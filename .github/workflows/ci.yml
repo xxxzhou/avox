@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (windows)
+        if: matrix.os == 'windows-latest'
+        run: cmake --preset windows
+
+      - name: Configure (linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: cmake --preset linux
+
+      - name: Build (windows)
+        if: matrix.os == 'windows-latest'
+        run: cmake --build build/windows --config Release
+
+      - name: Build (linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: cmake --build build/linux
+
+      - name: Test (linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: ctest --test-dir build/linux --output-on-failure
