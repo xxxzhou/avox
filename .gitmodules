@@ -1,6 +1,6 @@
 [submodule "3rdparty/ZLMediaKit"]
 	path = 3rdparty/ZLMediaKit
-	url = git@github.com:xxxzhou/ZLMediaKit.git
+	url = https://github.com/xxxzhou/ZLMediaKit.git
 [submodule "3rdparty/faad2"]
 	path = 3rdparty/faad2
 	url = git@github.com:knik0/faad2.git
