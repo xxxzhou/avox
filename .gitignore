@@ -143,3 +143,4 @@ build_log_torrent.txt
 results/torrent_bench/
 # swig nodejs 生成物 (build 时由 swig 重新生成)
 swig/nodejs/files
+deploy/

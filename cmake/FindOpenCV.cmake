@@ -19,10 +19,11 @@ include(FindPackageHandleStandardArgs)
 # 版本
 set(OpenCV_VERSION "4.13.0")
 
-# 默认搜索路径
+# 默认搜索路径 (avc_library 与项目内 3rdparty/library 目录结构一致: windows/opencv, android/opencv ...)
 set(OpenCV_SEARCH_PATHS
     $ENV{OpenCV_DIR}
     ${PROJECT_SOURCE_DIR}/3rdparty/library
+    ${AVOX_EXTERNAL_LIBRARY_DIR}/3rdparty/library
 )
 
 # ============== 平台检测 ==============
