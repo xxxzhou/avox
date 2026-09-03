@@ -1,0 +1,429 @@
+# 水印图片URL列表 (透明PNG logo/图标)
+# 格式: URL 文件名 [类型]
+#   类型: overlay (半透明图标) 或 external (品牌logo)，默认 external
+#
+# 以#开头的行为注释
+
+# ===== 半透明图标 (overlay 类型 - 小图标/按钮/角标) =====
+
+# 播放按钮
+https://upload.wikimedia.org/wikipedia/commons/thumb/2/26/Play-button.png/120px-Play-button.png play_icon.png overlay
+
+# 分享图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/8/83/Octicons-share.svg/120px-Octicons-share.svg.png share_icon.png overlay
+
+# 相机图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/Camera_font_awesome.svg/120px-Camera_font_awesome.svg.png camera_icon.png overlay
+
+# 音乐图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/e/Eo_circle_green_white_musical-note.svg/120px-Eo_circle_green_white_musical-note.svg.png music_icon.png overlay
+
+# 定位图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/e/e8/Map_marker.png/100px-Map_marker.png location_icon.png overlay
+
+# WiFi 图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/a/ae/WiFi_Logo.svg/120px-WiFi_Logo.svg.png wifi_icon.png overlay
+
+# 搜索图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/5/55/Magnifying_glass_icon.svg/120px-Magnifying_glass_icon.svg.png search_icon.png overlay
+
+# 心形图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Love_Heart_symbol.svg/120px-Love_Heart_symbol.svg.png heart_icon.png overlay
+
+# 星形图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/e/e7/Star_green_icon.svg/120px-Star_green_icon.svg.png star_icon.png overlay
+
+# 消息图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/7/72/Simple_Chat.svg/120px-Simple_Chat.svg.png chat_icon.png overlay
+
+# 箭头图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/9/90/Ic_arrow_forward_48px.svg/120px-Ic_arrow_forward_48px.svg.png arrow_icon.png overlay
+
+# 设置图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/4/4c/Gear_font_awesome.svg/120px-Gear_font_awesome.svg.png settings_icon.png overlay
+
+# 下载图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/d/d5/Ic_cloud_download_48px.svg/120px-Ic_cloud_download_48px.svg.png download_icon.png overlay
+
+# 时间图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/8/86/Octicons-clock.svg/120px-Octicons-clock.svg.png clock_icon.png overlay
+
+# 用户图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/3/34/Ic_person_48px.svg/120px-Ic_person_48px.svg.png user_icon.png overlay
+
+# 锁定图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/7/71/Lock_font_awesome.svg/120px-Lock_font_awesome.svg.png lock_icon.png overlay
+
+# 通知铃铛
+https://upload.wikimedia.org/wikipedia/commons/thumb/8/8a/Octicons-bell.svg/120px-Octicons-bell.svg.png bell_icon.png overlay
+
+# 书签图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Bookmark_font_awesome.svg/120px-Bookmark_font_awesome.svg.png bookmark_icon.png overlay
+
+# 眼睛图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/0/0b/Eye_font_awesome.svg/120px-Eye_font_awesome.svg.png eye_icon.png overlay
+
+# 编辑图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/a/a7/Octicons-pencil.svg/120px-Octicons-pencil.svg.png edit_icon.png overlay
+
+# 垃圾桶图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/7/7d/Octicons-trashcan.svg/120px-Octicons-trashcan.svg.png trash_icon.png overlay
+
+# 添加图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/2/23/Octicons-plus.svg/120px-Octicons-plus.svg.png plus_icon.png overlay
+
+# 检查图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/0/0e/Octicons-check.svg/120px-Octicons-check.svg.png check_icon.png overlay
+
+# 关闭图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/e/e4/Octicons-x.svg/120px-Octicons-x.svg.png close_icon.png overlay
+
+# 信息图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/5/54/Octicons-info.svg/120px-Octicons-info.svg.png info_icon.png overlay
+
+# 警告图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/d/d6/Octicons-alert.svg/120px-Octicons-alert.svg.png alert_icon.png overlay
+
+# 问号图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/e/e6/Help_font_awesome.svg/120px-Help_font_awesome.svg.png help_icon.png overlay
+
+# 火焰图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/c/c4/Font_Awesome_5_solid_fire.svg/120px-Font_Awesome_5_solid_fire.svg.png fire_icon.png overlay
+
+# 闪电图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/e/ee/Flash_icon.svg/120px-Flash_icon.svg.png flash_icon.png overlay
+
+# 礼物图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/4/46/Octicons-gift.svg/120px-Octicons-gift.svg.png gift_icon.png overlay
+
+# 徽章/奖杯图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/d/d8/Octicons-trophy.svg/120px-Octicons-trophy.svg.png trophy_icon.png overlay
+
+# 皇冠图标
+https://upload.wikimedia.org/wikipedia/commons/thumb/3/38/Octicons-crown.svg/120px-Octicons-crown.svg.png crown_icon.png overlay
+
+# ===== 品牌 logo (external 类型 - 较大 logo) =====
+
+# HTML5 Logo
+https://upload.wikimedia.org/wikipedia/commons/thumb/6/61/HTML5_logo_and_wordmark.svg/120px-HTML5_logo_and_wordmark.svg.png html5_logo.png external
+
+# CSS3 Logo
+https://upload.wikimedia.org/wikipedia/commons/thumb/d/d5/CSS3_logo_and_wordmark.svg/120px-CSS3_logo_and_wordmark.svg.png css3_logo.png external
+
+# JavaScript Logo
+https://upload.wikimedia.org/wikipedia/commons/thumb/b/ba/Javascript_badge.svg/120px-Javascript_badge.svg.png js_logo.png external
+
+# React Logo
+https://upload.wikimedia.org/wikipedia/commons/thumb/a/a7/React-icon.svg/120px-React-icon.svg.png react_logo.png external
+
+# Python Logo
+https://upload.wikimedia.org/wikipedia/commons/thumb/c/c3/Python-logo-notext.svg/120px-Python-logo-notext.svg.png python_logo.png external
+
+# Git Logo
+https://upload.wikimedia.org/wikipedia/commons/thumb/e/e0/Git-logo.svg/120px-Git-logo.svg.png git_logo.png external
+
+# Node.js Logo
+https://upload.wikimedia.org/wikipedia/commons/thumb/d/d9/Node.js_logo.svg/120px-Node.js_logo.svg.png nodejs_logo.png external
+
+# TypeScript Logo
+https://upload.wikimedia.org/wikipedia/commons/thumb/4/4c/Typescript_logo_2020.svg/120px-Typescript_logo_2020.svg.png typescript_logo.png external
+
+# Vue.js Logo
+https://upload.wikimedia.org/wikipedia/commons/thumb/9/95/Vue.js_Logo_2.svg/120px-Vue.js_Logo_2.svg.png vue_logo.png external
+
+# Angular Logo
+https://upload.wikimedia.org/wikipedia/commons/thumb/c/cf/Angular_full_color_logo.svg/120px-Angular_full_color_logo.svg.png angular_logo.png external
+
+# ===== 几何形状水印 =====
+
+# 圆形
+https://upload.wikimedia.org/wikipedia/commons/thumb/a/a0/Circle_-_black_simple.svg/100px-Circle_-_black_simple.svg.png circle_shape.png overlay
+
+# 三角形
+https://upload.wikimedia.org/wikipedia/commons/thumb/2/2c/Triangle_font_awesome.svg/120px-Triangle_font_awesome.svg.png triangle_shape.png overlay
+
+# 方形
+https://upload.wikimedia.org/wikipedia/commons/thumb/7/7d/Font_Awesome_5_solid_square.svg/120px-Font_Awesome_5_solid_square.svg.png square_shape.png overlay
+
+# 菱形
+https://upload.wikimedia.org/wikipedia/commons/thumb/d/d3/Diamond_icon.svg/120px-Diamond_icon.svg.png diamond_shape.png overlay
+
+# ===== 社交媒体图标 =====
+
+# Twitter/X
+https://upload.wikimedia.org/wikipedia/commons/thumb/5/57/X_logo_2023_%28white%29.png/120px-X_logo_2023_%28white%29.png twitter_icon.png overlay
+
+# Facebook
+https://upload.wikimedia.org/wikipedia/commons/thumb/0/05/Facebook_Logo_%282019%29.png/120px-Facebook_Logo_%282019%29.png facebook_icon.png overlay
+
+# Instagram
+https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Instagram_icon.png/120px-Instagram_icon.png instagram_icon.png overlay
+
+# YouTube
+https://upload.wikimedia.org/wikipedia/commons/thumb/0/09/YouTube_full-color_icon_%282017%29.svg/120px-YouTube_full-color_icon_%282017%29.svg.png youtube_icon.png overlay
+
+# LinkedIn
+https://upload.wikimedia.org/wikipedia/commons/thumb/8/81/LinkedIn_icon.svg/120px-LinkedIn_icon.svg.png linkedin_icon.png overlay
+
+# ===== Icons8 图标 (免费版，有图标许可) =====
+
+# 播放按钮 (彩色)
+https://img.icons8.com/color/96/play.png play_color.png overlay
+
+# YouTube 播放按钮
+https://img.icons8.com/color/96/youtube-play.png youtube_play.png overlay
+
+# 视频播放器
+https://img.icons8.com/fluency/96/video.png video_icon.png overlay
+
+# 直播图标
+https://img.icons8.com/color/96/live-video-on.png live_icon.png overlay
+
+# 录制图标
+https://img.icons8.com/color/96/record.png record_icon.png overlay
+
+# 音乐音符 (彩色)
+https://img.icons8.com/color/96/music.png music_color.png overlay
+
+# 麦克风
+https://img.icons8.com/color/96/microphone.png mic_icon.png overlay
+
+# 摄像头
+https://img.icons8.com/color/96/camera.png camera_color.png overlay
+
+# 相机 (复古)
+https://img.icons8.com/fluency/96/camera.png camera_fluency.png overlay
+
+# 图片/图像
+https://img.icons8.com/color/96/image.png image_icon.png overlay
+
+# 相册
+https://img.icons8.com/color/96/stack-of-photos.png album_icon.png overlay
+
+# 文件夹
+https://img.icons8.com/color/96/folder-invoices.png folder_icon.png overlay
+
+# 云存储
+https://img.icons8.com/color/96/cloud.png cloud_icon.png overlay
+
+# 云下载
+https://img.icons8.com/color/96/cloud-download.png cloud_download.png overlay
+
+# 云上传
+https://img.icons8.com/color/96/cloud-upload.png cloud_upload.png overlay
+
+# 分享
+https://img.icons8.com/color/96/share.png share_color.png overlay
+
+# 链接
+https://img.icons8.com/color/96/link.png link_icon.png overlay
+
+# 复制
+https://img.icons8.com/color/96/copy.png copy_icon.png overlay
+
+# 剪贴板
+https://img.icons8.com/color/96/clipboard.png clipboard_icon.png overlay
+
+# 编辑/画笔
+https://img.icons8.com/color/96/edit.png edit_color.png overlay
+
+# 删除/垃圾
+https://img.icons8.com/color/96/trash.png trash_color.png overlay
+
+# 设置齿轮
+https://img.icons8.com/color/96/settings.png settings_color.png overlay
+
+# 筛选
+https://img.icons8.com/color/96/filter.png filter_icon.png overlay
+
+# 搜索放大镜
+https://img.icons8.com/color/96/search.png search_color.png overlay
+
+# 首页
+https://img.icons8.com/color/96/home.png home_icon.png overlay
+
+# 用户/人
+https://img.icons8.com/color/96/user.png user_color.png overlay
+
+# 用户组
+https://img.icons8.com/color/96/people-skin-type-7.png people_icon.png overlay
+
+# 通知铃铛
+https://img.icons8.com/color/96/appointment-reminders.png bell_color.png overlay
+
+# 消息气泡
+https://img.icons8.com/color/96/speech-bubble.png bubble_icon.png overlay
+
+# 聊天
+https://img.icons8.com/color/96/chat.png chat_color.png overlay
+
+# 邮件
+https://img.icons8.com/color/96/new-post.png email_icon.png overlay
+
+# 心形/喜欢
+https://img.icons8.com/color/96/like.png like_icon.png overlay
+
+# 爱心
+https://img.icons8.com/color/96/hearts.png hearts_icon.png overlay
+
+# 星星/收藏
+https://img.icons8.com/color/96/star.png star_color.png overlay
+
+# 收藏夹
+https://img.icons8.com/color/96/bookmark-ribbon.png bookmark_color.png overlay
+
+# 火/热门
+https://img.icons8.com/color/96/fire-element.png fire_color.png overlay
+
+# 闪电
+https://img.icons8.com/color/96/lightning-bolt.png lightning_icon.png overlay
+
+# 勾选/完成
+https://img.icons8.com/color/96/checkmark.png check_color.png overlay
+
+# 关闭/X
+https://img.icons8.com/color/96/delete-sign.png close_color.png overlay
+
+# 警告
+https://img.icons8.com/color/96/warning-shield.png warning_icon.png overlay
+
+# 信息
+https://img.icons8.com/color/96/info.png info_color.png overlay
+
+# 问号/帮助
+https://img.icons8.com/color/96/help.png help_color.png overlay
+
+# 锁定
+https://img.icons8.com/color/96/lock.png lock_color.png overlay
+
+# 解锁
+https://img.icons8.com/color/96/unlock.png unlock_icon.png overlay
+
+# 位置/地图
+https://img.icons8.com/color/96/marker.png marker_icon.png overlay
+
+# 定位
+https://img.icons8.com/color/96/geo-fence.png location_color.png overlay
+
+# WiFi
+https://img.icons8.com/color/96/wifi.png wifi_color.png overlay
+
+# 信号
+https://img.icons8.com/color/96/signal.png signal_icon.png overlay
+
+# 电池
+https://img.icons8.com/color/96/battery-level.png battery_icon.png overlay
+
+# 亮度
+https://img.icons8.com/color/96/sun.png sun_icon.png overlay
+
+# 月亮/夜间
+https://img.icons8.com/color/96/moon-satellite.png moon_icon.png overlay
+
+# ===== 社交媒体彩色图标 =====
+
+# 微信
+https://img.icons8.com/color/96/weixing.png wechat_icon.png overlay
+
+# QQ
+https://img.icons8.com/color/96/qq.png qq_icon.png overlay
+
+# 微博
+https://img.icons8.com/color/96/weibo.png weibo_icon.png overlay
+
+# 抖音/TikTok
+https://img.icons8.com/color/96/tiktok.png tiktok_icon.png overlay
+
+# Twitter/X
+https://img.icons8.com/color/96/twitter.png twitter_color.png overlay
+
+# Facebook
+https://img.icons8.com/color/96/facebook-new.png facebook_color.png overlay
+
+# Instagram
+https://img.icons8.com/color/96/instagram-new.png instagram_color.png overlay
+
+# YouTube
+https://img.icons8.com/color/96/youtube.png youtube_color.png overlay
+
+# LinkedIn
+https://img.icons8.com/color/96/linkedin.png linkedin_color.png overlay
+
+# 抖音
+https://img.icons8.com/color/96/tiktok--v1.png douyin_icon.png overlay
+
+# 快手
+https://img.icons8.com/color/96/kuaishou.png kuaishou_icon.png overlay
+
+# 小红书
+https://img.icons8.com/color/96/xiaohongshu.png xiaohongshu_icon.png overlay
+
+# B站/Bilibili
+https://img.icons8.com/color/96/bilibili.png bilibili_icon.png overlay
+
+# ===== 品牌 Logo =====
+
+# Android
+https://img.icons8.com/color/96/android-os.png android_logo.png external
+
+# Apple
+https://img.icons8.com/color/96/mac-os.png apple_logo.png external
+
+# Windows
+https://img.icons8.com/color/96/windows-10.png windows_logo.png external
+
+# Linux
+https://img.icons8.com/color/96/linux.png linux_logo.png external
+
+# Chrome
+https://img.icons8.com/color/96/chrome.png chrome_logo.png external
+
+# Firefox
+https://img.icons8.com/color/96/firefox.png firefox_logo.png external
+
+# Safari
+https://img.icons8.com/color/96/safari.png safari_logo.png external
+
+# Edge
+https://img.icons8.com/color/96/ms-edge-new.png edge_logo.png external
+
+# Google
+https://img.icons8.com/color/96/google-logo.png google_logo.png external
+
+# Microsoft
+https://img.icons8.com/color/96/microsoft.png microsoft_logo.png external
+
+# OpenAI
+https://img.icons8.com/color/96/chatgpt.png openai_logo.png external
+
+# GitHub
+https://img.icons8.com/color/96/github.png github_logo.png external
+
+# GitLab
+https://img.icons8.com/color/96/gitlab.png gitlab_logo.png external
+
+# Docker
+https://img.icons8.com/color/96/docker.png docker_logo.png external
+
+# Kubernetes
+https://img.icons8.com/color/96/kubernetes.png k8s_logo.png external
+
+# AWS
+https://img.icons8.com/color/96/amazon-web-services.png aws_logo.png external
+
+# Azure
+https://img.icons8.com/color/96/azure-1.png azure_logo.png external
+
+# Alibaba Cloud (阿里云) - 使用 CDN URL
+# https://img.icons8.com/color/96/alibaba-cloud.png aliyun_logo.png external
+
+# Tencent Cloud (腾讯云) - 使用 CDN URL
+# https://img.icons8.com/color/96/tencent-qq.png tencent_logo.png external
+
+# ===== 注意事项 =====
+# 1. overlay: 半透明小图标，适合作为叠加水印
+# 2. external: 品牌 logo，class_id = 4
+# 3. 图片最好是透明背景 PNG
+# 4. 图片尺寸建议 100-500 像素
+# 5. Wikipedia/Wikimedia 图片通常是 CC BY-SA 或公共领域许可
+# 6. Icons8 图标免费版需遵循其许可协议 (icons8.com/license)

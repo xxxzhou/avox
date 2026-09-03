@@ -1,0 +1,291 @@
+# 水印文字词汇库 v2
+# 用于动态组合生成各种可能的文字水印
+# 格式: 类别 词汇
+# 以#开头的行为注释
+
+# ============================================================================
+# 英文动作词库
+# ============================================================================
+action_en NOT
+action_en FOR
+action_en DO
+action_en ONLY
+action_en STRICTLY
+action_en PRIVATE
+action_en CONFIDENTIAL
+action_en PERSONAL
+action_en INTERNAL
+action_en EXCLUSIVE
+action_en LIMITED
+action_en RESTRICTED
+action_en PROHIBITED
+action_en BLOCKED
+action_en PROTECTED
+action_en LICENSED
+action_en UNAUTHORIZED
+action_en AUTHORIZED
+action_en PREVIEW
+action_en TRIAL
+action_en SAMPLE
+action_en DEMO
+action_en TESTING
+action_en EVALUATION
+action_en REVIEW
+action_en APPROVED
+action_en PENDING
+action_en ARCHIVED
+action_en TEMPORARY
+action_en FINAL
+action_en DRAFT
+
+# ============================================================================
+# 英文名词词库
+# ============================================================================
+noun_en RESALE
+noun_en DISTRIBUTION
+noun_en COPY
+noun_en REPRODUCTION
+noun_en SCREENSHOT
+noun_en RECORDING
+noun_en DOWNLOAD
+noun_en UPLOAD
+noun_en SHARE
+noun_en USE
+noun_en ACCESS
+noun_en PREVIEW
+noun_en TESTING
+noun_en REVIEW
+noun_en EVALUATION
+noun_en PERSONAL USE
+noun_en INTERNAL USE
+noun_en COMMERCIAL USE
+noun_en PUBLIC RELEASE
+noun_en SALE
+noun_en RENT
+noun_en LEASE
+noun_en PURPOSES
+noun_en PURPOSES ONLY
+noun_en CONTENT
+noun_en MATERIAL
+noun_en DOCUMENT
+noun_en FILE
+noun_en IMAGE
+noun_en PHOTO
+noun_en VIDEO
+noun_en MEDIA
+noun_en PROPERTY
+noun_en COLLECTION
+
+# ============================================================================
+# 英文状态词库
+# ============================================================================
+status_en HD
+status_en 4K
+status_en 8K
+status_en UHD
+status_en FHD
+status_en PRO
+status_en PLUS
+status_en ULTRA
+status_en MAX
+status_en PREMIUM
+status_en VIP
+status_en MEMBER
+status_en GUEST
+status_en ADMIN
+status_en FREE
+status_en PAID
+status_en TRIAL
+status_en BETA
+status_en ALPHA
+status_en RC
+status_en DEMO
+status_en SAMPLE
+status_en PREVIEW
+status_en LATEST
+status_en UPDATED
+status_en NEW
+status_en OLD
+status_en ARCHIVED
+status_en DELETED
+status_en TEMPORARY
+status_en PERMANENT
+status_en SYNCED
+status_en ONLINE
+status_en OFFLINE
+status_en ACTIVE
+status_en INACTIVE
+status_en ENABLED
+status_en DISABLED
+status_en LOCKED
+status_en UNLOCKED
+status_en BLOCKED
+status_en VERIFIED
+status_en UNVERIFIED
+
+# ============================================================================
+# 中文动作词库
+# ============================================================================
+action_cn 仅供
+action_cn 禁止
+action_cn 请勿
+action_cn 限于
+action_cn 仅限
+action_cn 严禁
+action_cn 切勿
+action_cn 不得
+action_cn 不可
+action_cn 无法
+action_cn 未
+action_cn 已
+action_cn 正在
+action_cn 即将
+action_cn 暂停
+action_cn 停止
+action_cn 开始
+action_cn 结束
+
+# ============================================================================
+# 中文名词词库
+# ============================================================================
+noun_cn 预览
+noun_cn 转载
+noun_cn 下载
+noun_cn 截图
+noun_cn 录屏
+noun_cn 分享
+noun_cn 使用
+noun_cn 访问
+noun_cn 测试
+noun_cn 审核
+noun_cn 评估
+noun_cn 商用
+noun_cn 外传
+noun_cn 复制
+noun_cn 传播
+noun_cn 公开
+noun_cn 发布
+noun_cn 内容
+noun_cn 文件
+noun_cn 图片
+noun_cn 视频
+noun_cn 资源
+noun_cn 资料
+noun_cn 作品
+noun_cn 素材
+
+# ============================================================================
+# 中文状态词库
+# ============================================================================
+status_cn 高清
+status_cn 超清
+status_cn 会员
+status_cn VIP
+status_cn 试用
+status_cn 正式
+status_cn 内部
+status_cn 公开
+status_cn 付费
+status_cn 免费
+status_cn 独家
+status_cn 原创status_cn 版权
+status_cn 授权
+status_cn 限免
+status_cn 热门
+status_cn 推荐
+status_cn 最新
+status_cn 精选
+status_cn 收藏
+status_cn 归档
+status_cn 临时
+status_cn 永久
+status_cn 已删除
+status_cn 待审核
+status_cn 已通过
+status_cn 已拒绝
+
+# ============================================================================
+# 版权名称词库
+# ============================================================================
+copyright_name Author
+copyright_name Photographer
+copyright_name Studio
+copyright_name Media
+copyright_name Productions
+copyright_name Entertainment
+copyright_name Records
+copyright_name Publishing
+copyright_name Digital
+copyright_name Tech
+copyright_name Solutions
+copyright_name Services
+copyright_name Group
+copyright_name Holdings
+copyright_name Corporation
+copyright_name Company
+copyright_name Ltd
+copyright_name Inc
+copyright_name LLC
+copyright_name Agency
+copyright_name Network
+copyright_name Platform
+copyright_name Channel
+copyright_name Team
+copyright_name Workshop
+copyright_name Lab
+copyright_name Studio
+copyright_name Gallery
+copyright_name Museum
+copyright_name Archive
+copyright_name Library
+copyright_name Collection
+copyright_name Foundation
+copyright_name Institute
+copyright_name University
+copyright_name College
+copyright_name School
+copyright_name Hospital
+copyright_name Center
+copyright_name Organization
+copyright_name Association
+
+# ============================================================================
+# 组合模板
+# ============================================================================
+# 短文字模板 - 单词或短语
+template_short {status_en}
+template_short {status_cn}
+template_short {action_cn}{noun_cn}
+
+# 长文字模板 - 组合句式
+template_long NOT FOR {noun_en}
+template_long FOR {noun_en} ONLY
+template_long DO NOT {action_en}
+template_long {action_en} {noun_en}
+template_long {action_en} FOR {noun_en}
+template_long STRICTLY FOR {noun_en}
+template_long {status_en} VERSION
+template_long {status_en} ACCESS
+template_long {status_en} CONTENT
+template_long {action_cn}{noun_cn}
+template_long {action_cn}{noun_cn}使用
+template_long {action_cn}公开{noun_cn}
+template_long 仅限{noun_cn}{action_cn}
+
+# 版权模板
+template_copyright © {year} {copyright_name}
+template_copyright © {year} All Rights Reserved
+template_copyright © {copyright_name}
+template_copyright © Photo by {copyright_name}
+template_copyright © {copyright_name} All Rights Reserved
+
+# ============================================================================
+# 年份范围
+# ============================================================================
+year 2024
+year 2025
+year 2026
+year 2027
+year 2028
+year 2029
+year 2030
