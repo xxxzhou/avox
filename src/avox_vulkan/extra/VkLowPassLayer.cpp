@@ -1,0 +1,81 @@
+#include "VkLowPassLayer.hpp"
+
+namespace avox {
+
+// VkSaveFrameLayer::VkSaveFrameLayer(/* args */) {
+//   // 是否自己使用ComputeShader复制
+//   bUserPipe = true;
+//   // 告诉外面,不需要自动连接别层输入
+//   bInput = true;
+//   glslPath = "glsl/copyImage.comp.spv";
+// }
+
+// VkSaveFrameLayer::~VkSaveFrameLayer() {}
+
+// void VkSaveFrameLayer::saveImageInfo(const ImageFormat& imageFormat,
+//                                      int32_t nodeIndex, int32_t outNodeIndex) {
+//   inFormats[0] = imageFormat;
+//   outFormats[0] = imageFormat;
+//   inLayers[0].nodeIndex = nodeIndex;
+//   inLayers[0].siteIndex = outNodeIndex;
+// }
+
+// void VkSaveFrameLayer::onCommand() {
+//   inTexs.clear();
+//   inTexs.push_back(
+//       vkPipeGraph->getOutTex(inLayers[0].nodeIndex, inLayers[0].siteIndex));
+//   if (bUserPipe) {
+//     VkLayer::onInitLayer();
+//     VkLayer::onInitPipe();
+//     VkLayer::onCommand();
+//   } else {
+//     inTexs[0]->addBarrier(cmd, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+//                           VK_PIPELINE_STAGE_TRANSFER_BIT,
+//                           VK_ACCESS_SHADER_READ_BIT);
+//     outTexs[0]->addBarrier(cmd, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+//                            VK_PIPELINE_STAGE_TRANSFER_BIT,
+//                            VK_ACCESS_SHADER_WRITE_BIT);
+//     copyImage(cmd, inTexs[0], outTexs[0]->image);
+//   }
+// }
+
+// VkLowPassLayer::VkLowPassLayer(/* args */) {
+//   saveLayer = std::make_unique<VkSaveFrameLayer>();
+// }
+
+// VkLowPassLayer::~VkLowPassLayer() {}
+
+// void VkLowPassLayer::onInitGraph() {
+//   VkDissolveBlendLayer::onInitGraph();
+//   pipeGraph->addNode(saveLayer);
+// }
+
+// void VkLowPassLayer::onInitNode() { saveLayer->addLine(this, 0, 1); }
+
+// void VkLowPassLayer::onInitLayer() {
+//   VkLayer::onInitLayer();
+//   saveLayer->saveImageInfo(inFormats[0], getGraphIndex(), 0);
+// }
+
+// VkHighPassLayer::VkHighPassLayer(/* args */) {
+//   lowLayer = std::make_unique<VkLowPassLayer>();
+//   paramet = 0.5f;
+//   lowLayer->updateParamet(paramet);
+// }
+
+// VkHighPassLayer::~VkHighPassLayer() {}
+
+// void VkHighPassLayer::onUpdateParamet() { lowLayer->updateParamet(paramet); }
+
+// void VkHighPassLayer::onInitGraph() {
+//   VkDifferenceBlendLayer::onInitGraph();
+//   pipeGraph->addNode(lowLayer->getLayer());
+// }
+
+// void VkHighPassLayer::onInitNode() {
+//   lowLayer->addLine(this, 0, 1);
+//   setStartNode(this, 0);
+//   setStartNode(lowLayer, 1);
+// }
+
+}
