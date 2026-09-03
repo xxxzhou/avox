@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebRTC Signaling Client</title>
+    <link rel="stylesheet" href="./rtc_test.css">
+
+
+</head>
+<body>
+    <div class="container">
+        <h1>🎥 WebRTC Signaling Client</h1>
+        <video id="fileVideo" autoplay playsinline muted style="display:none"></video>
+
+
+        <!-- 配置 -->
+        <div class="config-panel">
+            <h3>📡 配置</h3>
+            <div class="config-row">
+                <div class="config-item">
+                    <label>信令服务地址</label>
+                    
+                     <input type="text" id="signalServer" value="http://192.168.1.100:8486/webrtc/{route}" placeholder="http://192.168.1.100:8486/webrtc/{route}">
+                    <!-- <input type="text" id="signalServer" value="http://172.23.175.118:8486/webrtc/{route}" placeholder="http://172.23.175.118:8486/webrtc/{route}"> -->
+                </div>
+            </div>
+            <div class="config-row">
+                <div class="config-item">
+                    <label>Token</label>
+                    <input id="token" value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzZXNzaW9uSWQiOiI2Njk5OTkxMTEyMjIzMzExMDA2NjA3NzExMjIiLCJmcm9tIjoiMTExMSIsInRvIjoiMjIyMiIsImV4cCI6MTc2OTY1NDk0OSwiaWF0IjoxNzY5Mzk1NzQ5fQ.xlz9HpzdyLrFaKT052Zn7Gin6JKk8xDWEbWJ09CE7KE" placeholder="粘贴 Token">
+                </div>
+            </div>
+            <div class="config-row">
+                <div class="config-item">
+                    <label>Self ID</label>
+                    <input type="text" id="selfId" value="2222" placeholder="2222">
+                </div>
+            </div>
+        </div>
+
+        <!-- TURN 配置 -->
+        <div class="config-panel">
+            <h3>🔄 TURN 配置</h3>
+            <div class="config-row">
+                <div class="config-item">
+                    <label>TURN 服务器</label>
+                     <input type="text" id="turnServer" value="turn:192.168.1.100:8478"> 
+                    <!-- <input type="text" id="turnServer" value="turn:172.23.175.118:3478"> -->
+                </div>
+                <div class="config-item">
+                    <label>用户名</label>
+                    <input type="text" id="turnUsername" value="demo">
+                </div>
+                <div class="config-item">
+                    <label>密码</label>
+                    <input type="password" id="turnPassword" value="123456">
+                </div>
+            </div>
+        </div>
+
+        <!-- 状态 -->
+        <div class="status-bar">
+            <div class="status-item">
+                <label>SSE:</label>
+                <span class="status-badge status-disconnected" id="sseStatus">未连接</span>
+            </div>
+            <div class="status-item">
+                <label>WebRTC:</label>
+                <span class="status-badge status-disconnected" id="connStatus">未连接</span>
+            </div>
+            <div class="status-item">
+                <label>本端候选:</label>
+                <span class="status-badge status-disconnected" id="localCandCount">0</span>
+            </div>
+            <div class="status-item">
+                <label>对端候选:</label>
+                <span class="status-badge status-disconnected" id="remoteCandCount">0</span>
+            </div>
+        </div>
+
+        <!-- 按钮 -->
+        <div class="actions">
+            <button class="btn btn-offer" id="btnRecvOnly" onclick="enableRecvOnlyMode()">
+                📺 仅接收模式
+            </button>
+            <button class="btn btn-offer" id="btnOffer" onclick="startAsOffer()">
+                📤 Offer 方
+            </button>
+            <button class="btn btn-answer" id="btnAnswer" onclick="startAsAnswer()">
+                📥 Answer 方
+            </button>
+            <button class="btn btn-stats" onclick="showSelectedCandidates()">
+                📊 查看选中候选
+            </button>
+            <button class="btn btn-stats" id="btnStats" onclick="logOutboundVideoStats()">
+                📊 打印编码信息
+            </button>
+            <button class="btn btn-reset" onclick="resetAll()">
+                🔄 重置
+            </button>
+        </div>
+
+        <!-- 日志 -->
+        <div class="log-container">
+            <div class="log-header">
+                <h3>📋 日志</h3>
+                <button class="btn-clear" onclick="clearLog()">清空</button>
+            </div>
+            <div class="log-content" id="logContent"></div>
+        </div>
+
+        <!-- 视频 -->
+    <div class="canvas-container">
+      <canvas id="videoCanvas" width="640" height="480"></canvas>
+    </div>
+    </div>
+    <script src="./avox_player.js"></script>
+    <script src="./rtc_test.js"></script>
+</body>
+</html>

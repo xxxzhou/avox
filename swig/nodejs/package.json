@@ -1,0 +1,57 @@
+{
+  "name": "avox-player",
+  "version": "1.0.0",
+  "description": "AVOX Player Electron App",
+  "main": "main.js",
+  "scripts": {
+    "configure": "node-gyp configure",
+    "rebuild": "node-gyp rebuild --release",
+    "rebuild:debug": "node-gyp rebuild --debug",
+    "start": "electron main.js",
+    "dist": "electron-builder --win --x64",
+    "dist:dir": "electron-builder --win --x64 --dir"
+  },
+  "devDependencies": {
+    "electron": "^22.3.18",
+    "electron-builder": "^24.13.3",
+    "electron-rebuild": "^3.2.9",
+    "node-addon-api": "^8.9.2"
+  },
+  "build": {
+    "appId": "com.avplay.avox-player",
+    "productName": "AVOX Player",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "avox_player.js",
+      "yuvglrender.js",
+      "player_test.html",
+      "player_test.js",
+      "rtc_test.html",
+      "rtc_test.js",
+      "rtc_test.css",
+      "../build/windows/avplay/install/AMD64/Release/avox_js.node",
+      "../build/windows/avplay/install/AMD64/Release/*.dll",
+      "../build/windows/avplay/install/AMD64/Release/glsl/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": "x64"
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "nan": "^2.28.0",
+    "node-gyp": "^13.0.1"
+  }
+}

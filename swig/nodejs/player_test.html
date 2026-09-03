@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>AVOX Player Test Suite</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    body {
+      background: #111;
+      color: #ddd;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      line-height: 1.6;
+      padding: 20px;
+    }
+    
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    
+    h1 {
+      color: #fff;
+      margin-bottom: 30px;
+      text-align: center;
+    }
+    
+    h2 {
+      color: #f0f0f0;
+      margin: 20px 0 15px;
+      border-bottom: 1px solid #333;
+      padding-bottom: 5px;
+    }
+    
+    /* Player type selector */
+    .player-selector {
+      background: #222;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    
+    .player-selector label {
+      margin-right: 15px;
+      cursor: pointer;
+    }
+    
+    /* Control panels */
+    .control-panel {
+      background: #222;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    
+    .control-group {
+      margin-bottom: 15px;
+    }
+    
+    .control-group label {
+      display: inline-block;
+      width: 120px;
+      font-weight: 500;
+    }
+    
+    .control-group input[type="text"],
+    .control-group input[type="number"] {
+      background: #333;
+      border: 1px solid #444;
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 4px;
+      width: 400px;
+    }
+    
+    .control-group button {
+      background: #4a6fa5;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-right: 10px;
+      font-weight: 500;
+    }
+    
+    .control-group button:hover {
+      background: #5a7fb5;
+    }
+    
+    .control-group button:active {
+      background: #3a5f95;
+    }
+
+    .control-group button.speed-active {
+      background: #2d8a4e;
+      border-color: #2d8a4e;
+    }
+
+    /* Status panel */
+    .status-panel {
+      background: #222;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    
+    .status-item {
+      display: inline-block;
+      margin-right: 20px;
+      padding: 5px 10px;
+      background: #333;
+      border-radius: 4px;
+    }
+    
+    .status-item strong {
+      color: #4a6fa5;
+    }
+    
+    /* Log panel */
+    .log-panel {
+      background: #222;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    
+    #logContainer {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 4px;
+      padding: 10px;
+      height: 200px;
+      overflow-y: auto;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 12px;
+    }
+    
+    .log-entry {
+      margin-bottom: 5px;
+    }
+    
+    .log-info {
+      color: #888;
+    }
+    
+    .log-error {
+      color: #ff6b6b;
+    }
+    
+    .log-success {
+      color: #51cf66;
+    }
+    
+    /* WebRTC specific controls */
+    .webrtc-controls {
+      background: #222;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      border-left: 4px solid #4a6fa5;
+    }
+    
+    .sdp-container {
+      margin: 10px 0;
+    }
+    
+    .sdp-container textarea {
+      background: #333;
+      border: 1px solid #444;
+      color: #fff;
+      padding: 10px;
+      border-radius: 4px;
+      width: 100%;
+      height: 100px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 12px;
+      resize: vertical;
+    }
+
+    /* Grid layout */
+    .grid-container {
+      background: #000;
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 20px;
+      display: grid;
+      gap: 2px;
+    }
+
+    .grid-cell {
+      background: #1a1a1a;
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+      aspect-ratio: 16 / 9;
+    }
+
+    .grid-cell canvas {
+      width: 100%;
+      height: 100%;
+      max-width: 100%;
+      max-height: 100%;
+      display: block;
+    }
+
+    .grid-cell .cell-label {
+      position: absolute;
+      top: 4px;
+      left: 4px;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      padding: 2px 6px;
+      font-size: 12px;
+      border-radius: 3px;
+    }
+
+    /* Player count selector */
+    .player-count-selector {
+      background: #222;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+
+    .player-count-selector label {
+      margin-right: 10px;
+      font-weight: 500;
+    }
+
+    .player-count-selector button {
+      background: #333;
+      color: #ddd;
+      border: 1px solid #444;
+      padding: 8px 16px;
+      margin-right: 8px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .player-count-selector button.active {
+      background: #4a6fa5;
+      border-color: #4a6fa5;
+      color: #fff;
+    }
+
+    .player-count-selector button:hover {
+      background: #4a6fa5;
+    }
+  </style>
+</head>
+<body>
+  <nav style="background:#1c1c1c;padding:10px 20px;border-radius:6px;margin-bottom:16px;display:flex;gap:16px;align-items:center;">
+    <strong style="color:#4a6fa5;">AVOX Test Suite</strong>
+    <a href="./player_test.html" style="color:#fff;text-decoration:none;padding:4px 10px;background:#4a6fa5;border-radius:4px;">Player</a>
+    <a href="./rtc_test.html" style="color:#fff;text-decoration:none;padding:4px 10px;background:#4a6fa5;border-radius:4px;">WebRTC</a>
+    <a href="./agent_test.html" style="color:#fff;text-decoration:none;padding:4px 10px;background:#27ae60;border-radius:4px;">Agent</a>
+    <span style="margin-left:auto;color:#888;font-size:12px;">点 Agent 进入 avox_agent 聊天测试</span>
+  </nav>
+
+  <div class="container">
+    <h1>AVOX Player Test Suite</h1>
+    
+    <!-- Player type selector -->
+    <div class="player-selector">
+      <h2>Player Type</h2>
+      <label>
+        <input type="radio" name="playerType" value="media" checked> Media Player
+      </label>
+      <label>
+        <input type="radio" name="playerType" value="webrtc"> WebRTC Player
+      </label>
+    </div>
+    
+    <!-- Media Player Controls -->
+    <div id="mediaControls" class="control-panel">
+      <h2>Media Player Controls</h2>
+      
+      <div class="control-group">
+        <label>Media URL:</label>
+        <input id="urlInput" type="text" value="D://Back/为美好的世界献上爆焰12.mp4"
+          placeholder="输入播放地址，例如 file:///D:/test.mp4" />
+      </div>
+      
+      <div class="control-group">
+        <label>Controls:</label>
+        <button id="btnPlay">Play</button>
+        <button id="btnPause">Pause</button>
+        <button id="btnResume">Resume</button>
+        <button id="btnStop">Stop</button>
+        <button id="btnSeekBack">Seek -10s</button>
+        <button id="btnSeekForward">Seek +10s</button>
+        <button id="btnSpeed05">0.5x</button>
+        <button id="btnSpeed1" class="speed-active">1x</button>
+        <button id="btnSpeed2">2x</button>
+        <button id="btnSpeed4">4x</button>
+        <button id="btnSpeed8">8x</button>
+        <button id="btnSpeed16">16x</button>
+      </div>
+
+      <div class="control-group">
+        <label>Settings:</label>
+        <button id="btnHardDecodeOn">Hard Decode On</button>
+        <button id="btnHardDecodeOff">Hard Decode Off</button>
+        <button id="btnIoPlanFFmpeg">IO Plan: FFmpeg</button>
+        <button id="btnIoPlanZlMediaKit">IO Plan: ZLMediaKit</button>
+      </div>
+      
+      <div class="control-group">
+        <label>Effects:</label>
+        <button id="btnWatermarkOn">Watermark On</button>
+        <button id="btnWatermarkOff">Watermark Off</button>
+        <button id="btnLutOn">LUT On</button>
+        <button id="btnLutOff">LUT Off</button>
+        <button id="btnFontOn">Font On</button>
+        <button id="btnFontOff">Font Off</button>
+      </div>
+
+      <div class="control-group">
+        <label>Size Scale:</label>
+        <button id="btnScale025">Scale 0.25x</button>
+        <button id="btnScale05">Scale 0.5x</button>
+        <button id="btnScale075">Scale 0.75x</button>
+        <button id="btnScale1">Scale 1x</button>
+        <button id="btnScale2">Scale 2x</button>
+        <button id="btnDisableSizeChange">Disable Size Change</button>
+        <button id="btnAutoSizeScale">Toggle autoSizeScale</button>
+      </div>
+
+      <div class="control-group">
+        <label>ScreenShot:</label>
+        <input id="screenShotPath" type="text" value="D://screenshot.png"
+          placeholder="截图保存路径，例如 D://screenshot.png" />
+        <button id="btnScreenShot">Screen Shot</button>
+        <button id="btnScreenShotBase64">Screen Shot Base64</button>
+      </div>
+
+      <div class="control-group">
+        <label>Record:</label>
+        <input id="recordPath" type="text" value="D://record.mp4"
+          placeholder="录像保存路径，例如 D://record.mp4" />
+        <label style="width:auto;margin-right:5px;"><input type="checkbox" id="recordTranscode" checked> 转码</label>
+        <button id="btnRecordStart">Record Start</button>
+        <button id="btnRecordStop">Record Stop</button>
+      </div>
+
+      <div class="control-group">
+        <label>Recorder Input:</label>
+        <input id="recorderInput" type="text" value=""
+          placeholder="录制输入地址，例如 rtsp://..." />
+      </div>
+
+      <div class="control-group">
+        <label>Recorder Output:</label>
+        <input id="recorderOutput" type="text" value="D://recorder_output.mp4"
+          placeholder="录制输出路径，例如 D://output.mp4" />
+        <label style="width:auto;margin-right:5px;"><input type="checkbox" id="recorderTranscode"> 转码</label>
+        <button id="btnRecorderStart">Recorder Start</button>
+        <button id="btnRecorderStop">Recorder Stop</button>
+      </div>
+
+      <div class="control-group">
+        <label>录制时长(秒):</label>
+        <input id="recorderDuration" type="number" value="10" min="0"
+          placeholder="0=不限, 录到源结束或手动停止" style="width:120px;" />
+        <span style="color:#888;font-size:12px;">0=不限，到达时长自动停止</span>
+        <span id="recorderProgress" style="margin-left:15px;color:#4a6fa5;font-weight:500;"></span>
+      </div>
+
+      
+      <div class="control-group">
+        <label>对讲推流地址:</label>
+        <input id="talkPushUrl" type="text" value="rtsp://127.0.0.1/live/test"
+          placeholder="语音对讲推流地址，例如 rtsp://..." />
+        <button id="btnTalkStart">开始对讲</button>
+        <button id="btnTalkStop">停止对讲</button>
+      </div>
+
+      <div class="control-group">
+        <label>ONVIF 检测:</label>
+        <button id="btnCheckOnvif">检测 ONVIF Backchannel</button>
+        <span id="onvifCheckResult" style="margin-left: 10px; color: #888;"></span>
+      </div>
+
+      <div class="control-group">
+        <label>推流模式:</label>
+        <label style="width: auto; margin-right: 20px;">
+          <input type="radio" name="talkMode" value="normal" checked> 普通推流
+        </label>
+        <label style="width: auto;">
+          <input type="radio" name="talkMode" value="onvif"> ONVIF Backchannel
+        </label>
+        <span id="onvifAudioInfo" style="margin-left: 10px; color: #888; font-size: 12px;"></span>
+      </div>
+    </div>
+    
+    <!-- WebRTC Player Controls -->
+    <div id="webrtcControls" class="webrtc-controls" style="display: none;">
+      <h2>WebRTC Player Controls</h2>
+      
+      <div class="control-group">
+        <label>Controls:</label>
+        <button id="btnWebRtcStart">Start</button>
+        <button id="btnWebRtcStop">Stop</button>
+      </div>
+      
+      <div class="sdp-container">
+        <label>Local SDP:</label>
+        <textarea id="localSdp" readonly></textarea>
+        <button id="btnCopyLocalSdp">Copy Local SDP</button>
+      </div>
+      
+      <div class="sdp-container">
+        <label>Remote SDP:</label>
+        <textarea id="remoteSdp" placeholder="Paste remote SDP here"></textarea>
+        <button id="btnSetRemoteSdp">Set Remote SDP</button>
+      </div>
+    </div>
+
+    <!-- Player Count Selector -->
+    <div class="player-count-selector">
+      <label>Player Count:</label>
+      <button class="active" data-count="1">1</button>
+      <button data-count="2">2</button>
+      <button data-count="4">4</button>
+      <button data-count="8">8</button>
+      <button data-count="16">16</button>
+      <button data-count="32">32</button>
+      <button data-count="49">49</button>
+      <button data-count="64">64</button>
+    </div>
+
+    <!-- Video Grid -->
+    <div id="videoGrid" class="grid-container" style="grid-template-columns: 1fr; grid-template-rows: 1fr;">
+      <div class="grid-cell" data-index="0">
+        <canvas id="canvas0" width="1280" height="720"></canvas>
+        <span class="cell-label">Player 0</span>
+      </div>
+    </div>
+    
+    <!-- Status Panel -->
+    <div class="status-panel">
+      <h2>Status</h2>
+      <div class="status-item">
+        <strong>Player ID:</strong> <span id="playerId">test-player</span>
+      </div>
+      <div class="status-item">
+        <strong>State:</strong> <span id="playerState">init</span>
+      </div>
+      <div class="status-item">
+        <strong>Video:</strong> <span id="videoInfo">-</span>
+      </div>
+      <div class="status-item">
+        <strong>Audio:</strong> <span id="audioInfo">-</span>
+      </div>
+      <div class="status-item">
+        <strong>Time:</strong> <span id="playDuration">00:00 / 00:00</span>
+      </div>
+      <div class="status-item" style="width: 200px;">
+        <strong>Progress:</strong>
+        <div style="background: #444; border-radius: 3px; height: 8px; margin-top: 4px; cursor: pointer;" id="progressBar">
+          <div style="background: #4a6fa5; border-radius: 3px; height: 100%; width: 0%;" id="progressFill"></div>
+        </div>
+      </div>
+      <div class="status-item">
+        <strong>Video Rate:</strong> <span id="videoRate">0</span> Kb/s (avg: <span id="videoRateAvg">0</span>)
+      </div>
+      <div class="status-item">
+        <strong>Audio Rate:</strong> <span id="audioRate">0</span> Kb/s (avg: <span id="audioRateAvg">0</span>)
+      </div>
+      <div class="status-item">
+        <strong>Loss Rate:</strong> <span id="lossRate">0</span>%
+      </div>
+    </div>
+    
+    <!-- Log Panel -->
+    <div class="log-panel">
+      <h2>Log</h2>
+      <div id="logContainer"></div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="./avox_player.js"></script>
+  <script src="./player_test.js"></script>
+  <script>
+    // --- Grid Layout ---
+    function getGridLayout(count) {
+      switch (count) {
+        case 1:  return { rows: 1, cols: 1 };
+        case 2:  return { rows: 1, cols: 2 };
+        case 4:  return { rows: 2, cols: 2 };
+        case 8:  return { rows: 2, cols: 4 };
+        case 16: return { rows: 4, cols: 4 };
+        case 32: return { rows: 4, cols: 8 };
+        case 49: return { rows: 7, cols: 7 };
+        case 64: return { rows: 8, cols: 8 };
+        default: return { rows: 1, cols: count };
+      }
+    }
+
+    const videoGrid = document.getElementById('videoGrid');
+    let currentPlayerCount = 1;
+
+    function rebuildGrid(count) {
+      const { rows, cols } = getGridLayout(count);
+      currentPlayerCount = count;
+
+      // Destroy existing players first
+      if (window.playerTestSuite) {
+        window.playerTestSuite.players.forEach(p => p.destroy());
+        window.playerTestSuite.players = [];
+        // 重置全屏放大状态
+        window.playerTestSuite.fullscreenIndex = -1;
+      }
+
+      // Clear grid
+      videoGrid.innerHTML = '';
+      videoGrid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+      videoGrid.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+
+      // Create cells
+      for (let i = 0; i < count; i++) {
+        const cell = document.createElement('div');
+        cell.className = 'grid-cell';
+        cell.dataset.index = i;
+
+        const canvas = document.createElement('canvas');
+        canvas.id = 'canvas' + i;
+        canvas.width = 1280;
+        canvas.height = 720;
+        cell.appendChild(canvas);
+
+        const label = document.createElement('span');
+        label.className = 'cell-label';
+        label.textContent = 'Player ' + i;
+        cell.appendChild(label);
+
+        videoGrid.appendChild(cell);
+      }
+
+      // Re-create all players for the new grid
+      if (window.playerTestSuite) {
+        window.playerTestSuite.createPlayers();
+      }
+    }
+
+    // Player count button events
+    document.querySelectorAll('.player-count-selector button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const count = parseInt(btn.dataset.count);
+        document.querySelectorAll('.player-count-selector button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        rebuildGrid(count);
+      });
+    });
+  </script>
+</body>
+</html>
+
