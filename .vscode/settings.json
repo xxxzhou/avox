@@ -1,0 +1,120 @@
+{
+    "C_Cpp.clang_format_style": "{ BasedOnStyle: Google, IndentWidth: 2}",
+    "files.associations": {        
+    },
+    // "C_Cpp.intelliSenseEngine": "Tag Parser",
+    "C_Cpp.clang_format_fallbackStyle": "Google",
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+    "C_Cpp.dimInactiveRegions": false,
+    "C_Cpp.default.includePath": [
+        "${workspaceFolder}/src",
+    ],
+    // 限制 IntelliSense 符号库范围: 只索引被 #include 的头文件, 不递归扫描 webrtc/ffmpeg/opencv/onnx 整棵树 (根治 cpptools 卡顿)
+    "C_Cpp.default.browse.limitSymbolsToIncludedHeaders": true,
+    "C_Cpp.default.browse.path": [
+        "${workspaceFolder}/src",
+        "${workspaceFolder}/plugins"
+    ],
+    // 符号库缓存上限 (MB), 默认 5120, 收窄到 2GB
+    "C_Cpp.intelliSenseCacheSize": 5120,
+    // 解析优先级降到 low, 让前台打字/悬停先抢到 CPU, 不被后台建库拖住
+    "C_Cpp.workspaceParsingPriority": "low",
+    "C_Cpp.files.exclude": {
+        "**/.vscode": true,
+        "**/.vs": true,
+        "**/3rdparty": true,
+        "**/swig": true,
+        "**/assets": true,
+        "**/build": true,
+        "**/node_modules": true,
+        "**/doc": true,
+        "**/glsl": true,
+        "**/platform": true,
+        "**/webrtc": true,
+        "**/webrtc/**": true,
+    },
+    "files.watcherExclude": {
+        "**/build": true,
+        "**/out": true,
+        "**/.git": true,
+        "**/node_modules": true,
+        "**/3rdparty": true,
+        "**/webrtc": true,
+        "**/webrtc/**": true,
+    },
+    "files.exclude": {
+        ".history": true,
+        "__pycache__": true,
+        ".vscode/cache": true,
+        // build 输出(26750 文件/22GB, 含 1.5GB PDB 等)必须从资源管理器/搜索排除, 否则 VSCode 被淹
+        "**/build": true,
+        "**/out": true,
+        "**/.vs": true,
+        "**/*.pdb": true,
+        "**/*.obj": true,
+        "**/*.o": true,
+        "**/*.tlog": true,
+        "**/*.ilk": true,
+        "**/*.idb": true,
+        "**/*.exp": true,
+    },
+    // 搜索索引排除: 搜索时跳过 build/二进制/3rdparty, 避免索引几万个产物文件
+    "search.exclude": {
+        "**/build": true,
+        "**/out": true,
+        "**/3rdparty": true,
+        "**/node_modules": true,
+        "**/.git": true,
+        "**/*.pdb": true,
+        "**/*.lib": true,
+        "**/*.so": true,
+        "**/*.dll": true,
+        "**/*.apk": true,
+        "**/*.mp4": true,
+        "**/*.obj": true,
+        "**/*.o": true,
+    },
+    // "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",  
+    "cmake.autoSelectActiveFolder": false,
+    // "C_Cpp.errorSquiggles": "Disabled",
+    "cmake.configureSettings": {
+        "CMAKE_BUILD_TYPE": "${buildType}"
+    },
+    "cmake.buildDirectory": "${workspaceFolder}/build/windows/avplay",
+    // 调试 avox_cli 必须用集成终端: 默认 Debug Console(internalConsole) 是只读输出, 无法接收
+    // 键盘输入; 且其 stdin 是管道(FILE_TYPE_PIPE), 导致 Shell::run() 里 cmdIsInteractive()
+    // 返回 false 直接退出、无法进入交互循环。集成终端integratedTerminal提供真实
+    // 控制台句柄(FILE_TYPE_CHAR)。若集成终端仍有问题, 可改 "externalTerminal" 弹独立控制台窗。
+    "cmake.debugConfig": {
+        "console": "internalConsole"
+    },
+    "terminal.integrated.scrollback": 10000,
+    // "cmake.cmakePath": "/usr/bin/cmake",
+    // "cmake.cmakePath": "D:/Program Files/CMake/bin/cmake.exe",
+    // "editor.formatOnPaste": true,
+    "preCI.localCodeCheck.filter.whitePath": "",
+    "preCI.localCodeCheck.filter.skipPath": "",
+    "preCI.localCodeCheck.checkerSet.C#": [
+        "standard_csharp"
+    ],
+    "preCI.localCodeCheck.checkerSet.其他": [
+        "standard_scc"
+    ],
+    "preCI.localCodeCheck.checkerSet.Python": [
+        "standard_python"
+    ],
+    "preCI.localCodeCheck.checkerSet.JAVA": [
+        "standard_java"
+    ],
+    "preCI.localCodeCheck.checkerSet.C/C++": [
+        "standard_cpp"
+    ],
+    "CodeGPT.apiKey": "CodeGPT Plus Beta",
+    "marscode.codeCompletionPro": {
+        "enableCodeCompletionPro": true
+    },
+    "marscode.enableInlineCommand": true,
+    "trae.tab.enableRename": false,
+    "trae.tab.enableAutoImport": false,
+    "dotnet.defaultSolution": "disable"
+}
