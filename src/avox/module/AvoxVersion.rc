@@ -1,0 +1,44 @@
+// avox.dll Windows 版本资源 (右键属性 -> 详细信息 可见版本号/commit)
+// 仅 Windows: 由 src/CMakeLists.txt 在 WIN32 下加入 avox target
+// 语法对照 3rdparty/ZLMediaKit/resource.rc
+#include "winres.h"
+#include "../AvoxVersion.h"
+
+// 组合成 FILEVERSION 需要的逗号分隔数字列表 (a,b,c,d -> 属性显示 a.b.c.d)
+#define AVOX_RC_VERSION AVOX_VER_MAJOR,AVOX_VER_MINOR,0,AVOX_VER_PATCH
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION    AVOX_RC_VERSION
+ PRODUCTVERSION AVOX_RC_VERSION
+ FILEFLAGSMASK  0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS        0x40004L
+ FILETYPE      0x2L
+ FILESUBTYPE   0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "000004b0"
+        BEGIN
+            VALUE "CompanyName",      "avplay"
+            VALUE "FileDescription",  "avplay audio/video SDK"
+            VALUE "FileVersion",      AVOX_COMMIT_VERSION
+            VALUE "InternalName",     "avox"
+            VALUE "LegalCopyright",   "Copyright (C) avplay"
+            VALUE "OriginalFilename", "avox.dll"
+            VALUE "ProductName",      "avplay"
+            VALUE "ProductVersion",   AVOX_COMMIT_VERSION
+            VALUE "CommitHash",       AVOX_COMMIT_HASH
+            VALUE "Branch",           AVOX_BRANCH_NAME
+            VALUE "BuildTime",        AVOX_BUILD_TIME
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0, 1200
+    END
+END
