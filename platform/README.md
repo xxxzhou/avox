@@ -1,11 +1,24 @@
-# engines
+# 各平台演示
 
-Thin engine wrappers over the avox C API / C++ core.
+## 测试
 
-| target | form | plan |
-|--------|------|------|
-| Godot 4 | GDExtension (avox_godot) | M2 — open source, Asset Store |
-| Unity | native package + C# shim | M3 — marketplace |
-| Unreal | plugin | M3+ |
+第一层是在samples下,编写其功能对应调用,直接使用在vscode里运行,大部分通用功能可以先在windows上测试是否正常.其没有复杂的UI,只有一个简单的渲染窗口,用于确定是否能正常渲染,是否有画面,画面是否同步等问题.
 
-Wrapper principle: engine code stays dumb; all media logic lives in avox core/plugins.
+第二层在java/objc调用对应封装好的C++接口,在android studio/Xcode上测试.各自有简单的封装接口调用测试,包含打开/关闭,播放/暂停,简单设置等,但是其功能比较多,每个功能做界面与UI还测试时序,每个都要搞一套会很花时间,因此只列简单UI界面做测试.
+
+第三层是avalonia的demo,利用其多平台统一原生自渲染的优势,使用统一C#封装的C++接口及统一界面,每个功能只需要写一个位置,各个平台都能测试.用来测试复杂的UI逻辑,时序操作,以及各个平台的差异性.
+
+一般来说,每个功能写完先在第一层测试,然后根据情况,如果UI逻辑复杂,可以直接在第三层编写功能完成测试,但是不同平台出现不一致的问题(如不同平台相机切换出现crash的问题),因为avalonia其对应的调试工具是VS/Rider,没有Android studio/Xcode的调试信息完善,所以出现摸不清的BUG,可以在第二层编写测试功能及界面,使用Android studio/Xcode编写测试并调试.
+
+## Windows平台
+
+除了常用C++方法,还提供C#的封装,直接使用avalonia提供的demo,移除了WinFrom相关的Demo,没有精力维护界面SDK的多个不同方案.
+
+## Android平台
+
+除了常用C++方法,还提供Java的封装.
+
+## iOS平台
+
+请先用build_ios.py生成build/ios/avplay.xcodeproj,然后用Xcode打开相应platform下的各项目.
+
