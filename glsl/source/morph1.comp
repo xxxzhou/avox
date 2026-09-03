@@ -1,0 +1,135 @@
+#version 450
+
+layout (local_size_x = 16, local_size_y = 16) in;// gl_WorkGroupSize
+
+#if CHANNEL_RGBA
+layout (binding = 0, rgba8) uniform readonly image2D inTex;
+layout (binding = 1, rgba8) uniform image2D outTex;
+#elif CHANNEL_R8
+layout (binding = 0, r8) uniform readonly image2D inTex;
+layout (binding = 1, r8) uniform image2D outTex;
+#elif CHANNEL_R16UI
+layout (binding = 0, r16ui) uniform readonly uimage2D inTex;
+layout (binding = 1, r16ui) uniform uimage2D outTex;
+#endif
+
+layout (binding = 2) uniform UBO {
+	int ksize;	    
+} ubo;
+
+#if EROSION 
+    #define OPERATE min
+    #if CHANNEL_RGBA
+        #define INIT_VUL vec4(1.0)
+    #elif CHANNEL_R8
+        #define INIT_VUL 1.0f
+    #elif CHANNEL_R16UI
+        #define INIT_VUL 65535
+    #endif
+#endif
+
+#if DILATION 
+    #define OPERATE max
+    #if CHANNEL_RGBA
+        #define INIT_VUL vec4(0.0)
+    #elif CHANNEL_R8
+        #define INIT_VUL 0.0f
+    #elif CHANNEL_R16UI
+        #define INIT_VUL 0
+    #endif
+#endif
+
+#if IS_SHARED
+// 限定最大核为32
+
+#if CHANNEL_RGBA
+    shared vec4 row_shared[16][16*3];
+#elif CHANNEL_R8
+    shared float row_shared[16][16*3];
+#elif CHANNEL_R16UI
+    shared uint row_shared[16][16*3];   
+#endif
+
+void main(){
+    ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(inTex);
+    if(uv.x >= size.x || uv.y >= size.y){
+        return;
+    } 
+    ivec2 locId = ivec2(gl_LocalInvocationID.xy);
+    for(int i = 0; i < 3; i++){
+        uint gIdx = max(0,min(uv.x+(i-1)*16,size.x-1));
+        #if CHANNEL_RGBA
+            row_shared[locId.y][locId.x + i*16] = imageLoad(inTex,ivec2(gIdx,uv.y));
+        #elif CHANNEL_R8
+            row_shared[locId.y][locId.x + i*16] = imageLoad(inTex,ivec2(gIdx,uv.y)).r;
+        #elif CHANNEL_R16UI
+            row_shared[locId.y][locId.x + i*16] = imageLoad(inTex,ivec2(gIdx,uv.y)).r;            
+        #endif   
+    }
+    memoryBarrierShared();
+	barrier();
+    #if CHANNEL_RGBA
+        vec4 result = INIT_VUL;
+    #elif CHANNEL_R8
+        float result = INIT_VUL;
+    #elif CHANNEL_R16UI
+        uint result = INIT_VUL;
+    #endif
+    for(int i =0; i < ubo.ksize; i++){
+        int ix = locId.x - ubo.ksize/2 + i;
+        #if CHANNEL_RGBA
+            vec4 fr = row_shared[locId.y][16 + ix];
+            result = OPERATE(fr,result);
+        #elif CHANNEL_R8
+            float fr = row_shared[locId.y][16 + ix];
+            result = OPERATE(fr,result);
+        #elif CHANNEL_R16UI
+            uint fr = row_shared[locId.y][16 + ix];
+            result = OPERATE(fr,result);    
+        #endif
+    }
+#if CHANNEL_R16UI
+    imageStore(outTex, uv, uvec4(result)); 
+#else
+    imageStore(outTex, uv, vec4(result)); 
+#endif
+}
+
+#else
+
+void main(){
+    ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(inTex);
+    if(uv.x >= size.x || uv.y >= size.y){
+        return;
+    } 
+    #if CHANNEL_RGBA
+        vec4 result = INIT_VUL;
+    #elif CHANNEL_R8
+        float result = INIT_VUL;
+    #elif CHANNEL_R8
+        uint result = INIT_VUL;        
+    #endif
+    for(int i = 0; i< ubo.ksize; ++i){
+        int x = uv.x-ubo.ksize/2+i;
+        x = max(0,min(x,size.x-1));
+        #if CHANNEL_RGBA
+            vec4 r = imageLoad(inTex,ivec2(x,uv.y));
+            result = OPERATE(result,r);
+        #elif CHANNEL_R8
+            float r = imageLoad(inTex,ivec2(x,uv.y)).r;
+            result = OPERATE(result,r);
+        #elif CHANNEL_R16UI
+            uint r = imageLoad(inTex,ivec2(x,uv.y)).r;
+            result = OPERATE(result,r);            
+        #endif
+    }
+#if CHANNEL_R16UI
+    imageStore(outTex, uv, uvec4(result)); 
+#else
+    imageStore(outTex, uv, vec4(result)); 
+#endif   
+}
+#endif
+

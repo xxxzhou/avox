@@ -1,0 +1,35 @@
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16) in; // gl_WorkGroupSize
+// 视频帧
+layout(binding = 0, rgba8) uniform readonly image2D inTex;
+// canvas R8（大小 = 帧大小/tscale），通过 sampler 双线性插值放大
+layout(binding = 1) uniform sampler2D inTex2;
+// 输出
+layout(binding = 2, rgba8) uniform image2D outTex;
+
+layout(std140, binding = 3) uniform UBO {
+  float fcolorx;
+  float fcolory;
+  float fcolorz;
+  // 宽度阈值 [0,1]：α≥阈值 全合并，α<阈值 丢弃。低=宽，高=细
+  float threshold;
+}
+ubo;
+
+void main() {
+  ivec2 id = ivec2(gl_GlobalInvocationID.xy);
+  ivec2 size = imageSize(outTex);
+  if (id.x >= size.x || id.y >= size.y)
+    return;
+  // 基础颜色
+  vec4 color = imageLoad(inTex, id);
+  // 归一化 UV，canvas 经双线性放大产生 0~1 渐变
+  vec2 uv = vec2(id.x + 0.5, id.y + 0.5) / vec2(size);
+  float a = textureLod(inTex2, uv, 0.0).r;
+  // 硬切：α≥阈值全合并(1)，α<阈值丢弃(0)，无半透明
+  float k = step(ubo.threshold, a);
+  vec3 fcolor = vec3(ubo.fcolorx, ubo.fcolory, ubo.fcolorz);
+  color.rgb = mix(color.rgb, fcolor.rgb, k);
+  imageStore(outTex, id, color);
+}

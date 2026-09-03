@@ -1,0 +1,30 @@
+// sRGB -> 线性光 转换 (FSR 线性空间入口)
+// 输入 sRGB 编码的 rgba8 (UNORM [0,1]), 输出线性光 rgba16f (半精度浮点, 精度远超 rgba8)
+// FSR 官方要求在线性光下做放大+锐化, gamma 空间会压缩中灰 luma 范围
+// rgba8 在线性空间暗部只有 ~18 个量化级(0~0.04045 映射到 0~10/255), 信息严重丢失
+#version 450
+
+layout (local_size_x = 16, local_size_y = 16) in;
+
+layout (binding = 0, rgba8) uniform readonly image2D inTex;
+layout (binding = 1, rgba16f) uniform image2D outTex;
+
+// sRGB OETF 逆函数: x <= 0.04045 ? x/12.92 : ((x+0.055)/1.055)^2.4
+// step+mix 无分支, 避免发散
+vec3 srgbToLinear(vec3 c) {
+    vec3 usePw = step(vec3(0.04045), c);
+    vec3 lo = c / 12.92;
+    vec3 hi = pow((c + 0.055) / 1.055, vec3(2.4));
+    return mix(lo, hi, usePw);
+}
+
+void main() {
+    ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(inTex);
+    if (uv.x >= size.x || uv.y >= size.y) {
+        return;
+    }
+    vec4 c = imageLoad(inTex, uv);
+    c.rgb = srgbToLinear(clamp(c.rgb, 0.0, 1.0));
+    imageStore(outTex, uv, c);
+}

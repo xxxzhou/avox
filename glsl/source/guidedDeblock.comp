@@ -1,0 +1,29 @@
+// 导向滤波自引导去块输出 (逐通道, 保色, 值域有界)
+// q = mean_c + a · (I - mean_c), a∈[0,1] => q 是 I 与局部均值 mean_c 的凸组合
+//   平坦区 a≈0 -> q≈mean_c (局部均值, 平滑块边界, 逐通道保色)
+//   边缘   a≈1 -> q≈I       (保留细节)
+// 因 a∈[0,1], q 必在 [min(I,mean_c), max(I,mean_c)] 之间, 不会过曝/变黑
+// in[0]=I(rgba32f, convert from rgba8→rgba32f): 原始帧的 float 表示, 值域 0~1
+// in[1]=mean_c(rgba32f), in[2]=a(rgba32f)
+// out=rgba8 (sRGB 空间, 去块在 sRGB 做, eps 匹配 sRGB 值域)
+#version 450
+
+layout (local_size_x = 16, local_size_y = 16) in;
+
+layout (binding = 0, rgba32f) uniform readonly image2D inTex;   // 原始 I (rgba32f, from convert)
+layout (binding = 1, rgba32f) uniform readonly image2D inTex1;  // mean_c
+layout (binding = 2, rgba32f) uniform readonly image2D inTex2;  // a
+layout (binding = 3, rgba8) uniform image2D outTex;             // 输出 rgba8 (sRGB)
+
+void main() {
+    ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(inTex);
+    if (uv.x >= size.x || uv.y >= size.y) {
+        return;
+    }
+    vec3 I = imageLoad(inTex, uv).rgb;
+    vec3 mean_c = imageLoad(inTex1, uv).rgb;
+    vec3 a = imageLoad(inTex2, uv).rgb;
+    vec3 q = mean_c + a * (I - mean_c);
+    imageStore(outTex, uv, vec4(clamp(q, 0.0, 1.0), 1.0));
+}

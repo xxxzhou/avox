@@ -1,0 +1,129 @@
+// FidelityFX Super Resolution 1.0 - RCAS (Robust Contrast Adaptive Sharpening)
+// Based on AMD FidelityFX FSR 1.0 (ffx_fsr1.h), MIT license
+// Ported to GLSL 450 compute shader for avox Vulkan pipeline
+//
+// Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files(the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and / or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
+#version 450
+
+layout (local_size_x = 16, local_size_y = 16) in;
+
+layout (binding = 0, rgba16f) uniform readonly image2D inTex;
+layout (binding = 1, rgba16f) uniform image2D outTex;
+
+// sharpness: 0.0 = maximum sharpening, N>0 = number of stops (halving) of reduction
+layout (std140, binding = 2) uniform UBO {
+    float sharpness;
+} ubo;
+
+//------------------------------------------------------------------------------------------------------------------------------
+// Approximate math helpers (from AMD ffx_a.h, GLSL equivalents)
+float APrxMedRcpF1(float a) {
+    float b = uintBitsToFloat(0x7ef19fffu - floatBitsToUint(a));
+    return b * (-b * a + 2.0);
+}
+float ASatF1(float x) {
+    return clamp(x, 0.0, 1.0);
+}
+float AMax3F1(float x, float y, float z) {
+    return max(x, max(y, z));
+}
+float AMin3F1(float x, float y, float z) {
+    return min(x, min(y, z));
+}
+
+//------------------------------------------------------------------------------------------------------------------------------
+void main() {
+    ivec2 ip = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(inTex);
+    if (ip.x >= size.x || ip.y >= size.y) {
+        return;
+    }
+
+    // Algorithm uses minimal 3x3 pixel neighborhood
+    //    b
+    //  d e f
+    //    h
+    vec3 b = imageLoad(inTex, ip + ivec2(0, -1)).rgb;
+    vec3 d = imageLoad(inTex, ip + ivec2(-1, 0)).rgb;
+    vec4 ee = imageLoad(inTex, ip);
+    vec3 e = ee.rgb;
+    float alpha = ee.a;
+    vec3 f = imageLoad(inTex, ip + ivec2(1, 0)).rgb;
+    vec3 h = imageLoad(inTex, ip + ivec2(0, 1)).rgb;
+
+    // Luma times 2
+    float bL = b.b * 0.5 + (b.r * 0.5 + b.g);
+    float dL = d.b * 0.5 + (d.r * 0.5 + d.g);
+    float eL = e.b * 0.5 + (e.r * 0.5 + e.g);
+    float fL = f.b * 0.5 + (f.r * 0.5 + f.g);
+    float hL = h.b * 0.5 + (h.r * 0.5 + h.g);
+
+    // Noise detection
+    float nz = 0.25 * bL + 0.25 * dL + 0.25 * fL + 0.25 * hL - eL;
+    nz = ASatF1(abs(nz) * APrxMedRcpF1(AMax3F1(AMax3F1(bL, dL, eL), fL, hL) -
+                                         AMin3F1(AMin3F1(bL, dL, eL), fL, hL)));
+    nz = -0.5 * nz + 1.0;
+
+    // Min and max of ring
+    float mn4R = min(AMin3F1(b.r, d.r, f.r), h.r);
+    float mn4G = min(AMin3F1(b.g, d.g, f.g), h.g);
+    float mn4B = min(AMin3F1(b.b, d.b, f.b), h.b);
+    float mx4R = max(AMax3F1(b.r, d.r, f.r), h.r);
+    float mx4G = max(AMax3F1(b.g, d.g, f.g), h.g);
+    float mx4B = max(AMax3F1(b.b, d.b, f.b), h.b);
+
+    // Immediate constants for peak range
+    vec2 peakC = vec2(1.0, -4.0);
+
+    // Limiters, these need to be high precision RCPs
+    float hitMinR = min(mn4R, e.r) / (4.0 * mx4R);
+    float hitMinG = min(mn4G, e.g) / (4.0 * mx4G);
+    float hitMinB = min(mn4B, e.b) / (4.0 * mx4B);
+    float hitMaxR = (peakC.x - max(mx4R, e.r)) / (4.0 * mn4R + peakC.y);
+    float hitMaxG = (peakC.x - max(mx4G, e.g)) / (4.0 * mn4G + peakC.y);
+    float hitMaxB = (peakC.x - max(mx4B, e.b)) / (4.0 * mn4B + peakC.y);
+
+    float lobeR = max(-hitMinR, hitMaxR);
+    float lobeG = max(-hitMinG, hitMaxG);
+    float lobeB = max(-hitMinB, hitMaxB);
+
+    // 官方: exp2(-sharpness) 把 stops 映射到线性强度 (sharpness=0 全强度, N>0 每增1减半)
+    float sharp = exp2(-ubo.sharpness);
+    // 自适应 lobe: 三通道取 max, clamp 到 [-FSR_RCAS_LIMIT, 0]
+    // 负值=锐化, 0=平坦区不锐化(不放大噪声/块)
+    // FSR_RCAS_LIMIT: 官方默认 0.1875(=0.25-1/16, 保守), 此处 0.5 获更强锐化
+    //   4*lobe+1 >= 4*(-0.5)+1 = -1.0, 仍需保证分母>0 → resolve 用精确倒数+clamp 防负
+    const float FSR_RCAS_LIMIT = 0.5;
+    float lobe = max(-FSR_RCAS_LIMIT, min(max(max(lobeR, lobeG), lobeB), 0.0));
+    lobe *= sharp;
+    lobe *= nz;  // 噪声区衰减 lobe (官方同款, 保留)
+
+    // DEBUG: 放大 lobe 5 倍, 确认 RCAS 是否在跑
+    lobe *= 5.0;
+
+    // Resolve: 用精确倒数替代近似倒数, 避免小分母时精度不足产生负值→黑点
+    // FSR_RCAS_LIMIT=0.5 时 4*lobe+1 可能为负, clamp 分母保证安全
+    float rcpL = 1.0 / max(4.0 * lobe + 1.0, 0.001);
+    vec3 pix;
+    pix.r = (lobe * b.r + lobe * d.r + lobe * h.r + lobe * f.r + e.r) * rcpL;
+    pix.g = (lobe * b.g + lobe * d.g + lobe * h.g + lobe * f.g + e.g) * rcpL;
+    pix.b = (lobe * b.b + lobe * d.b + lobe * h.b + lobe * f.b + e.b) * rcpL;
+
+    imageStore(outTex, ip, vec4(pix, alpha));
+}

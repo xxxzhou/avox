@@ -1,0 +1,95 @@
+#version 450
+
+layout (local_size_x = 16, local_size_y = 16) in;// gl_WorkGroupSize
+#if CHANNEL_RGBA
+layout (binding = 0, rgba8) uniform readonly image2D inTex;
+layout (binding = 1, rgba8) uniform image2D outTex;
+#elif CHANNEL_R8
+layout (binding = 0, r8) uniform readonly image2D inTex;
+layout (binding = 1, r8) uniform image2D outTex;
+#elif CHANNEL_RGBA32F
+layout (binding = 0, rgba32f) uniform readonly image2D inTex;
+layout (binding = 1, rgba32f) uniform image2D outTex;
+#endif
+layout (binding = 2) uniform UBO {
+	int yksize;	
+    int anchor;
+} ubo;
+
+layout (binding = 3) buffer inBuffer{
+    float kernel[];
+};
+
+const int PATCH_PER_BLOCK = 4;
+const int HALO_SIZE = 1; 
+
+// 共享块,扩充前后二边HALO_SIZE(分为上HALO_SIZE,中间自身*PATCH_PER_BLOCK,下HALO_SIZE)
+// 经测试,column使用这个packUnorm4x8/unpackUnorm4x8优化共享显存会导致r8负优化.但是rgba8需要这个优化
+#if CHANNEL_RGBA32F || CHANNEL_R8
+shared vec4 column_shared[16*(PATCH_PER_BLOCK+HALO_SIZE*2)][16];
+#define packUnorm4x8
+#define unpackUnorm4x8
+#else
+shared uint column_shared[16*(PATCH_PER_BLOCK+HALO_SIZE*2)][16];
+#endif
+
+// 假定1920*1080,gl_WorkGroupSize(16,16),gl_NumWorkGroups(120,68/4),每一个线程高度要管理4个
+// 核心的最大高度由HALO_SIZE*gl_WorkGroupSize.y决定
+void main(){    
+    ivec2 size = imageSize(outTex);    
+    uint x = gl_GlobalInvocationID.x;
+    // 纹理范围的全局起点
+    uint yStart = gl_WorkGroupID.y * (gl_WorkGroupSize.y*PATCH_PER_BLOCK) + gl_LocalInvocationID.y;
+    // 填充每个块的上HALO_SIZE,注意每列最前面的那个块取不到纹理数据
+    if(gl_WorkGroupID.y > 0){// 填充非第一列的上边
+        for(int j=0;j<HALO_SIZE;++j){
+            vec4 rgba = imageLoad(inTex,ivec2(x,yStart-(HALO_SIZE-j)*gl_WorkGroupSize.y));
+            column_shared[gl_LocalInvocationID.y+ j*gl_WorkGroupSize.y][gl_LocalInvocationID.x] = packUnorm4x8(rgba);
+        }        
+    }else{ // 每列最上边 
+        for(int j=0;j<HALO_SIZE;++j){  
+            uint maxIdy = max(0,yStart-(HALO_SIZE-j)*gl_WorkGroupSize.y);
+            vec4 rgba = imageLoad(inTex,ivec2(x,maxIdy));             
+            column_shared[gl_LocalInvocationID.y+ j*gl_WorkGroupSize.y][gl_LocalInvocationID.x] = packUnorm4x8(rgba);
+        }
+    }
+    // 填充正常加下边扩展的块,注意每列最后面的那个块取不到下HALO_SIZE块纹理数据
+    if(gl_WorkGroupID.y + 2 < gl_NumWorkGroups.y){
+        // 主要导入的数据,一个线程取行上四个位置数据
+        for(int j=0;j<PATCH_PER_BLOCK;++j){
+            vec4 rgba = imageLoad(inTex,ivec2(x,yStart+j*gl_WorkGroupSize.y));
+            uint y = gl_LocalInvocationID.y + (HALO_SIZE+j)*gl_WorkGroupSize.y;
+            column_shared[y][gl_LocalInvocationID.x] = packUnorm4x8(rgba);
+        }
+        // 下边的扩展中,还在纹理中
+        for(int j=0;j<HALO_SIZE;++j){
+            vec4 rgba = imageLoad(inTex,ivec2(x,yStart+(PATCH_PER_BLOCK+j)*gl_WorkGroupSize.y));
+            uint y = gl_LocalInvocationID.y + (PATCH_PER_BLOCK+HALO_SIZE+j)*gl_WorkGroupSize.y;
+            column_shared[y][gl_LocalInvocationID.x] = packUnorm4x8(rgba);
+        }
+    }else{// 每列最后边的一个块
+        for (int j = 0; j < PATCH_PER_BLOCK; ++j){
+            uint minIdy = min(size.y-1,yStart+j*gl_WorkGroupSize.y);
+            uint y = gl_LocalInvocationID.y + (HALO_SIZE+j)*gl_WorkGroupSize.y;
+            column_shared[y][gl_LocalInvocationID.x] = packUnorm4x8(imageLoad(inTex,ivec2(x,minIdy)));
+        }
+        for(int j=0;j<HALO_SIZE;++j){
+            uint minIdy = min(size.y-1,yStart+(PATCH_PER_BLOCK+j)*gl_WorkGroupSize.y);
+            uint y = gl_LocalInvocationID.y + (PATCH_PER_BLOCK+HALO_SIZE+j)*gl_WorkGroupSize.y;
+            column_shared[y][gl_LocalInvocationID.x] = packUnorm4x8(imageLoad(inTex,ivec2(x,minIdy)));
+        }
+    }
+	memoryBarrierShared();
+	barrier();
+    for (int j = 0; j < PATCH_PER_BLOCK; ++j){
+        uint y = yStart + j*gl_WorkGroupSize.y;
+        if(y<size.y){
+            vec4 sum = vec4(0);
+            for(int k=0;k<ubo.yksize;++k){
+                uint yy = gl_LocalInvocationID.y + (HALO_SIZE+j)*gl_WorkGroupSize.y - ubo.anchor + k;
+                sum = sum + unpackUnorm4x8(column_shared[yy][gl_LocalInvocationID.x]) * kernel[k];
+            }
+            imageStore(outTex, ivec2(x,y),sum); 
+        }
+    }
+}

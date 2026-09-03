@@ -1,0 +1,19 @@
+// 导向滤波自引导去块: 准备逐通道平方 (自引导, guidance=p=各通道自身)
+// out: c² (R², G², B²) -> box -> mean_cc
+// 注: mean_c 由 box 直接平滑原图得到, 无需在此输出
+#version 450
+
+layout (local_size_x = 16, local_size_y = 16) in;
+
+layout (binding = 0, rgba32f) uniform readonly image2D inTex;
+layout (binding = 1, rgba32f) uniform image2D outTex1;
+
+void main() {
+    ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(inTex);
+    if (uv.x >= size.x || uv.y >= size.y) {
+        return;
+    }
+    vec3 c = imageLoad(inTex, uv).rgb;
+    imageStore(outTex1, uv, vec4(c * c, 1.0));  // 逐通道平方
+}
