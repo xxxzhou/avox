@@ -1,0 +1,64 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36221.1
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AvoxCommon", "AvoxCommon\AvoxCommon.csproj", "{C26B76AB-98A1-4EC2-89FC-DB6EC4BB0875}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AvoxControls", "AvoxControls\AvoxControls.csproj", "{B1F008D2-FC1B-4B3F-BCF0-F6394A737571}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AvaPlayer", "AvaPlayer\AvaPlayer\AvaPlayer.csproj", "{C01A191E-52E9-42D7-935B-A2F866761D05}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AvaPlayer.Android", "AvaPlayer\AvaPlayer.Android\AvaPlayer.Android.csproj", "{246A57B9-EDC7-4D0C-9965-6A51DD950093}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AvaPlayer.Desktop", "AvaPlayer\AvaPlayer.Desktop\AvaPlayer.Desktop.csproj", "{C6F16BE2-A1BA-428A-9576-1CD97182CFF5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AvaPlayer.iOS", "AvaPlayer\AvaPlayer.iOS\AvaPlayer.iOS.csproj", "{2CE160F7-0B6F-4C41-BE7C-875AA519CA00}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WatermarkRemover", "WatermarkRemover\WatermarkRemover.csproj", "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{C26B76AB-98A1-4EC2-89FC-DB6EC4BB0875}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C26B76AB-98A1-4EC2-89FC-DB6EC4BB0875}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C26B76AB-98A1-4EC2-89FC-DB6EC4BB0875}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C26B76AB-98A1-4EC2-89FC-DB6EC4BB0875}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B1F008D2-FC1B-4B3F-BCF0-F6394A737571}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B1F008D2-FC1B-4B3F-BCF0-F6394A737571}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B1F008D2-FC1B-4B3F-BCF0-F6394A737571}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B1F008D2-FC1B-4B3F-BCF0-F6394A737571}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C01A191E-52E9-42D7-935B-A2F866761D05}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C01A191E-52E9-42D7-935B-A2F866761D05}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C01A191E-52E9-42D7-935B-A2F866761D05}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C01A191E-52E9-42D7-935B-A2F866761D05}.Release|Any CPU.Build.0 = Release|Any CPU
+		{246A57B9-EDC7-4D0C-9965-6A51DD950093}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{246A57B9-EDC7-4D0C-9965-6A51DD950093}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{246A57B9-EDC7-4D0C-9965-6A51DD950093}.Debug|Any CPU.Deploy.0 = Debug|Any CPU
+		{246A57B9-EDC7-4D0C-9965-6A51DD950093}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{246A57B9-EDC7-4D0C-9965-6A51DD950093}.Release|Any CPU.Build.0 = Release|Any CPU
+		{246A57B9-EDC7-4D0C-9965-6A51DD950093}.Release|Any CPU.Deploy.0 = Release|Any CPU
+		{C6F16BE2-A1BA-428A-9576-1CD97182CFF5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C6F16BE2-A1BA-428A-9576-1CD97182CFF5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C6F16BE2-A1BA-428A-9576-1CD97182CFF5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C6F16BE2-A1BA-428A-9576-1CD97182CFF5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2CE160F7-0B6F-4C41-BE7C-875AA519CA00}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2CE160F7-0B6F-4C41-BE7C-875AA519CA00}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2CE160F7-0B6F-4C41-BE7C-875AA519CA00}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2CE160F7-0B6F-4C41-BE7C-875AA519CA00}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2CE160F7-0B6F-4C41-BE7C-875AA519CA00}.Release|Any CPU.Deploy.0 = Release|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {D2A3E2CF-E1C8-414F-A88E-E81AADF161D5}
+	EndGlobalSection
+EndGlobal

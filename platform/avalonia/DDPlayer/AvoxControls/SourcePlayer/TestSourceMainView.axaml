@@ -1,0 +1,25 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:AvoxControls.SourcePlayer"
+             xmlns:avox="using:AvoxControls"
+             x:Class="AvoxControls.SourcePlayer.TestSourceMainView">
+
+    <Grid RowDefinitions="*,Auto">
+        <!-- 顶部：SourcePlayer -->
+        <controls:SourcePlayerView x:Name="SourcePlayerViewControl"
+                                   Grid.Row="0"
+                                   HorizontalAlignment="Stretch"
+                                   VerticalAlignment="Stretch"/>
+
+        <!-- 底部：源信息 
+        <Border Grid.Row="1"
+                Background="#FFF0F0F0"
+                Padding="5"
+                CornerRadius="5"
+                Margin="5">
+            <StackPanel Spacing="5">
+                <avox:SourceInfoView DataContext="{Binding SourcePlayerModel.SourceInfoModel, ElementName=SourcePlayerViewControl}" />
+            </StackPanel>
+        </Border>-->
+    </Grid>
+</UserControl>

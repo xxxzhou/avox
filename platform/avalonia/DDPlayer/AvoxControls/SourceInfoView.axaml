@@ -1,0 +1,57 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="AvoxControls.SourceInfoView"
+             Background="#FFF5F5F5"
+             BorderBrush="#FFCCCCCC"
+             BorderThickness="1"
+             Padding="5">
+    <Grid ColumnDefinitions="*,10,*">
+        <!-- 视频信息 -->
+        <Grid Grid.Column="0" IsVisible="{Binding HasVideo}">
+            <StackPanel Spacing="3">
+                <TextBlock Text="视频信息" FontWeight="Bold" Foreground="#FF000000" Margin="0,0,0,5"/>
+                <TextBlock Foreground="#FF333333">
+                    <Run Text="编码: " FontWeight="SemiBold"/>
+                    <Run Text="{Binding VideoCodec}"/>
+                </TextBlock>
+                <TextBlock Foreground="#FF333333">
+                    <Run Text="分辨率: " FontWeight="SemiBold"/>
+                    <Run Text="{Binding VideoResolution}"/>
+                </TextBlock>
+                <StackPanel Orientation="Horizontal" Spacing="0">
+                    <TextBlock Text="帧率: " FontWeight="SemiBold" Foreground="#FF333333"/>
+                    <TextBlock Text="{Binding VideoFrameRate}" Foreground="#FF333333"/>
+                    <TextBlock Text=" fps" Foreground="#FF333333"/>
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+
+        <!-- 音频信息 -->
+        <Grid Grid.Column="2" IsVisible="{Binding HasAudio}">
+            <StackPanel Spacing="3">
+                <TextBlock Text="音频信息" FontWeight="Bold" Foreground="#FF000000" Margin="0,0,0,5"/>
+                <TextBlock Foreground="#FF333333">
+                    <Run Text="编码: " FontWeight="SemiBold"/>
+                    <Run Text="{Binding AudioCodec}"/>
+                </TextBlock>
+                <StackPanel Orientation="Horizontal" Spacing="0">
+                    <TextBlock Text="采样率: " FontWeight="SemiBold" Foreground="#FF333333"/>
+                    <TextBlock Text="{Binding AudioSampleRate}" Foreground="#FF333333"/>
+                    <TextBlock Text=" Hz" Foreground="#FF333333"/>
+                </StackPanel>
+                <TextBlock Foreground="#FF333333">
+                    <Run Text="声道: " FontWeight="SemiBold"/>
+                    <Run Text="{Binding AudioChannelInfo}"/>
+                </TextBlock>
+            </StackPanel>
+        </Grid>
+
+        <!-- 无媒体信息提示 -->
+        <TextBlock Grid.Column="0" Grid.ColumnSpan="3"
+                   Text="暂无媒体信息"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"
+                   Foreground="#FF999999"
+                   IsVisible="{Binding !HasVideo, FallbackValue=False}"/>
+    </Grid>
+</UserControl>

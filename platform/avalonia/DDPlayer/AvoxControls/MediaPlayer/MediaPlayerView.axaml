@@ -1,0 +1,189 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:AvoxControls"
+             xmlns:media="using:AvoxControls.MediaPlayer"
+             xmlns:converters="using:AvoxControls.Converters"
+             x:Class="AvoxControls.MediaPlayer.MediaPlayerView"
+            >
+   <Grid RowDefinitions="*,Auto,Auto">
+        <!-- 视频渲染区域 - 占据除控制面板外的所有空间 -->
+        <Grid Grid.Row="0" >
+            <controls:RenderView x:Name="RenderView" Margin="5"
+                                 HorizontalAlignment="Stretch"
+                                 VerticalAlignment="Stretch"/>
+        </Grid>
+
+        <!-- 进度条区域 - 根据 CanSeek 显示/隐藏 -->
+        <media:PlayerControlBar x:Name="ProgressControlBar"
+                                Grid.Row="1"
+                                IsVisible="{Binding CanSeek}"/>
+
+        <!-- 控制面板 - 在底部，独立布局行 -->
+        <Border x:Name="ControlPanel"
+                Grid.Row="2"
+                Padding="4,2"
+                CornerRadius="0,0,8,8"
+                Background="#E0FFFFFF"
+                Height="38">
+            <Border.Transitions>
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.3"/>
+                </Transitions>
+            </Border.Transitions>
+            <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
+                <!-- 左侧：播放控制按钮 -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4">
+                    <Button Command="{Binding PlayCommand}"
+                            Width="28" Height="28"
+                            Foreground="White"
+                            Background="#FF1E90FF"
+                            BorderThickness="0"
+                            CornerRadius="3"
+                            FontSize="12"
+                            Padding="0"
+                            HorizontalContentAlignment="Center"
+                            VerticalContentAlignment="Center"
+                            IsEnabled="{Binding IsPlaying, Converter={x:Static converters:BoolInverseConverter.Instance}}">
+                        <TextBlock Text="▶" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Button>
+                    <Button Command="{Binding PauseCommand}"
+                            Width="28" Height="28"
+                            Foreground="White"
+                            Background="#FF1E90FF"
+                            BorderThickness="0"
+                            CornerRadius="3"
+                            FontSize="12"
+                            Padding="0"
+                            HorizontalContentAlignment="Center"
+                            VerticalContentAlignment="Center"
+                            IsEnabled="{Binding IsPlaying}">
+                        <TextBlock Text="||" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Button>
+                    <Button Command="{Binding CloseCommand}"
+                            Width="28" Height="28"
+                            Foreground="White"
+                            Background="#FFFF4500"
+                            BorderThickness="0"
+                            CornerRadius="3"
+                            FontSize="12"
+                            Padding="0"
+                            HorizontalContentAlignment="Center"
+                            VerticalContentAlignment="Center">
+                        <TextBlock Text="▣" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Button>
+                    <!-- 分隔线 -->
+                    <Rectangle Width="1" Height="20" Fill="#FFCCCCCC"/>
+                    <!-- 开始录制按钮 -->
+                    <Button Command="{Binding StartRecordingCommand}"
+                            Width="28" Height="28"
+                            Foreground="White"
+                            Background="#FF9C27B0"
+                            BorderThickness="0"
+                            CornerRadius="3"
+                            FontSize="12"
+                            Padding="0"
+                            HorizontalContentAlignment="Center"
+                            VerticalContentAlignment="Center"
+                            IsEnabled="{Binding CanRecord}">
+                        <TextBlock Text="⏺" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Button>
+                    <!-- 停止录制按钮 -->
+                    <Button Command="{Binding StopRecordingCommand}"
+                            Width="28" Height="28"
+                            Foreground="White"
+                            Background="#FF9C27B0"
+                            BorderThickness="0"
+                            CornerRadius="3"
+                            FontSize="12"
+                            Padding="0"
+                            HorizontalContentAlignment="Center"
+                            VerticalContentAlignment="Center"
+                            IsEnabled="{Binding IsRecording}">
+                        <TextBlock Text="⏹" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Button>
+                </StackPanel>
+
+                <!-- 中间：状态、进度、时间、速度 -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                    <!-- 状态信息 -->
+                    <TextBlock Text="{Binding CurrentState}"
+                               VerticalAlignment="Center"
+                               FontWeight="Bold"
+                               Foreground="#FF222222"
+                               MinWidth="50"
+                               FontSize="12"/>
+
+                    <!-- 分隔线 -->
+                    <Rectangle Width="1" Height="20" Fill="#FFCCCCCC"/>   
+
+                    <!-- 速度控制 -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="速度" Foreground="#FF222222" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,3,0" FontSize="12"/>
+                        <ComboBox ItemsSource="{Binding SpeedOptions}"
+                                  SelectedItem="{Binding PlaybackSpeed}"
+                                  Width="55"
+                                  Height="22"
+                                  FontSize="12"
+                                  VerticalAlignment="Center"/>
+                        <TextBlock Text="x"
+                                   Foreground="#FF222222"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center"
+                                   Margin="2,0,0,0"
+                                   FontSize="12"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- 右侧：音量控制和截图按钮 -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right">
+                    <!-- 音量控制 -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Command="{Binding ToggleMuteCommand}"
+                                Width="26" Height="26"
+                                Background="#FFF5F5F5"
+                                Foreground="#FF222222"
+                                BorderThickness="1"
+                                BorderBrush="#FFCCCCCC"
+                                CornerRadius="3">
+                            <StackPanel>
+                                <TextBlock Text="🔊"
+                                           FontSize="11"
+                                           IsVisible="{Binding IsMuted, Converter={x:Static converters:BoolInverseConverter.Instance}}"/>
+                                <TextBlock Text="🔇"
+                                           FontSize="11"
+                                           IsVisible="{Binding IsMuted}"/>
+                            </StackPanel>
+                        </Button>
+                        <Slider Minimum="0" Maximum="1"
+                                Value="{Binding Volume}"
+                                Width="80"
+                                VerticalAlignment="Top"
+                                Margin="4,-4,4,4"/>
+                        <TextBlock Text="{Binding Volume, StringFormat={}{0:P0}}"
+                                   Foreground="#FF222222"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center"
+                                   MinWidth="32"
+                                   FontSize="11"/>
+                    </StackPanel>
+
+                    <!-- 分隔线 -->
+                    <Rectangle Width="1" Height="20" Fill="#FFCCCCCC"/>
+
+                    <!-- 截图按钮 -->
+                    <Button Command="{Binding TakeScreenshotCommand}"
+                            Width="28" Height="28"
+                            Foreground="White"
+                            Background="#FF32CD32"
+                            BorderThickness="0"
+                            CornerRadius="3"
+                            Padding="0"
+                            HorizontalContentAlignment="Center"
+                            VerticalContentAlignment="Center">
+                        <TextBlock Text="📸" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

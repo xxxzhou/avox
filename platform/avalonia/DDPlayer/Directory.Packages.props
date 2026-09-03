@@ -1,0 +1,35 @@
+<Project>
+    <!-- https://learn.microsoft.com/en-us/nuget/consume-packages/central-package-management -->
+    <PropertyGroup>
+        <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+        <!-- 如果是 iOS 平台，必须禁用它，否则远程连接会报错 -->
+        <UseArtifactsOutput>false</UseArtifactsOutput>
+        <ValidateXcodeVersion>false</ValidateXcodeVersion>
+    </PropertyGroup>
+    <ItemGroup>  
+        <!-- Avalonia packages -->
+        <!-- Important: keep version in sync! -->
+        <PackageVersion Include="Avalonia" Version="11.3.9" />
+        <PackageVersion Include="Avalonia.Themes.Fluent" Version="11.3.9" />
+        <PackageVersion Include="Avalonia.Fonts.Inter" Version="11.3.9" />
+        <PackageVersion Include="Avalonia.Diagnostics" Version="11.3.9" />
+        <PackageVersion Include="Avalonia.Desktop" Version="11.3.9" />
+        <PackageVersion Include="Avalonia.iOS" Version="11.3.9" />
+        <PackageVersion Include="Avalonia.Browser" Version="11.3.9" />
+        <PackageVersion Include="Avalonia.Android" Version="11.3.9" />
+        <PackageVersion Include="Avalonia.ReactiveUI" Version="11.3.9" />
+        <PackageVersion Include="Avalonia.Controls.DataGrid" Version="11.3.9" />
+
+        <PackageVersion Include="MessageBox.Avalonia" Version="3.2.0" />
+
+        <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+        <PackageVersion Include="HarfBuzzSharp" Version="8.3.0" />
+        <PackageVersion Include="MicroCom.Runtime" Version="0.11.2" />
+        <PackageVersion Include="System.Drawing.Common" Version="8.0.0" />
+
+        <!-- 更新到与net8.0-android34.0兼容的版本 -->
+        <PackageVersion Include="Xamarin.AndroidX.Core.SplashScreen" Version="1.2.0" />
+        <PackageVersion Include="Xamarin.AndroidX.AppCompat" Version="1.7.1.1" />
+        <PackageVersion Include="Xamarin.Kotlin.StdLib" Version="1.9.22.1" />
+    </ItemGroup>
+</Project>

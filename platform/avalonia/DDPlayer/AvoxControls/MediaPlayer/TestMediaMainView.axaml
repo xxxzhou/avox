@@ -1,0 +1,66 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:AvoxControls.MediaPlayer"
+             xmlns:avox="using:AvoxControls"
+             x:Class="AvoxControls.MediaPlayer.TestMediaMainView">
+
+    <Grid RowDefinitions="Auto,*,Auto">
+        <!-- 顶部：地址输入 -->
+        <Border Grid.Row="0"
+                Background="#FFE8F4E8"
+                BorderBrush="#FF808080"
+                BorderThickness="1"
+                Margin="5"
+                Padding="5">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto" RowDefinitions="Auto">
+                <TextBlock Grid.Column="0" Text="媒体地址: " VerticalAlignment="Center"/>
+                <avox:HistoryTextBox Grid.Column="1"
+                                    x:Name="UrlHistoryTextBox"
+                                    Watermark="输入媒体文件或流地址（如：rtmp://... 或 file://...）"
+                                    HorizontalAlignment="Stretch"
+                                    VerticalAlignment="Center"
+                                    Margin="10,0"
+                                    Confirmed="OnUrlConfirmed"/>
+                <Button Grid.Column="2"
+                        Content="确定"
+                        Click="OnConfirmButtonClick"
+                        IsEnabled="True"
+                        MinWidth="80"
+                        Height="30"
+                        VerticalAlignment="Center"
+                        Margin="0,0,10,0"/>
+                <Button Grid.Column="3"
+                        Content="设置"
+                        Click="OnSettingsButtonClick"
+                        IsEnabled="True"
+                        MinWidth="80"
+                        Height="30"
+                        VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+
+        <!-- 中间：媒体播放器 -->
+        <controls:MediaPlayerView x:Name="MediaPlayerViewControl"
+                                  Grid.Row="1"
+                                  Margin="2"
+                                  HorizontalAlignment="Stretch"
+                                  VerticalAlignment="Stretch"/>
+
+        <!-- 底部：提示信息
+        <Border Grid.Row="2"
+                Background="#FFF0F0F0"
+                Padding="5"
+                CornerRadius="5"
+                Margin="0,5,0,5">
+            <StackPanel Spacing="5">
+                <avox:SourceInfoView DataContext="{Binding MediaModel.SourceInfoModel, ElementName=MediaPlayerViewControl}" />
+                <TextBlock TextWrapping="Wrap">
+                    <Run Text="当前配置: " FontWeight="Bold"/>
+                    <Run Text="{Binding Config.Playback.IoPlan}"/>
+                    <Run Text=" | 硬解码: "/>
+                    <Run Text="{Binding Config.Playback.EnableHardwareDecoding}"/>
+                </TextBlock>
+            </StackPanel>
+        </Border> -->
+    </Grid>
+</UserControl>

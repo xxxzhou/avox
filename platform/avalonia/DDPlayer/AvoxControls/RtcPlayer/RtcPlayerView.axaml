@@ -1,0 +1,213 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+			 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+			 xmlns:controls="using:AvoxControls"
+			 xmlns:converters="using:AvoxControls.Converters"
+			 x:Class="AvoxControls.RtcPlayer.RtcPlayerView">
+	<Grid ColumnDefinitions="{OnPlatform '*', Windows='*,*'}" RowDefinitions="{OnPlatform 'Auto,*,*', Windows='Auto,*'}">
+		<!-- 第一栏：设备选择和控制按钮 -->
+		<Border Grid.Row="0"
+				Grid.Column="0"
+				Grid.ColumnSpan="{OnPlatform '1', Windows='2'}"
+				Background="#FFE8F4E8"
+				BorderBrush="#FF808080"
+				BorderThickness="1"
+				Padding="3"
+				Margin="5">
+			<Grid ColumnDefinitions="Auto,*,Auto,*,Auto,Auto,Auto,Auto" RowDefinitions="Auto">
+				<!-- 视频源选择 -->
+				<TextBlock Grid.Column="0" Text="视频: " VerticalAlignment="Center" FontWeight="Bold" Foreground="#FF000000"/>
+				<ComboBox x:Name="VideoSourceComboBox"
+						  Grid.Column="1"
+						  PlaceholderText="选择视频源"
+						  HorizontalAlignment="Stretch"
+						  VerticalAlignment="Center"
+						  Margin="0,0,5,0"
+						  Foreground="#FF000000"/>
+
+				<!-- 音频源选择 -->
+				<TextBlock Grid.Column="2" Text="音频: " VerticalAlignment="Center" FontWeight="Bold" Foreground="#FF000000"/>
+				<ComboBox x:Name="AudioSourceComboBox"
+						  Grid.Column="3"
+						  PlaceholderText="选择音频源"
+						  HorizontalAlignment="Stretch"
+						  VerticalAlignment="Center"
+						  Margin="0,0,5,0"
+						  Foreground="#FF000000"/>
+
+				<!-- 开始按钮 -->
+				<Button Grid.Column="4"
+						Content="开始"
+						Command="{Binding Controller.OpenCommand}"
+						Width="60"
+						Height="30"
+						VerticalAlignment="Center"
+						Margin="0,0,5,0"/>
+
+				<!-- 结束按钮 -->
+				<Button Grid.Column="5"
+						Content="结束"
+						Command="{Binding Controller.CloseCommand}"
+						Width="60"
+						Height="30"
+						VerticalAlignment="Center"
+						Margin="0,0,5,0"/>
+
+				<!-- 设置按钮 -->
+				<Button Grid.Column="6"
+						Content="设置"
+						Click="OnSettingsButtonClick"
+						Width="60"
+						Height="30"
+						VerticalAlignment="Center"/>
+			</Grid>
+		</Border>
+		<!-- 左侧：推流区域 -->
+		<Grid Grid.Row="1" Grid.Column="0" RowDefinitions="*,auto" Margin="5">
+			<Grid Grid.Row="0">
+				<controls:RenderView x:Name="LocalRenderView"
+									 HorizontalAlignment="Stretch"
+									 VerticalAlignment="Stretch"/>
+				<!-- 无视频源提示 -->
+				<TextBlock Text="未设置视频源"
+						   Foreground="#FF888888"
+						   HorizontalAlignment="Center"
+						   VerticalAlignment="Center"
+						   IsVisible="{Binding PushModel.HasVideoSource, Converter={x:Static converters:BoolInverseConverter.Instance}}"/>
+				<!-- 推流区域标题 -->
+				<TextBlock Text="推流区域"
+						   Foreground="#FFFFFF"
+						   HorizontalAlignment="Left"
+						   VerticalAlignment="Top"
+						   FontWeight="Bold"/>
+			</Grid>
+			<Grid Grid.Row="1">
+				<!-- 左侧：推流控制 -->
+				<Border Padding="4,2"
+						CornerRadius="8,8,0,0"
+						Background="#FFF0F0F0"
+						Height="38">
+					<Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
+						<!-- 左侧：控制按钮 -->
+						<StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4">
+							<TextBlock Text="推流区" VerticalAlignment="Center" FontWeight="Bold" Foreground="#FF222222"/>
+						</StackPanel>
+
+						<!-- 中间：状态信息 -->
+						<TextBlock Grid.Column="1"
+								   Text="{Binding PushModel.CurrentState}"
+								   HorizontalAlignment="Center"
+								   VerticalAlignment="Center"
+								   FontWeight="Bold"
+								   Foreground="#FF222222"
+								   MinWidth="50"
+								   FontSize="12"/>
+
+						<!-- 右侧：截图 -->
+						<StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right">
+							<!-- 截图按钮 -->
+							<Button Command="{Binding PushModel.TakeScreenshotCommand}"
+									Width="28" Height="28"
+									Foreground="White"
+									Background="#FF32CD32"
+									BorderThickness="0"
+									CornerRadius="3"
+									Padding="0"
+									HorizontalContentAlignment="Center"
+									VerticalContentAlignment="Center">
+								<TextBlock Text="📸" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+							</Button>
+						</StackPanel>
+					</Grid>
+				</Border>
+			</Grid>
+		</Grid>
+		<!-- 右侧：拉流区域 -->
+		<Grid Grid.Row="{OnPlatform 2, Windows=1}" Grid.Column="{OnPlatform 0, Windows=1}" RowDefinitions="*,auto" Margin="5">
+			<Grid Grid.Row="0">
+				<controls:RenderView x:Name="RemoteRenderView"
+									 HorizontalAlignment="Stretch" 
+									 VerticalAlignment="Stretch"/>
+				<!-- 拉流区域标题 -->
+				<TextBlock Text="拉流区域"
+						   Foreground="#FFFFFF"
+						   HorizontalAlignment="Left"
+						   VerticalAlignment="Top"
+						   Margin="10,10,0,0"
+						   FontWeight="Bold"/>
+			</Grid>
+			<Grid Grid.Row="1" Margin="0,0,0,0">
+				<Border Grid.Column="1"
+						Padding="4,2"
+						CornerRadius="8,8,0,0"
+						Background="#FFF0F0F0"
+						Height="38">
+					<Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
+						<StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4">
+							<TextBlock Text="拉流区" VerticalAlignment="Center" FontWeight="Bold" Foreground="#FF222222"/>
+						</StackPanel>
+
+						<!-- 中间：状态信息 -->
+						<StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+							<TextBlock Text="{Binding PullModel.CurrentState}"
+									   VerticalAlignment="Center"
+									   FontWeight="Bold"
+									   Foreground="#FF222222"
+									   MinWidth="50"
+									   FontSize="12"/>
+						</StackPanel>
+
+						<!-- 右侧：音量控制和截图 -->
+						<StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right">
+							<!-- 音量控制 -->
+							<StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+								<Button Command="{Binding PullModel.ToggleMuteCommand}"
+										Width="26" Height="30"
+										Background="#FFF5F5F5"
+										Foreground="#FF222222"
+										BorderThickness="1"
+										BorderBrush="#FFCCCCCC"
+										CornerRadius="3">
+									<StackPanel>
+										<TextBlock Text="🔊"
+												   FontSize="11"
+												   IsVisible="{Binding PullModel.IsMuted, Converter={x:Static converters:BoolInverseConverter.Instance}}"/>
+										<TextBlock Text="🔇"
+												   FontSize="11"
+												   IsVisible="{Binding PullModel.IsMuted}"/>
+									</StackPanel>
+								</Button>
+								<Slider Minimum="0" Maximum="1.0"
+										Value="{Binding PullModel.Volume}"
+										Width="60"
+										VerticalAlignment="Center"/>
+								<TextBlock Text="{Binding PullModel.Volume, StringFormat={}{0:P0}}"
+										   Foreground="#FF222222"
+										   FontWeight="SemiBold"
+										   VerticalAlignment="Center"
+										   MinWidth="32"
+										   FontSize="11"/>
+							</StackPanel>
+
+							<!-- 分隔线 -->
+							<Rectangle Width="1" Height="20" Fill="#FFCCCCCC"/>
+
+							<!-- 截图按钮 -->
+							<Button Command="{Binding PullModel.TakeScreenshotCommand}"
+									Width="28" Height="28"
+									Foreground="White"
+									Background="#FF32CD32"
+									BorderThickness="0"
+									CornerRadius="3"
+									Padding="0"
+									HorizontalContentAlignment="Center"
+									VerticalContentAlignment="Center">
+								<TextBlock Text="📸" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+							</Button>
+						</StackPanel>
+					</Grid>
+				</Border>
+			</Grid>
+		</Grid>
+	</Grid>
+
+</UserControl>

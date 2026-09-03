@@ -1,0 +1,83 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="WatermarkRemover.Views.MainWindow"
+        Title="水印去除工具"
+        Width="1100" Height="700">
+
+  <Grid Margin="10">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="*"/>
+      <ColumnDefinition Width="350"/>
+    </Grid.ColumnDefinitions>
+
+    <!-- 左侧：图片预览 -->
+    <Border Grid.Column="0" Margin="0,0,10,0" Background="#F5F5F5" CornerRadius="8">
+      <Grid>
+        <TextBlock Name="NoImageText" Text="选择图片后显示预览"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                   FontSize="16" Foreground="Gray"/>
+        <Image Name="PreviewImage" Stretch="Uniform"/>
+      </Grid>
+    </Border>
+
+    <!-- 右侧：控制面板 -->
+    <Grid Grid.Column="1">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="*"/>
+        <RowDefinition Height="Auto"/>
+      </Grid.RowDefinitions>
+
+      <!-- 顶部按钮区 -->
+      <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="0,0,0,10">
+        <Button Content="选择文件" Name="SelectFilesBtn" Width="70" Height="28"/>
+        <Button Content="文件夹" Name="SelectFolderBtn" Width="60" Height="28"/>
+        <Button Content="清空" Name="ClearBtn" Width="50" Height="28"/>
+        <Button Content="开始处理" Name="ProcessBtn" Width="75" Height="28"/>
+      </StackPanel>
+
+      <!-- 参数设置区 -->
+      <Border Grid.Row="1" Background="#F0F0F0" Padding="8" Margin="0,0,0,10" CornerRadius="4">
+        <StackPanel Spacing="5">
+          <TextBlock Text="Mask膨胀参数" FontWeight="Bold"/>
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Slider Grid.Column="0" Name="MaskDilateSlider" Minimum="10" Maximum="50" Value="20"
+                    TickFrequency="5" IsSnapToTickEnabled="True" Margin="0,0,10,0"/>
+            <TextBlock Grid.Column="1" Name="MaskDilateText" Text="20px"
+                       VerticalAlignment="Center" Width="40" TextAlignment="Right"/>
+          </Grid>
+          <TextBlock Text="值越大，修复区域越大 (默认20)" FontSize="10" Foreground="Gray"/>
+        </StackPanel>
+      </Border>
+
+      <!-- 状态栏 -->
+      <Border Grid.Row="2" Background="#E8E8E8" Padding="8" Margin="0,0,0,10" CornerRadius="4">
+        <StackPanel>
+          <TextBlock Name="StatusText" Text="正在初始化..."/>
+          <TextBlock Name="CountText" Text="已处理: 0 / 总计: 0" Margin="0,4,0,0"/>
+        </StackPanel>
+      </Border>
+
+      <!-- 图片列表 -->
+      <DataGrid Grid.Row="3" Name="ImageDataGrid"
+                AutoGenerateColumns="False"
+                IsReadOnly="True"
+                GridLinesVisibility="All"
+                BorderThickness="1" BorderBrush="#CCCCCC">
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="文件名" Binding="{Binding FileName}" Width="150"/>
+          <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="70"/>
+        </DataGrid.Columns>
+      </DataGrid>
+
+      <!-- 底部 -->
+      <TextBlock Grid.Row="4" Text="模型: base | CPU模式" Foreground="Gray" FontSize="11" Margin="0,10,0,0"/>
+    </Grid>
+  </Grid>
+</Window>

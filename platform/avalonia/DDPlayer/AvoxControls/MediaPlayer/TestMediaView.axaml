@@ -1,0 +1,25 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:AvoxControls.MediaPlayer"
+             xmlns:avox="using:AvoxControls"
+             x:Class="AvoxControls.MediaPlayer.TestMediaView">
+
+    <Grid>
+        <!-- 主界面 - 始终保留在视觉树中，避免 NativeControlHost 窗口脱离 -->
+        <controls:TestMediaMainView x:Name="MainView" />
+
+        <!-- 设置界面 - 通过 IsVisible 控制显示/隐藏，覆盖在主界面之上 -->
+        <Border x:Name="SettingsOverlay"
+                IsVisible="False"
+                HorizontalAlignment="Stretch"
+                VerticalAlignment="Stretch">
+            <Border.Background>
+                <SolidColorBrush Color="White"/>
+            </Border.Background>
+            <controls:MediaSettingView x:Name="SettingsView"
+                                       HorizontalAlignment="Stretch"
+                                       VerticalAlignment="Stretch"/>
+        </Border>
+    </Grid>
+
+</UserControl>

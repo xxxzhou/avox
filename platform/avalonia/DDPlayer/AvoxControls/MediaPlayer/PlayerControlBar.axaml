@@ -1,0 +1,49 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="30"
+             x:Class="AvoxControls.MediaPlayer.PlayerControlBar">
+
+    <Grid Background="White" Height="30">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <!-- 进度条 -->
+        <Border x:Name="ProgressTrack"
+                Grid.Column="0"
+                Background="#FFCCCCCC"
+                Height="8"
+                CornerRadius="4"
+                VerticalAlignment="Center"
+                Margin="10,0">
+            <Grid>
+                <Rectangle x:Name="ProgressFill"
+                           Fill="Black"
+                           HorizontalAlignment="Left"
+                           VerticalAlignment="Stretch"
+                           RadiusX="4"
+                           RadiusY="4"
+                           Width="0"/>
+                <Border x:Name="ProgressThumb"
+                        Background="Black"
+                        Width="14"
+                        Height="14"
+                        CornerRadius="7"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Center"
+                        Margin="-7,0,0,0"/>
+            </Grid>
+        </Border>
+
+        <!-- 开始时间 / 总时间 -->
+        <TextBlock Grid.Column="1"
+                   x:Name="TimeTextBlock"
+                   Text="00:00 / 00:00"
+                   Foreground="Black"
+                   VerticalAlignment="Center"
+                   Margin="10,0" />
+    </Grid>
+</UserControl>

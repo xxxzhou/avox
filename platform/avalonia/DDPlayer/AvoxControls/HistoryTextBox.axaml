@@ -1,0 +1,63 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             x:Class="AvoxControls.HistoryTextBox"
+             mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="40">
+    <Grid>
+        <TextBox x:Name="MainTextBox"
+                 Watermark="{Binding Watermark, Mode=OneWay}"
+                 Text="{Binding Text, Mode=TwoWay}"
+                 HorizontalAlignment="Stretch"
+                 VerticalAlignment="Center">
+            <TextBox.KeyBindings>
+                <KeyBinding Gesture="Enter" Command="{Binding ConfirmCommand}" />
+                <KeyBinding Gesture="Escape" Command="{Binding CancelCommand}" />
+            </TextBox.KeyBindings>
+        </TextBox>
+
+        <!-- 历史记录下拉列表 -->
+        <Popup x:Name="HistoryPopup"
+               IsOpen="{Binding IsPopupOpen, Mode=TwoWay}"
+               Placement="Bottom"
+               PlacementTarget="{Binding ElementName=MainTextBox}"
+               HorizontalOffset="0"
+               VerticalOffset="2"
+               IsLightDismissEnabled="True">
+            <Border Background="White"
+                    BorderBrush="Gray"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Padding="4">
+                <ScrollViewer MaxHeight="300">
+                    <ItemsControl ItemsSource="{Binding HistoryItems}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Padding="8,4"
+                                        Background="Transparent"
+                                        PointerPressed="OnHistoryItemTapped">
+                                    <TextBlock Text="{Binding DisplayText}"
+                                               TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Center">
+                                        <TextBlock.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="删除"
+                                                         Command="{Binding $parent[UserControl].DataContext.DeleteCommand}"
+                                                         CommandParameter="{Binding}" />
+                                            </ContextMenu>
+                                        </TextBlock.ContextMenu>
+                                    </TextBlock>
+                                    <Border.Styles>
+                                        <Style Selector="Border:pointerover">
+                                            <Setter Property="Background" Value="#F0F0F0" />
+                                        </Style>
+                                    </Border.Styles>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Border>
+        </Popup>
+    </Grid>
+</UserControl>

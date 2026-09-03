@@ -1,0 +1,138 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:common="clr-namespace:AvoxCommon;assembly=AvoxCommon"
+             xmlns:converters="clr-namespace:AvoxControls.Converters;assembly=AvoxControls"
+             mc:Ignorable="d" d:DesignWidth="500" d:DesignHeight="450"
+             x:Class="AvoxControls.RtcPlayer.RtcSettingView"
+             HorizontalAlignment="Stretch"
+             VerticalAlignment="Stretch">
+
+    <Grid Margin="15" Background="#FFFFFFFF">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- 标签页控件 -->
+        <TabControl Grid.Row="0">
+            <!-- WebRTC设置 -->
+            <TabItem Header="WebRTC设置">
+                <ScrollViewer>
+                    <StackPanel Margin="5" Spacing="15">
+                        <!-- WebRTC角色类型选择 -->
+                        <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="4" Padding="10">
+                            <StackPanel Spacing="5">
+                                <TextBlock Text="WebRTC角色类型" FontWeight="Bold" Margin="0,0,0,5" />
+                                <StackPanel x:Name="RtcRollTypePanel" Spacing="5" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- WebRTC模式选择 -->
+                        <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="4" Padding="10">
+                            <StackPanel Spacing="5">
+                                <TextBlock Text="WebRTC模式" FontWeight="Bold" Margin="0,0,0,5" />
+                                <StackPanel x:Name="RtcModePanel" Spacing="5" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 推流URI -->
+                        <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="4" Padding="10">
+                            <StackPanel Spacing="5">
+                                <TextBlock Text="推流URI" FontWeight="Bold" Margin="0,0,0,5" />
+                                <TextBox x:Name="PushUriTextBox"
+                                         Text="{Binding Rtc.PushUri}"
+                                         Watermark="rtsp://127.0.0.1/live/test"
+                                         HorizontalAlignment="Stretch" />
+                                <TextBlock Text="WebRTC推流地址" 
+                                           Foreground="Gray"
+                                           FontSize="11" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 拉流URI -->
+                        <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="4" Padding="10">
+                            <StackPanel Spacing="5">
+                                <TextBlock Text="拉流URI" FontWeight="Bold" Margin="0,0,0,5" />
+                                <TextBox x:Name="PullUriTextBox"
+                                         Text="{Binding Rtc.PullUri}"
+                                         Watermark="rtsp://127.0.0.1/live/test"
+                                         HorizontalAlignment="Stretch" />
+                                <TextBlock Text="WebRTC拉流地址" 
+                                           Foreground="Gray"
+                                           FontSize="11" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- SSE设置 -->
+                        <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="4" Padding="10">
+                            <StackPanel Spacing="5">
+                                <TextBlock Text="SSE信令设置" FontWeight="Bold" Margin="0,0,0,5" />
+                                <CheckBox x:Name="UseSSECheckBox" 
+                                          Content="使用SSE信令" 
+                                          IsChecked="{Binding Rtc.UseSSE}" />
+                                <TextBox x:Name="SseServerTextBox"
+                                         Text="{Binding Rtc.SseServer}"
+                                         Watermark="http://127.0.0.1:8080/signal"
+                                         HorizontalAlignment="Stretch" />
+                                <TextBlock Text="SSE服务地址" 
+                                           Foreground="Gray"
+                                           FontSize="11" />
+                                <TextBox x:Name="SseTokenTextBox"
+                                         Text="{Binding Rtc.SseToken}"
+                                         Watermark="SSE认证令牌" 
+                                         HorizontalAlignment="Stretch" />
+                                <TextBlock Text="SSE认证令牌" 
+                                           Foreground="Gray"
+                                           FontSize="11" />
+                                <TextBox x:Name="SseIdTextBox"
+                                         Text="{Binding Rtc.SseId}"
+                                         Watermark="SSE客户端ID" 
+                                         HorizontalAlignment="Stretch" />
+                                <TextBlock Text="SSE客户端ID" 
+                                           Foreground="Gray"
+                                           FontSize="11" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- TURN服务设置 -->
+                        <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="4" Padding="10">
+                            <StackPanel Spacing="5">
+                                <TextBlock Text="TURN服务设置" FontWeight="Bold" Margin="0,0,0,5" />
+                                <TextBox x:Name="TurnServerTextBox"
+                                         Text="{Binding Rtc.TurnServer}"
+                                         Watermark="turn:turn.example.com:3478"
+                                         HorizontalAlignment="Stretch" />
+                                <TextBlock Text="TURN服务地址" 
+                                           Foreground="Gray"
+                                           FontSize="11" />
+                                <TextBox x:Name="TurnUsernameTextBox"
+                                         Text="{Binding Rtc.TurnUsername}"
+                                         Watermark="TURN用户名" 
+                                         HorizontalAlignment="Stretch" />
+                                <TextBlock Text="TURN服务用户名" 
+                                           Foreground="Gray"
+                                           FontSize="11" />
+                                <TextBox x:Name="TurnPasswordTextBox"
+                                         Text="{Binding Rtc.TurnPassword}"
+                                         Watermark="TURN密码" 
+                                         HorizontalAlignment="Stretch" 
+                                         PasswordChar="*" />
+                                <TextBlock Text="TURN服务密码" 
+                                           Foreground="Gray"
+                                           FontSize="11" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+
+        <!-- 按钮区域 -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,15,0,0">
+            <Button Content="确定" Click="OKButton_Click" Margin="0,0,10,0" Width="80" />
+            <Button Content="取消" Click="CancelButton_Click" Width="80" />
+        </StackPanel>
+    </Grid>
+</UserControl>

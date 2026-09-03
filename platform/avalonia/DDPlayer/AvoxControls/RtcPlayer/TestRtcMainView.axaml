@@ -1,0 +1,28 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:AvoxControls"
+             xmlns:rtc="using:AvoxControls.RtcPlayer"
+             x:Class="AvoxControls.RtcPlayer.TestRtcMainView">
+    <Grid RowDefinitions="*,Auto">
+        <!-- RTC 播放器主体 -->
+        <rtc:RtcPlayerView x:Name="RtcPlayerViewControl" Grid.Row="0"/>
+
+        <!-- 底部信息面板
+        <Grid Grid.Row="1" ColumnDefinitions="*,*" Margin="0,5">
+            <Border Grid.Column="0"
+                    BorderBrush="#FFCCCCCC"
+                    BorderThickness="1"
+                    Margin="5,0,5,0"
+                    Padding="5">
+                <controls:SourceInfoView DataContext="{Binding #RtcPlayerViewControl.PushModel.SourceInfoModel}"/>
+            </Border>           
+            <Border Grid.Column="1"
+                    BorderBrush="#FFCCCCCC"
+                    BorderThickness="1"
+                    Margin="5,0,5,0"
+                    Padding="5">
+                <controls:SourceInfoView DataContext="{Binding #RtcPlayerViewControl.PullModel.SourceInfoModel}"/>
+            </Border>
+        </Grid> -->
+    </Grid>
+</UserControl>

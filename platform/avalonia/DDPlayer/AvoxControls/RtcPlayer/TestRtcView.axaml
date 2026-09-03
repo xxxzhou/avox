@@ -1,0 +1,24 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:rtc="using:AvoxControls.RtcPlayer"
+             x:Class="AvoxControls.RtcPlayer.TestRtcView">
+
+    <Grid>
+        <!-- 主界面 - 始终保留在视觉树中 -->
+        <rtc:TestRtcMainView x:Name="MainView" />
+
+        <!-- 设置界面 - 通过 IsVisible 控制显示/隐藏 -->
+        <Border x:Name="SettingsOverlay"
+                IsVisible="False"
+                HorizontalAlignment="Stretch"
+                VerticalAlignment="Stretch">
+            <Border.Background>
+                <SolidColorBrush Color="White"/>
+            </Border.Background>
+            <rtc:RtcSettingView x:Name="SettingsView"
+                               HorizontalAlignment="Stretch"
+                               VerticalAlignment="Stretch"/>
+        </Border>
+    </Grid>
+
+</UserControl>
