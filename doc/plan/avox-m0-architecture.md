@@ -1,3 +1,8 @@
+# [archived] avox M0 设计笔记（导入 avox 前的脚手架）
+
+> 本笔记来自 avox 初始 M0 脚手架（全新重写方案），现已改为以 avox(AVPlay) 代码为底座导入；
+> 原始文件见 git 历史（3586d2d 及之前）。设计思路仍可作为后续演进的参考。
+
 # avox architecture
 
 Working design notes for the third generation. Decisions here are earned from two
