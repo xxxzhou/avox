@@ -1,0 +1,612 @@
+name: Release Build
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag to upload assets (e.g., v1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write  # 允许写入 Release
+
+jobs:
+  build-windows:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false  # 先不拉取，后面用缓存
+
+      - name: Cache Git Submodules
+        uses: actions/cache@v4
+        id: cache-submodules
+        with:
+          path: |
+            .git/modules
+            3rdparty
+          key: submodules-${{ hashFiles('.gitmodules') }}
+
+      - name: Checkout Submodules
+        if: steps.cache-submodules.outputs.cache-hit != 'true'
+        run: |
+          # 将 SSH 协议的 submodule URL 改为 HTTPS
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init --recursive --depth=1
+
+      - name: Clone Library Repository (onnxruntime small files)
+        uses: actions/checkout@v4
+        with:
+          repository: xxxzhou/avc_library
+          path: avc_library
+          token: ${{ secrets.AVOX_LIBRARY_TOKEN }}
+          sparse-checkout: |
+            3rdparty/library/windows/onnxruntime
+          sparse-checkout-cone-mode: false
+
+      - name: Cache Prebuilt Libraries
+        uses: actions/cache@v4
+        id: cache-prebuilt
+        with:
+          path: avc_library
+          key: prebuilt-v1.0.0-windows-v2
+
+      - name: Download Prebuilt Libraries (from Release)
+        if: steps.cache-prebuilt.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          mkdir -p avc_library/build/windows/release
+          mkdir -p avc_library/3rdparty/library/windows/onnxruntime/onnxruntime-win-x64-1.23.2/lib
+
+          TOKEN="${{ secrets.AVOX_LIBRARY_TOKEN }}"
+          BASE="https://github.com/xxxzhou/avc_library/releases/download/v1.0.0"
+
+          curl -sL -H "Authorization: token $TOKEN" "$BASE/webrtc-windows-x64.lib" \
+            -o avc_library/build/windows/release/webrtc.lib && echo "webrtc OK"
+
+          curl -sL -H "Authorization: token $TOKEN" "$BASE/onnxruntime.lib" \
+            -o avc_library/3rdparty/library/windows/onnxruntime/onnxruntime-win-x64-1.23.2/lib/onnxruntime.lib && echo "onnxruntime.lib OK"
+
+          curl -sL -H "Authorization: token $TOKEN" "$BASE/onnxruntime_providers_shared.lib" \
+            -o avc_library/3rdparty/library/windows/onnxruntime/onnxruntime-win-x64-1.23.2/lib/onnxruntime_providers_shared.lib && echo "onnxruntime_providers_shared.lib OK"
+
+      - name: Cache AI Models
+        uses: actions/cache@v4
+        id: cache-models
+        with:
+          path: assets/models
+          key: ai-models-v3
+
+      - name: Download AI Models (from Release)
+        if: steps.cache-models.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          # Create models directory
+          mkdir -p assets/models
+
+          TOKEN="${{ secrets.AVOX_LIBRARY_TOKEN }}"
+
+          # Download stt-sense-voice
+          echo "Downloading stt-sense-voice..."
+          mkdir -p assets/models/stt/sense-voice
+          URL=$(curl -sL -H "Authorization: token $TOKEN" \
+            "https://api.github.com/repos/xxxzhou/avox_model/releases/tags/stt-sense-voice" | python3 -c \
+            "import sys,json; assets=json.load(sys.stdin)['assets']; print([a['browser_download_url'] for a in assets if 'stt-sense-voice.zip' in a['name']][0])")
+          if [ -n "$URL" ]; then
+            curl -sL -H "Authorization: token $TOKEN" "$URL" -o assets/models/stt-sense-voice.zip
+            unzip -o -q assets/models/stt-sense-voice.zip -d assets/models/stt/sense-voice/
+            rm -f assets/models/stt-sense-voice.zip
+          else
+            echo "Warning: stt-sense-voice not found"
+          fi
+
+          # Download stt-zh-en
+          echo "Downloading stt-zh-en..."
+          mkdir -p assets/models/stt/zh-en
+          URL=$(curl -sL -H "Authorization: token $TOKEN" \
+            "https://api.github.com/repos/xxxzhou/avox_model/releases/tags/stt-zh-en" | python3 -c \
+            "import sys,json; assets=json.load(sys.stdin)['assets']; print([a['browser_download_url'] for a in assets if 'stt-zh-en.zip' in a['name']][0])")
+          if [ -n "$URL" ]; then
+            curl -sL -H "Authorization: token $TOKEN" "$URL" -o assets/models/stt-zh-en.zip
+            unzip -o -q assets/models/stt-zh-en.zip -d assets/models/stt/zh-en/
+            rm -f assets/models/stt-zh-en.zip
+          else
+            echo "Warning: stt-zh-en not found"
+          fi
+
+          # Download translation-opus-mt-ja-zh
+          echo "Downloading translation-opus-mt-ja-zh..."
+          mkdir -p assets/models/translation/opus-mt-ja-zh
+          URL=$(curl -sL -H "Authorization: token $TOKEN" \
+            "https://api.github.com/repos/xxxzhou/avox_model/releases/tags/translation-opus-mt-ja-zh" | python3 -c \
+            "import sys,json; assets=json.load(sys.stdin)['assets']; urls=[a['browser_download_url'] for a in assets if 'translation' in a['name'] and a['name'].endswith('.zip')]; print(urls[0] if urls else '')")
+          if [ -n "$URL" ]; then
+            curl -sL -H "Authorization: token $TOKEN" "$URL" -o assets/models/translation.zip
+            unzip -o -q assets/models/translation.zip -d assets/models/translation/opus-mt-ja-zh/
+            rm -f assets/models/translation.zip
+          else
+            echo "Warning: translation model not found"
+          fi
+
+          echo "Models downloaded and extracted"
+
+      - name: Setup Python
+        if: runner.environment != 'self-hosted'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Setup .NET 8
+        if: runner.environment != 'self-hosted'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install SWIG (Windows)
+        if: runner.environment != 'self-hosted'
+        shell: pwsh
+        run: |
+          choco install swig -y
+          # Refresh environment variables so CMake can find SWIG
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+          swig -version
+          echo "SWIG_PATH=$((Get-Command swig).Source)" >> $env:GITHUB_ENV
+
+      - name: Setup SWIG (self-hosted)
+        if: runner.environment == 'self-hosted'
+        shell: pwsh
+        run: |
+          swig -version
+          echo "SWIG_PATH=$((Get-Command swig).Source)" >> $env:GITHUB_ENV
+
+      - name: Cache Compiled Libraries
+        uses: actions/cache@v4
+        id: cache-libs
+        with:
+          path: |
+            build/windows/faad2
+            build/windows/ZLMediaKit
+            build/windows/freetype
+            build/windows/fdk-aac
+            build/windows/sherpa-onnx
+            build/windows/sentencepiece
+          key: windows-libs-v4-${{ hashFiles('3rdparty/**/CMakeLists.txt', '3rdparty/**/*.cmake', '3rdparty/**/*.h', 'cmake/**/*.cmake', 'CMakeLists.txt') }}
+
+      - name: Build C++ SDK
+        shell: pwsh
+        run: |
+          # Refresh PATH to include chocolatey-installed SWIG
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+          # Verify SWIG is accessible and get its path
+          swig -version
+          $swigPath = (Get-Command swig).Source
+          Write-Host "SWIG path: $swigPath"
+          # Pass SWIG_EXECUTABLE to CMake
+          $env:AVOX_EXTRA_CMAKE_ARGS = "-DAVOX_ENABLE_SHERPA=ON -DSWIG_EXECUTABLE=$swigPath"
+          python build_windows.py; exit $LASTEXITCODE
+        env:
+          PYTHONIOENCODING: utf-8
+          AVOX_BUILD_TYPE: Release
+          CMAKE_CI: ON
+          AVOX_EXTERNAL_LIBRARY_DIR: ${{ github.workspace }}\avc_library
+
+      - name: Run unit tests (Windows)
+        shell: pwsh
+        run: |
+          # 单元测试随 build_windows.py 一同构建 (AVOX_BUILD_TESTS=ON), 此处只负责运行
+          ctest --test-dir build/windows/avplay --output-on-failure -C Release
+
+      - name: Verify C++ SDK (Windows)
+        shell: pwsh
+        run: |
+          $avoxDll = "build/windows/avplay/install/AMD64/Release/avox.dll"
+          $wrapperDll = "build/windows/avplay/install/AMD64/Release/AvoxWrapper.dll"
+          if (-not (Test-Path $avoxDll)) {
+            Write-Error "avox.dll not found at $avoxDll - C++ build failed"
+            exit 1
+          }
+          if (-not (Test-Path $wrapperDll)) {
+            Write-Error "AvoxWrapper.dll not found at $wrapperDll - SWIG build failed"
+            exit 1
+          }
+          Write-Host "C++ SDK verified: avox.dll and AvoxWrapper.dll exist"
+
+      - name: Cache SWIG C# files
+        uses: actions/cache@v4
+        with:
+          path: swig/csharp/files
+          key: swig-csharp-${{ hashFiles('swig/**/*.i') }}
+          restore-keys: |
+            swig-csharp-
+
+      - name: Ensure SWIG files exist
+        shell: pwsh
+        run: |
+          # Refresh PATH to include chocolatey-installed SWIG
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+          # Check if SWIG files exist
+          if (-not (Test-Path "swig/csharp/files") -or -not (Get-ChildItem "swig/csharp/files/*.cs" -ErrorAction SilentlyContinue)) {
+            Write-Host "SWIG files not found, rebuilding..."
+            $swigPath = (Get-Command swig).Source
+            $env:AVOX_EXTRA_CMAKE_ARGS = "-DAVOX_ENABLE_SHERPA=ON -DSWIG_EXECUTABLE=$swigPath"
+            python build_windows.py; exit $LASTEXITCODE
+          } else {
+            Write-Host "SWIG files found"
+            Get-ChildItem "swig/csharp/files/*.cs" | Select-Object -First 5
+          }
+        env:
+          PYTHONIOENCODING: utf-8
+          AVOX_BUILD_TYPE: Release
+          CMAKE_CI: ON
+          AVOX_EXTERNAL_LIBRARY_DIR: ${{ github.workspace }}\avc_library
+
+      - name: Build AvaPlayer Desktop
+        run: |
+          cd platform/avalonia/DDPlayer
+          dotnet restore AvaPlayer/AvaPlayer.Desktop/AvaPlayer.Desktop.csproj /p:CS_ENABLE_WEBRTC=false || exit 1
+          dotnet build AvaPlayer/AvaPlayer.Desktop/AvaPlayer.Desktop.csproj -c Release --no-incremental /p:CS_ENABLE_WEBRTC=false || exit 1
+        env:
+          CI: True
+
+      - name: Create ZIP
+        shell: pwsh
+        run: |
+          $src = "build/windows/avplay/install/AMD64/Release"
+          if (Test-Path "$src/avox.dll") {
+            Compress-Archive -Path "$src/*" -DestinationPath "avplay-windows-x64.zip" -Force
+          } else {
+            Write-Error "Build output not found at $src"
+            exit 1
+          }
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.event.release.tag_name }}
+          files: avplay-windows-x64.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: avplay-windows-x64
+          path: avplay-windows-x64.zip
+
+  build-android:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Cache Git Submodules
+        uses: actions/cache@v4
+        id: cache-submodules
+        with:
+          path: |
+            .git/modules
+            3rdparty
+          key: submodules-${{ hashFiles('.gitmodules') }}
+
+      - name: Checkout Submodules
+        if: steps.cache-submodules.outputs.cache-hit != 'true'
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init --recursive --depth=1
+
+      - name: Cache Prebuilt Libraries
+        uses: actions/cache@v4
+        id: cache-prebuilt
+        with:
+          path: avc_library
+          key: prebuilt-v1.0.0-android-v2
+
+      - name: Download Prebuilt Libraries (from Release)
+        if: steps.cache-prebuilt.outputs.cache-hit != 'true'
+        run: |
+          # Create directories
+          mkdir -p avc_library/build/android/release
+          mkdir -p avc_library/3rdparty/library/android/onnxruntime/onnxruntime-android-arm64-v8a-static_lib-1.23.2/lib
+
+          # Download webrtc-android-arm64.a
+          curl -sL -H "Authorization: token ${{ secrets.AVOX_LIBRARY_TOKEN }}" \
+            "https://api.github.com/repos/xxxzhou/avc_library/releases/tags/v1.0.0" | python3 -c \
+            "import sys,json; assets=json.load(sys.stdin)['assets']; print([a['browser_download_url'] for a in assets if 'android-arm64' in a['name'] and 'onnx' not in a['name']][0])" | \
+            xargs -I{} curl -sL -H "Authorization: token ${{ secrets.AVOX_LIBRARY_TOKEN }}" {} -o avc_library/build/android/release/libwebrtc.a
+
+          # Download onnxruntime-android-arm64.a
+          curl -sL -H "Authorization: token ${{ secrets.AVOX_LIBRARY_TOKEN }}" \
+            "https://api.github.com/repos/xxxzhou/avc_library/releases/tags/v1.0.0" | python3 -c \
+            "import sys,json; assets=json.load(sys.stdin)['assets']; print([a['browser_download_url'] for a in assets if 'onnxruntime-android-arm64' in a['name']][0])" | \
+            xargs -I{} curl -sL -H "Authorization: token ${{ secrets.AVOX_LIBRARY_TOKEN }}" {} -o avc_library/3rdparty/library/android/onnxruntime/onnxruntime-android-arm64-v8a-static_lib-1.23.2/lib/libonnxruntime.a
+
+          echo "Downloaded prebuilt libraries"
+
+      - name: Cache AI Models
+        uses: actions/cache@v4
+        id: cache-models
+        with:
+          path: assets/models
+          key: ai-models-v3
+
+      - name: Download AI Models (from Release)
+        if: steps.cache-models.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p assets/models
+          TOKEN="${{ secrets.AVOX_LIBRARY_TOKEN }}"
+
+          # Download stt-sense-voice
+          echo "Downloading stt-sense-voice..."
+          mkdir -p assets/models/stt/sense-voice
+          URL=$(curl -sL -H "Authorization: token $TOKEN" \
+            "https://api.github.com/repos/xxxzhou/avox_model/releases/tags/stt-sense-voice" | python3 -c \
+            "import sys,json; assets=json.load(sys.stdin)['assets']; print([a['browser_download_url'] for a in assets if 'stt-sense-voice.zip' in a['name']][0])")
+          if [ -n "$URL" ]; then
+            curl -sL -H "Authorization: token $TOKEN" "$URL" -o assets/models/stt-sense-voice.zip
+            unzip -o -q assets/models/stt-sense-voice.zip -d assets/models/stt/sense-voice/
+            rm -f assets/models/stt-sense-voice.zip
+          else
+            echo "Warning: stt-sense-voice not found"
+          fi
+
+          # Download stt-zh-en
+          echo "Downloading stt-zh-en..."
+          mkdir -p assets/models/stt/zh-en
+          URL=$(curl -sL -H "Authorization: token $TOKEN" \
+            "https://api.github.com/repos/xxxzhou/avox_model/releases/tags/stt-zh-en" | python3 -c \
+            "import sys,json; assets=json.load(sys.stdin)['assets']; print([a['browser_download_url'] for a in assets if 'stt-zh-en.zip' in a['name']][0])")
+          if [ -n "$URL" ]; then
+            curl -sL -H "Authorization: token $TOKEN" "$URL" -o assets/models/stt-zh-en.zip
+            unzip -o -q assets/models/stt-zh-en.zip -d assets/models/stt/zh-en/
+            rm -f assets/models/stt-zh-en.zip
+          else
+            echo "Warning: stt-zh-en not found"
+          fi
+
+          # Download translation-opus-mt-ja-zh
+          echo "Downloading translation-opus-mt-ja-zh..."
+          mkdir -p assets/models/translation/opus-mt-ja-zh
+          URL=$(curl -sL -H "Authorization: token $TOKEN" \
+            "https://api.github.com/repos/xxxzhou/avox_model/releases/tags/translation-opus-mt-ja-zh" | python3 -c \
+            "import sys,json; assets=json.load(sys.stdin)['assets']; urls=[a['browser_download_url'] for a in assets if 'translation' in a['name'] and a['name'].endswith('.zip')]; print(urls[0] if urls else '')")
+          if [ -n "$URL" ]; then
+            curl -sL -H "Authorization: token $TOKEN" "$URL" -o assets/models/translation.zip
+            unzip -o -q assets/models/translation.zip -d assets/models/translation/opus-mt-ja-zh/
+            rm -f assets/models/translation.zip
+          else
+            echo "Warning: translation model not found"
+          fi
+
+          echo "Models downloaded and extracted"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Cache Compiled Libraries
+        uses: actions/cache@v4
+        id: cache-libs
+        with:
+          path: |
+            build/android/faad2
+            build/android/ZLMediaKit
+            build/android/freetype
+            build/android/fdk-aac
+            build/android/sherpa-onnx
+            build/android/sentencepiece
+          key: android-libs-v4-${{ hashFiles('3rdparty/**/CMakeLists.txt', '3rdparty/**/*.cmake', '3rdparty/**/*.h', 'cmake/**/*.cmake', 'CMakeLists.txt') }}
+
+      - name: Cache Android NDK
+        id: cache-ndk
+        uses: actions/cache@v4
+        with:
+          path: ~/android-ndk-root
+          key: android-ndk-r26b
+
+      - name: Cache ONNX Runtime
+        id: cache-onnx
+        uses: actions/cache@v4
+        with:
+          path: ~/onnxruntime
+          key: onnxruntime-android-1.23.2-v4
+
+      - name: Install Linux dependencies
+        if: steps.cache-ndk.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build openjdk-17-jdk wget unzip swig
+          # 下载并解压 Android NDK
+          cd /tmp
+          wget -q https://dl.google.com/android/repository/android-ndk-r26b-linux.zip -O android-ndk.zip
+          unzip -q android-ndk.zip -d $HOME/android-ndk-root
+
+      - name: Cache SWIG 4.3.1
+        uses: actions/cache@v4
+        id: cache-swig
+        with:
+          path: ~/swig-4.3.1
+          key: swig-4.3.1-linux-v2
+
+      - name: Install SWIG 4.3.1
+        if: steps.cache-swig.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libpcre2-dev curl
+          cd /tmp
+          curl -L -o swig-4.3.1.tar.gz "https://sourceforge.net/projects/swig/files/swig/swig-4.3.1/swig-4.3.1.tar.gz/download"
+          tar xzf swig-4.3.1.tar.gz
+          cd swig-4.3.1
+          ./configure --prefix=$HOME/swig-4.3.1 > /dev/null 2>&1
+          make -j4 > /dev/null 2>&1
+          make install > /dev/null 2>&1
+
+      - name: Ensure SWIG in PATH
+        run: |
+          echo "$HOME/swig-4.3.1/bin" >> $GITHUB_PATH
+          export PATH="$HOME/swig-4.3.1/bin:$PATH"
+          swig -version
+
+      - name: Download ONNX Runtime for Android
+        if: steps.cache-onnx.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p $HOME/onnxruntime
+          cd $HOME/onnxruntime
+          wget -q https://github.com/csukuangfj/onnxruntime-libs/releases/download/v1.23.2/onnxruntime-android-arm64-v8a-static_lib-1.23.2.zip
+          unzip -q onnxruntime-android-arm64-v8a-static_lib-1.23.2.zip
+          ls -la onnxruntime-android-arm64-v8a-static_lib-1.23.2/
+          ls -la onnxruntime-android-arm64-v8a-static_lib-1.23.2/include/ || echo "include not found"
+
+      - name: Link ONNX Runtime to avc_library
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/avc_library/3rdparty/library/android/onnxruntime
+          # Remove existing symlink or directory if exists
+          rm -rf $GITHUB_WORKSPACE/avc_library/3rdparty/library/android/onnxruntime/onnxruntime-android-arm64-v8a-static_lib-1.23.2
+          ln -nsf $HOME/onnxruntime/onnxruntime-android-arm64-v8a-static_lib-1.23.2 \
+            $GITHUB_WORKSPACE/avc_library/3rdparty/library/android/onnxruntime/onnxruntime-android-arm64-v8a-static_lib-1.23.2
+          # Verify structure
+          ls -la $GITHUB_WORKSPACE/avc_library/3rdparty/library/android/onnxruntime/
+          ls -la $GITHUB_WORKSPACE/avc_library/3rdparty/library/android/onnxruntime/onnxruntime-android-arm64-v8a-static_lib-1.23.2/include/ || echo "include not found in symlink"
+
+      - name: Build C++ SDK
+        run: |
+          export ANDROID_NDK=$HOME/android-ndk-root/android-ndk-r26b
+          python build_android.py; exit $?
+        env:
+          PYTHONIOENCODING: utf-8
+          AVOX_BUILD_TYPE: Release
+          CMAKE_CI: ON
+          AVOX_EXTERNAL_LIBRARY_DIR: ${{ github.workspace }}/avc_library
+          AVOX_EXTRA_CMAKE_ARGS: "-DAVOX_ENABLE_TRANSLATION=ON -DAVOX_ENABLE_SHERPA=ON -DAVOX_ENABLE_SWIG_JAVA=OFF"
+
+      - name: Verify C++ SDK (Android)
+        run: |
+          if [ ! -f "build/android/avplay/install/aarch64/libavox.so" ]; then
+            echo "libavox.so not found at build/android/avplay/install/aarch64/libavox.so - C++ build failed"
+            exit 1
+          fi
+          echo "C++ SDK verified: libavox.so exists"
+
+      - name: Cache .NET Workloads
+        uses: actions/cache@v4
+        id: cache-dotnet-workload
+        with:
+          path: ~/.dotnet
+          key: dotnet-workload-android-8.0
+
+      - name: Lock .NET SDK to 8.x
+        run: |
+          SDK_VER=$(dotnet --list-sdks | grep '^8\.' | tail -1 | cut -d' ' -f1)
+          echo "{\"sdk\":{\"version\":\"$SDK_VER\"}}" > global.json
+          cat global.json
+
+      - name: Install .NET Android Workload
+        run: |
+          # 即使缓存命中也需要确保 workload 正确注册
+          dotnet workload restore platform/avalonia/DDPlayer/AvaPlayer/AvaPlayer.Android/AvaPlayer.Android.csproj /p:CS_ENABLE_WEBRTC=false || true
+          # 如果 restore 失败，尝试完整安装
+          if ! dotnet workload list | grep -q android; then
+            for i in 1 2 3; do
+              dotnet workload install android --skip-sign-check && break
+              echo "Retry $i..."
+              sleep 10
+            done
+          fi
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-android-${{ hashFiles('platform/avalonia/DDPlayer/**/*.csproj') }}
+          restore-keys: |
+            nuget-android-
+
+      - name: Build AvaPlayer Android
+        run: |
+          cd platform/avalonia/DDPlayer
+          # 只 restore Android 项目，避免 iOS workload 缺失错误
+          # CS_ENABLE_WEBRTC=false: C++ Android 构建未启用 WebRTC，避免 CS0246 错误
+          dotnet restore AvaPlayer/AvaPlayer.Android/AvaPlayer.Android.csproj /p:CS_ENABLE_WEBRTC=false || exit 1
+          dotnet build AvaPlayer/AvaPlayer.Android/AvaPlayer.Android.csproj -c Release --no-incremental /p:CS_ENABLE_WEBRTC=false || exit 1
+        env:
+          CI: True
+
+      - name: Create SDK ZIP
+        run: |
+          if [ -d "build/android/avplay/install/aarch64" ]; then
+            cd build/android/avplay/install/aarch64
+            zip -r ../../../../../avplay-android-arm64.zip .
+            cd - > /dev/null
+          else
+            echo "Build output not found at build/android/avplay/install/aarch64"
+            exit 1
+          fi
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.event.release.tag_name }}
+          files: avplay-android-arm64.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: avplay-android-arm64
+          path: avplay-android-arm64.zip
+
+  # 删除Release中自动生成的源码包
+  cleanup-release-assets:
+    needs: [build-windows, build-android]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove source code assets from Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REPO="${{ github.repository }}"
+
+          # 获取 Release ID
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            TAG="${{ inputs.release_tag }}"
+          else
+            TAG="${{ github.event.release.tag_name }}"
+          fi
+
+          echo "Getting release ID for tag: $TAG"
+          RELEASE_ID=$(curl -sL -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/$REPO/releases/tags/$TAG" | jq -r '.id')
+
+          if [ -z "$RELEASE_ID" ] || [ "$RELEASE_ID" == "null" ]; then
+            echo "Release not found for tag: $TAG"
+            exit 1
+          fi
+
+          echo "Release ID: $RELEASE_ID"
+
+          # 获取Release中的所有资产
+          ASSETS=$(curl -sL -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/$REPO/releases/$RELEASE_ID/assets")
+
+          # 删除GitHub自动生成的源码包 (Source code.zip 和 Source code.tar.gz)
+          echo "$ASSETS" | jq -r '.[] | select(.name == "Source code.zip" or .name == "Source code.tar.gz") | .id' | while read ASSET_ID; do
+            if [ -n "$ASSET_ID" ]; then
+              echo "Deleting source code asset ID: $ASSET_ID"
+              curl -sL -X DELETE -H "Authorization: token $GITHUB_TOKEN" \
+                "https://api.github.com/repos/$REPO/releases/assets/$ASSET_ID"
+            fi
+          done
+
+          echo "Source code assets cleanup completed"
