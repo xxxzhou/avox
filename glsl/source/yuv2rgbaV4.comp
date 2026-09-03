@@ -1,0 +1,80 @@
+#version 450
+
+layout (local_size_x = 16, local_size_y = 16) in;
+layout (binding = 0, r16ui) uniform readonly uimage2D inTex;
+layout (binding = 1, rgba8) uniform image2D outTex;
+// std140: 3 个 int 后 mat4 自动对齐到 offset 16, 共 80B
+layout (std140, binding = 2) uniform UBO
+{
+	int width;
+	int height;
+	int yuvType;
+	mat4 colorMat;  // 行优先 YUV->RGB, UV 的 -0.5 已折进偏移列, 用法 vec4(yuv,1)*colorMat
+} ubo;
+
+// 读取16位值,提取低10位并归一化
+float read10bit(ivec2 pos) {
+	uint val = imageLoad(inTex, pos).r;
+	// 取低10位并归一化到 [0,1]
+	return float(val & 1023u) / 1023.f;
+}
+
+// UV 值(归一化 [0,1], 含 +0.5 偏移), 不再减 0.5(折进 colorMat 偏移列)
+float read10bitUV(ivec2 pos) {
+	return read10bit(pos);
+}
+
+// yuv420P10: 平面格式, 10-bit, 小端
+// 数据在内存中紧密排列: Y平面(width*height) + U平面(w/2*h/2) + V平面(w/2*h/2)
+// 输入图像宽度=width, 高度=height*1.5 (以R16像素为单位)
+void yuv420p10(){
+    ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 outSize = imageSize(outTex);
+    ivec2 inSize = imageSize(inTex);
+    if(uv.x >= outSize.x/2 || uv.y >= outSize.y/2){
+        return;
+    }
+	// 输出图像尺寸
+	int width = outSize.x;
+	int height = outSize.y;
+	// UV平面尺寸
+	int uvWidth = width / 2;
+	int uvHeight = height / 2;
+	// Y平面大小(像素数)
+	int yPlaneSize = width * height;
+	// U平面大小(像素数)
+	int uvPlaneSize = uvWidth * uvHeight;
+
+	// U和V的线性索引
+	int uvIndex = uv.y * uvWidth + uv.x;
+	// U和V在整个图像中的线性位置
+	int uLinearPos = yPlaneSize + uvIndex;
+	int vLinearPos = yPlaneSize + uvPlaneSize + uvIndex;
+
+	// 转换为2D坐标 (基于输入图像宽度)
+	ivec2 uPos = ivec2(uLinearPos % width, uLinearPos / width);
+	ivec2 vPos = ivec2(vLinearPos % width, vLinearPos / width);
+
+	// 读取4个Y值 (2x2块)
+	float y1 = read10bit(ivec2(uv.x*2, uv.y*2));
+	float y2 = read10bit(ivec2(uv.x*2+1, uv.y*2));
+	float y3 = read10bit(ivec2(uv.x*2, uv.y*2+1));
+	float y4 = read10bit(ivec2(uv.x*2+1, uv.y*2+1));
+	// 读取U和V
+	float u = read10bitUV(uPos);
+	float v = read10bitUV(vPos);
+
+	vec4 rgba1 = vec4(y1, u, v, 1.0) * ubo.colorMat;
+	vec4 rgba2 = vec4(y2, u, v, 1.0) * ubo.colorMat;
+	vec4 rgba3 = vec4(y3, u, v, 1.0) * ubo.colorMat;
+	vec4 rgba4 = vec4(y4, u, v, 1.0) * ubo.colorMat;
+
+	imageStore(outTex, ivec2(uv.x*2, uv.y*2), rgba1);
+	imageStore(outTex, ivec2(uv.x*2+1, uv.y*2), rgba2);
+	imageStore(outTex, ivec2(uv.x*2, uv.y*2+1), rgba3);
+	imageStore(outTex, ivec2(uv.x*2+1, uv.y*2+1), rgba4);
+}
+
+void main(){
+	yuv420p10();
+}

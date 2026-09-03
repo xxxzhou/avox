@@ -1,0 +1,41 @@
+#version 450
+
+layout (local_size_x = 16, local_size_y = 16) in;
+layout (binding = 0, rgba8) uniform readonly image2D inTex;
+layout (binding = 1, rgba8) uniform image2D outTex;
+// std140: 3 个 int 后 mat4 自动对齐到 offset 16, 共 80B
+layout (std140, binding = 2) uniform UBO {
+	int width;
+	int height;
+	int yuvType;
+	mat4 colorMat;  // 行优先 YUV->RGB, UV 的 -0.5 已折进偏移列, 用法 vec4(yuv,1)*colorMat
+} ubo;
+
+void main(){
+	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(inTex);
+    if(uv.x >= size.x || uv.y >= size.y){
+        return;
+    }
+	// yuv2I
+	int bitx = 0;
+	int yoffset = 0;
+	// yvyuI
+	if(ubo.yuvType == 1){
+		bitx= 2;
+	}
+	// uyvyI
+	if(ubo.yuvType == 2){
+		yoffset = 1;
+	}
+
+	vec4 yuyv = imageLoad(inTex,ivec2(uv.x,uv.y)).rgba;
+	float y1 = yuyv[yoffset];
+	float y2 = yuyv[yoffset+2];
+	float u = yuyv[bitx + (1-yoffset)];       // 不再 -0.5f (折进 colorMat 偏移列)
+	float v = yuyv[(2-bitx)+(1-yoffset)];     // 不再 -0.5f
+	vec4 rgba1 = vec4(y1,u,v,1.0) * ubo.colorMat;
+	vec4 rgba2 = vec4(y2,u,v,1.0) * ubo.colorMat;
+	imageStore(outTex, ivec2(uv.x*2,uv.y),rgba1);
+	imageStore(outTex, ivec2(uv.x*2+1,uv.y),rgba2);
+}

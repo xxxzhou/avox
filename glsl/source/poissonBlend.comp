@@ -1,0 +1,58 @@
+#version 450
+
+layout (local_size_x = 16, local_size_y = 16) in;// gl_WorkGroupSize
+layout (binding = 0, rgba8) uniform image2D inTex;
+layout (binding = 1, rgba8) uniform readonly image2D inTex1;
+layout (binding = 2, rgba8) uniform image2D outTex;
+
+layout (std140, binding = 3) uniform UBO {
+    float percent;
+} ubo;
+
+layout(push_constant) uniform pushBlock {
+    int pong;
+} constBlock;
+
+const ivec2 centerT[4] = {
+    ivec2(1,0),
+    ivec2(-1,0),
+    ivec2(0,1),
+    ivec2(0,-1)
+};
+
+void main(){
+    ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(inTex);
+    if(uv.x >= size.x || uv.y >= size.y){
+        return;
+    }     
+    vec4 center = vec4(0);
+    if(constBlock.pong == 0){
+        center = imageLoad(inTex,uv);
+    }else{
+        center = imageLoad(outTex,uv);
+    }
+    vec4 center1 = imageLoad(inTex1,uv);  
+    vec4 sum = vec4(0);
+    vec4 sum1 = vec4(0);
+    for(int i = 0; i < 4; i++){
+        ivec2 cuv = uv + centerT[i];
+        cuv = max(ivec2(0),min(cuv,size));
+        if(constBlock.pong == 0){
+            sum += imageLoad(inTex,cuv);
+        }else{
+            sum += imageLoad(outTex,cuv);
+        }
+        sum1 += imageLoad(inTex1,cuv);
+    }
+    vec4 mean = sum / 4.0;
+    vec4 diff1 = center1 - sum1 /4.0;
+    vec4 grad = mean + diff1;
+    
+    vec4 result = vec4(mix(center.rgb,grad.rgb,center1.a * ubo.percent),center.a);    
+    if(constBlock.pong == 0){
+        imageStore(outTex,uv,result);  
+    }else{
+        imageStore(inTex,uv,result);  
+    }
+}

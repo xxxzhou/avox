@@ -1,0 +1,21 @@
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0, rgba8) uniform readonly image2D inTex;
+layout(binding = 1, r8) uniform image2D outTex;
+
+void main() {
+  ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+  ivec2 size = imageSize(inTex);
+  if (uv.x >= size.x || uv.y >= size.y) {
+    return;
+  }
+  vec4 color = imageLoad(inTex, uv);
+  ivec2 nuv1 = ivec2(uv.x * 3, uv.y);
+  ivec2 nuv2 = ivec2(uv.x * 3 + 1, uv.y);
+  ivec2 nuv3 = ivec2(uv.x * 3 + 2, uv.y);
+  imageStore(outTex, nuv1, vec4(color.r));
+  imageStore(outTex, nuv2, vec4(color.g));
+  imageStore(outTex, nuv3, vec4(color.b));
+}

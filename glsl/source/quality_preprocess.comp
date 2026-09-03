@@ -1,0 +1,20 @@
+#version 450
+layout(local_size_x=16, local_size_y=16) in;
+
+layout(binding=0) uniform sampler2D inputTex;
+layout(std430, binding=1) buffer OutputBuf { float data[]; };
+layout(binding=2) uniform Params { int width; int height; };
+
+void main() {
+  ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
+  if (pos.x >= width || pos.y >= height) return;
+  // 双线性采样: texture() 自动插值, 支持输入和输出分辨率不同 (即 resize)
+  vec2 uv = (vec2(pos) + 0.5) / vec2(width, height);
+  vec4 rgba = texture(inputTex, uv);
+  // NCHW: channel-first, row-major [1, 3, H, W]
+  int idx = pos.y * width + pos.x;
+  int hw = width * height;
+  data[0 * hw + idx] = rgba.r;
+  data[1 * hw + idx] = rgba.g;
+  data[2 * hw + idx] = rgba.b;
+}

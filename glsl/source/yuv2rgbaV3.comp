@@ -1,0 +1,41 @@
+#version 450
+
+// 16bit https://github.com/KhronosGroup/GLSL/blob/master/extensions/ext/GL_EXT_shader_16bit_storage.txt
+#extension GL_EXT_shader_16bit_storage: require
+#extension GL_EXT_shader_explicit_arithmetic_types_int16: require
+
+layout (local_size_x = 16, local_size_y = 16) in;
+layout (binding = 0, r8) uniform readonly image2D inTex;
+layout (binding = 1, rgba8) uniform image2D outTex;
+// std140: 3 个 int 后 mat4 自动对齐到 offset 16, 共 80B
+layout (std140, binding = 2) uniform UBO {
+	int width;
+	int height;
+	int yuvType;
+	mat4 colorMat;  // 行优先 YUV->RGB, UV 的 -0.5 已折进偏移列, 用法 vec4(yuv,1)*colorMat
+} ubo;
+
+void main(){
+	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(outTex);
+    if(uv.x >= size.x/2 || uv.y >= size.y){
+        return;
+    }
+	// 只有8位有效
+	uint b1 = uint(imageLoad(inTex,ivec2(uv.x*5,uv.y)).r * 255);
+	uint b2 = uint(imageLoad(inTex,ivec2(uv.x*5+1,uv.y)).r * 255);
+	uint b3 = uint(imageLoad(inTex,ivec2(uv.x*5+2,uv.y)).r * 255);
+	uint b4 = uint(imageLoad(inTex,ivec2(uv.x*5+3,uv.y)).r * 255);
+	uint b5 = uint(imageLoad(inTex,ivec2(uv.x*5+4,uv.y)).r * 255);
+	// 5个8位,一共40个有效位,对应四个10BIT的值
+	const uint mask10bit = uint(1023);
+	// 不再 -0.5f (折进 colorMat 偏移列)
+	float u = float(((b1 << 2) | (b2 >> 6)) & mask10bit)* 0.00097751710654936461f;
+    float y1 = float(((b2 << 4) | (b3 >> 4)) & mask10bit)* 0.00097751710654936461f;
+    float v = float(((b3 << 6) | (b4 >> 2)) & mask10bit)* 0.00097751710654936461f;
+    float y2 = float(((b4 << 8) | (b5)) & mask10bit)* 0.00097751710654936461f;
+	vec4 rgba1 = vec4(y1,u,v,1.0) * ubo.colorMat;
+	vec4 rgba2 = vec4(y2,u,v,1.0) * ubo.colorMat;
+	imageStore(outTex, ivec2(uv.x*2,uv.y),rgba1);
+	imageStore(outTex, ivec2(uv.x*2+1,uv.y),rgba2);
+}

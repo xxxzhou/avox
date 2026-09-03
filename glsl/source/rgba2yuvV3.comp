@@ -1,0 +1,52 @@
+#version 450
+
+// 16bit https://github.com/KhronosGroup/GLSL/blob/master/extensions/ext/GL_EXT_shader_16bit_storage.txt
+#extension GL_EXT_shader_16bit_storage: require
+#extension GL_EXT_shader_explicit_arithmetic_types_int16: require
+
+layout (local_size_x = 16, local_size_y = 16) in;
+layout (binding = 0, rgba8) uniform readonly image2D inTex;
+layout (binding = 1, r8) uniform image2D outTex;
+// std140: 3 个 int 后 mat4 自动对齐到 offset 16, 共 80B
+layout (std140, binding = 2) uniform UBO
+{
+	int width;
+	int height;
+	int yuvType;
+	mat4 colorMat;  // 行优先 RGB->YUV, 用法 vec4(rgb,1)*colorMat (向量在左)
+} ubo;
+
+vec4 make_vec4(uint r){
+	float fr = float(r)*0.003921568627f;
+    return vec4(fr,fr,fr,fr);
+}
+
+const uint mask10bit = uint(1023);
+
+void main(){
+	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(inTex);
+    if(uv.x >= size.x/2 || uv.y >= size.y){
+        return;
+    }
+	vec4 rgba1 = imageLoad(inTex,ivec2(uv.x*2,uv.y)).rgba;
+    vec4 rgba2 = imageLoad(inTex,ivec2(uv.x*2+1,uv.y)).rgba;
+	vec4 yuv1 = vec4(rgba1.rgb,1.0) * ubo.colorMat;
+	vec4 yuv2 = vec4(rgba2.rgb,1.0) * ubo.colorMat;
+	uint u = uint((yuv1.y + yuv2.y) / 2.f * mask10bit);
+	uint y = uint(yuv1.x * mask10bit);
+	uint v = uint((yuv1.z + yuv2.z) / 2.f * mask10bit);
+	uint y1 = uint(yuv2.x * mask10bit);
+	// 5个8位,一共40个有效位,对应四个10BIT的值
+	uint b1 = (u >> 2) & 0xFF;
+    uint b2 = ((u << 6) | (y >> 4)) & 0xFF;
+    uint b3 = ((y << 4) | (v >> 6)) & 0xFF;
+    uint b4 = ((v << 2) | (y1 >> 8)) & 0xFF;
+    uint b5 = y1 & 0xFF;
+	// 存入对应五个位置
+	imageStore(outTex, ivec2(uv.x*5,uv.y),make_vec4(b1));
+	imageStore(outTex, ivec2(uv.x*5+1,uv.y),make_vec4(b2));
+	imageStore(outTex, ivec2(uv.x*5+2,uv.y),make_vec4(b3));
+	imageStore(outTex, ivec2(uv.x*5+3,uv.y),make_vec4(b4));
+	imageStore(outTex, ivec2(uv.x*5+4,uv.y),make_vec4(b5));
+}

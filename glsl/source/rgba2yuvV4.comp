@@ -1,0 +1,85 @@
+#version 450
+
+layout (local_size_x = 16, local_size_y = 16) in;
+layout (binding = 0, rgba8) uniform readonly image2D inTex;
+layout (binding = 1, r16ui) uniform uimage2D outTex;
+// std140: 3 个 int 后 mat4 自动对齐到 offset 16, 共 80B
+layout (std140, binding = 2) uniform UBO
+{
+	int width;
+	int height;
+	int yuvType;
+	mat4 colorMat;  // 行优先 RGB->YUV, 用法 vec4(rgb,1)*colorMat (向量在左)
+} ubo;
+
+// 将10bit值写入16位
+void write10bit(ivec2 pos, uint val) {
+	val = val & 1023u;  // 确保10位有效
+	imageStore(outTex, pos, uvec4(val, 0, 0, 0));
+}
+
+// yuv420P10: 平面格式, 10-bit
+// 数据在内存中紧密排列: Y平面(width*height) + U平面(w/2*h/2) + V平面(w/2*h/2)
+void yuv420p10(){
+    ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(inTex);
+    if(uv.x >= size.x/2 || uv.y >= size.y/2){
+        return;
+    }
+	// 输入图像尺寸
+	int width = size.x;
+	int height = size.y;
+	// UV平面尺寸
+	int uvWidth = width / 2;
+	int uvHeight = height / 2;
+	// Y平面大小(像素数)
+	int yPlaneSize = width * height;
+	// U平面大小(像素数)
+	int uvPlaneSize = uvWidth * uvHeight;
+
+	// U和V的线性索引
+	int uvIndex = uv.y * uvWidth + uv.x;
+	// U和V在整个图像中的线性位置
+	int uLinearPos = yPlaneSize + uvIndex;
+	int vLinearPos = yPlaneSize + uvPlaneSize + uvIndex;
+
+	// 转换为2D坐标 (基于输出图像宽度)
+	ivec2 uPos = ivec2(uLinearPos % width, uLinearPos / width);
+	ivec2 vPos = ivec2(vLinearPos % width, vLinearPos / width);
+
+	// 读取4个RGBA像素 (2x2)
+	vec4 rgba1 = imageLoad(inTex, ivec2(uv.x*2, uv.y*2));
+	vec4 rgba2 = imageLoad(inTex, ivec2(uv.x*2+1, uv.y*2));
+	vec4 rgba3 = imageLoad(inTex, ivec2(uv.x*2, uv.y*2+1));
+	vec4 rgba4 = imageLoad(inTex, ivec2(uv.x*2+1, uv.y*2+1));
+
+	// 转换为YUV
+	vec4 yuv1 = vec4(rgba1.rgb, 1.0) * ubo.colorMat;
+	vec4 yuv2 = vec4(rgba2.rgb, 1.0) * ubo.colorMat;
+	vec4 yuv3 = vec4(rgba3.rgb, 1.0) * ubo.colorMat;
+	vec4 yuv4 = vec4(rgba4.rgb, 1.0) * ubo.colorMat;
+
+	// 4:2:0 下采样: 4个Y共享1个U和1个V
+	vec4 yuv = (yuv1 + yuv2 + yuv3 + yuv4) / 4.0f;
+
+	// 量化到10-bit
+	uint y1 = uint(yuv1.x * 1023.f);
+	uint y2 = uint(yuv2.x * 1023.f);
+	uint y3 = uint(yuv3.x * 1023.f);
+	uint y4 = uint(yuv4.x * 1023.f);
+	uint uVal = uint(yuv.y * 1023.f);
+	uint vVal = uint(yuv.z * 1023.f);
+
+	// 写入Y值
+	write10bit(ivec2(uv.x*2, uv.y*2), y1);
+	write10bit(ivec2(uv.x*2+1, uv.y*2), y2);
+	write10bit(ivec2(uv.x*2, uv.y*2+1), y3);
+	write10bit(ivec2(uv.x*2+1, uv.y*2+1), y4);
+	// 写入U和V
+	write10bit(uPos, uVal);
+	write10bit(vPos, vVal);
+}
+
+void main(){
+	yuv420p10();
+}

@@ -1,0 +1,35 @@
+#version 450
+layout(local_size_x=16, local_size_y=16) in;
+
+layout(std430, binding=0) readonly buffer InputBuf { float data[]; };
+layout(rgba8, binding=1) uniform image2D outImage;
+layout(push_constant) uniform Params {
+  int srcWidth;
+  int srcHeight;
+  int dstWidth;
+  int dstHeight;
+};
+
+void main() {
+  ivec2 dstPos = ivec2(gl_GlobalInvocationID.xy);
+  if (dstPos.x >= dstWidth || dstPos.y >= dstHeight) return;
+  // 目标像素在 4x 源图中的浮点坐标
+  float srcX = (float(dstPos.x) + 0.5) * float(srcWidth) / float(dstWidth) - 0.5;
+  float srcY = (float(dstPos.y) + 0.5) * float(srcHeight) / float(dstHeight) - 0.5;
+  // 双线性插值 (从 SSBO NCHW 读)
+  int x0 = max(0, int(floor(srcX)));
+  int y0 = max(0, int(floor(srcY)));
+  int x1 = min(x0 + 1, srcWidth - 1);
+  int y1 = min(y0 + 1, srcHeight - 1);
+  float fx = srcX - float(x0);
+  float fy = srcY - float(y0);
+  int hw = srcWidth * srcHeight;
+  // 四个角的 RGB (NCHW: ch*hw + y*srcWidth + x)
+  vec3 c00 = vec3(data[0*hw+y0*srcWidth+x0], data[1*hw+y0*srcWidth+x0], data[2*hw+y0*srcWidth+x0]);
+  vec3 c10 = vec3(data[0*hw+y0*srcWidth+x1], data[1*hw+y0*srcWidth+x1], data[2*hw+y0*srcWidth+x1]);
+  vec3 c01 = vec3(data[0*hw+y1*srcWidth+x0], data[1*hw+y1*srcWidth+x0], data[2*hw+y1*srcWidth+x0]);
+  vec3 c11 = vec3(data[0*hw+y1*srcWidth+x1], data[1*hw+y1*srcWidth+x1], data[2*hw+y1*srcWidth+x1]);
+  vec3 color = mix(mix(c00, c10, fx), mix(c01, c11, fx), fy);
+  color = clamp(color, 0.0, 1.0);
+  imageStore(outImage, dstPos, vec4(color, 1.0));
+}
