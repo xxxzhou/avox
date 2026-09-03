@@ -1,0 +1,30 @@
+// Anime4K-v4.0-De-Ring-Compute-Statistics
+// Auto-converted from Anime4K GLSL
+// MIT License - Copyright (c) 2019-2021 bloc97
+
+#version 450
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0) uniform sampler2D statsMaxTex;
+layout(binding = 1, r32f) uniform writeonly image2D dstTex;
+layout(std140, binding = 2) uniform UBO {
+	int width;
+	int height;
+} ubo;
+
+void main() {
+	ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
+	if (pos.x >= ubo.width || pos.y >= ubo.height) return;
+
+	vec2 texelSize = 1.0 / vec2(ubo.width, ubo.height);
+	vec2 uv = (vec2(pos) + 0.5) * texelSize;
+
+	// 5-pixel vertical max luma
+	float gmax = 0.0;
+	for (int i = -2; i <= 2; i++) {
+		float luma = texture(statsMaxTex, uv + vec2(0.0, float(i)) * texelSize).r;
+		gmax = max(gmax, luma);
+	}
+
+	imageStore(dstTex, pos, vec4(gmax, 0.0, 0.0, 0.0));
+}

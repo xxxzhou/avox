@@ -1,0 +1,53 @@
+#version 450
+
+// VkPreFontLayer
+layout(local_size_x = 32, local_size_y = 1) in;
+
+layout(binding = 0, r8) uniform readonly image2D  inTex;
+// x,y,width,height 对应纹理坐标和宽高
+layout(binding = 1) buffer charLayout { ivec4 frect[]; };
+// x,y 渲染坐标，其布局在CPU算，然后传入
+layout(binding = 2) buffer uvLayout { ivec2 trect[]; };
+layout(binding = 3, r8) uniform image2D outTex;
+
+layout(binding = 4) uniform UBO {
+  int showCount;
+} ubo;
+
+void main() {
+  int index = int(gl_GlobalInvocationID.x);
+  ivec2 oSize = imageSize(outTex);  
+  if (index >= ubo.showCount) {
+    return;
+  }
+  // 字体对应左上角UV坐标和宽高
+  ivec4 fvu = frect[index];
+  ivec2 tvu = trect[index];
+  // 确保字符渲染区域有效
+  if (fvu.z <= 0 || fvu.w <= 0) {
+    return;
+  }
+  for (int y = 0; y < fvu.w; y++) {
+    for (int x = 0; x < fvu.z; x++) {
+      ivec2 uv = ivec2(fvu.x + x, fvu.y + y);
+      ivec2 xuv = ivec2(tvu.x + x, tvu.y + y);
+      float alpha = imageLoad(inTex, uv).r;   
+      // 确保有效范围
+      ivec2 cuv = ivec2(
+        clamp(xuv.x, 0, oSize.x - 1),
+        clamp(xuv.y, 0, oSize.y - 1)
+      ); 
+      // 避免多个线程同时写入同一像素
+      if (alpha > 0.01) {
+        // 只有一个线程写入该像素
+        float currentAlpha = imageLoad(outTex, cuv).r;
+        if (alpha > currentAlpha) {
+          imageStore(outTex, cuv, vec4(alpha));
+        }
+      }     
+    }
+  }
+  // 添加内存屏障确保所有写入完成
+  memoryBarrierShared();
+	barrier();
+}

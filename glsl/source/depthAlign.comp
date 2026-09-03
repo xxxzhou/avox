@@ -1,0 +1,94 @@
+#version 450
+
+// 对A坐标系的颜色对齐到B坐标系下
+
+layout (local_size_x = 16, local_size_y = 16) in;// gl_WorkGroupSize
+layout (binding = 0, r16ui) uniform readonly uimage2D inTex;
+layout (binding = 1, r16ui) uniform uimage2D outTex;
+
+layout (std140, binding = 2) uniform UBO {  
+    // A光点偏移
+    float intrinPPX;
+    float intrinPPY;
+    // A焦距
+    float intrinFX;
+    float intrinFY;
+    // 同上,B的内矩阵
+    float otherIntrinPPX;
+    float otherIntrinPPY;
+    float otherIntrinFX;
+    float otherIntrinFY;
+    // A相对B的旋转
+    float col00;
+    float col01;
+    float col02;   
+    float col10;
+    float col11;
+    float col12;    
+    float col20;
+    float col21;
+    float col22;
+    // A相对B的位移
+    float transX;
+    float transY;
+    float transZ;
+    // 单位
+    float alignScale;
+} ubo;
+
+void main(){
+    ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(inTex);    
+    ivec2 outSize = imageSize(outTex);
+    if(uv.x >= size.x || uv.y >= size.y){
+        return;
+    }   
+    mat3 rotationMat = mat3(
+        ubo.col00,ubo.col01,ubo.col02,
+        ubo.col10,ubo.col11,ubo.col12,
+        ubo.col20,ubo.col21,ubo.col22
+    ); 
+    vec3 trans = vec3(ubo.transX,ubo.transY,ubo.transZ);
+    vec2 intrinPP = vec2(ubo.intrinPPX,ubo.intrinPPY);
+    vec2 intrinF = vec2(ubo.intrinFX,ubo.intrinFY);
+    vec2 otherIntrinPP = vec2(ubo.otherIntrinPPX,ubo.otherIntrinPPY);
+    vec2 otherIntrinF = vec2(ubo.otherIntrinFX,ubo.otherIntrinFY);
+
+    uint idepth = imageLoad(inTex,uv).r;
+    float depth = ubo.alignScale * idepth;
+    if(depth <=0){
+        return;
+    }
+    // 取深度平面的左上角
+	vec2 depth_pixel = vec2(uv.x - 0.5f, uv.y - 0.5f);
+	// 在焦点面的UV,intrinF像素平面的焦距，intrinPP像素平面中心点
+	vec2 xy = (depth_pixel - intrinPP) / intrinF;
+	// 得到深度空间下的位置信息
+	vec3 depth_point = vec3(xy*depth, depth);
+	// 转到颜色空间下对应的位置信息
+	vec3 other_point = depth_point * rotationMat + trans;
+	// 深度空间转到颜色像素平面
+	vec2 pxy = other_point.xy / other_point.z;
+	vec2 other_pixel = pxy*otherIntrinF + otherIntrinPP;
+	// 颜色像素平面的坐标位置
+	ivec2 other_xy0 = ivec2(other_pixel.x + 0.5f, other_pixel.y + 0.5f);
+
+	// 操作如同上面,取深度平面的右下角
+	depth_pixel = vec2(uv.x + 0.5, uv.y + 0.5f);
+	xy = (depth_pixel - intrinPP) / intrinF;
+	depth_point = vec3(xy*depth, depth);
+	other_point = depth_point * rotationMat + trans;
+	pxy = other_point.xy / other_point.z;
+	other_pixel = pxy*otherIntrinF + otherIntrinPP;    
+	ivec2 other_xy1 = ivec2(other_pixel.x + 0.5f, other_pixel.y + 0.5f);
+
+    for (int y = max(0, other_xy0.y); y <= min(outSize.y, other_xy1.y); ++y){
+		for (int x = max(0, other_xy0.x); x <= min(outSize.x, other_xy1.x); ++x){	
+            uint cdepth = imageLoad(outTex,ivec2(x,y)).r;
+            uint minDepth = cdepth > 0 ? min(cdepth,idepth) : idepth;
+            imageStore(outTex,ivec2(x,y),uvec4(minDepth));
+            // they can only be used on images with the r32i or r32ui formats.
+            // imageAtomicMin(outTex,ivec2(x, y),mdepth);
+		}
+    } 
+}
