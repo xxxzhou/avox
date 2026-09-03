@@ -1,0 +1,4 @@
+// avox_agent Windows 资源 (图标)
+#include "winres.h"
+
+IDI_ICON1   ICON    "avox_agent.ico"
