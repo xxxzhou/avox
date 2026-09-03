@@ -1,0 +1,630 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		E9D9302B2E38703C006D143A /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E9D930222E38703C006D143A /* IOSurface.framework */; };
+		E9DD79B42EFE51AF006548EA /* libwebrtc.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E9DD79B32EFE51AF006548EA /* libwebrtc.a */; };
+		E9DD79B52EFE5BB8006548EA /* libavox.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E9DD79762EFE5182006548EA /* libavox.a */; };
+		E9DD79B62EFE5BF2006548EA /* libavox.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E9EA7FEC2DE6B5A800A84822 /* libavox.a */; };
+		E9DD79B72EFE5BF2006548EA /* libvolk.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E9EA7FF32DE707DE00A84822 /* libvolk.a */; };
+		E9DD79C72EFE5BF3006548EA /* libSDL3.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E9DD79B82EFE5BF2006548EA /* libSDL3.a */; };
+		E9DD79C82EFE5BF3006548EA /* libavutil.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E9DD79B92EFE5BF2006548EA /* libavutil.a */; };
+		E9DD79C92EFE5BF3006548EA /* libavformat.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E9DD79BA2EFE5BF2006548EA /* libavformat.a */; };
+		E9DD79CA2EFE5BF3006548EA /* libmov.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E9DD79BB2EFE5BF2006548EA /* libmov.a */; };
+		E9DD79CB2EFE5BF3006548EA /* libzlmediakit.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E9DD79BC2EFE5BF2006548EA /* libzlmediakit.a */; };
+		E9DD79CC2EFE5BF3006548EA /* libfaad.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E9DD79BD2EFE5BF2006548EA /* libfaad.a */; };
+		E9DD79CD2EFE5BF3006548EA /* libfdk-aac.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E9DD79BE2EFE5BF2006548EA /* libfdk-aac.a */; };
+		E9DD79CE2EFE5BF3006548EA /* libmpeg.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E9DD79BF2EFE5BF2006548EA /* libmpeg.a */; };
+		E9DD79CF2EFE5BF3006548EA /* libfreetyped.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E9DD79C02EFE5BF2006548EA /* libfreetyped.a */; };
+		E9DD79D02EFE5BF3006548EA /* libflv.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E9DD79C12EFE5BF2006548EA /* libflv.a */; };
+		E9DD79D12EFE5BF3006548EA /* libext-codec.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E9DD79C22EFE5BF2006548EA /* libext-codec.a */; };
+		E9DD79D22EFE5BF3006548EA /* libswresample.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E9DD79C32EFE5BF2006548EA /* libswresample.a */; };
+		E9DD79D32EFE5BF3006548EA /* libzltoolkit.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E9DD79C42EFE5BF2006548EA /* libzltoolkit.a */; };
+		E9DD79D42EFE5BF3006548EA /* libavcodec.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E9DD79C52EFE5BF3006548EA /* libavcodec.a */; };
+		E9DD79D52EFE5BF3006548EA /* libmk_api.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E9DD79C62EFE5BF3006548EA /* libmk_api.a */; };
+		E9EA805C2DE70EC500A84822 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E9EA805B2DE70EC500A84822 /* Security.framework */; };
+		E9EA805E2DE70EE400A84822 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E9EA805D2DE70EE400A84822 /* CoreFoundation.framework */; };
+		E9EA80602DE70EEC00A84822 /* CFNetwork.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E9EA805F2DE70EEC00A84822 /* CFNetwork.framework */; };
+		E9EA80622DE70EF200A84822 /* GLKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E9EA80612DE70EF200A84822 /* GLKit.framework */; platformFilter = ios; };
+		E9EA80642DE70F0100A84822 /* OpenGLES.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E9EA80632DE70F0100A84822 /* OpenGLES.framework */; platformFilter = ios; };
+		E9EA80662DE70F0C00A84822 /* CoreMedia.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E9EA80652DE70F0C00A84822 /* CoreMedia.framework */; };
+		E9EA80682DE70F1300A84822 /* CoreVideo.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E9EA80672DE70F1300A84822 /* CoreVideo.framework */; };
+		E9EA806A2DE70F1B00A84822 /* CoreAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E9EA80692DE70F1B00A84822 /* CoreAudio.framework */; };
+		E9EA806C2DE70F2200A84822 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E9EA806B2DE70F2200A84822 /* AVFoundation.framework */; };
+		E9EA806E2DE70F2900A84822 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E9EA806D2DE70F2900A84822 /* CoreGraphics.framework */; };
+		E9EA80702DE70F3100A84822 /* VideoToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E9EA806F2DE70F3100A84822 /* VideoToolbox.framework */; };
+		E9EA80722DE70F3A00A84822 /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E9EA80712DE70F3A00A84822 /* AudioToolbox.framework */; };
+		E9EA80742DE70F4200A84822 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E9EA80732DE70F4200A84822 /* Foundation.framework */; };
+		E9EA80762DE70F4900A84822 /* CoreMotion.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E9EA80752DE70F4900A84822 /* CoreMotion.framework */; };
+		E9EA80782DE70F5000A84822 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E9EA80772DE70F5000A84822 /* UIKit.framework */; };
+		E9EA807A2DE70F5600A84822 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E9EA80792DE70F5600A84822 /* QuartzCore.framework */; };
+		E9EA807C2DE70F5D00A84822 /* CoreBluetooth.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E9EA807B2DE70F5D00A84822 /* CoreBluetooth.framework */; };
+		E9EA807E2DE70F6400A84822 /* GameController.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E9EA807D2DE70F6300A84822 /* GameController.framework */; };
+		E9EA80802DE70F8C00A84822 /* libbz2.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = E9EA807F2DE70F8C00A84822 /* libbz2.tbd */; };
+		E9EA80822DE70F9300A84822 /* libiconv.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = E9EA80812DE70F9300A84822 /* libiconv.tbd */; };
+		E9EA80842DE70FBE00A84822 /* libz.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = E9EA80832DE70FBE00A84822 /* libz.tbd */; };
+		E9EA818D2DE835AA00A84822 /* MoltenVK.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E9EA81842DE835AA00A84822 /* MoltenVK.framework */; };
+		E9EA818E2DE835AA00A84822 /* MoltenVK.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = E9EA81842DE835AA00A84822 /* MoltenVK.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		E9EA81962DEFDC6300A84822 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E9EA81952DEFDC6300A84822 /* Metal.framework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		E9DD79752EFE5182006548EA /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E9EA7ED52DE5A0D300A84822 /* avplay.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 5EE84A3DB323429395428EEF;
+			remoteInfo = avox;
+		};
+		E9EA7FEA2DE6B54400A84822 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E9EA7ED52DE5A0D300A84822 /* avplay.xcodeproj */;
+			proxyType = 1;
+			remoteGlobalIDString = 9333762AFFD24DC7489249B6;
+			remoteInfo = avox;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		E9EA818F2DE835AA00A84822 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				E9EA818E2DE835AA00A84822 /* MoltenVK.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		E9C6978E2EC1C77300FD9FA4 /* libfdk-aac.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = "libfdk-aac.a"; path = "../../../build/ios/fdk-aac/Debug-iphoneos/libfdk-aac.a"; sourceTree = "<group>"; };
+		E9D930222E38703C006D143A /* IOSurface.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = IOSurface.framework; path = System/Library/Frameworks/IOSurface.framework; sourceTree = SDKROOT; };
+		E9DD79B32EFE51AF006548EA /* libwebrtc.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libwebrtc.a; path = ../../../../../webrtc/build/ios/debug/obj/libwebrtc.a; sourceTree = "<group>"; };
+		E9DD79B82EFE5BF2006548EA /* libSDL3.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libSDL3.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libSDL3.a; sourceTree = "<group>"; };
+		E9DD79B92EFE5BF2006548EA /* libavutil.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavutil.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libavutil.a; sourceTree = "<group>"; };
+		E9DD79BA2EFE5BF2006548EA /* libavformat.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavformat.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libavformat.a; sourceTree = "<group>"; };
+		E9DD79BB2EFE5BF2006548EA /* libmov.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libmov.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libmov.a; sourceTree = "<group>"; };
+		E9DD79BC2EFE5BF2006548EA /* libzlmediakit.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libzlmediakit.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libzlmediakit.a; sourceTree = "<group>"; };
+		E9DD79BD2EFE5BF2006548EA /* libfaad.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libfaad.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libfaad.a; sourceTree = "<group>"; };
+		E9DD79BE2EFE5BF2006548EA /* libfdk-aac.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = "libfdk-aac.a"; path = "../../../build/ios/avplay/install/aarch64/Debug/libfdk-aac.a"; sourceTree = "<group>"; };
+		E9DD79BF2EFE5BF2006548EA /* libmpeg.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libmpeg.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libmpeg.a; sourceTree = "<group>"; };
+		E9DD79C02EFE5BF2006548EA /* libfreetyped.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libfreetyped.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libfreetyped.a; sourceTree = "<group>"; };
+		E9DD79C12EFE5BF2006548EA /* libflv.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libflv.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libflv.a; sourceTree = "<group>"; };
+		E9DD79C22EFE5BF2006548EA /* libext-codec.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = "libext-codec.a"; path = "../../../build/ios/avplay/install/aarch64/Debug/libext-codec.a"; sourceTree = "<group>"; };
+		E9DD79C32EFE5BF2006548EA /* libswresample.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libswresample.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libswresample.a; sourceTree = "<group>"; };
+		E9DD79C42EFE5BF2006548EA /* libzltoolkit.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libzltoolkit.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libzltoolkit.a; sourceTree = "<group>"; };
+		E9DD79C52EFE5BF3006548EA /* libavcodec.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavcodec.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libavcodec.a; sourceTree = "<group>"; };
+		E9DD79C62EFE5BF3006548EA /* libmk_api.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libmk_api.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libmk_api.a; sourceTree = "<group>"; };
+		E9EA7ED52DE5A0D300A84822 /* avplay.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; name = avplay.xcodeproj; path = /Volumes/PSSD/work/github/avplay/build/ios/avplay/avplay.xcodeproj; sourceTree = "<absolute>"; };
+		E9EA7FEC2DE6B5A800A84822 /* libavox.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavox.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libavox.a; sourceTree = "<group>"; };
+		E9EA7FF32DE707DE00A84822 /* libvolk.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libvolk.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libvolk.a; sourceTree = "<group>"; };
+		E9EA805B2DE70EC500A84822 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
+		E9EA805D2DE70EE400A84822 /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = System/Library/Frameworks/CoreFoundation.framework; sourceTree = SDKROOT; };
+		E9EA805F2DE70EEC00A84822 /* CFNetwork.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CFNetwork.framework; path = System/Library/Frameworks/CFNetwork.framework; sourceTree = SDKROOT; };
+		E9EA80612DE70EF200A84822 /* GLKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = GLKit.framework; path = System/Library/Frameworks/GLKit.framework; sourceTree = SDKROOT; };
+		E9EA80632DE70F0100A84822 /* OpenGLES.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = OpenGLES.framework; path = System/Library/Frameworks/OpenGLES.framework; sourceTree = SDKROOT; };
+		E9EA80652DE70F0C00A84822 /* CoreMedia.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreMedia.framework; path = System/Library/Frameworks/CoreMedia.framework; sourceTree = SDKROOT; };
+		E9EA80672DE70F1300A84822 /* CoreVideo.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreVideo.framework; path = System/Library/Frameworks/CoreVideo.framework; sourceTree = SDKROOT; };
+		E9EA80692DE70F1B00A84822 /* CoreAudio.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudio.framework; path = System/Library/Frameworks/CoreAudio.framework; sourceTree = SDKROOT; };
+		E9EA806B2DE70F2200A84822 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
+		E9EA806D2DE70F2900A84822 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
+		E9EA806F2DE70F3100A84822 /* VideoToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = VideoToolbox.framework; path = System/Library/Frameworks/VideoToolbox.framework; sourceTree = SDKROOT; };
+		E9EA80712DE70F3A00A84822 /* AudioToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AudioToolbox.framework; path = System/Library/Frameworks/AudioToolbox.framework; sourceTree = SDKROOT; };
+		E9EA80732DE70F4200A84822 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
+		E9EA80752DE70F4900A84822 /* CoreMotion.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreMotion.framework; path = System/Library/Frameworks/CoreMotion.framework; sourceTree = SDKROOT; };
+		E9EA80772DE70F5000A84822 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
+		E9EA80792DE70F5600A84822 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
+		E9EA807B2DE70F5D00A84822 /* CoreBluetooth.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreBluetooth.framework; path = System/Library/Frameworks/CoreBluetooth.framework; sourceTree = SDKROOT; };
+		E9EA807D2DE70F6300A84822 /* GameController.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = GameController.framework; path = System/Library/Frameworks/GameController.framework; sourceTree = SDKROOT; };
+		E9EA807F2DE70F8C00A84822 /* libbz2.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libbz2.tbd; path = usr/lib/libbz2.tbd; sourceTree = SDKROOT; };
+		E9EA80812DE70F9300A84822 /* libiconv.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libiconv.tbd; path = usr/lib/libiconv.tbd; sourceTree = SDKROOT; };
+		E9EA80832DE70FBE00A84822 /* libz.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libz.tbd; path = usr/lib/libz.tbd; sourceTree = SDKROOT; };
+		E9EA80852DE712DF00A84822 /* testbed.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = testbed.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E9EA81842DE835AA00A84822 /* MoltenVK.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MoltenVK.framework; path = ../../../build/ios/avplay/install/aarch64/MoltenVK.framework; sourceTree = "<group>"; };
+		E9EA81952DEFDC6300A84822 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		E9DD79102EEAD587006548EA /* Exceptions for "testbed" folder in "testbed" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = E9D651BB2DDC689800B57B12 /* testbed */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		E9D651BE2DDC689800B57B12 /* testbed */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				E9DD79102EEAD587006548EA /* Exceptions for "testbed" folder in "testbed" target */,
+			);
+			path = testbed;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		E9D651B92DDC689800B57B12 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E9DD79C72EFE5BF3006548EA /* libSDL3.a in Frameworks */,
+				E9DD79C82EFE5BF3006548EA /* libavutil.a in Frameworks */,
+				E9DD79C92EFE5BF3006548EA /* libavformat.a in Frameworks */,
+				E9DD79CA2EFE5BF3006548EA /* libmov.a in Frameworks */,
+				E9DD79CB2EFE5BF3006548EA /* libzlmediakit.a in Frameworks */,
+				E9DD79CC2EFE5BF3006548EA /* libfaad.a in Frameworks */,
+				E9DD79CD2EFE5BF3006548EA /* libfdk-aac.a in Frameworks */,
+				E9DD79CE2EFE5BF3006548EA /* libmpeg.a in Frameworks */,
+				E9DD79CF2EFE5BF3006548EA /* libfreetyped.a in Frameworks */,
+				E9DD79D02EFE5BF3006548EA /* libflv.a in Frameworks */,
+				E9DD79D12EFE5BF3006548EA /* libext-codec.a in Frameworks */,
+				E9DD79D22EFE5BF3006548EA /* libswresample.a in Frameworks */,
+				E9DD79D32EFE5BF3006548EA /* libzltoolkit.a in Frameworks */,
+				E9DD79D42EFE5BF3006548EA /* libavcodec.a in Frameworks */,
+				E9DD79D52EFE5BF3006548EA /* libmk_api.a in Frameworks */,
+				E9DD79B62EFE5BF2006548EA /* libavox.a in Frameworks */,
+				E9DD79B72EFE5BF2006548EA /* libvolk.a in Frameworks */,
+				E9DD79B52EFE5BB8006548EA /* libavox.a in Frameworks */,
+				E9DD79B42EFE51AF006548EA /* libwebrtc.a in Frameworks */,
+				E9D9302B2E38703C006D143A /* IOSurface.framework in Frameworks */,
+				E9EA81962DEFDC6300A84822 /* Metal.framework in Frameworks */,
+				E9EA818D2DE835AA00A84822 /* MoltenVK.framework in Frameworks */,
+				E9EA80842DE70FBE00A84822 /* libz.tbd in Frameworks */,
+				E9EA80802DE70F8C00A84822 /* libbz2.tbd in Frameworks */,
+				E9EA80822DE70F9300A84822 /* libiconv.tbd in Frameworks */,
+				E9EA807E2DE70F6400A84822 /* GameController.framework in Frameworks */,
+				E9EA807C2DE70F5D00A84822 /* CoreBluetooth.framework in Frameworks */,
+				E9EA807A2DE70F5600A84822 /* QuartzCore.framework in Frameworks */,
+				E9EA80782DE70F5000A84822 /* UIKit.framework in Frameworks */,
+				E9EA80762DE70F4900A84822 /* CoreMotion.framework in Frameworks */,
+				E9EA80742DE70F4200A84822 /* Foundation.framework in Frameworks */,
+				E9EA80722DE70F3A00A84822 /* AudioToolbox.framework in Frameworks */,
+				E9EA80702DE70F3100A84822 /* VideoToolbox.framework in Frameworks */,
+				E9EA806E2DE70F2900A84822 /* CoreGraphics.framework in Frameworks */,
+				E9EA806C2DE70F2200A84822 /* AVFoundation.framework in Frameworks */,
+				E9EA806A2DE70F1B00A84822 /* CoreAudio.framework in Frameworks */,
+				E9EA80682DE70F1300A84822 /* CoreVideo.framework in Frameworks */,
+				E9EA80662DE70F0C00A84822 /* CoreMedia.framework in Frameworks */,
+				E9EA80642DE70F0100A84822 /* OpenGLES.framework in Frameworks */,
+				E9EA80622DE70EF200A84822 /* GLKit.framework in Frameworks */,
+				E9EA80602DE70EEC00A84822 /* CFNetwork.framework in Frameworks */,
+				E9EA805E2DE70EE400A84822 /* CoreFoundation.framework in Frameworks */,
+				E9EA805C2DE70EC500A84822 /* Security.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		E9D651B32DDC689800B57B12 = {
+			isa = PBXGroup;
+			children = (
+				E9D651BE2DDC689800B57B12 /* testbed */,
+				E9D651BD2DDC689800B57B12 /* Products */,
+				E9EA7ED52DE5A0D300A84822 /* avplay.xcodeproj */,
+				E9EA7FE32DE6B1F600A84822 /* Frameworks */,
+			);
+			sourceTree = "<group>";
+		};
+		E9D651BD2DDC689800B57B12 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				E9EA80852DE712DF00A84822 /* testbed.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		E9EA7ED82DE5A0D300A84822 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				E9DD79762EFE5182006548EA /* libavox.a */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		E9EA7FE32DE6B1F600A84822 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				E9DD79C52EFE5BF3006548EA /* libavcodec.a */,
+				E9DD79BA2EFE5BF2006548EA /* libavformat.a */,
+				E9DD79B92EFE5BF2006548EA /* libavutil.a */,
+				E9DD79C22EFE5BF2006548EA /* libext-codec.a */,
+				E9DD79BD2EFE5BF2006548EA /* libfaad.a */,
+				E9DD79BE2EFE5BF2006548EA /* libfdk-aac.a */,
+				E9DD79C12EFE5BF2006548EA /* libflv.a */,
+				E9DD79C02EFE5BF2006548EA /* libfreetyped.a */,
+				E9DD79C62EFE5BF3006548EA /* libmk_api.a */,
+				E9DD79BB2EFE5BF2006548EA /* libmov.a */,
+				E9DD79BF2EFE5BF2006548EA /* libmpeg.a */,
+				E9DD79B82EFE5BF2006548EA /* libSDL3.a */,
+				E9DD79C32EFE5BF2006548EA /* libswresample.a */,
+				E9DD79BC2EFE5BF2006548EA /* libzlmediakit.a */,
+				E9DD79C42EFE5BF2006548EA /* libzltoolkit.a */,
+				E9DD79B32EFE51AF006548EA /* libwebrtc.a */,
+				E9C6978E2EC1C77300FD9FA4 /* libfdk-aac.a */,
+				E9D930222E38703C006D143A /* IOSurface.framework */,
+				E9EA81952DEFDC6300A84822 /* Metal.framework */,
+				E9EA81842DE835AA00A84822 /* MoltenVK.framework */,
+				E9EA80832DE70FBE00A84822 /* libz.tbd */,
+				E9EA80812DE70F9300A84822 /* libiconv.tbd */,
+				E9EA807F2DE70F8C00A84822 /* libbz2.tbd */,
+				E9EA807D2DE70F6300A84822 /* GameController.framework */,
+				E9EA807B2DE70F5D00A84822 /* CoreBluetooth.framework */,
+				E9EA80792DE70F5600A84822 /* QuartzCore.framework */,
+				E9EA80772DE70F5000A84822 /* UIKit.framework */,
+				E9EA80752DE70F4900A84822 /* CoreMotion.framework */,
+				E9EA80732DE70F4200A84822 /* Foundation.framework */,
+				E9EA80712DE70F3A00A84822 /* AudioToolbox.framework */,
+				E9EA806F2DE70F3100A84822 /* VideoToolbox.framework */,
+				E9EA806D2DE70F2900A84822 /* CoreGraphics.framework */,
+				E9EA806B2DE70F2200A84822 /* AVFoundation.framework */,
+				E9EA80692DE70F1B00A84822 /* CoreAudio.framework */,
+				E9EA80672DE70F1300A84822 /* CoreVideo.framework */,
+				E9EA80652DE70F0C00A84822 /* CoreMedia.framework */,
+				E9EA80632DE70F0100A84822 /* OpenGLES.framework */,
+				E9EA80612DE70EF200A84822 /* GLKit.framework */,
+				E9EA805F2DE70EEC00A84822 /* CFNetwork.framework */,
+				E9EA805D2DE70EE400A84822 /* CoreFoundation.framework */,
+				E9EA805B2DE70EC500A84822 /* Security.framework */,
+				E9EA7FF32DE707DE00A84822 /* libvolk.a */,
+				E9EA7FEC2DE6B5A800A84822 /* libavox.a */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		E9D651BB2DDC689800B57B12 /* testbed */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E9D651D42DDC689900B57B12 /* Build configuration list for PBXNativeTarget "testbed" */;
+			buildPhases = (
+				E9D651B82DDC689800B57B12 /* Sources */,
+				E9D651B92DDC689800B57B12 /* Frameworks */,
+				E9D651BA2DDC689800B57B12 /* Resources */,
+				E9EA818F2DE835AA00A84822 /* Embed Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				E9EA7FEB2DE6B54400A84822 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				E9D651BE2DDC689800B57B12 /* testbed */,
+			);
+			name = testbed;
+			productName = testbed;
+			productReference = E9EA80852DE712DF00A84822 /* testbed.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		E9D651B42DDC689800B57B12 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastUpgradeCheck = 1620;
+				TargetAttributes = {
+					E9D651BB2DDC689800B57B12 = {
+						CreatedOnToolsVersion = 16.2;
+					};
+				};
+			};
+			buildConfigurationList = E9D651B72DDC689800B57B12 /* Build configuration list for PBXProject "testbed" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = E9D651B32DDC689800B57B12;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = E9D651BD2DDC689800B57B12 /* Products */;
+			projectDirPath = "";
+			projectReferences = (
+				{
+					ProductGroup = E9EA7ED82DE5A0D300A84822 /* Products */;
+					ProjectRef = E9EA7ED52DE5A0D300A84822 /* avplay.xcodeproj */;
+				},
+			);
+			projectRoot = "";
+			targets = (
+				E9D651BB2DDC689800B57B12 /* testbed */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXReferenceProxy section */
+		E9DD79762EFE5182006548EA /* libavox.a */ = {
+			isa = PBXReferenceProxy;
+			fileType = archive.ar;
+			path = libavox.a;
+			remoteRef = E9DD79752EFE5182006548EA /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+/* End PBXReferenceProxy section */
+
+/* Begin PBXResourcesBuildPhase section */
+		E9D651BA2DDC689800B57B12 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		E9D651B82DDC689800B57B12 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		E9EA7FEB2DE6B54400A84822 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = avox;
+			targetProxy = E9EA7FEA2DE6B54400A84822 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		E9D651D52DDC689900B57B12 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Y96Y9F6CFS;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"Volumes/PSSD/work/github/avplay/build/ios/avplay/install/aarch64/**",
+					/Volumes/PSSD/work/github/avplay/build/ios/avplay/install/include,
+				);
+				GCC_C_LANGUAGE_STANDARD = c17;
+				GCC_INPUT_FILETYPE = automatic;
+				GCC_PREPROCESSOR_DEFINITIONS = AVOX_ENABLE_SDL;
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					/Volumes/PSSD/work/github/avplay/build/ios/avplay/install/include,
+				);
+				INFOPLIST_FILE = testbed/Info.plist;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UIMainStoryboardFile = Main;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				LIBRARY_SEARCH_PATHS = (
+					/Volumes/PSSD/work/github/avplay/build/ios/avplay/install/aarch64/Debug,
+					"$(PROJECT_DIR)/Frameworks",
+					"$(PROJECT_DIR)/lib",
+					"$(PROJECT_DIR)",
+					/Volumes/PSSD/work/webrtc/build/ios/debug/obj,
+					/Volumes/PSSD/work/github/avplay/3rdparty/library/ios/ffmpeg/lib,
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = "-ObjC";
+				PRODUCT_BUNDLE_IDENTIFIER = "-.2.3.testbed";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		E9D651D62DDC689900B57B12 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Y96Y9F6CFS;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"Volumes/PSSD/work/github/avplay/build/ios/avplay/install/aarch64/**",
+					/Volumes/PSSD/work/github/avplay/build/ios/avplay/install/include,
+				);
+				GCC_C_LANGUAGE_STANDARD = c17;
+				GCC_INPUT_FILETYPE = automatic;
+				GCC_PREPROCESSOR_DEFINITIONS = AVOX_ENABLE_SDL;
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					/Volumes/PSSD/work/github/avplay/build/ios/avplay/install/include,
+				);
+				INFOPLIST_FILE = testbed/Info.plist;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UIMainStoryboardFile = Main;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				LIBRARY_SEARCH_PATHS = (
+					/Volumes/PSSD/work/github/avplay/build/ios/avplay/install/aarch64/Release,
+					"$(PROJECT_DIR)/Frameworks",
+					"$(PROJECT_DIR)/lib",
+					"$(PROJECT_DIR)",
+					/Volumes/PSSD/work/webrtc/build/ios/release/obj,
+					/Volumes/PSSD/work/github/avplay/3rdparty/library/ios/ffmpeg/lib,
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = "-ObjC";
+				PRODUCT_BUNDLE_IDENTIFIER = "-.2.3.testbed";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		E9D651D72DDC689900B57B12 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_NS_ASSERTIONS = YES;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				FRAMEWORK_SEARCH_PATHS = "/Volumes/PSSD/work/github/avplay/build/ios/avplay/install/aarch64/**";
+				GCC_C_LANGUAGE_STANDARD = c17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_INPUT_FILETYPE = automatic;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = "\"<Multiple values>\"";
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+			};
+			name = Debug;
+		};
+		E9D651D82DDC689900B57B12 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = YES;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				FRAMEWORK_SEARCH_PATHS = "/Volumes/PSSD/work/github/avplay/build/ios/avplay/install/aarch64/**";
+				GCC_C_LANGUAGE_STANDARD = c17;
+				GCC_INPUT_FILETYPE = automatic;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_PREPROCESSOR_DEFINITIONS = "\"<Multiple values>\"";
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		E9D651B72DDC689800B57B12 /* Build configuration list for PBXProject "testbed" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E9D651D72DDC689900B57B12 /* Debug */,
+				E9D651D82DDC689900B57B12 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E9D651D42DDC689900B57B12 /* Build configuration list for PBXNativeTarget "testbed" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E9D651D52DDC689900B57B12 /* Debug */,
+				E9D651D62DDC689900B57B12 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = E9D651B42DDC689800B57B12 /* Project object */;
+}
