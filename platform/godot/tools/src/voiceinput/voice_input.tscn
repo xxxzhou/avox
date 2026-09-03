@@ -1,0 +1,8 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/voiceinput/voice_input.gd" id="1_v"]
+
+[node name="VoiceInput" type="Window"]
+title = "语音输入"
+size = Vector2i(236, 34)
+script = ExtResource("1_v")
