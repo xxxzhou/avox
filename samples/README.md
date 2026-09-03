@@ -1,3 +1,3 @@
-# samples
+# 功能测试
 
-Demo applications (player demo, plugin smoke tests). Unit tests live in tests/.
+此samples主要是为了测试功能是否正常，是否正常实现。
