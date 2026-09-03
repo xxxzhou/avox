@@ -20,7 +20,7 @@ Third generation of my media engine line:
 - **Plugins carry capabilities** — device capture, broadcast IO, AI modules load as
   plugins; the core stays small and media-pure.
 
-See [docs/architecture.md](docs/architecture.md) and [plugins/README.md](plugins/README.md).
+See [doc/architecture.md](doc/architecture.md) and [plugins/README.md](plugins/README.md).
 
 ## Build
 

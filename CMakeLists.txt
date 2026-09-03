@@ -14,7 +14,7 @@ option(AVOX_BUILD_TESTS    "Build avox tests"                      ON)
 option(AVOX_ENABLE_VULKAN  "Build the Vulkan GPU pipeline module"  OFF)
 option(AVOX_ENABLE_PLUGINS "Build bundled source plugins"          OFF)
 
-add_subdirectory(core)
+add_subdirectory(src)
 
 if(AVOX_BUILD_TESTS)
   enable_testing()

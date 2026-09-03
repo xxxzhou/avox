@@ -1,4 +1,4 @@
-#include <avox/version.h>
+#include <avox/AvoxVersion.h>
 
 #include <gtest/gtest.h>
 
