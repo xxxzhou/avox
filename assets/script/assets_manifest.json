@@ -1,0 +1,362 @@
+{
+  "version": 3,
+  "description": "avox 插件运行时资源清单（唯一权威）。统一脚本 fetch_assets.py 读取本文件执行下载/解压/转发。仅收录【运行时】所需资源: AI 模型 (平台无关) + 运行时动态库 (平台相关, 见 item.platforms); 不含 .lib/静态库/链接期产物。后期新增只需追加一条 item。",
+  "usage": "python assets/script/fetch_assets.py --list            # 列出全部及就绪状态 (当前平台)\n        python assets/script/fetch_assets.py --list --platform linux   # 指定平台视角\n        python assets/script/fetch_assets.py --interactive   # 交互式多选\n        python assets/script/fetch_assets.py --select sherpa_sense_voice,inpaint_lama\n        python assets/script/fetch_assets.py --plugin avox_sherpa --all\n        python assets/script/fetch_assets.py --list --json    # 供 avox_cmd 内置 python 执行器调用",
+  "sources": {
+    "avox_model": {
+      "repo": "https://github.com/xxxzhou/avox_model",
+      "role": "AI 模型仓库",
+      "note": "模型平台无关。inpaint 模型为 git-lfs 单文件 (github.com/<repo>/raw/<branch>/<path> 取真实内容); stt 模型为 release zip (解压后扁平无顶层目录); translation 为已量化 int8 的 git-lfs 文件。本仓库未收录 OCR 与 AOT-GAN。"
+    },
+    "avc_library": {
+      "repo": "https://github.com/xxxzhou/avc_library",
+      "role": "第三方预编译库仓库",
+      "note": "平台覆盖: windows (onnxruntime.dll + opencv_world4130.dll, 均动态) + android (onnxruntime 为静态库, 无运行时独立 DLL); 暂未收录 linux/ios。windows DLL 位于 3rdparty/library/windows/<库>/... (onnxruntime.dll 真实文件, opencv_world4130.dll 为 git-lfs)。完整开发库 (含 .lib/头文件) 请 git clone 到 ../avc_library 供 CMake 构建用, 本清单只取运行时 DLL。"
+    }
+  },
+  "conventions": {
+    "dest": "所有 dest 相对 --root (默认仓库根)。模型 -> assets/models/<功能>/ (开发期下到仓库, 构建 CMake 复制 stt/translation 到输出); 运行时 DLL -> plugins/ (运行时 avox 从 avox.dll 同级 plugins/ 加载)。",
+    "runtime_root": "下载运行时 DLL 时, 请用 --root 指向运行时部署根 (avox.dll/avox_cli.exe 所在目录, 如 build/.../install/AMD64/Release), 勿用仓库根以免污染源码 plugins/ 目录。",
+    "runtime_lookup": "运行时模型根 = avox.dll 同级 assets/models/ (Android 为 APK assets, iOS 为 bundle); 插件/第三方 DLL = avox.dll 同级 plugins/ (LoadLibraryEx 搜索该目录)。",
+    "static_libs_excluded": "按设计, .lib/.a 静态/导入库与 sentencepiece (静态链入, 无独立 DLL) 不收录——它们是构建期产物, 非运行时部署资源。Android/iOS 的 onnxruntime/sherpa 为静态库, 同理不作为运行时 DLL 项。",
+    "platforms": "库项按平台区分: item.platforms.<windows|linux|android|ios> 各含 files/verify_files/note, 必要时可覆盖 method (如某平台为静态库或未收录时标 manual)。模型项无 platforms 字段 = 全平台通用。脚本用 --platform 选择 (默认按 sys.platform 自动检测: windows/linux/macos)。"
+  },
+  "items": [
+    {
+      "id": "inpaint_lama",
+      "name": "LaMa 图像修复模型",
+      "plugin": "avox_cv",
+      "type": "model",
+      "method": "download",
+      "dest": "assets/models/inpaint",
+      "source": "avox_model git-lfs",
+      "files": [
+        { "url": "https://github.com/xxxzhou/avox_model/raw/main/assets/models/inpaint/lama_base.onnx", "name": "lama_base.onnx", "size_mb": 198, "sha256": "1faef5301d78db7dda502fe59966957ec4b79dd64e16f03ed96913c7a4eb68d6" }
+      ],
+      "verify_files": ["lama_base.onnx"],
+      "note": "fp32 双输入 (image/mask) 修复模型, inpaint 默认修复器。mini/base/high 三档均映射本文件。"
+    },
+    {
+      "id": "inpaint_yolo",
+      "name": "YOLO26-Seg 水印分割模型 (训练好, base 档)",
+      "plugin": "avox_cv",
+      "type": "model",
+      "method": "download",
+      "dest": "assets/models/inpaint",
+      "source": "avox_model git-lfs",
+      "files": [
+        { "url": "https://github.com/xxxzhou/avox_model/raw/main/assets/models/inpaint/yolo26m-seg_watermark.onnx", "name": "yolo26m-seg_watermark.onnx", "size_mb": 90, "sha256": "ca42b56e9472ba9e77c8703114b9ee379561810cccb9c2e57e8c18f3a7f44613" }
+      ],
+      "verify_files": ["yolo26m-seg_watermark.onnx"],
+      "note": "训练好的 base 档 YOLO26-Seg 分割模型, 直接可用于 C++ 推理 (无需训练/导出)。水印检测用; 仅做修复可只下 inpaint_lama。"
+    },
+    {
+      "id": "inpaint_aotgan",
+      "name": "AOT-GAN 图像修复模型",
+      "plugin": "avox_cv",
+      "type": "model",
+      "method": "manual",
+      "dest": "assets/models/inpaint/aotgan-onnx-float",
+      "source_ref": "avox_model 未收录; 仓库内无下载脚本与公开源 (约 50MB)",
+      "files_expected": ["aotgan.onnx"],
+      "note": "可选修复器 (setInpaintMode(aotgan))。不下载也能用, 默认走 LaMa。"
+    },
+    {
+      "id": "ocr_ppocrv6",
+      "name": "PP-OCRv6 文字识别 (det + rec + 字典)",
+      "plugin": "avox_ocr",
+      "type": "model",
+      "method": "download",
+      "dest": "assets/models/ocr",
+      "source": "avox_model git-lfs",
+      "files": [
+        { "url": "https://github.com/xxxzhou/avox_model/raw/main/assets/models/ocr/ch_PP-OCRv6_det.onnx", "name": "ch_PP-OCRv6_det.onnx", "size_mb": 59, "sha256": "eb13b44b25bb36f89528b68720af8a61d9cf381176107f465db1757b65d086e1" },
+        { "url": "https://github.com/xxxzhou/avox_model/raw/main/assets/models/ocr/ch_PP-OCRv6_rec.onnx", "name": "ch_PP-OCRv6_rec.onnx", "size_mb": 20, "sha256": "5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634" },
+        { "url": "https://github.com/xxxzhou/avox_model/raw/main/assets/models/ocr/ppocr_keys_v1.txt", "name": "ppocr_keys_v1.txt", "sha256": "d051391881962ec266c4b4ee7b6a493fa2aeabaa2cd9ee369148cf3f6980af99" }
+      ],
+      "verify_files": ["ch_PP-OCRv6_det.onnx", "ch_PP-OCRv6_rec.onnx", "ppocr_keys_v1.txt"],
+      "note": "det = 文字检测 (DBNet, 59MB), rec = 文字识别 (CRNN+CTC, 20MB), ppocr_keys_v1.txt = 字典 (74KB)。avox_model 另有 layout_inference.pdmodel 但内容为 'Entry not found' 无效占位, 已跳过。"
+    },
+    {
+      "id": "sherpa_zh_en",
+      "name": "sherpa 流式中英 STT (zipformer-bilingual-zh-en)",
+      "plugin": "avox_sherpa",
+      "type": "model",
+      "method": "download",
+      "dest": "assets/models/stt/zh-en",
+      "source": "avox_model release stt-zh-en",
+      "files": [
+        { "url": "https://github.com/xxxzhou/avox_model/releases/download/stt-zh-en/stt-zh-en.zip", "size_mb": 168, "sha256": "1eef6af0f94feace5650c38fbedb0286c69320e7b8fbf57e62c3bc69692ae23f" }
+      ],
+      "archive": { "format": "zip", "flatten": false },
+      "verify_files": [
+        "encoder-epoch-99-avg-1.int8.onnx",
+        "decoder-epoch-99-avg-1.onnx",
+        "joiner-epoch-99-avg-1.int8.onnx",
+        "tokens.txt"
+      ],
+      "note": "Transducer encoder/joiner (int8) + decoder (fp32) + tokens。zip 内扁平无顶层目录。用于 SherpaRecognizer 流式模式。"
+    },
+    {
+      "id": "sherpa_sense_voice",
+      "name": "sherpa 离线多语言 STT (SenseVoice + Silero VAD)",
+      "plugin": "avox_sherpa",
+      "type": "model",
+      "method": "download",
+      "dest": "assets/models/stt/sense-voice",
+      "source": "avox_model release stt-sense-voice",
+      "files": [
+        { "url": "https://github.com/xxxzhou/avox_model/releases/download/stt-sense-voice/stt-sense-voice.zip", "size_mb": 153, "sha256": "11152a86af239e8377fabc5ff059b139fa4d6495b2a64f329df186af90de17ed" }
+      ],
+      "archive": { "format": "zip", "flatten": false },
+      "verify_files": ["model.int8.onnx", "tokens.txt", "silero_vad.onnx"],
+      "note": "SenseVoice (中/英/日/韩/粤, 带 ITN 标点) + Silero VAD。zip 内扁平。用于 SherpaSenseVoice 离线模式。"
+    },
+    {
+      "id": "sherpa_tts_kokoro",
+      "name": "sherpa Kokoro TTS (中英多语言神经网络语音合成, 53 speakers)",
+      "plugin": "avox_sherpa",
+      "type": "model",
+      "method": "download",
+      "dest": "assets/models/tts/kokoro",
+      "source": "sherpa-onnx 官方 tts-models release (kokoro-multi-lang-v1_0, 24kHz)",
+      "files": [
+        { "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2", "size_mb": 327, "sha256": "c133d26353d776da730870dac7da07dbfc9a5e3bc80cc5e8e83ab6e823be7046" }
+      ],
+      "archive": { "format": "tarbz2", "flatten": false, "strip": 1 },
+      "verify_files": ["model.onnx", "voices.bin", "tokens.txt", "espeak-ng-data"],
+      "note": "Kokoro v1.0 多语言 TTS (zh/en, 53 说话人, 24000Hz), Agent 虚拟人语音合成首选。tar.bz2 含顶层目录 kokoro-multi-lang-v1_0/ (strip=1 剥离); 内: model.onnx (310M) + voices.bin (26M) + tokens.txt (687B) + espeak-ng-data/ + dict/ + lexicon-{zh,us-en,gb-en}.txt + {number,date,phone}-zh.fst。SherpaTts 经 sherpa-onnx C API 加载, data_dir=espeak-ng-data + lexicon=lexicon-us-en.txt,lexicon-zh.txt (逗号分隔; 中文音素前端必带 lexicon-zh.txt, 否则中文无声 issue #2248); dict_dir 不需。sha256 待首次下载后回填 (官方未提供)。"
+    },
+    {
+      "id": "translation_opus_mt",
+      "name": "opus-mt-ja-zh 日中翻译 (已量化 INT8)",
+      "plugin": "avox_translation",
+      "type": "model",
+      "method": "download",
+      "dest": "assets/models/translation/opus-mt-ja-zh",
+      "source": "avox_model git-lfs",
+      "files": [
+        { "url": "https://github.com/xxxzhou/avox_model/raw/main/assets/models/translation/opus-mt-ja-zh/encoder_model_int8.onnx", "name": "encoder_model_int8.onnx", "size_mb": 50, "sha256": "9a9d4e292e1d489dd927a413abc2f1b5dba8c58175df7ae0b55805d524b97562" },
+        { "url": "https://github.com/xxxzhou/avox_model/raw/main/assets/models/translation/opus-mt-ja-zh/decoder_model_int8.onnx", "name": "decoder_model_int8.onnx", "size_mb": 88, "sha256": "a2ded9361af122ea3bf87e04e9bbf534bf4798b218cb941be7ca1fa29a167511" },
+        { "url": "https://github.com/xxxzhou/avox_model/raw/main/assets/models/translation/opus-mt-ja-zh/source.spm", "name": "source.spm", "size_mb": 1.3, "sha256": "25103859c8bbbe317e69b07551c55c53dc7943eebf078c56fbf5bc7f96d63289" },
+        { "url": "https://github.com/xxxzhou/avox_model/raw/main/assets/models/translation/opus-mt-ja-zh/target.spm", "name": "target.spm", "size_mb": 1.3, "sha256": "fe81460cde65383464718c26789ff8c5d818719c3f2c2c3cd36f42532579c56e" }
+      ],
+      "verify_files": ["encoder_model_int8.onnx", "decoder_model_int8.onnx", "source.spm", "target.spm"],
+      "note": "已量化 INT8, 无需 optimum 导出/WSL 量化。C++ 仅加载这 4 个文件。release 的 translation-opus-mt-ja-zh.zip 是 HuggingFace cache 脏结构故不用, 改逐文件 LFS 取。"
+    },
+    {
+      "id": "quality_realesrgan_x4v3",
+      "name": "Real-ESRGAN general-x4v3 画质增强模型",
+      "plugin": "avox_vulkan",
+      "type": "model",
+      "method": "download",
+      "dest": "assets/models/quality",
+      "source": "avox_model (普通 git 文件, 4.6MB 无需 LFS)",
+      "files": [
+        { "url": "https://github.com/xxxzhou/avox_model/raw/main/assets/models/quality/realesrgan-general-x4v3.onnx", "name": "realesrgan-general-x4v3.onnx", "size_mb": 4.6, "sha256": "3a26ad82f4a6e9f24dd4d8b46bb655cc81b12e4687d100fa50ca97ac13c0f930" }
+      ],
+      "verify_files": ["realesrgan-general-x4v3.onnx"],
+      "note": "Real-ESRGAN 轻量通用盲退化 SR (1.21M 参数, float ONNX)。已导出好直接加载, 客户侧无需转换 (export_onnx.py 仅开发期从 .pth 导出)。VkQEnhanceLayer 经 OpenVINO GPU FP16 推理 (Intel iGPU Upscale2x ~540ms / Restore ~131ms); avox_openvino plugin 未装时自动降级 ORT CPU。文件小走普通 git, 不走 LFS。"
+    },
+    {
+      "id": "avatar_wav2arkit",
+      "name": "wav2arkit 音频→ARKit52 blendshape (虚拟人口型)",
+      "plugin": "avox_avatar",
+      "type": "model",
+      "method": "download",
+      "dest": "assets/models/avatar",
+      "source": "HuggingFace myned-ai/wav2arkit_cpu (Apache-2.0)",
+      "files": [
+        { "url": "https://huggingface.co/myned-ai/wav2arkit_cpu/resolve/main/wav2arkit_cpu.onnx", "name": "wav2arkit_cpu.onnx", "size_mb": 1.8, "sha256": "cdecbfad3915dd20b2f0718942d0b8894b2ee11edcc5a9a9da45d29a46af2ed9" },
+        { "url": "https://huggingface.co/myned-ai/wav2arkit_cpu/resolve/main/wav2arkit_cpu.onnx.data", "name": "wav2arkit_cpu.onnx.data", "size_mb": 383.4, "sha256": "c0f0364673c6e50be126b193e2b56809c16ac6bee4805aea9b8251ce53429bf8" }
+      ],
+      "verify_files": ["wav2arkit_cpu.onnx", "wav2arkit_cpu.onnx.data"],
+      "note": "wav2vec2-base 微调: 16kHz mono float32 PCM [1,N] → ARKit52 blendshape [1,frames,52] (30fps)。两文件必须同目录部署: .onnx (1.8M, 仅计算图) + .onnx.data (383M, 外部权重, ORT 同目录自动加载)。CPU 推理 ~45ms/秒 (22x 实时)。接口 IAudioFace 可替换 (换 LAM/NeuroSync 只改 avox_avatar 内部 + 本条目)。源在 HuggingFace 非 avox_model 仓库; 下载由上层 fetch 适配 HF resolve URL (302→CDN), 开发期已下到 assets/models/avatar/。license: Apache-2.0。"
+    },
+    {
+      "id": "avatar_mediapipe_landmarker",
+      "name": "MediaPipe 视频驱动: 人脸 landmarker (图→478 landmarks)",
+      "plugin": "avox_avatar",
+      "type": "model",
+      "method": "download",
+      "dest": "assets/models/avatar",
+      "source": "HuggingFace takoyakisoft/vtuberkit-vision-landmarkers-onnx (Apache-2.0; Google MediaPipe 官方 .task bundle 经 VisionOnnxExporter 导出, 非第三方移植)",
+      "files": [
+        { "url": "https://huggingface.co/takoyakisoft/vtuberkit-vision-landmarkers-onnx/resolve/main/onnx/face/face_landmark.onnx", "name": "face_landmarker.onnx", "size_mb": 4.69, "sha256": "38ea4d75bffea5a72cb93ec027ddeaf31763049ffa57ec944fa3840119083bec" }
+      ],
+      "verify_files": ["face_landmarker.onnx"],
+      "note": "MediaPipe Face Landmarker 官方导出版 (含 iris 共 478 点)。输入 input_12[B,256,256,3] NHWC float (非 NCHW; 需先人脸裁剪到 256x256, MVP 中心裁剪, 稳健性后续接同 repo 的 face_detector.onnx BlazeFace); 输出 Identity[B,1,1,1434]=478x3 landmark-major (reshape 即 [478,3]), 另 Identity_1 presence logit (sigmoid 后为脸部置信度) + Identity_2 标量。需配合 avatar_mediapipe_blendshape 取 146 子集(x,y)算 52 ARKit blendshape。开发期已下到 assets/models/avatar/。"
+    },
+    {
+      "id": "avatar_mediapipe_blendshape",
+      "name": "MediaPipe 视频驱动: blendshape 头 (landmarks→52 ARKit)",
+      "plugin": "avox_avatar",
+      "type": "model",
+      "method": "download",
+      "dest": "assets/models/avatar",
+      "source": "HuggingFace takoyakisoft/vtuberkit-vision-landmarkers-onnx (Apache-2.0; Google MediaPipe 官方 .task 的 blendshape 头, 输出名 StatefulPartitionedCall:0 = TF 原生导出签名)",
+      "files": [
+        { "url": "https://huggingface.co/takoyakisoft/vtuberkit-vision-landmarkers-onnx/resolve/main/onnx/face/face_blendshape.onnx", "name": "face_blendshape.onnx", "size_mb": 1.80, "sha256": "4d97c181a04c1ac1778daa7ffbd9ae1e80b65300750078a7edbcf456d29b53c3" }
+      ],
+      "verify_files": ["face_blendshape.onnx"],
+      "note": "52 ARKit blendshape 官方头 (Google 本尊, 非 py-feat 近似; 已取代早期 py-feat MLP-Mixer 方案)。输入 serving_default_input_points:0[1,146,2] float (478 点经 MP_BLENDSHAPE_MODEL_LANDMARKS_SUBSET 取的 146 子集的 x,y; batch 固定=1 须逐帧单跑); 输出 StatefulPartitionedCall:0[52] 已 sigmoid∈[0,1], 顺序为标准 ARKit 名 (_neutral/browDownLeft/.../noseSneerRight), wav2arkit 原生序与本表 51 实名同序 (无 _neutral, 尾多 tongueOut), avox_avatar 插件已 +1 重排统一到此序 (canonical, 见 AvoxAvatar.h getArkit52NamesCsv), 可直接复用 onFaceBlendshape 下游。注: 官方头按 MediaPipe 图约定吃【归一化】landmark (非原始裁剪像素), 这点与 py-feat 自带内部归一化不同, 插件阶段须用真人脸对照参考输出校正归一化。开发期已下到 assets/models/avatar/。"
+    },
+    {
+      "id": "avatar_mediapipe_detector",
+      "name": "MediaPipe 视频驱动: 人脸检测器 (BlazeFace 短距)",
+      "plugin": "avox_avatar",
+      "type": "model",
+      "method": "download",
+      "dest": "assets/models/avatar",
+      "source": "HuggingFace takoyakisoft/vtuberkit-vision-landmarkers-onnx (Apache-2.0; Google MediaPipe face_detection_short_range 官方 .task 经 VisionOnnxExporter 导出)",
+      "files": [
+        { "url": "https://huggingface.co/takoyakisoft/vtuberkit-vision-landmarkers-onnx/resolve/main/onnx/face/face_detector.onnx", "name": "face_detector.onnx", "size_mb": 0.4, "sha256": "0acb84ef882f18005675b14b3d8021038fab9fc2d2e6365fc73787022d7dda48" }
+      ],
+      "verify_files": ["face_detector.onnx"],
+      "note": "BlazeFace 短距检测器 (MediaPipeFace 首段: 脸框+关键点 → 裁剪对齐喂 face_landmarker, 取代早期中心裁剪 MVP)。输入 [1,128,128,3] RGB norm[-1,1]; 输出 regressors[1,896,16]+classificators[1,896,1], 解码非标准 exp (16 维全线性 /128, reverseOutputOrder box=[xc,yc,w,h])。与 avatar_mediapipe_landmarker/blendshape 同仓同版本, 三件套须齐备。开发期已下到 assets/models/avatar/。"
+    },
+    {
+      "id": "avatar_mediapipe_pose_detector",
+      "name": "MediaPipe 全身姿态: 检测器 (BlazePose)",
+      "plugin": "avox_avatar",
+      "type": "model",
+      "method": "download",
+      "dest": "assets/models/avatar",
+      "source": "HuggingFace takoyakisoft/vtuberkit-vision-landmarkers-onnx (Apache-2.0; Google MediaPipe pose_detection 官方 .task 经 VisionOnnxExporter 导出)",
+      "files": [
+        { "url": "https://huggingface.co/takoyakisoft/vtuberkit-vision-landmarkers-onnx/resolve/main/onnx/body/pose_detector.onnx", "name": "pose_detector.onnx", "size_mb": 11.44, "sha256": "47fd5599d6fa17608f03e0eb0ae230baa6e597d7e8a2c8199fe00abea55a701f" }
+      ],
+      "verify_files": ["pose_detector.onnx"],
+      "note": "BlazePose 检测器 (MediaPipeBody 首段: 全身框+8 关键点 → 裁剪对齐喂 pose_landmarker)。输入 input_1:0[1,3,224,224] NCHW RGB norm[-1,1] (224x224, 非人脸 128); 输出 Identity[1,2254,12](box4+8kp)+Identity_1[1,2254,1] 分数, 解码须按 BlazePose 锚配置 (strides/anchors 与 face 不同, 2254 锚)。与 pose_landmarker 同仓同版本, 两件套须齐备。开发期已下到 assets/models/avatar/。"
+    },
+    {
+      "id": "avatar_mediapipe_pose_landmarker",
+      "name": "MediaPipe 全身姿态: landmarker (33 点)",
+      "plugin": "avox_avatar",
+      "type": "model",
+      "method": "download",
+      "dest": "assets/models/avatar",
+      "source": "HuggingFace takoyakisoft/vtuberkit-vision-landmarkers-onnx (Apache-2.0; Google MediaPipe pose_landmarker 官方 .task 经 VisionOnnxExporter 导出)",
+      "files": [
+        { "url": "https://huggingface.co/takoyakisoft/vtuberkit-vision-landmarkers-onnx/resolve/main/onnx/body/pose_landmark.onnx", "name": "pose_landmark.onnx", "size_mb": 12.17, "sha256": "eef49ab70a13e6a721ca936f40bd3c9c008058723a99012c769d98ea12416ab2" }
+      ],
+      "verify_files": ["pose_landmark.onnx"],
+      "note": "全身姿态 33 点 (MediaPipeBody 次段, 驱动 avatar 全身骨骼/手势)。输入 input_1[1,256,256,3] NHWC RGB norm[-1,1] (256x256); 输出 Identity[1,195](=65x3, 前 33 点即标准 33 关节 xyz, 其余为辅助/稳定性点)+Identity_1[1,1] presence + Identity_2 seg + Identity_3[1,64,64,39] 特征 + Identity_4[1,117](world landmarks)。retargeting 用前 33 点 (归一化图像坐标) 或 Identity_4 (世界坐标)。与 pose_detector 同仓同版本, 两件套须齐备。开发期已下到 assets/models/avatar/。"
+    },
+    {
+      "id": "onnxruntime_dll",
+      "name": "ONNX Runtime 运行时库",
+      "plugin": "avox_onnx",
+      "type": "library",
+      "method": "download",
+      "dest": "plugins",
+      "source": "avc_library 3rdparty/library/<平台>/onnxruntime",
+      "platforms": {
+        "windows": {
+          "files": [
+            { "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/onnxruntime/onnxruntime-win-x64-1.23.2/lib/onnxruntime.dll", "name": "onnxruntime.dll", "size_mb": 14.4, "sha256": "102e19d55820d7609bb6deb67074a0a6cbfabb6be474b9b3013022b1459b71c7" }
+          ],
+          "verify_files": ["onnxruntime.dll"]
+        },
+        "linux": {
+          "method": "manual",
+          "note": "avc_library 暂未收录 linux; 从 ONNX Runtime 官方 release 取 onnxruntime-linux-x64-1.23.2.tgz, 解压 lib/libonnxruntime.so 放入 plugins/。"
+        },
+        "android": {
+          "method": "manual",
+          "note": "android 为静态库 libonnxruntime.a, 编译期链入 avox, 无运行时独立库。"
+        },
+        "ios": {
+          "method": "manual",
+          "note": "iOS 强制静态链接 (onnxruntime.framework/.a), 无运行时独立库; 且 iOS 不允许动态加载第三方库。"
+        }
+      },
+      "note": "v1.23.2 运行时库, avox_onnx/inpaint/ocr/translation 共用。注意: 必须使用静态链 VC 运行时的版本 (14.4MB, 无 MSVCP140 依赖); 微软官方 CPU release (动态链 MSVCP140, 13.5MB) 在 plugins/ 目录下 DllMain 初始化失败 (err=1114)。windows CPU 模式只需 onnxruntime.dll; CUDA(GPU) 模式另需 onnxruntime_providers_shared.dll + CUDA 运行时库, 不在此自动获取。"
+    },
+    {
+      "id": "openvino_dll",
+      "name": "OpenVINO 运行时库 (Intel iGPU 推理)",
+      "plugin": "avox_openvino",
+      "type": "library",
+      "method": "download",
+      "dest": "plugins",
+      "source": "avc_library 3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib",
+      "platforms": {
+        "windows": {
+          "files": [
+            { "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino.dll", "name": "openvino.dll", "size_mb": 15.1, "sha256": "5b690008afc2dbace4373a0f6677ef81b26d1cd6dccb6745d05cbd35f91d2ef0" },
+            { "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_onnx_frontend.dll", "name": "openvino_onnx_frontend.dll", "size_mb": 4.3, "sha256": "220ffe8eb5ada8d174fab7617ebbacd837592969ea5e7bf04d1a889b358fec94" },
+            { "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_ir_frontend.dll", "name": "openvino_ir_frontend.dll", "sha256": "cb1c2ddb8ea53dba96b991295636a453099fab249213e453fc0294dcbce79314" },
+            { "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_intel_gpu_plugin.dll", "name": "openvino_intel_gpu_plugin.dll", "size_mb": 35.2, "sha256": "eb29153ee6e098aedc40fb873c86094693be49e208793df471ef0bdd14d17ced" },
+            { "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_intel_cpu_plugin.dll", "name": "openvino_intel_cpu_plugin.dll", "size_mb": 42.8, "sha256": "715b12a679e365994821bc4a8290371c3ab13f4622fd3c3a59392521b9f0c345" },
+            { "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_auto_plugin.dll", "name": "openvino_auto_plugin.dll", "sha256": "71ec0ce30859c822aea0dd1b44bc2c3208be9330f3a8fd3dbbef8c8343d37f7c" },
+            { "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_hetero_plugin.dll", "name": "openvino_hetero_plugin.dll", "sha256": "53c2dc99743db121c2d4da7e482407266cddb1706bcc7bb111526be38757c1a4" },
+            { "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/tbb12.dll", "name": "tbb12.dll", "sha256": "11d3ff73510927ff96a92099db95c8409b80838a6a9fc2895142bce8b17a36a1" },
+            { "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/tbbbind_2_5.dll", "name": "tbbbind_2_5.dll", "sha256": "b67d275cbd5e1914d86921955f545897f41d6690de36bdcea3277c376355cdb8" },
+            { "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/tbbmalloc.dll", "name": "tbbmalloc.dll", "sha256": "5a756a4afaee8566fe2fbd4a2152409b43102e94e63de7548f73c505105a9e4d" },
+            { "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/tbbmalloc_proxy.dll", "name": "tbbmalloc_proxy.dll", "sha256": "612a584f9847570162f358218ef8d37cd05fe6a914888bf5b8d89210b89fc6d7" },
+            { "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/cache.json", "name": "cache.json", "size_mb": 8.4, "sha256": "0b2ad2a99516a3411ce3fef274e8ae2880b41a6f00c9bac6768cd4a94b87c41c" }
+          ],
+          "verify_files": ["openvino.dll", "openvino_intel_gpu_plugin.dll"]
+        },
+        "linux": {
+          "method": "manual",
+          "note": "avc_library 暂未收录 linux openvino; 从 OpenVINO 官方 linux release 取包, 解压 runtime/lib/intel64/Release 下 openvino*.so + 对应 plugins/ + TBB .so 放入运行目录。"
+        },
+        "android": {
+          "method": "manual",
+          "note": "Android 不启用 OpenVINO, VkQEnhanceLayer 走 ORT 静态库 (libonnxruntime.a 链入)。"
+        },
+        "ios": {
+          "method": "manual",
+          "note": "iOS 不启用 OpenVINO (强制静态链接), 走 ORT/CoreML。"
+        }
+      },
+      "note": "OpenVINO 2026.2 C++ runtime, avox_openvino plugin 用, VkQEnhanceLayer(Real-ESRGAN) 经它跑 Intel iGPU FP16。11 dll + cache.json(GPU 内核缓存, 加速首次推理), 全部 openvino.dll 同目录(plugins/), LoadLibrary 自动找到。构建期经 FindOpenVINO.cmake DEP_DLLS 已自动拷贝; 本项用于无构建产物的部署分发。无此库时 VkQEnhanceLayer 自动降级 ORT CPU。大 dll(gpu/cpu plugin)在 avc_library 走 git-lfs, raw/ URL 自动 302 取真实内容。"
+    },
+    {
+      "id": "opencv_dll",
+      "name": "OpenCV 运行时库",
+      "plugin": "avox_opencv",
+      "type": "library",
+      "method": "download",
+      "dest": "plugins",
+      "source": "avc_library 3rdparty/library/windows/opencv",
+      "platforms": {
+        "windows": {
+          "files": [
+            { "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/opencv/build/x64/vc16/bin/opencv_world4130.dll", "name": "opencv_world4130.dll", "size_mb": 65, "sha256": "d6ad6fcc7908e8e90625fa8614d0480b111d7cc887054ed01a3ed2ad5f872d79" },
+            { "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/opencv/build/x64/vc16/bin/opencv_videoio_ffmpeg4130_64.dll", "name": "opencv_videoio_ffmpeg4130_64.dll", "size_mb": 27, "sha256": "fcc614672159094a35815b7ea2819a648cbf86c30d90c57e8c6ba1432f594548" }
+          ],
+          "verify_files": ["opencv_world4130.dll"]
+        },
+        "linux": {
+          "method": "manual",
+          "note": "avc_library 未收录 linux opencv; 用系统 libopencv_world.so 或从 OpenCV 官方获取放入 plugins/。"
+        },
+        "android": {
+          "method": "manual",
+          "note": "android 用静态 opencv (sdk native libs) 链入, avc_library 未收录独立动态库。"
+        }
+      },
+      "note": "v4.13.0。opencv_world4130.dll 主库 (avox_opencv/inpaint/ocr 共用); opencv_videoio_ffmpeg4130_64.dll 为 videoio 的 ffmpeg 后端 (用到视频读写时需要, 否则可选)。"
+    },
+    {
+      "id": "sherpa_onnx_dll",
+      "name": "sherpa-onnx 运行时库 (编译产物)",
+      "plugin": "avox_sherpa",
+      "type": "library",
+      "method": "build",
+      "dest": "plugins",
+      "source_ref": "git submodule 3rdparty/sherpa-onnx (k2-fsa/sherpa-onnx); avc_library 未收录预编译",
+      "build_command": "python build_windows.py",
+      "platforms": {
+        "windows": { "verify_files": ["sherpa-onnx-c-api.dll"] },
+        "linux": { "verify_files": ["libsherpa-onnx-c-api.so"] },
+        "android": { "method": "manual", "note": "android 为静态库 libsherpa-onnx-c-api.a, 链入 avox, 无运行时独立库。" },
+        "ios": { "method": "manual", "note": "iOS 强制静态链接, 无运行时独立库。" }
+      },
+      "note": "由 build_windows.py (或对应平台 build 脚本) 编译并复制到 plugins/。avc_library 无预编译, 不能下载; 如已有构建产物, 直接确认 plugins/ 下存在即可。"
+    }
+  ]
+}
