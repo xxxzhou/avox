@@ -1,3 +1,22 @@
-# Per-plugin build switches, included from the top-level CMakeLists.
-# option(AVOX_PLUGIN_MF      "Build avox_mf (Media Foundation camera)" OFF)
-# option(AVOX_PLUGIN_DECKLINK "Build avox_decklink" OFF)
+# plugins/options.cmake —— 组件(plugins/)option 定义
+#
+# 根 CMakeLists.txt 在 include(AVOXOptions) 和 add_subdirectory(src) 之前 include 本文件,
+# 保证 src 的 gate(如 inpaint 依赖 AVOX_ENABLE_OPENCV)能读到这些 option。
+#
+# 注: 第三方库的 find_package / link 过渡期仍在 cmake/AVOXOptions.cmake
+#     (对应 src 模块还在用, 如 inpaint 用 opencv), 待各模块迁到 plugins 后再移入。
+#     已迁组件的 option 先挪到这里, 未迁的随迁移逐个补。
+
+option(AVOX_ENABLE_OPENCV "build with OpenCV support (for mask processing)" ON)
+option(AVOX_ENABLE_SHERPA "build sherpa-onnx for streaming speech recognition" ON)
+option(AVOX_ENABLE_ONNX "build ONNX Runtime support" ON)
+option(AVOX_ENABLE_TRANSLATION "build offline translation" ON)
+option(AVOX_ENABLE_CV "build avox_cv (inpaint watermark removal + generic YOLO, needs AVOX_ENABLE_ONNX+AVOX_ENABLE_OPENCV)" ON)
+option(AVOX_ENABLE_OCR "build OCR text recognition (PP-OCRv6, needs AVOX_ENABLE_ONNX)" ON)
+# avox_avatar: 音频->ARKit52 blendshape (虚拟人口型/表情; 运行期需 avox_onnx 插件 + 模型, 默认开)
+option(AVOX_ENABLE_AVATAR "build avox_avatar (audio->ARKit52 blendshape, virtual human; needs AVOX_ENABLE_ONNX at runtime)" ON)
+# OpenVINO: VkQEnhanceLayer 画质增强的 Intel iGPU/CPU 推理后端 (runtime 自动 GPU→CPU→ORT 降级)。
+# 默认 OFF: 无 OV runtime 时 VkQEnhanceLayer 走 ORT CPU。提取 runtime: python script/openvino/extract_openvino.py
+option(AVOX_ENABLE_OPENVINO "build OpenVINO for Intel iGPU/CPU inference (VkQEnhanceLayer)" OFF)
+# avox_torrent: 磁力/BT 边下边播 (libtorrent 顺序下载, 插件静态链入)
+option(AVOX_ENABLE_TORRENT "build avox_torrent magnet/bt streaming plugin (libtorrent)" ON)
