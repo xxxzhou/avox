@@ -1,0 +1,207 @@
+input.comp inputRGB.comp CHANNEL_RGB=1
+input.comp inputBRGA.comp CHANNEL_BRGA=1
+input.comp inputARGB.comp CHANNEL_ARGB=1
+filter2D.comp filter2D.comp CHANNEL_RGBA=1
+filter2D.comp filter2DC1.comp CHANNEL_R8=1
+filter2D.comp filter2DF4.comp CHANNEL_RGBA32F=1
+adaptiveThreshold.comp
+alphaShow.comp alphaShow.comp CHANNEL_RGBA=1
+alphaShow.comp alphaShowC1.comp CHANNEL_R8=1
+alphaShow.comp alphaShowF4.comp CHANNEL_RGBA32F=1
+alphaShow.comp alphaShowF1.comp CHANNEL_R32F=1
+alphaShow.comp alphaShowSI4.comp CHANNEL_RGBA32I=1
+alphaShow.comp alphaShowSI1.comp CHANNEL_R32I=1
+blend.comp
+chromaKey.comp
+filterColumn.comp filterColumn.comp CHANNEL_RGBA=1
+filterColumn.comp filterColumnC1.comp CHANNEL_R8=1
+filterColumn.comp filterColumnF4.comp CHANNEL_RGBA32F=1
+filterRow.comp filterRow.comp CHANNEL_RGBA=1
+filterRow.comp filterRowC1.comp CHANNEL_R8=1
+filterRow.comp filterRowF4.comp CHANNEL_RGBA32F=1
+luminance.comp
+operate.comp
+resize.comp resize.comp CHANNEL_RGBA=1
+resize.comp resizeC1.comp CHANNEL_R8=1
+resize.comp resizeF4.comp CHANNEL_RGBA32F=1
+resizeUI1.comp
+transpose.comp
+rgba2yuvV1.comp
+rgba2yuvV2.comp
+rgba2yuvV3.comp
+rgba2yuvV4.comp
+yuv2rgbaV1.comp
+yuv2rgbaV2.comp
+yuv2rgbaV3.comp
+yuv2rgbaV4.comp
+guidedFilter1.comp
+guidedFilter2.comp
+guidedMatting.comp
+convertImage.comp convertImage.comp CHANNEL_RGBA=1
+convertImage.comp convertImageF4.comp CHANNEL_RGBA32F=1
+prewittEdge.comp
+harrisCornerDetection.comp
+thresholdedNMS.comp
+showRound.comp
+addBlend.comp
+alphaBlend.comp
+lookup.comp
+reduce.comp reduce_sum.comp REDUCE_SUM=1 CHANNEL_RGBA=1
+reduce.comp reduce_sumC1.comp REDUCE_SUM=1 CHANNEL_R8=1
+reduce2.comp reduce2_sumF4.comp REDUCE_SUM=1 CHANNEL_RGBA32F=1
+reduce2.comp reduce2_sumF1.comp REDUCE_SUM=1 CHANNEL_R32F=1
+averageLuminanceThreshold.comp
+bilateral.comp bilateral.comp CHANNEL_RGBA=1
+bilateral.comp bilateralC1.comp CHANNEL_R8=1
+brightness.comp
+bulgeDistortion.comp
+cgaColorspace.comp
+colorBlend.comp
+colorBurnBlend.comp
+colorDodgeBlend.comp
+colorInvert.comp
+colorLocalBinaryPattern.comp
+fastFeatureDetector.comp
+colorMatrix.comp
+contrast.comp
+cropFilter.comp
+crosshatch.comp
+darkenBlend.comp
+differenceBlend.comp
+dissolveBlend.comp
+divideBlend.comp
+gamma.comp
+blurSelective.comp
+blurPosition.comp
+sphereRefraction.comp
+glassSphere.comp
+halftone.comp
+hardLightBlend.comp
+haze.comp
+highlightShadow.comp
+highlightShadowTint.comp
+copyImage.comp
+dissolveBlend.comp
+histogram.comp histogram.comp CHANNEL_RGBA=1
+histogram.comp histogramC1.comp 
+histogramCombin.comp
+luminanceRange.comp
+luminanceThreshold.comp
+saturation.comp
+fastFeatureDetector.comp
+kuwahara.comp
+filterMat3x3.comp
+levels.comp
+lightenBlend.comp
+linearBurnBlend.comp
+luminosityBlend.comp
+mask.comp
+median.comp median.comp CHANNEL_RGBA=1
+median.comp medianC1.comp CHANNEL_R8=1
+median.comp medianK3.comp CHANNEL_RGBA=1 KSIZE3=1
+median.comp medianK3C1.comp CHANNEL_R8=1 KSIZE3=1
+monochrome.comp
+motionBlur.comp
+motionDetector.comp
+multiplyBlend.comp
+nobleCornerDetection.comp
+normalBlend.comp
+opacity.comp
+overlayBlend.comp
+pixellate.comp
+poissonBlend.comp
+perlinNoise.comp
+pinchDistortion.comp
+pixellatePosition.comp
+polarPixellate.comp
+posterize.comp
+polkaDot.comp
+xyDerivative.comp
+prewittEdge.comp
+directionalSobel.comp
+morph1.comp morph1_erosion.comp EROSION=1 IS_SHARED=1 CHANNEL_RGBA=1
+morph1.comp morph1_dilation.comp DILATION=1 IS_SHARED=1 CHANNEL_RGBA=1
+morph2.comp morph2_erosion.comp EROSION=1 IS_SHARED=1 CHANNEL_RGBA=1
+morph2.comp morph2_dilation.comp DILATION=1 IS_SHARED=1 CHANNEL_RGBA=1
+morph1.comp morph1_erosionC1.comp EROSION=1 IS_SHARED=1 CHANNEL_R8=1
+morph1.comp morph1_dilationC1.comp DILATION=1 IS_SHARED=1 CHANNEL_R8=1
+morph2.comp morph2_erosionC1.comp EROSION=1 IS_SHARED=1 CHANNEL_R8=1
+morph2.comp morph2_dilationC1.comp DILATION=1 IS_SHARED=1 CHANNEL_R8=1
+morph1.comp morph1_erosionUI1.comp EROSION=1 IS_SHARED=1 CHANNEL_R16UI=1
+morph1.comp morph1_dilationUI1.comp DILATION=1 IS_SHARED=1 CHANNEL_R16UI=1
+morph2.comp morph2_erosionUI1.comp EROSION=1 IS_SHARED=1 CHANNEL_R16UI=1
+morph2.comp morph2_dilationUI1.comp DILATION=1 IS_SHARED=1 CHANNEL_R16UI=1
+saturationBlend.comp
+screenBlend.comp
+sharpen.comp
+shiTomasiFeatureDetection.comp
+sobelEdge.comp
+sobelEdge.comp sketch.comp SKETCH=1
+skinTone.comp
+toon.comp
+softLightBlend.comp
+solarize.comp
+sourceOverBlend.comp
+stretchDisortion.comp
+subtractBlend.comp
+swirl.comp
+sharpen.comp
+poissonBlend.comp
+sobelThreshold.comp sobelThreshold.comp CHANNEL_RGBA=1
+sobelThreshold.comp sobelThresholdC1.comp CHANNEL_R8=1
+sobelThreshold.comp sketchThreshold.comp SKETCH=1 CHANNEL_RGBA=1
+sobelThreshold.comp sketchThresholdC1.comp SKETCH=1 CHANNEL_R8=1
+tiltShift.comp
+unsharpMask.comp
+vibrance.comp
+vignette.comp
+zoomBlur.comp
+voronoiConsumer.comp
+rgb.comp
+mapChannel.comp
+flip.comp
+memset.comp memset.comp CHANNEL_RGBA=1
+memset.comp memsetU1.comp CHANNEL_R16UI=1
+hue.comp
+hueBlend.comp
+emboss.comp
+exclusionBlend.comp
+exposure.comp
+falseColor.comp
+canny.comp
+directionalNMS.comp
+histogramLut.comp
+histogramLutResult.comp histogramLutResult.comp CHANNEL_RGBA=1
+histogramLutResult.comp histogramLutResultC1.comp CHANNEL_R8=1
+alphaSeparate.comp
+alphaCombin.comp
+alphaCombin.comp alphaScaleCombin.comp ALPHA_SCALE=1
+twoImage.comp twoImageColumn.comp COLUMN=1
+twoImage.comp twoImageRow.comp ROW=1
+ncnnInMat.comp twoImageBGR.comp NCNN_BGR=1
+ncnnInMat.comp twoImageRGB.comp NCNN_RGB=1
+ncnnInCropMat.comp ncnnInCropMatBGR.comp NCNN_BGR=1
+ncnnInCropMat.comp ncnnInCropMatRGB.comp NCNN_RGB=1
+drawPoints.comp
+drawPointBlend.comp
+drawRect.comp
+ncnnUpload.comp
+uvMap.comp
+uvMap.comp addUVMap.comp ADD_MAP=1
+depthAlign.comp
+drawFont.comp
+drawFontBlend.comp
+drawShapeBlend.comp
+basicAdjust.comp
+quality_preprocess.comp
+quality_postprocess.comp
+fsr_easu.comp
+fsr_rcas.comp
+fsr_srgb_decode.comp
+fsr_srgb_encode.comp
+guidedDeblock.comp
+guidedFilter1Deblock.comp
+guidedFilter2Deblock.comp
+convertImage.comp convertImageH2F4.comp CHANNEL_RGBA16F=1
+convertImage.comp convertImageF4H.comp CHANNEL_RGBA32F16=1
+bilateral.comp bilateralH.comp CHANNEL_RGBA16F=1
