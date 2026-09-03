@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "AvaPlayer.Desktop": {
+      "commandName": "Project",
+      "nativeDebugging": true
+    }
+  }
+}

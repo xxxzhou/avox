@@ -1,0 +1,89 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFrameworks>net8.0-android34.0</TargetFrameworks>
+		<NoWarn>NU1605;NU1202</NoWarn>
+
+		<!-- 路径设置 -->
+		<OutputPath>$(MSBuildProjectDirectory)\..\..\..\..\..\build\android\avplay\install\aarch64\</OutputPath>
+		<BaseOutputPath>$(OutputPath)</BaseOutputPath>
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+		<SupportedOSPlatformVersion>26.0</SupportedOSPlatformVersion>
+
+		<!-- Android 基础配置 -->
+		<AndroidApplication>true</AndroidApplication>
+		<AndroidManifest>Properties\AndroidManifest.xml</AndroidManifest>
+		<AndroidNdkVersion>26.1.10909125</AndroidNdkVersion>
+		<AndroidEnableNativeDebugging>true</AndroidEnableNativeDebugging>
+
+		<!-- 解决 Java 内存不足 -->
+		<JavaMaximumHeapSize>4G</JavaMaximumHeapSize>
+		<AndroidExplicitCrunch>false</AndroidExplicitCrunch>
+
+		<!-- 架构锁定：匹配原生库 (arm64-v8a) -->
+		<RuntimeIdentifier>android-arm64</RuntimeIdentifier>
+		<AndroidSupportedAbis>arm64-v8a</AndroidSupportedAbis>
+
+		<!-- 绕过 MSB4019 错误 -->
+		<ILLinkTargetsPath>$(MSBuildProjectDirectory)\Empty.targets</ILLinkTargetsPath>
+
+		<!-- 【优化项 1】防止对模型文件进行二次压缩：大幅减少打包耗时 -->
+		<AndroidAndroidAssetPacakgeCompressExtensions>.bin;.model;.onnx;.json</AndroidAndroidAssetPacakgeCompressExtensions>
+	</PropertyGroup>
+
+	<!-- 【优化项 2】Debug 模式下的属性配置（平级放置，不要嵌套） -->
+	<PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+		<!-- 调试时直接生成 APK 而不是 Bundle -->
+		<AndroidPackageFormat>apk</AndroidPackageFormat>
+		<!-- 开启快速部署：只同步变化的 DLL -->
+		<EmbedAssembliesIntoApk>false</EmbedAssembliesIntoApk>
+		<AndroidFastDeploymentType>Assemblies</AndroidFastDeploymentType>
+	</PropertyGroup>
+
+	<!-- 【关键修复】针对 Release 模式的编译器设置 -->
+	<PropertyGroup Condition="'$(Configuration)' == 'Release'">
+		<RunAOTCompilation>false</RunAOTCompilation>
+		<AndroidLinkMode>None</AndroidLinkMode>
+		<PublishTrimmed>false</PublishTrimmed>
+		<!-- 强行改回 apk，跳过 bundletool 转换 aab 的复杂逻辑 -->
+		<AndroidPackageFormat>apk</AndroidPackageFormat>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Avalonia.Android" />
+		<PackageReference Include="MicroCom.Runtime" />
+		<PackageReference Include="Xamarin.AndroidX.Core.SplashScreen" />
+		<PackageReference Include="Xamarin.AndroidX.AppCompat" />
+		<PackageReference Include="HarfBuzzSharp" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\AvaPlayer\AvaPlayer.csproj" />
+	</ItemGroup>
+
+	<!-- 包含外部 assets 目录 -->
+	<!-- 使用 MSBuildProjectDirectory 替代 SolutionDir，确保 CI 环境下路径正确 -->
+	<ItemGroup>
+		<AndroidAsset Include="$(MSBuildProjectDirectory)\..\..\..\..\..\platform\android\AvoxJava\avox\assets\**\*">
+			<Link>Assets\%(RecursiveDir)%(FileName)%(Extension)</Link>
+		</AndroidAsset>
+	</ItemGroup>
+
+	<!-- 包含 Java 源文件 -->
+	<ItemGroup>
+		<AndroidJavaSource Include="$(MSBuildThisFileDirectory)Java\**\*.java" />
+	</ItemGroup>
+
+	<!-- 包含 WebRTC Java 包 -->
+	<ItemGroup>
+		<AndroidJavaLibrary Include="$(MSBuildProjectDirectory)\..\..\..\..\..\3rdparty\library\android\webrtc\libwebrtc.jar" />
+	</ItemGroup>
+
+	<!-- 引用原生库文件 (.so) -->
+	<ItemGroup>
+		<AndroidNativeLibrary Include="$(MSBuildProjectDirectory)\..\..\..\..\..\build\android\avplay\install\aarch64\*.so">
+			<Link>lib\arm64-v8a\%(RecursiveDir)%(Filename)%(Extension)</Link>
+		</AndroidNativeLibrary>
+	</ItemGroup>
+
+</Project>

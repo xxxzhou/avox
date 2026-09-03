@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <NoWarn>NU1605;NU1202</NoWarn>
+    <BaseOutputPath>$(OutputPath)</BaseOutputPath>
+    <IntermediateOutputPath>$(MSBuildProjectDirectory)\..\obj\$(Configuration)\</IntermediateOutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <SkipInvalidConfigurations>true</SkipInvalidConfigurations>
+  </PropertyGroup>
+  <!-- Windows 平台配置 -->
+  <PropertyGroup Condition="$(TargetFramework.Contains('windows'))">
+    <OutputPath>$(MSBuildProjectDirectory)\..\..\..\..\build\windows\avplay\install\AMD64\$(Configuration)\</OutputPath>
+    <IntermediateOutputPath>$(MSBuildProjectDirectory)\..\obj\windows\$(Configuration)\</IntermediateOutputPath>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+  </PropertyGroup>
+  <!-- Android 平台配置 -->
+  <PropertyGroup Condition="$(TargetFramework.Contains('android'))">
+    <OutputPath>$(MSBuildProjectDirectory)\..\..\..\..\build\android\avplay\install\aarch64\</OutputPath>
+    <IntermediateOutputPath>$(MSBuildProjectDirectory)\..\obj\android\$(Configuration)\</IntermediateOutputPath>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+  </PropertyGroup>
+  <PropertyGroup Condition="$(TargetFramework.Contains('ios'))">
+    <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup> 
+  <ItemGroup>
+    <!-- 不依赖特定 UI 框架，可在任何 .NET 环境中使用 -->
+    <PackageReference Include="System.Drawing.Common" />
+  </ItemGroup>
+
+  <!-- 2. 直接引用外部 .cs 文件 -->
+  <ItemGroup>
+    <Compile Include="..\..\..\..\swig\csharp\files\*.cs">
+      <Link>AvoxNet\%(RecursiveDir)%(FileName)%(Extension)</Link>
+    </Compile>
+  </ItemGroup>
+</Project>

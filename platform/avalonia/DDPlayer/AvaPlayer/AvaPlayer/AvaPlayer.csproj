@@ -1,0 +1,57 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <NoWarn>NU1605;NU1202</NoWarn>  
+    <BaseOutputPath>$(OutputPath)</BaseOutputPath>   
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <SkipInvalidConfigurations>true</SkipInvalidConfigurations>
+    <EnableTrimAnalyzer>false</EnableTrimAnalyzer>
+    <PublishTrimmed>false</PublishTrimmed>    
+  </PropertyGroup>
+  <!-- Windows 平台配置 -->
+  <PropertyGroup Condition="$(TargetFramework.Contains('windows')) or '$(TargetFramework)' == 'net8.0'">
+    <OutputPath>$(MSBuildProjectDirectory)\..\..\..\..\..\build\windows\avplay\install\AMD64\$(Configuration)\</OutputPath>
+    <IntermediateOutputPath>$(MSBuildProjectDirectory)\..\..\obj\windows\$(Configuration)\</IntermediateOutputPath>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+  </PropertyGroup>
+  <!-- Android 平台配置 -->
+  <PropertyGroup Condition="$(TargetFramework.Contains('android'))">
+    <OutputPath>$(MSBuildProjectDirectory)\..\..\..\..\..\build\android\avplay\install\aarch64\</OutputPath>
+    <IntermediateOutputPath>$(MSBuildProjectDirectory)\..\..\obj\android\$(Configuration)\</IntermediateOutputPath>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+  </PropertyGroup> 
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="Avalonia.Fonts.Inter" />
+    <!--Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration.-->
+    <PackageReference Include="Avalonia.Diagnostics">
+      <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
+      <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="HarfBuzzSharp" NoWarn="NU1605;NU1202">
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\AvoxControls\AvoxControls.csproj" />
+  </ItemGroup>
+
+  <!-- 排除 MainView 变体，避免默认包含 -->
+  <ItemGroup>
+    <AvaloniaXaml Remove="Views\MainView.WithRtc.axaml" />
+  </ItemGroup>
+
+  <!-- 始终使用含 RTC 的 MainView（WebRTC 插件由 native 运行时动态加载） -->
+  <ItemGroup>
+    <AvaloniaXaml Include="Views\MainView.WithRtc.axaml">
+      <SubType>Designer</SubType>
+    </AvaloniaXaml>
+  </ItemGroup>
+</Project>

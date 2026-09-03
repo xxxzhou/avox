@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- CI 环境: 只构建当前平台目标 (GitHub Actions 自动设置 CI=True) -->
+    <TargetFrameworks Condition="'$(CI)' == 'True' AND $([MSBuild]::IsOSPlatform('windows'))">net8.0-windows;net8.0</TargetFrameworks>
+    <TargetFrameworks Condition="'$(CI)' == 'True' AND $([MSBuild]::IsOSPlatform('linux'))">net8.0;net8.0-android34.0</TargetFrameworks>
+    <TargetFrameworks Condition="'$(CI)' == 'True' AND $([MSBuild]::IsOSPlatform('osx'))">net8.0;net8.0-ios</TargetFrameworks>
+    <!-- 本地开发: macOS 只构建 iOS，其他平台构建全部 -->
+    <TargetFrameworks Condition="'$(CI)' != 'True' AND $([MSBuild]::IsOSPlatform('osx'))">net8.0;net8.0-ios</TargetFrameworks>
+    <TargetFrameworks Condition="'$(CI)' != 'True' AND !$([MSBuild]::IsOSPlatform('osx'))">net8.0-windows;net8.0-android;net8.0-ios;net8.0</TargetFrameworks>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <NoWarn>NU1605;NU1202</NoWarn>
+    <BaseOutputPath>$(OutputPath)</BaseOutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+	<SkipInvalidConfigurations>true</SkipInvalidConfigurations>
+	<!-- 1. 指向刚才创建的真实空文件 (使用相对路径) -->
+	<ILLinkTargetsPath>$(MSBuildProjectDirectory)\Empty.targets</ILLinkTargetsPath>
+	<!-- 2. 强制禁用所有裁剪相关的属性，防止 SDK 在其他地方尝试加载 -->
+	<PublishTrimmed>false</PublishTrimmed>
+	<IsTrimmable>false</IsTrimmable>
+	<EnableTrimAnalyzer>false</EnableTrimAnalyzer>
+	<AndroidLinkMode>None</AndroidLinkMode>
+  </PropertyGroup>
+  <!-- Windows 平台配置 -->
+  <PropertyGroup Condition="$(TargetFramework.Contains('windows'))">
+    <OutputPath>$(MSBuildProjectDirectory)\..\..\..\..\build\windows\avplay\install\AMD64\$(Configuration)\</OutputPath>
+    <IntermediateOutputPath>$(MSBuildProjectDirectory)\..\obj\windows\$(Configuration)\</IntermediateOutputPath>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+  </PropertyGroup>
+  <!-- Android 平台配置 -->
+  <PropertyGroup Condition="$(TargetFramework.Contains('android'))">
+    <OutputPath>$(MSBuildProjectDirectory)\..\..\..\..\build\android\avplay\install\aarch64\</OutputPath>
+    <IntermediateOutputPath>$(MSBuildProjectDirectory)\..\obj\android\$(Configuration)\</IntermediateOutputPath>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+  </PropertyGroup> 
+  <PropertyGroup Condition="$(TargetFramework.Contains('ios'))">
+    <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>    
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="HarfBuzzSharp" />
+  </ItemGroup>  
+	<ItemGroup Condition="$(TargetFramework.Contains('android'))">
+    <PackageReference Include="Avalonia.Android" />
+    <PackageReference Include="Xamarin.AndroidX.Core.SplashScreen" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AvoxCommon\AvoxCommon.csproj" />
+  </ItemGroup>
+</Project>

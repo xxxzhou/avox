@@ -1,0 +1,3 @@
+<Project>
+  <!-- 空的targets文件，用于跳过ILLink.targets的导入 -->
+</Project>

@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0-ios</TargetFramework> 
+    <ValidateXcodeVersion>false</ValidateXcodeVersion> 
+    <NoWarn>NU1605;NU1202;NU1213;XG0001</NoWarn>    
+    <SupportedOSPlatformVersion>16.0</SupportedOSPlatformVersion>
+    <UseInterpreter>true</UseInterpreter>
+    <ProvisioningType>manual</ProvisioningType>
+	  <CodeSignKey>Apple Development: mfjt55@163.com (F55URGYB7K)</CodeSignKey>   
+    <MtouchUseLlvm>false</MtouchUseLlvm> 
+    <!-- windows编译IOS使用$(SolutionDir)../../../../会出错 -->
+    <CppBuildRoot>/Volumes/PSSD/work/github/avplay/build/ios/avplay/install/aarch64</CppBuildRoot>
+    <WebRTC>/Volumes/PSSD/work/webrtc/build/ios/debug/obj</WebRTC>
+    <MtouchNoSymbolStrip>true</MtouchNoSymbolStrip>
+    <MtouchExtraArgs>$(MtouchExtraArgs) --registrar:static -gcc_flags "-ObjC -framework VideoToolbox -framework AVFoundation -framework AudioToolbox -framework CoreMedia -framework CoreVideo -framework CoreGraphics -framework UIKit -framework QuartzCore -framework CoreAudio -framework CoreMotion -framework CoreBluetooth -framework GameController -framework Metal -framework IOSurface -lz -lbz2 -liconv"</MtouchExtraArgs> 
+    <!-- <MtouchNoSymbolStrip>true</MtouchNoSymbolStrip>
+    <MtouchLink>None</MtouchLink>     -->
+  </PropertyGroup>
+  <!-- CppBuildRoot动态判定 -->
+  <ItemGroup Condition="'$(OS)' != 'Windows_NT'">  
+    <NativeReference Include="$(CppBuildRoot)/Debug/*.a">
+      <Kind>Static</Kind>
+      <ForceLoad>True</ForceLoad>
+      <SmartLink>True</SmartLink>
+    </NativeReference> 
+    <!-- WebRTC 库通常建议 SmartLink=True，防止符号冲突 -->
+    <NativeReference Include="$(WebRTC)/*.a">
+      <Kind>Static</Kind>
+      <ForceLoad>False</ForceLoad>
+      <SmartLink>True</SmartLink>
+    </NativeReference>    
+    <!-- 动态库、框架和资源保持不变 -->
+    <NativeReference Include="$(CppBuildRoot)/Debug/*.dylib" Kind="Dynamic" SmartLink="True" />
+    <NativeReference Include="$(CppBuildRoot)/MoltenVK.framework" Kind="Framework" SmartLink="True" IsCxx="True" />    
+    <BundleResource Include="$(CppBuildRoot)/avox.bundle/**">
+        <Link>Resources/avox.bundle/%(RecursiveDir)%(FileName)%(Extension)</Link>
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </BundleResource>
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia.iOS" />
+    <PackageReference Include="HarfBuzzSharp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AvaPlayer\AvaPlayer.csproj" />
+  </ItemGroup>
+</Project>

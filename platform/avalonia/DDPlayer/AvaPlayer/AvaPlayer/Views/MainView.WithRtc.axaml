@@ -1,0 +1,82 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:mediaplayer="using:AvoxControls.MediaPlayer"
+             xmlns:sourceplayer="using:AvoxControls.SourcePlayer"
+             xmlns:rtcplayer="using:AvoxControls.RtcPlayer"
+             xmlns:vm="using:AvaPlayer.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="480"
+             x:Class="AvaPlayer.Views.MainView"
+             x:DataType="vm:MainViewModel">
+  <Design.DataContext>
+    <!-- This only sets the DataContext for the previewer in an IDE,
+         to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
+    <vm:MainViewModel />
+  </Design.DataContext>
+
+  <Grid RowDefinitions="Auto,*">
+    <!-- 顶部导航栏 -->
+    <Border Grid.Row="0"
+            Background="#FFF0F0F0"
+            BorderBrush="#FFCCCCCC"
+            BorderThickness="0,0,0,1"
+            Padding="10,5">
+      <StackPanel Orientation="Horizontal" Spacing="10">
+        <TextBlock Text="AvaPlayer" 
+                   FontWeight="Bold" 
+                   FontSize="16"
+                   VerticalAlignment="Center"
+                   Margin="0,0,20,0"/>
+        <RadioButton x:Name="MediaPlayerRadio"
+                     Content="媒体播放"
+                     IsChecked="True"
+                     GroupName="ViewMode"
+                     Checked="OnViewModeChanged"
+                     Click="OnViewModeChanged"
+                     VerticalAlignment="Center"/>
+        <RadioButton x:Name="SourcePlayerRadio"
+                     Content="设备推送"
+                     GroupName="ViewMode"
+                     Checked="OnViewModeChanged"
+                     Click="OnViewModeChanged"
+                     VerticalAlignment="Center"/>
+        <RadioButton x:Name="RtcPlayerRadio"
+                     Content="RTC 通话"
+                     GroupName="ViewMode"
+                     Checked="OnViewModeChanged"
+                     Click="OnViewModeChanged"
+                     VerticalAlignment="Center"/>
+      </StackPanel>
+    </Border>
+
+    <!-- 内容区域 -->
+    <Grid Grid.Row="1" x:Name="ContentContainer">
+      <!-- 动态加载容器（_useDynamicLoading = true 时使用） -->
+      <ContentControl x:Name="DynamicContent" 
+                      HorizontalAlignment="Stretch"
+                      VerticalAlignment="Stretch"/>
+      
+      <!-- 预加载视图容器（_useDynamicLoading = false 时使用） -->
+      <Grid x:Name="PreloadedContainer" IsVisible="False">
+        <!-- 媒体播放器视图 -->
+        <mediaplayer:TestMediaView x:Name="MediaPlayerView" 
+                                   IsVisible="True"
+                                   HorizontalAlignment="Stretch"
+                                   VerticalAlignment="Stretch"/>
+        
+        <!-- 设备源播放器视图 -->
+        <sourceplayer:TestSourceView x:Name="SourcePlayerView"
+                                     IsVisible="False"
+                                     HorizontalAlignment="Stretch"
+                                     VerticalAlignment="Stretch"/>
+
+        <!-- RTC 播放器视图 -->
+        <rtcplayer:TestRtcView x:Name="RtcPlayerView"
+                               IsVisible="False"
+                               HorizontalAlignment="Stretch"
+                               VerticalAlignment="Stretch"/>
+      </Grid>
+    </Grid>
+  </Grid>
+</UserControl>
