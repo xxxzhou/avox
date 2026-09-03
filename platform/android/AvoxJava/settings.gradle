@@ -1,0 +1,4 @@
+include ':avox'
+
+include ':testbed'
+project(":testbed").projectDir = new File("testbed")

@@ -1,0 +1,68 @@
+apply plugin: 'com.android.library'
+
+android {
+    defaultConfig {
+        minSdk 26
+        versionCode 1
+        versionName "1.0.0"
+        compileSdkVersion 30
+        externalNativeBuild {
+            cmake {
+                def ndkPath = "C:/Users/mfjt5/AppData/Local/Android/Sdk/ndk/26.1.10909125"
+                abiFilters "arm64-v8a"
+                cppFlags "-std=c++17"
+                arguments "-DANDROID_STL=c++_shared",
+                        "-DAVOX_ENABLE_FAAC=OFF",
+                        "-DANDROID_TOOLCHAIN=clang",
+                        // "-DCMAKE_SYSROOT=${ndkPath}/sysroot",
+                        "-DANDROID_NDK=${ndkPath}",
+                        "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384",
+                        "-DCMAKE_EXE_LINKER_FLAGS=-Wl,-z,max-page-size=16384",
+                        "-DCMAKE_C_COMPILER_FORCED=TRUE",
+                        "-DCMAKE_CXX_COMPILER_FORCED=TRUE" // 跳过 C++ 编译器检查
+            }
+        }
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        consumerProguardFiles "consumer-rules.pro"
+    }
+    sourceSets {
+        main {
+            assets.srcDirs = ['assets']
+            // 添加 SDL 的 Java 源码路径
+            // java.srcDirs += ['../../../../3rdparty/SDL/android-project/app/src/main/java']
+            // https://developer.android.com/build/releases/past-releases/agp-4-0-0-release-notes?hl=zh-cn#cmake-imported-targets
+            // jniLibs.srcDirs = ['libs']
+        }
+    }
+    aaptOptions {
+        noCompress 'onnx'
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            debuggable true
+        }
+    }
+    externalNativeBuild {
+        cmake {
+            path "${projectDir}/../../../../CMakeLists.txt"
+            version "3.22.1"
+        }
+    }
+    compileOptions {
+        sourceCompatibility = 11
+        targetCompatibility = 11
+    }
+    ndkVersion '26.1.10909125'
+}
+
+println fileTree(dir: "libs", include: ["*.jar"]).files
+dependencies {
+    implementation fileTree(dir: "libs", include: ["*.jar"])
+    implementation files('libs/avox_swig.jar')
+    implementation 'com.android.support:appcompat-v7:28.0.0'
+    implementation 'com.android.support:media2:28.0.0-alpha03'
+}

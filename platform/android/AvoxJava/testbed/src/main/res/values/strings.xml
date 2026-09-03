@@ -1,0 +1,21 @@
+<resources>
+    <string name="btnVulkan">Vulkan</string>
+    <string name="btnVkGL">Vulkan2GL</string>
+    <string name="btnGL">EGL</string>
+    <string name="btnOpen">打开</string>
+    <string name="btnClose">关闭</string>
+    <string name="btnSource">数据源</string>
+    <string name="btnAudioStart">相机录音开</string>
+    <string name="btnAudioStop">相机录音关</string>
+    <string name="btnVideoStart">相机开</string>
+    <string name="btnVideoStop">相机关</string>
+    <string name="btnPushStart">开始推流</string>
+    <string name="btnPushStop">结束推流</string>
+    <string name="btnSttStart">语音识别开</string>
+    <string name="btnSttStop">语音识别关</string>
+    <string name="label_vulkan">vulkan 显示</string>
+    <string name="label_opengl_es">opengl es 显示</string>
+    <!--    <string name="rtmp_text">rtmp://202.69.69.180:443/webcast/bshdlive-pc</string>-->
+    <string name="rtmp_text">rtsp://192.168.68.244/live/test</string>
+    <string name="rtc_pull">http://192.168.68.244</string>
+</resources>

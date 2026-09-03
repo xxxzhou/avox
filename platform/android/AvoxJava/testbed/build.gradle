@@ -1,0 +1,44 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace 'avox.samples.mediaplayer'
+    signingConfigs {
+        release {
+            storeFile file('D:\\Work\\android\\avplay.jks')
+            storePassword "12345678"
+            keyAlias "avplay"
+            keyPassword "12345678"
+        }
+    }
+    compileSdkVersion 30
+    defaultConfig {
+        applicationId "avox.samples.mediaplayer"
+        minSdkVersion 26
+        versionCode 1
+        versionName "1.0"
+    }
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility = 11
+        targetCompatibility = 11
+    }
+}
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    implementation files('../avox/libs/avox_swig.jar')
+    implementation files('../../../../3rdparty/library/android/webrtc/libwebrtc.jar')
+    //for permission
+    implementation 'com.yanzhenjie:permission:2.0.3'
+    implementation project(path: ':avox')
+    implementation 'androidx.activity:activity:1.0.0'
+    implementation 'androidx.appcompat:appcompat:1.1.0'
+    implementation 'com.google.android.material:material:1.1.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.0.0'
+}
