@@ -1,0 +1,27 @@
+[submodule "3rdparty/ZLMediaKit"]
+	path = 3rdparty/ZLMediaKit
+	url = git@github.com:xxxzhou/ZLMediaKit.git
+[submodule "3rdparty/faad2"]
+	path = 3rdparty/faad2
+	url = git@github.com:knik0/faad2.git
+[submodule "3rdparty/volk"]
+	path = 3rdparty/volk
+	url = git@github.com:zeux/volk.git
+[submodule "3rdparty/fdk-aac"]
+	path = 3rdparty/fdk-aac
+	url = git@github.com:mstorsjo/fdk-aac.git
+[submodule "3rdparty/freetype"]
+	path = 3rdparty/freetype
+	url = git@github.com:freetype/freetype.git
+[submodule "3rdparty/sherpa-onnx"]
+	path = 3rdparty/sherpa-onnx
+	url = git@github.com:k2-fsa/sherpa-onnx.git
+[submodule "3rdparty/sentencepiece"]
+	path = 3rdparty/sentencepiece
+	url = git@github.com:google/sentencepiece.git
+[submodule "3rdparty/cpp-httplib"]
+	path = 3rdparty/cpp-httplib
+	url = https://github.com/yhirose/cpp-httplib.git
+[submodule "3rdparty/godot-cpp"]
+	path = 3rdparty/godot-cpp
+	url = https://github.com/godotengine/godot-cpp.git

@@ -1,0 +1,145 @@
+build
+build_*.log
+build_*.txt
+__pycache__
+src/avox/.vscode/*.*
+src/avox/AvoxVersion.h
+.history
+.vs
+.vscode/cache
+*.dmp
+data
+/yolo11n.pt
+tmp/**
+script/verify
+.zcode
+
+# plugins
+# plugins/avox_vi
+
+# 3rdparty
+3rdparty/library/windows/onnxruntime
+3rdparty/library/android/onnxruntime
+3rdparty/library/linux/onnxruntime
+3rdparty/library/ios/onnxruntime
+3rdparty/library/windows/opencv
+3rdparty/library/android/opencv
+3rdparty/library/linux/opencv
+3rdparty/library/ios/opencv
+
+# nodes
+node_modules
+
+# python
+swig/python/files/**
+
+# swig
+swig/csharp/files
+swig/java/files
+swig/java/avox_swig.jar
+
+# iOS
+._*
+**/._*
+xcuserdata
+.DS_Store
+platform/ios/**/Pods
+platform/ios/**/*.xcworkspace
+platform/ios/**/Podfile.lock
+platform/ios/testbed/lib/
+platform/ios/testbed/libwebrtc.a
+platform/ios/testbed/testbed/avox.bundle
+
+# Windows
+platform/windows/Testbed/obj/**/*.*
+platform/windows/Testbed/bin/**/*.*
+platform/windows/Testbed/.vs/**/*.*
+# SWIG生成的CSharp封装库,后面看需要做版本管理
+platform/windows/CSharp/**/*.*
+
+# Android
+platform/android/AvoxJava/avox/src/main/java/avox/android/library/swig
+platform/android/AvoxJava/.gradle
+platform/android/AvoxJava/.idea
+platform/android/AvoxJava/gradle
+platform/android/AvoxJava/**/.gradle
+platform/android/AvoxJava/**/.idea
+platform/android/AvoxJava/**/.cxx
+platform/android/AvoxJava/gradlew
+platform/android/AvoxJava/gradlew.bat
+platform/android/AvoxJava/local.properties
+platform/android/AvoxJava/avox/build
+# platform/android/AvoxJava/avox/libs
+platform/android/AvoxJava/avox/assets
+platform/android/AvoxJava/**/build/
+platform/android/AvoxJava/avox/libs/arm64-v8a
+
+# wasm
+/platform/wasm/**/*.*
+/platform/wasm/**/build
+!/platform/wasm/**/*.py
+!/platform/wasm/**/*.cpp
+!/platform/wasm/**/CMakeLists.txt
+
+# nodejs
+swig/nodejs/dist
+swig/nodejs/package-lock.json
+
+# avalonia
+platform/avalonia/DDPlayer/**/obj
+platform/avalonia/DDPlayer/**/bin
+platform/avalonia/DDPlayer/**/.vs
+platform/avalonia/DDPlayer/.idea/
+platform/avalonia/DDPlayer/AvaPlayer/AvaPlayer.iOS/net10.0
+
+# AI
+.codebuddy/
+.trae/
+assets/models/**
+assets/config
+!assets/models/README.md
+.claude/
+.mcp.json
+yolo26m-seg.pt
+yolo26n-seg.pt
+yolo26n.pt
+dist
+avplay-android-arm64.zip
+avplay-windows-x64.zip
+AvaPlayer-windows-x64.zip
+
+script/realesrgan/weights/realesr-general-x4v3.pth
+
+# Godot (platform/godot: GDExtension 插件 + 实测项目)
+# 部署的插件运行时 (deploy_godot.ps1 生成, bin junction 指向构建输出)
+platform/godot/**/addons/
+# Godot 编辑器缓存
+platform/godot/**/.godot/
+# 本机编辑器配置
+platform/godot/**/.vscode/
+# 运行日志
+platform/godot/**/*.log
+# 调试截图 (voice_input.gd 等运行时 save_png 产物)
+platform/godot/tools/tmp_*.png
+# 直接在 plugin 目录 cmake 的兜底产物 (plugin/build/ 由上面 build 规则覆盖)
+platform/godot/plugin/bin/
+platform/godot/tools/src/avatar/test_clips/
+platform/godot/tools/src/avatar/test_vrm/*.vrm
+platform/godot/docs/ui-reference/
+# Godot Android 打包产物 (可由 build_android_godot.sh 重新生成)
+platform/godot/**/*.apk
+platform/godot/**/*.idsig
+platform/godot/**/*.import
+platform/godot/avox_tools_win/
+
+build_cancel_removal.log
+build_log.txt
+
+samples/pythontest/
+swig/nodejs/screenshots/
+swig/nodejs/logs/
+build_log_torrent.txt
+
+results/torrent_bench/
+# swig nodejs 生成物 (build 时由 swig 重新生成)
+swig/nodejs/files
