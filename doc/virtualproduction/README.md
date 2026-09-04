@@ -1,7 +1,7 @@
 # 虚拟制片 (Virtual Production / XR) 文档
 
 > 整理同步自 aocec(aoce) 仓库的 `doc/virtualproduction/`、`doc/ue4/`、`doc/math/` 中与虚拟制片相关的部分, 2026-09 同步。
-> 原仓库已冻结归档, 这些文档是现场项目(坪山 LED 虚拟拍摄、XR 演播)沉淀的一手经验, 标定相关算法细节与踩坑记录直接服务于 `plugins/avox_calib` 的移植整合(方案见 [doc/plan/虚拟制片标定移植方案.md](../plan/虚拟制片标定移植方案.md))。
+> 原仓库已冻结归档, 这些文档是现场项目(坪山 LED 虚拟拍摄、XR 演播)沉淀的一手经验, 标定相关算法细节与踩坑记录直接服务于 `plugins/avox_calib` 的移植整合(标定移植方案已随 avox_calib 落地)。
 > 原文引用的配图(约 85MB 现场截图/动图)未同步, 需要看图请到 aocec 仓库 `assets/images/` 对应路径; 文中指向 aocec 代码的相对路径同理。
 
 ## 阅读顺序建议
