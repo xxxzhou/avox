@@ -54,6 +54,10 @@ extern void regWasAudioRender();
 extern void regWasAudioDevice();
 #endif
 #endif
+#if _WIN32
+// Windows平台Media Foundation相机设备(不依赖ffmpeg)
+extern void regWinMfCameraDevice();
+#endif
 #ifdef __ANDROID__
 // Android平台原生音频渲染
 extern void regAndATRender();
@@ -162,6 +166,9 @@ void AvoxManager::init() {
   regWasAudioRender();
   regWasAudioDevice();
 #endif
+#endif
+#if _WIN32
+  regWinMfCameraDevice();
 #endif
 #ifdef __ANDROID__
   regAndATRender();

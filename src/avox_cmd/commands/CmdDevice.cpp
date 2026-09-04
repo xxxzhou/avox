@@ -3,13 +3,14 @@
  * @brief device 子命令 - 设备枚举 + ISourcePlayer 采集预览/截图/录像
  *
  * 整合 sourceplaytest / sourcettstest 能力:
- *   1. 枚举视频/音频设备 (SDK 取平台默认: Win=win_capture/wasapi,
- *      Android=and_ndkcamer2/android, iOS=ios_avf/ios; 每平台只实现一个, 不暴露选择)
+ *   1. 枚举视频/音频设备 (SDK 默认取平台值: Win=win_capture/wasapi,
+ *      Android=and_ndkcamer2/android, iOS=ios_avf/ios; -vsdk 可选 win_mf 相机)
  *   2. 按索引或名称子串选择设备
  *   3. ISourcePlayer 开 Vulkan 窗口预览采集
  *   4. 键控: P=截图 R=录像(开/关) A=重开设备 Q=quit
  * 用法:
  *   avox_cli device -list                       # 仅列出设备后退出
+ *   avox_cli device -list -vsdk win_mf          # 列出 MF 相机
  *   avox_cli device -vi 0 -ai 0                 # 选 0 号视频/音频设备预览
  *   avox_cli device -vname OBS                  # 按名称子串选视频设备
  *   avox_cli device -vi 1 -record D:/rec.mp4    # 预览并自动录像
@@ -88,8 +89,9 @@ Command cmdDevice() {
   Command cmd;
   cmd.name = "device";
   cmd.desc = "设备采集预览: 列设备(-list) / 摄像头·窗口·屏幕预览 / 录制(-record)";
-  cmd.parser.addArg(
-      {"-list", "", ArgType::Boolean, false, "仅列出设备后退出", ""});
+  cmd.parser.addArg({"-list", "", ArgType::Boolean, false, "仅列出设备后退出", ""});
+  cmd.parser.addArg({"-vsdk", "", ArgType::String, false,
+                     "视频SDK (win_capture/win_mf, 默认平台值)", ""});
   cmd.parser.addArg(
       {"-vi", "", ArgType::Int, false, "视频设备索引 (默认 0, -1=无)", "0"});
   cmd.parser.addArg({"-ai", "", ArgType::Int, false,
@@ -109,8 +111,11 @@ Command cmdDevice() {
 
   cmd.run = [](const ParsedArgs& args) -> int {
     bool onlyList = args.getBool("list");
-    // 每平台只实现一个 SDK, 取平台默认 (不暴露给用户选择)
+    // SDK 默认取平台值, -vsdk 可显式选择(如 win_mf 相机)
     VDeviceSdk vsdk = getDefaltVideoSdk();
+    std::string vsdkArg = args.getString("vsdk", "");
+    if (vsdkArg == "win_mf") vsdk = VDeviceSdk::win_mf;
+    if (vsdkArg == "win_capture") vsdk = VDeviceSdk::win_capture;
     ADeviceSdk asdk = getDefaltAudioSdk();
     int vi = args.getInt("vi", 0);
     int ai = args.getInt("ai", 0);

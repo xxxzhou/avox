@@ -25,20 +25,37 @@ int main(int argc, char* argv[]) {
   sp = createDevicePlayer();
   muxer = sp->getMuxer();
   IAudioManager* audioMgr = getAudioManager(ADeviceSdk::wasapi);
-  IVideoManager* videoMgr = getVideoManager(VDeviceSdk::win_capture);
+  // 用法: sourceplaytest [win_capture|win_mf] [设备索引], 默认win_capture窗口采集
+  VDeviceSdk sdk = VDeviceSdk::win_capture;
+  if (argc > 1 && std::string(argv[1]) == "win_mf") {
+    sdk = VDeviceSdk::win_mf;
+  }
+  IVideoManager* videoMgr = getVideoManager(sdk);
   int32_t count = videoMgr->getDeviceCount();
-  int32_t vIndex = 1;
-  for (int32_t i = 0; i < count; i++) {
-    // Visual Studio Code/RenderDoc
-    std::string name = videoMgr->getDevice(i)->getDeviceName();
-    if (name.find("微信") != std::string::npos) {
-      vIndex = i;
-      log(LogLevel::info, "select video device: ", name);
-      break;
+  log(LogLevel::info, "video device count:", count, " sdk:", (int)sdk);
+  int32_t vIndex = 0;
+  if (argc > 2) {
+    vIndex = atoi(argv[2]);
+  } else if (sdk == VDeviceSdk::win_capture) {
+    vIndex = 1;
+    for (int32_t i = 0; i < count; i++) {
+      // Visual Studio Code/RenderDoc
+      std::string name = videoMgr->getDevice(i)->getDeviceName();
+      if (name.find("微信") != std::string::npos) {
+        vIndex = i;
+        break;
+      }
     }
   }
+  if (vIndex >= count) {
+    vIndex = 0;
+  }
+  if (count > 0) {
+    log(LogLevel::info, "select video device:",
+        videoMgr->getDevice(vIndex)->getDeviceName());
+  }
   sp->setAudioSource(audioMgr->getDevice(0));
-  sp->setVideoSource(videoMgr->getDevice(vIndex));
+  sp->setVideoSource(count > 0 ? videoMgr->getDevice(vIndex) : nullptr);
   sp->getSurfaceRender()->setVulkan(true);
   sp->getSurfaceRender()->setSurface(nullptr);
   sp->open();

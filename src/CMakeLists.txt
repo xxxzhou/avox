@@ -35,7 +35,8 @@ if(WIN32)
     add_sub_path(avox_windows/dx11 AVOX_HEADER AVOX_SOURCE)
     add_sub_path(avox_windows/dx12 AVOX_HEADER AVOX_SOURCE)
     add_sub_path(avox_windows/winrt AVOX_HEADER AVOX_SOURCE)
-    add_sub_path(avox_windows/audio AVOX_HEADER AVOX_SOURCE) 
+    add_sub_path(avox_windows/audio AVOX_HEADER AVOX_SOURCE)
+    add_sub_path(avox_windows/camera AVOX_HEADER AVOX_SOURCE)
 endif() 
 
 # android系统
