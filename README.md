@@ -1,6 +1,6 @@
 # avox
 
-avox 是一套跨平台音视频能力库（C++17），提供从设备采集、硬解硬编、GPU 图像处理到渲染、推流录制的统一管线。播放器是当前最完整的模块；WebRTC 实时通话与 AI 能力（语音识别、机器翻译、图像修复、超分辨率）以插件形式按需整合；虚拟制片、数字人模块已在生产环境验证，正在集成；UE4/UE5、Unity3D、Godot 游戏引擎纹理级直通已打通。
+avox 是一套跨平台音视频能力库（C++17），提供从设备采集、硬解硬编、GPU 图像处理到渲染、推流录制的统一管线。播放器是当前最完整的模块；WebRTC 实时通话与 AI 能力（语音识别、机器翻译、图像修复、超分辨率）以插件形式按需整合；虚拟制片模块已在生产环境验证并集成，数字人模块正在集成；UE4/UE5、Unity3D、Godot 游戏引擎纹理级直通已打通。
 
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Android%20%7C%20iOS%20%7C%20Linux-blue)]()
 [![Language](https://img.shields.io/badge/Language-C%2B%2B%20%7C%20C%23%20%7C%20Java%20%7C%20JS%20%7C%20Python-orange)]()
@@ -8,7 +8,7 @@ avox 是一套跨平台音视频能力库（C++17），提供从设备采集、�
 [![Commercial License](https://img.shields.io/badge/Commercial-Available-success)]()
 [![Version](https://img.shields.io/badge/Version-1.0.0969-green)]()
 
-avox 源自作者多年的音视频/GPU 技术积累，经大模型辅助整理而成。技术脉络从早期 [OEIP](https://zhuanlan.zhihu.com/p/104027165)（UE4/Unity3D 多媒体管线）到 [aoce](https://github.com/xxxzhou/aoce)（Vulkan 跨平台 GPU 图像处理），关键实现过程均整理成系列技术文章（[知乎 @天天不在](https://www.zhihu.com/people/zhou-xin-12-70-21/posts)），见下文[技术实现解析](#技术实现解析)。
+avox 源自作者多年的音视频/GPU 技术积累，经大模型辅助整理而成。技术脉络从早期 [OEIP](https://zhuanlan.zhihu.com/p/104027165)（UE4/Unity3D 多媒体管线）到 [aoce](https://github.com/xxxzhou/aoce)（Vulkan 跨平台 GPU 图像处理），关键实现过程均整理成系列技术文章（[天天不在](https://www.zhihu.com/people/zhou-xin-12-70-21/posts)），见下文[技术实现解析](#技术实现解析)。
 
 ## 项目优势
 
@@ -23,6 +23,8 @@ avox 源自作者多年的音视频/GPU 技术积累，经大模型辅助整理�
 - **插件化 AI 能力模块** - 语音识别、翻译、图像修复、目标检测等以动态插件运行期加载，与播放主链路解耦，按产品形态裁剪交付体积
 - **游戏引擎深度接入** - UE4/UE5、Unity3D、Godot 纹理级零拷贝双向直通；播放、通话、AI 能力在引擎内原生可用，而非仅嵌一个播放窗口
 - **真实场景验证，全程有据可查** - 直播播放、多平台双向通话、虚拟制片等场景实战落地，关键实现均有系列技术文章与仓库文档对应，可读、可查、可复现
+
+Android Godot GPU 直通播放磁力链接演示![Android Godot GPU直通播放磁力链接](assets/images/godot/avox_android_menu.png)
 
 ## 核心特性
 
@@ -78,9 +80,9 @@ AI 模块以动态插件（`plugins/`）形式加载，运行期探测能力：
 - **AI 推理** - ONNX Runtime / NCNN 通用推理（YOLO 检测、人脸关键点等），支持 Vulkan 显存直连输入输出
 - **多模态 Agent** - LLM 集成，支持图文对话、工具链调用
 
-### 虚拟制片（集成中）
+### 虚拟制片
 
-虚拟制片模块已在生产环境验证，正在集成进 avox，近期合入：
+虚拟制片相关模块已在生产环境验证并集成进 avox：
 
 - **LED 虚拟拍摄相机跟踪** - 对标 Redspy/MoSys：单目+IMU、红外反光点方案
 - **XR 拍摄虚实相机混合** - 相机标定 + 畸变校正，虚实融合重投影误差约 3 像素
@@ -102,7 +104,7 @@ AI 模块以动态插件（`plugins/`）形式加载，运行期探测能力：
 
 ## 技术实现解析
 
-关键实现过程整理成系列技术文章（[知乎 @天天不在 - 文章列表](https://www.zhihu.com/people/zhou-xin-12-70-21/posts)）：
+关键实现过程整理成系列技术文章（[天天不在 - 文章列表](https://www.zhihu.com/people/zhou-xin-12-70-21/posts)）：
 
 **播放器框架与多平台移植**
 
@@ -158,9 +160,9 @@ avox 的能力来自多年的持续积累：
 |------|------|----------|
 | 2019-2020 | oeip（Windows） | CUDA/DX11 图像管线、FFmpeg 推拉流、UE4/Unity3D 纹理直通、CUDA Grabcut/导向滤波、YOLO 整合游戏引擎 |
 | 2020-2021 | [aoce](https://github.com/xxxzhou/aoce)（跨平台） | Vulkan Compute 图像管线、GPUImage 100+ 滤镜移植、Android/iOS 相机采集、蓝绿幕扣像、NCNN 端侧推理、SWIG 多语言 |
-| 2024-至今 | avox | 播放器 SDK：多平台硬解硬编、零拷贝 GPU 通路、WebRTC 全家桶、AI 字幕/修复/超分、多语言 SDK；虚拟制片模块集成中 |
+| 2024-至今 | avox | 播放器 SDK：多平台硬解硬编、零拷贝 GPU 通路、WebRTC 全家桶、AI 字幕/修复/超分、多语言 SDK；虚拟制片模块已集成 |
 
-**虚拟制片模块**（前期在 aoce 上完整验证，正在集成进 avox，近期合入）：
+**虚拟制片模块**（前期在 aoce 上完整验证，已集成进 avox）：
 
 - LED 虚拟拍摄相机跟踪（[跟踪算法](https://zhuanlan.zhihu.com/p/705932365)，对标 Redspy/MoSys：单目+IMU、红外反光点方案）
 - XR 拍摄虚实相机混合（[实现解析](https://zhuanlan.zhihu.com/p/705965901)，标定+畸变校正，重投影误差约 3 像素）
@@ -302,5 +304,5 @@ ISurfaceRender* render = player->getSurfaceRender(); // 托管，不释放
 ## 许可证
 
 - 本项目核心代码基于 [GNU AGPL-3.0](LICENSE) 开源：可自由使用、学习、修改和分发；基于本 SDK 的衍生作品（含插件）分发时须同样以 AGPL-3.0 开源。
-- **商业授权** - 闭源商用场景（商业插件、嵌入式产品集成等）可联系作者获取商业授权（知乎 @天天不在 / GitHub Issues）。
+- **商业授权** - 闭源商用场景（商业插件、嵌入式产品集成等）可联系作者获取商业授权（[天天不在](https://www.zhihu.com/people/zhou-xin-12-70-21/posts) / GitHub Issues）。
 - 第三方依赖（FFmpeg、WebRTC、OpenCV 等）遵循各自的开源协议，详见 [3rdparty/README.md](3rdparty/README.md)。

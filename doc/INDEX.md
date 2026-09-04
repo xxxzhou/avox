@@ -36,29 +36,29 @@ avox 是跨平台音视频播放器 SDK，支持直播流、本地媒体、硬�
 |------|------|------|------|------|
 | avox | `src/avox/` | 核心播放器框架 | [Code Wiki 架构](code-wiki/01-项目概览与架构.md) | ✅ |
 | avox_player | `src/avox/player/` | MediaPlayer/SourcePlayer 实现 | [Code Wiki 核心类](code-wiki/03-核心类与关键接口.md) | ✅ |
-| avox_source | `src/avox/source/` | 数据源 (AVSource/RawSource) | [数据源](player/数据源.md) | ✅ |
+| avox_source | `src/avox/source/` | 数据源 (AVSource/RawSource) | [数据源](player/core/数据源.md) | ✅ |
 
 ### 解码模块
 
 | 模块 | 目录 | 功能 | 文档 | 状态 |
 |------|------|------|------|------|
-| avox_video | `src/avox/video/` | 视频解码器基类 | [播放器硬解](player/播放器硬解.md) | ✅ |
+| avox_video | `src/avox/video/` | 视频解码器基类 | [播放器硬解](player/decode/播放器硬解.md) | ✅ |
 | avox_audio | `src/avox/audio/` | 音频解码器基类 | - | ✅ |
-| avox_ffmpeg | `src/avox_ffmpeg/` | FFmpeg 软解/硬解 | [播放器FFmpeg](player/播放器FFmpeg.md) | ✅ |
+| avox_ffmpeg | `src/avox_ffmpeg/` | FFmpeg 软解/硬解 | [播放器FFmpeg](player/decode/播放器FFmpeg.md) | ✅ |
 | avox_aac | `src/avox_aac/` | AAC 解码 (faad2/fdk-aac) | - | ✅ |
 
 ### IO 模块
 
 | 模块 | 目录 | 功能 | 文档 | 状态 |
 |------|------|------|------|------|
-| avox_zlmediakit | `src/avox_zlmediakit/` | 直播流解析 (RTSP/RTMP) | [ZLMediaKit](player/ZLMediaKit.md) | ✅ |
+| avox_zlmediakit | `src/avox_zlmediakit/` | 直播流解析 (RTSP/RTMP) | [ZLMediaKit](player/media/ZLMediaKit.md) | ✅ |
 | avox_muxer | `src/avox/muxer/` | 媒体复用 | [Code Wiki 核心类](code-wiki/03-核心类与关键接口.md) | ✅ |
 
 ### 渲染模块
 
 | 模块 | 目录 | 功能 | 文档 | 状态 |
 |------|------|------|------|------|
-| avox_vulkan | `src/avox_vulkan/` | Vulkan GPU 图像处理管线 | [Code Wiki 模块](code-wiki/02-目录结构与模块职责.md), [多平台GPU共享](player/多平台GPU共享.md) | ✅ |
+| avox_vulkan | `src/avox_vulkan/` | Vulkan GPU 图像处理管线 | [Code Wiki 模块](code-wiki/02-目录结构与模块职责.md), [多平台GPU共享](player/decode/多平台GPU共享.md) | ✅ |
 | avox_freetype | `src/avox_freetype/` | FreeType 文字渲染 | - | ✅ |
 
 ### 平台模块
@@ -219,12 +219,12 @@ class IAudioRender {
 
 **按功能查找：**
 
-- 音视频同步 → [播放器时间](player/播放器时间.md)
-- 硬件解码 → [播放器硬解](player/播放器硬解.md)
+- 音视频同步 → [播放器时间](player/core/播放器时间.md)
+- 硬件解码 → [播放器硬解](player/decode/播放器硬解.md)
 - Vulkan 处理 → [Code Wiki 模块](code-wiki/02-目录结构与模块职责.md)
 - WebRTC → [播放器WebRTC](webrtc/播放器WebRTC.md)
 - AI 功能 → [AI 模块](ai/)
-- GPU 直通/纹理共享 → [多平台GPU共享](player/多平台GPU共享.md)
+- GPU 直通/纹理共享 → [多平台GPU共享](player/decode/多平台GPU共享.md)
 
 **按平台查找：**
 

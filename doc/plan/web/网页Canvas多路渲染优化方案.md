@@ -1,7 +1,7 @@
 # 网页 Canvas 多路渲染优化方案
 
 > 适用场景:Electron 内嵌 `<canvas>` 多路播放(Intel UHD 770 集显,10 路 1080P 起卡顿)。
-> 本文只做方案分析与取舍,不改代码。相关现状见 [播放器Electron](../player/platform/播放器Electron.md)、[OffscreenCanvas自适应分辨率设计](./OffscreenCanvas自适应分辨率设计.md)、[多平台GPU共享](../player/多平台GPU共享.md)。
+> 本文只做方案分析与取舍,不改代码。相关现状见 [播放器Electron](../../player/platform/播放器Electron.md)、[OffscreenCanvas自适应分辨率设计](./OffscreenCanvas自适应分辨率设计.md)、[多平台GPU共享](../../player/decode/多平台GPU共享.md)。
 
 ---
 
@@ -66,7 +66,7 @@ I420/YUV420P = 1.5 字节/像素。1080P 单帧 = 1920×1080×1.5 ≈ **2.97 MiB
 - `bCpu=true`(网页 `setOffSurface` 路径):`imageToBuffer` 回读到 CPU。← 网页走这条
 - `bGpu=true`(原生窗口 `setSurface` 路径):`VkOutputLayer.cpp:132-181` 用 `VkWinImage` 把 Vulkan 结果 `copyImage` 到 D3D11 **共享纹理**,不过 CPU,返回 NT 共享句柄(`getOutGpuBuffer()`)。← 原生窗口走这条
 
-也就是说,**零 CPU 回读的 interop 机制现成**,只是网页用不上。原因见 [播放器Electron.md:94](../player/platform/播放器Electron.md) 的作者实证:
+也就是说,**零 CPU 回读的 interop 机制现成**,只是网页用不上。原因见 [播放器Electron.md:94](../../player/platform/播放器Electron.md) 的作者实证:
 
 > "把底层渲染结果通过 DX11 共享 NT 句柄,用 WebGPU 导入渲染"——**发现相应 API 根本没有,是 AI 自己编的**。Map 到 CPU 再给浏览器,硬解就没意义了。
 
@@ -87,7 +87,7 @@ I420/YUV420P = 1.5 字节/像素。1080P 单帧 = 1920×1080×1.5 ≈ **2.97 MiB
 
 **① 标准 Web 平台(stock Electron/Chrome):不行。**
 - WebGPU 的 `importExternalTexture` 只接受 `HTMLVideoElement`/`MediaStreamTrack`/`VideoFrame`,**不接受裸 GPU 句柄**。导入平台共享纹理(DXGI/IOSurface/dmabuf)仍是 proposal:[gpuweb#5167](https://github.com/gpuweb/gpuweb/issues/5167)、可写共享纹理 [gpuweb#6236](https://github.com/gpuweb/gpuweb/issues/6236),未落地。
-- 所以原生 Vulkan/D3D11 纹理无法零拷贝喂给网页 WebGL/WebGPU。这是 Web 平台边界,非本项目问题,也印证了 [播放器Electron.md:94](../player/platform/播放器Electron.md) 作者早年的实证。
+- 所以原生 Vulkan/D3D11 纹理无法零拷贝喂给网页 WebGL/WebGPU。这是 Web 平台边界,非本项目问题,也印证了 [播放器Electron.md:94](../../player/platform/播放器Electron.md) 作者早年的实证。
 
 **② 改 Chromium/Electron:技术可行,有先例。**
 - ANGLE 内部扩展 `ANGLE_d3d_texture_client_buffer`(Chromium 自用它把视频帧喂进 `<video>`/WebGPU)——只对 Chromium C++ 开放,不对 JS 开放。见 [angleproject#2820](https://bugs.chromium.org/p/angleproject/issues/detail?id=2820)。
@@ -158,7 +158,7 @@ C++ 解码/渲染 → NV12 buffer → new VideoFrame(buffer,{format:'nv12',...})
 
 ### 方案 C:原生窗口叠加(已有方案,真零拷贝但非 canvas)
 
-[播放器Electron.md:137-142](../player/platform/播放器Electron.md) 已实现:
+[播放器Electron.md:137-142](../../player/platform/播放器Electron.md) 已实现:
 `BrowserWindow.getNativeWindowHandle()` → `VkWinImage` 生成 D3D11/Vulkan Swapchain → `transparent:true` 浮窗叠在主窗口上,`VkVideoRender` 用 `bGpu=true` interop,**全程不过 CPU**。
 
 - 收益:回读+上传**两段全消**,性能等同原生,10 路无压力。
