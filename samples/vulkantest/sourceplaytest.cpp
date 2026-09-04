@@ -25,10 +25,13 @@ int main(int argc, char* argv[]) {
   sp = createDevicePlayer();
   muxer = sp->getMuxer();
   IAudioManager* audioMgr = getAudioManager(ADeviceSdk::wasapi);
-  // 用法: sourceplaytest [win_capture|win_mf] [设备索引], 默认win_capture窗口采集
+  // 用法: sourceplaytest [win_capture|win_mf|win_decklink] [设备索引], 默认win_capture窗口采集
   VDeviceSdk sdk = VDeviceSdk::win_capture;
   if (argc > 1 && std::string(argv[1]) == "win_mf") {
     sdk = VDeviceSdk::win_mf;
+  }
+  if (argc > 1 && std::string(argv[1]) == "win_decklink") {
+    sdk = VDeviceSdk::win_decklink;
   }
   IVideoManager* videoMgr = getVideoManager(sdk);
   int32_t count = videoMgr->getDeviceCount();

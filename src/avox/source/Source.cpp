@@ -3,6 +3,7 @@
 
 #include "../AvoxSource.h"
 #include "../module/AvoxManager.hpp"
+#include "../module/ModuleMgr.hpp"
 #include "DeviceSource.hpp"
 
 namespace avox {
@@ -44,6 +45,8 @@ const char* getRawSourceTypeStr(RawSourceType type) {
 }
 
 IVideoManager* getVideoManager(VDeviceSdk sdk) {
+  // vDeviceMgr查表不触发插件扫描, 先lazy加载插件(设备管理器可由插件注册, 如avox_decklink)
+  ModuleMgr::Get().ensureStarted();
   return AvoxManager::Get().vDeviceMgr.getMgr(sdk);
 }
 
@@ -60,6 +63,7 @@ VDeviceSdk getDefaltVideoSdk() {
 }
 
 IAudioManager* getAudioManager(ADeviceSdk sdk) {
+  ModuleMgr::Get().ensureStarted();
   return AvoxManager::Get().aDeviceMgr.getMgr(sdk);
 }
 

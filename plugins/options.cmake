@@ -20,3 +20,7 @@ option(AVOX_ENABLE_AVATAR "build avox_avatar (audio->ARKit52 blendshape, virtual
 option(AVOX_ENABLE_OPENVINO "build OpenVINO for Intel iGPU/CPU inference (VkQEnhanceLayer)" OFF)
 # avox_torrent: 磁力/BT 边下边播 (libtorrent 顺序下载, 插件静态链入)
 option(AVOX_ENABLE_TORRENT "build avox_torrent magnet/bt streaming plugin (libtorrent)" ON)
+# avox_decklink: DeckLink(Blackmagic)采集卡 (仅Windows编译, 运行期需Desktop Video驱动)
+option(AVOX_ENABLE_DECKLINK "build avox_decklink DeckLink capture card plugin (Windows only, needs Desktop Video driver at runtime)" ON)
+# avox_calib: 虚拟制片相机标定 (内参/手眼+scale/PnP/序列标定, 依赖 OpenCV calib3d+aruco; 移植自 aoce)
+option(AVOX_ENABLE_CALIB "build avox_calib virtual production camera calibration (needs OpenCV)" ON)

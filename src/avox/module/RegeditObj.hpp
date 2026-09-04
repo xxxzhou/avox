@@ -122,9 +122,10 @@ public:
     funcMap[type] = info;
   }
   // 延迟初始化，在第一次使用时才会初始化
+  // 未注册的type返回nullptr(不能调空initFunc, 会抛bad_function_call)
   OBJCLASS *getMgr(const OBJTYPE &type) {
     auto &info = funcMap[type];
-    if (!info.instance) {
+    if (!info.instance && info.initFunc) {
       info.instance = info.initFunc();
     }
     return info.instance;

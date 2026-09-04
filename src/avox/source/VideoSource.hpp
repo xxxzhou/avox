@@ -8,7 +8,8 @@ namespace avox {
 // 任何能产生视频帧的源
 // 回调不要直接dispatch(&IVideoSourceOb),需要从onFrame走
 // 因为onFrame会管理数据大小变化
-class VideoSource : public TDeviceSource<IVideoSource, IVideoSourceOb> {
+// AVOX_EXPORT: 方法实现在VideoSource.cpp, 需从avox.dll导出供插件设备源(如avox_decklink)链接
+class AVOX_EXPORT VideoSource : public TDeviceSource<IVideoSource, IVideoSourceOb> {
  public:
   VideoSource() = default;
   virtual ~VideoSource() = default;

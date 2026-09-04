@@ -112,6 +112,7 @@ enum class VDeviceSdk {
   win_capture,
   and_ndkcamer2,
   ios_avf,
+  win_decklink,
 };
 
 class IAudioSourceOb {

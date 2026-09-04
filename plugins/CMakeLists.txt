@@ -7,13 +7,17 @@ include_directories("../src/")
 # DYNAMIC: 独立 avox_<name>.dll/.so 输出到 ${CMAKE_INSTALL_PREFIX}/plugins/
 set(PLUGINS_STATIC  "")
 # avox_python (嵌入 CPython) 已移除: 被 avox.dll 核心的 SubprocessRunner (spawn 机器 python) 取代。
-set(PLUGINS_DYNAMIC avox_opencv avox_sherpa avox_onnx avox_translation avox_cv avox_ocr avox_webrtc avox_openvino avox_avatar avox_torrent)
+set(PLUGINS_DYNAMIC avox_opencv avox_sherpa avox_onnx avox_translation avox_cv avox_ocr avox_webrtc avox_openvino avox_avatar avox_torrent avox_calib)
 if(ANDROID)
   # Android: jniLibs 平铺 + 目录不可枚举, 动态插件无法被 avox 扫描加载(见 plugins/README.md
   # 静态化规划); Godot 打包场景仅保留 avox_torrent —— so 作为 APK 资源打进包,
   # 运行期由 avox_godot 解压到 filesDir 并 setPluginsDir 动态加载。
   # 其余插件在 Android 无预编译依赖(opencv 等)或链接不完整(sherpa 等), 一并排除。
   set(PLUGINS_DYNAMIC avox_torrent)
+endif()
+if(WIN32)
+  # DeckLink(Blackmagic)采集卡, 仅Windows
+  list(APPEND PLUGINS_DYNAMIC avox_decklink)
 endif()
 
 # 动态插件: 各自子目录调用 register_plugin(<name> DYNAMIC ...)

@@ -20,7 +20,7 @@
 #   VDeviceKind: _pw.VDeviceKind_{none,camera,window,monitor}
 #   ADeviceKind: _pw.ADeviceKind_{none,mic,loopback}
 # 设备 SDK 枚举:
-#   VDeviceSdk: _pw.VDeviceSdk_{none,win_mf,win_capture,and_ndkcamer2,ios_avf}
+#   VDeviceSdk: _pw.VDeviceSdk_{none,win_mf,win_capture,and_ndkcamer2,ios_avf,win_decklink}
 #   ADeviceSdk: _pw.ADeviceSdk_{none,wasapi,android,ios}
 
 import AvoxWrapper as _pw

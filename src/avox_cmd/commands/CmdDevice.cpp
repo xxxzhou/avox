@@ -49,6 +49,7 @@ const char* vSdkStr(VDeviceSdk s) {
   switch (s) {
     case VDeviceSdk::win_capture: return "win_capture";
     case VDeviceSdk::win_mf: return "win_mf";
+    case VDeviceSdk::win_decklink: return "win_decklink";
     case VDeviceSdk::and_ndkcamer2: return "and_ndkcamer2";
     case VDeviceSdk::ios_avf: return "ios_avf";
     default: return "none";
@@ -91,7 +92,7 @@ Command cmdDevice() {
   cmd.desc = "设备采集预览: 列设备(-list) / 摄像头·窗口·屏幕预览 / 录制(-record)";
   cmd.parser.addArg({"-list", "", ArgType::Boolean, false, "仅列出设备后退出", ""});
   cmd.parser.addArg({"-vsdk", "", ArgType::String, false,
-                     "视频SDK (win_capture/win_mf, 默认平台值)", ""});
+                     "视频SDK (win_capture/win_mf/win_decklink, 默认平台值)", ""});
   cmd.parser.addArg(
       {"-vi", "", ArgType::Int, false, "视频设备索引 (默认 0, -1=无)", "0"});
   cmd.parser.addArg({"-ai", "", ArgType::Int, false,
@@ -116,6 +117,7 @@ Command cmdDevice() {
     std::string vsdkArg = args.getString("vsdk", "");
     if (vsdkArg == "win_mf") vsdk = VDeviceSdk::win_mf;
     if (vsdkArg == "win_capture") vsdk = VDeviceSdk::win_capture;
+    if (vsdkArg == "win_decklink") vsdk = VDeviceSdk::win_decklink;
     ADeviceSdk asdk = getDefaltAudioSdk();
     int vi = args.getInt("vi", 0);
     int ai = args.getInt("ai", 0);
