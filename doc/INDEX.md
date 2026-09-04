@@ -112,6 +112,16 @@ avox 是跨平台音视频播放器 SDK，支持直播流、本地媒体、硬�
 |------|------|
 | [数据源](source/数据源.md) | AVSource/RawSource 设计 |
 
+### 虚拟制片 (来自 aocec 整理同步)
+
+| 文档 | 说明 |
+|------|------|
+| [虚拟制片文档导航](virtualproduction/README.md) | XR 演播/标定/追踪/传输文档总索引 |
+| [虚拟制片XR演播技术整理](virtualproduction/00-虚拟制片XR演播技术整理.md) | 全景总览: 追踪、标定、GPGPU、传输、工具链 |
+| [相机标定方案](virtualproduction/calib/相机标定方案.md) | 标定流程、手眼 scale 改进、LED/Aruco 标定板 |
+| [标定开发踩坑记录](virtualproduction/calib/标定开发踩坑记录.md) | Redspy YZ 取负、序列化精度等一手踩坑 |
+| [标定移植方案](plan/虚拟制片标定移植方案.md) | aocec 标定代码移植到 avox_calib 的实施计划 |
+
 ### 平台集成
 
 | 文档 | 说明 |
