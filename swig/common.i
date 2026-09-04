@@ -150,6 +150,29 @@
 %typemap(in) Napi::Value {
   $1 = $input; // $input 是 SWIG 包装层传入的 Napi::Value
 }
+// 通用显式析构重native对象: %newobject只挂GC finalizer, 时机不可控, 高频开关下内存滞留可达GB
+// RELEASE(DISOWN|CLEAR)摘所有权后delete(无双释放); 新增重类型在类型表加分支, 需有虚析构
+%native(destroyObject) Napi::Value destroyObject(const Napi::CallbackInfo &info);
+%wrapper %{
+Napi::Value destroyObject(const Napi::CallbackInfo &info) {
+  void *argp = nullptr;
+  if (info.Length() >= 1) {
+    // 类型表: ConvertPtr 先做类型匹配, 匹配失败不触碰所有权, 可安全链式尝试
+    if (SWIG_ConvertPtr(info[0], &argp, SWIGTYPE_p_avox__IMediaPlayer, SWIG_POINTER_RELEASE) == SWIG_OK && argp) {
+      delete static_cast<avox::IMediaPlayer *>(argp);
+    } else if (SWIG_ConvertPtr(info[0], &argp, SWIGTYPE_p_avox__ISourcePlayer, SWIG_POINTER_RELEASE) == SWIG_OK && argp) {
+      delete static_cast<avox::ISourcePlayer *>(argp);
+    } else if (SWIG_ConvertPtr(info[0], &argp, SWIGTYPE_p_avox__IRtcPlayer, SWIG_POINTER_RELEASE) == SWIG_OK && argp) {
+      delete static_cast<avox::IRtcPlayer *>(argp);
+    } else if (SWIG_ConvertPtr(info[0], &argp, SWIGTYPE_p_avox__IRecorder, SWIG_POINTER_RELEASE) == SWIG_OK && argp) {
+      delete static_cast<avox::IRecorder *>(argp);
+    } else if (SWIG_ConvertPtr(info[0], &argp, SWIGTYPE_p_avox__IScreenCapture, SWIG_POINTER_RELEASE) == SWIG_OK && argp) {
+      delete static_cast<avox::IScreenCapture *>(argp);
+    }
+  }
+  return info.Env().Undefined();
+}
+%}
 %typemap(out) void* getRenderSharedHandle {
     HANDLE h = (HANDLE)$1;
     if (h == NULL) {

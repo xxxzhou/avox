@@ -613,7 +613,15 @@ class MediaPlayer extends BasePlayer {
     }
     if (this.nplayer) {
       this.nplayer.close();
+      // 显式析构native播放器: GC finalizer回收正确但时机不可控, 高频开关下native内存
+      // 滞留可累积至GB级(告警审核场景实测), destroyObject立即确定性释放
+      if (typeof avox.destroyObject === 'function') {
+        avox.destroyObject(this.nplayer);
+      }
       this.nplayer = null;
+      // winRender/audioRender持有player内部的借用指针, 随析构一起失效, 置空防复用
+      this.winRender = null;
+      this.audioRender = null;
     }
   }
 }
@@ -676,6 +684,10 @@ class WebRtcPlayer extends BasePlayer {
     }
     if (this.nplayer) {
       this.nplayer.close();
+      // 显式析构: 同 MediaPlayer destroy(), 避免 GC 时机不可控导致 native 内存滞留
+      if (typeof avox.destroyObject === 'function') {
+        avox.destroyObject(this.nplayer);
+      }
       this.nplayer = null;
     }
   }
@@ -754,6 +766,10 @@ class SourcePlayer extends BasePlayer {
     }
     if (this.nplayer) {
       this.nplayer.close();
+      // 显式析构: 同 MediaPlayer destroy(), 避免 GC 时机不可控导致 native 内存滞留
+      if (typeof avox.destroyObject === 'function') {
+        avox.destroyObject(this.nplayer);
+      }
       this.nplayer = null;
     }
     this.audioMgr = null;

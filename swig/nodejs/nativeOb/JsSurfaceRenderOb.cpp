@@ -53,27 +53,18 @@ class JsSurfaceRenderOb : public JsObserver, public ISurfaceRenderOb {
   }
   // 需要windowrender打开enableYuvOut,electron返回CPU数据给网页
   virtual void onFrame(const YUVFrame& frame) override {
-    // log(LogLevel::info, "onFrame:", frame.format);
-    uint8_t* targetPtr = nullptr;
-    int32_t targetSize = 0;
-    // onFrame一次,才会转JS线程回调请求一次setJsBuffer
-    // 所以在memcpy时,下一个setJsBuffer肯定不会到
-    {
-      std::lock_guard<std::mutex> lock(mtx);
-      if (rawBufferPtr) {
-        targetPtr = rawBufferPtr;
-        targetSize = rawBufferSize;
-      }
-    }
     int32_t frameSize = getYuvFrameSize(frame.format, frame.stride[0]);
-    if (targetPtr && targetSize >= frameSize) {
-      // 从vulkan返回的frame肯定是nv12格式并且紧湊的
-      if (bTightlyPacked(frame)) {
-        // log(LogLevel::info, "Frame is tightly packed, using memcpy");
-        memcpy(targetPtr, frame.data[0], frameSize);
-      } else {
-        // log(LogLevel::info, "Frame is no tightly packed, using memcpy");
-        copyPlaneYUV2TightlyBuffer(frame, targetPtr);
+    {
+      // 拷贝全程持锁: setJsBuffer换缓冲会Reset旧Persistent引用, 锁外拷贝时
+      // V8可在拷贝进行中释放旧backing store, 写已释放堆=0xC0000374
+      std::lock_guard<std::mutex> lock(mtx);
+      if (rawBufferPtr && rawBufferSize >= frameSize) {
+        // 从vulkan返回的frame肯定是nv12格式并且紧湊的
+        if (bTightlyPacked(frame)) {
+          memcpy(rawBufferPtr, frame.data[0], frameSize);
+        } else {
+          copyPlaneYUV2TightlyBuffer(frame, rawBufferPtr);
+        }
       }
     }
     // 让JS层知道需要帧大小,申请JS层内存并传入需要写入指针
