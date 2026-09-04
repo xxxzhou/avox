@@ -16,6 +16,8 @@
 #include "../AvoxPlayer.h"
 #include "../muxer/IOMuxer.hpp"
 #include "../AvoxVision.h"
+#include "../AvoxCalib.h"
+#include "../AvoxScene.h"
 #include "../vision/IONNXSession.hpp"
 #include "../vision/IOVEngine.hpp"
 #include "../vision/OnnxSessionCache.hpp"
@@ -136,6 +138,18 @@ class AVOX_EXPORT AvoxManager {
   // 必须追加在全部成员末尾 (ABI 约束同上 audioFaceHub 注: 插在中间会挪动其后
   // 所有成员偏移, 未重编插件按旧偏移访问 ioSources/vRender 等即写错地址崩)。
   RegeditFactory<ISourceProbe> sourceProbeHub;
+  // ============ 虚拟制片标定工厂 (avox_calib loadModule 时 reg "opencv") ============
+  // 内参/手眼+scale/PnP/序列标定, 接口见 AvoxCalib.h, 移植自 aoce 虚拟制片标定方案
+  // (doc/plan/虚拟制片标定移植方案.md)。同样必须末尾追加 (ABI 约束同上)。
+  RegeditFactory<IImagePoints> imagePointsHub;
+  RegeditFactory<ICameraCalibration> cameraCalibrationHub;
+  RegeditFactory<ICameraOffset> cameraOffsetHub;
+  RegeditFactory<IPnpCameraPose> pnpCameraPoseHub;
+  RegeditFactory<IVideoCalibration> videoCalibrationHub;
+  RegeditFactory<ILedMeshBuild> ledMeshBuildHub;
+  // FBX 场景导入工厂 (avox_fbx loadModule 时 reg "fbx"; 接口见 AvoxScene.h)
+  // 同样必须末尾追加 (ABI 约束同上)。
+  RegeditFactory<ISceneImport> sceneImportHub;
 
  private:
   bool bInit = false;
