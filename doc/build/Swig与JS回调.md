@@ -169,7 +169,7 @@ IMediaMuxerOb* createJsMuxerOb(Napi::Value observer);
 #endif
 ```
 
-在生成 nodejs 原生扩展的 gyp 文件中，添加 jsOb 的相应头文件及实现文件，具体实现见[播放器 Electron](../../doc/media/播放器Electron.md).
+在生成 nodejs 原生扩展的 gyp 文件中，添加 jsOb 的相应头文件及实现文件，具体实现见[播放器 Electron](../player/platform/播放器Electron.md).
 
 ```json
 {

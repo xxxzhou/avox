@@ -14,7 +14,7 @@ windows下使用 .\webrtc_build_windows.ps1 release.就会编译release版本的
 
 也不要想着在WSL上访问windows上的webrtc源码编译,坑多的想不到,老老实实在WSL上拉M138的源码.
 
-使用[WSL2](../../doc/linux/Ubuntu.md),安装wsl2/ubuntu及android ndk相关环境。[WSL编译WebRTC](../../doc//webrtc/WSL编译WebRTC.md)
+使用[WSL2](../../doc/platforms/linux/Ubuntu.md),安装wsl2/ubuntu及android ndk相关环境。[WSL编译WebRTC](../../doc//webrtc/WSL编译WebRTC.md)
 
 windows与wsl2使用不同的换行，导致编译时出现错误，所以最好使用WSL2重新拉取代码，然后在WSL2编译。
 

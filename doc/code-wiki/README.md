@@ -49,4 +49,4 @@
 - 官方导航：[doc/INDEX.md](../INDEX.md)
 - 项目总览：[CLAUDE.md](../../CLAUDE.md)
 - 开发规范：[DeveloperGuide.md](../../DeveloperGuide.md)
-- 设计/规划文档：`doc/plan/`、`doc/framework/`、`doc/media/`、`doc/build/`
+- 设计/规划文档：`doc/plan/`、`doc/player/`、`doc/build/`

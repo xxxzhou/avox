@@ -8,7 +8,23 @@ avox 是跨平台音视频播放器 SDK，支持直播流、本地媒体、硬�
 
 **支持平台：** Windows、Android、iOS、Linux、WebAssembly
 
-**详细文档：** [README.md](../../README.md) | [AGENTS.md](../../AGENTS.md)
+**详细文档：** [README.md](../README.md) | [AGENTS.md](../AGENTS.md)
+
+---
+
+## 文档子集 (按领域)
+
+| 子集 | 说明 |
+|------|------|
+| [player](player/README.md) | 播放器: 核心/时间同步/硬解渲染/数据源/平台集成/问题记录 |
+| [webrtc](webrtc/) | WebRTC 集成、编译、编解码器对接、双向通话 |
+| [virtualproduction](virtualproduction/README.md) | 虚拟制片: XR 演播/标定/追踪/传输 (来自 aocec 整理同步) |
+| [platforms](platforms/) | 平台开发: Android / iOS / Linux (硬解、NDK、Xcode 等) |
+| [code-wiki](code-wiki/README.md) | 代码架构 Wiki: 概览/目录/核心类/依赖/构建 |
+| [ai](ai/) | AI 功能: inpaint 图像修复、语音转文字 |
+| [build](build/) | 构建: 脚本/CMake、Android、FFmpeg、SWIG、wasm |
+| [tools](tools/) | 开发工具: VSCode/Wireshark/ffmpeg/git/trae |
+| [plan](plan/) | 设计与规划方案 |
 
 ---
 
@@ -20,29 +36,29 @@ avox 是跨平台音视频播放器 SDK，支持直播流、本地媒体、硬�
 |------|------|------|------|------|
 | avox | `src/avox/` | 核心播放器框架 | [Code Wiki 架构](code-wiki/01-项目概览与架构.md) | ✅ |
 | avox_player | `src/avox/player/` | MediaPlayer/SourcePlayer 实现 | [Code Wiki 核心类](code-wiki/03-核心类与关键接口.md) | ✅ |
-| avox_source | `src/avox/source/` | 数据源 (AVSource/RawSource) | [数据源](source/数据源.md) | ✅ |
+| avox_source | `src/avox/source/` | 数据源 (AVSource/RawSource) | [数据源](player/数据源.md) | ✅ |
 
 ### 解码模块
 
 | 模块 | 目录 | 功能 | 文档 | 状态 |
 |------|------|------|------|------|
-| avox_video | `src/avox/video/` | 视频解码器基类 | [播放器硬解](media/播放器硬解.md) | ✅ |
+| avox_video | `src/avox/video/` | 视频解码器基类 | [播放器硬解](player/播放器硬解.md) | ✅ |
 | avox_audio | `src/avox/audio/` | 音频解码器基类 | - | ✅ |
-| avox_ffmpeg | `src/avox_ffmpeg/` | FFmpeg 软解/硬解 | [播放器FFmpeg](media/播放器FFmpeg.md) | ✅ |
+| avox_ffmpeg | `src/avox_ffmpeg/` | FFmpeg 软解/硬解 | [播放器FFmpeg](player/播放器FFmpeg.md) | ✅ |
 | avox_aac | `src/avox_aac/` | AAC 解码 (faad2/fdk-aac) | - | ✅ |
 
 ### IO 模块
 
 | 模块 | 目录 | 功能 | 文档 | 状态 |
 |------|------|------|------|------|
-| avox_zlmediakit | `src/avox_zlmediakit/` | 直播流解析 (RTSP/RTMP) | [ZLMediaKit](media/ZLMediaKit.md) | ✅ |
+| avox_zlmediakit | `src/avox_zlmediakit/` | 直播流解析 (RTSP/RTMP) | [ZLMediaKit](player/ZLMediaKit.md) | ✅ |
 | avox_muxer | `src/avox/muxer/` | 媒体复用 | [Code Wiki 核心类](code-wiki/03-核心类与关键接口.md) | ✅ |
 
 ### 渲染模块
 
 | 模块 | 目录 | 功能 | 文档 | 状态 |
 |------|------|------|------|------|
-| avox_vulkan | `src/avox_vulkan/` | Vulkan GPU 图像处理管线 | [Code Wiki 模块](code-wiki/02-目录结构与模块职责.md) | ✅ |
+| avox_vulkan | `src/avox_vulkan/` | Vulkan GPU 图像处理管线 | [Code Wiki 模块](code-wiki/02-目录结构与模块职责.md), [多平台GPU共享](player/多平台GPU共享.md) | ✅ |
 | avox_freetype | `src/avox_freetype/` | FreeType 文字渲染 | - | ✅ |
 
 ### 平台模块
@@ -50,8 +66,8 @@ avox 是跨平台音视频播放器 SDK，支持直播流、本地媒体、硬�
 | 模块 | 目录 | 功能 | 文档 | 状态 |
 |------|------|------|------|------|
 | avox_windows | `src/avox_windows/` | Windows 平台实现 | - | ✅ |
-| avox_android | `src/avox_android/` | Android 平台实现 | [Android硬解](android/Android硬解Vulkan.md) | ✅ |
-| avox_ios | `src/avox_ios/` | iOS 平台实现 | [IOS硬解](ios/IOS硬解Vulkan.md) | ✅ |
+| avox_android | `src/avox_android/` | Android 平台实现 | [Android硬解](platforms/android/Android硬解Vulkan.md) | ✅ |
+| avox_ios | `src/avox_ios/` | iOS 平台实现 | [IOS硬解](platforms/ios/IOS硬解Vulkan.md) | ✅ |
 | avox_linux | `src/avox_linux/` | Linux 平台实现 | - | ✅ |
 | avox_egl | `src/avox_egl/` | EGL 上下文 | - | ✅ |
 
@@ -59,14 +75,14 @@ avox 是跨平台音视频播放器 SDK，支持直播流、本地媒体、硬�
 
 | 模块 | 目录 | 功能 | 文档 | 状态 |
 |------|------|------|------|------|
-| avox_webrtc | `plugins/avox_webrtc/` | WebRTC 集成 (动态插件) | [播放器WebRTC](media/播放器WebRTC.md) | ✅ |
+| avox_webrtc | `plugins/avox_webrtc/` | WebRTC 集成 (动态插件) | [播放器WebRTC](webrtc/播放器WebRTC.md) | ✅ |
 
 ### AI 模块
 
 | 模块 | 目录 | 功能 | 文档 | 状态 |
 |------|------|------|------|------|
 | avox_cv | `plugins/avox_cv/` | AI 图像修复 (水印去除) + 通用 YOLO | [inpaint](ai/inpaint.md) | ✅ |
-| avox_sherpa | `plugins/avox_sherpa/` | Sherpa-ONNX 语音识别 | [sherpa](ai/sherpa.md) | ✅ |
+| avox_sherpa | `plugins/avox_sherpa/` | Sherpa-ONNX 语音识别 | [sherpa](ai/语音转文字.md) | ✅ |
 | avox_translation | `plugins/avox_translation/` | 神经机器翻译 | | ✅ |
 | avox_opencv | `plugins/avox_opencv/` | OpenCV 图像处理 / 模板匹配 (图标定位) | [图标模板匹配](../plugins/avox_opencv/doc/图标模板匹配设计.md) | ✅ |
 | avox_ocr | `plugins/avox_ocr/` | OCR 文字识别 (PP-OCRv6, 供 Agent 按文字点击) | [OCR识别设计](../plugins/avox_ocr/doc/OCR识别设计.md) | ✅ |
@@ -85,53 +101,13 @@ avox 是跨平台音视频播放器 SDK，支持直播流、本地媒体、硬�
 | Java | `swig/Java/` | [swig](build/swig.md) | ✅ |
 | Node.js | `swig/nodejs/` | [swig](build/swig.md) | ✅ |
 
----
+### 多引擎插件
 
-## 功能文档
-
-### 播放器核心
-
-| 文档 | 说明 |
-|------|------|
-| [Code Wiki 概览](code-wiki/README.md) | 项目架构、目录、核心类、依赖、构建总览 |
-| [播放器功能](media/播放器功能.md) | 软硬解切换、Seek |
-| [播放器重构](media/播放器重构.md) | 重构历程与成果 |
-| [播放器完善](framework/播放器完善.md) | 现代化改造规划 |
-
-### 时间与同步
-
-| 文档 | 说明 |
-|------|------|
-| [播放器时间](media/播放器时间.md) | 音视频同步、倍速播放、低延迟 |
-| [播放器问题记录](media/播放器问题记录.md) | 播放器问题：同步、硬解格式、拆合包 |
-| [播放器埋点](media/播放器埋点.md) | 埋点系统设计 |
-
-### 数据源
-
-| 文档 | 说明 |
-|------|------|
-| [数据源](source/数据源.md) | AVSource/RawSource 设计 |
-
-### 虚拟制片 (来自 aocec 整理同步)
-
-| 文档 | 说明 |
-|------|------|
-| [虚拟制片文档导航](virtualproduction/README.md) | XR 演播/标定/追踪/传输文档总索引 |
-| [虚拟制片XR演播技术整理](virtualproduction/00-虚拟制片XR演播技术整理.md) | 全景总览: 追踪、标定、GPGPU、传输、工具链 |
-| [相机标定方案](virtualproduction/calib/相机标定方案.md) | 标定流程、手眼 scale 改进、LED/Aruco 标定板 |
-| [标定开发踩坑记录](virtualproduction/calib/标定开发踩坑记录.md) | Redspy YZ 取负、序列化精度等一手踩坑 |
-| [标定移植方案](plan/虚拟制片标定移植方案.md) | aocec 标定代码移植到 avox_calib 的实施计划 |
-
-### 平台集成
-
-| 文档 | 说明 |
-|------|------|
-| [播放器Android](media/播放器Android.md) | Android 平台集成 |
-| [播放器IOS](media/播放器IOS.md) | iOS 平台集成 |
-| [播放器FFmpeg](media/播放器FFmpeg.md) | FFmpeg 集成 |
-| [播放器Vulkan集成](media/播放器Vulkan集成.md) | Vulkan 跨平台集成 |
-| [播放器WebRTC](media/播放器WebRTC.md) | WebRTC 集成 |
-| [播放器Electron](media/播放器Electron.md) | Electron 集成 |
+| 引擎 | 位置 | 文档 |
+|------|------|------|
+| Godot 4 | `platform/godot/plugin/` | [README](../platform/godot/plugin/README.md) |
+| Unreal Engine | `platform/ue/` | [README](../platform/ue/README.md) |
+| Unity | `platform/unity/` | [README](../platform/unity/README.md) |
 
 ---
 
@@ -143,7 +119,8 @@ avox 是跨平台音视频播放器 SDK，支持直播流、本地媒体、硬�
 | [Android构建](build/Android.md) | Android 构建指南 |
 | [FFmpeg构建](build/FFmpeg构建.md) | FFmpeg 编译 |
 | [swig](build/swig.md) | SWIG 多语言绑定 |
-| [wasm](language/wasm.md) | WebAssembly 编译 |
+| [Swig与JS回调](build/Swig与JS回调.md) | nodejs 绑定与 JS 回调 |
+| [wasm](build/wasm.md) | WebAssembly 编译 |
 
 ---
 
@@ -153,6 +130,9 @@ avox 是跨平台音视频播放器 SDK，支持直播流、本地媒体、硬�
 |------|------|
 | [VSCode卡顿排查](tools/VSCode卡顿排查.md) | VSCode 项目卡顿根因与解法(工作区缓存) |
 | [git常用操作](tools/git常用操作.md) | git 常用命令 |
+| [Wireshark](tools/Wireshark.md) | 抓包分析 |
+| [ffmpeg](tools/ffmpeg.md) | ffmpeg 命令 |
+| [trae](tools/trae.md) | trae 使用 |
 
 ---
 
@@ -239,23 +219,24 @@ class IAudioRender {
 
 **按功能查找：**
 
-- 音视频同步 → [播放器时间](media/播放器时间.md)
-- 硬件解码 → [播放器硬解](media/播放器硬解.md)
+- 音视频同步 → [播放器时间](player/播放器时间.md)
+- 硬件解码 → [播放器硬解](player/播放器硬解.md)
 - Vulkan 处理 → [Code Wiki 模块](code-wiki/02-目录结构与模块职责.md)
-- WebRTC → [播放器WebRTC](media/播放器WebRTC.md)
+- WebRTC → [播放器WebRTC](webrtc/播放器WebRTC.md)
 - AI 功能 → [AI 模块](ai/)
+- GPU 直通/纹理共享 → [多平台GPU共享](player/多平台GPU共享.md)
 
 **按平台查找：**
 
 - Windows → `src/avox_windows/`
-- Android → [Android 硬解](android/Android硬解Vulkan.md)
-- iOS → [iOS 硬解](ios/IOS硬解Vulkan.md)
+- Android → [Android 硬解](platforms/android/Android硬解Vulkan.md)
+- iOS → [iOS 硬解](platforms/ios/IOS硬解Vulkan.md)
 - Linux → `src/avox_linux/`
-- WebAssembly → [wasm](language/wasm.md)
+- WebAssembly → [wasm](build/wasm.md)
 
 **按开发阶段查找：**
 
-- 新手入门 → [README.md](../../README.md)
+- 新手入门 → [README.md](../README.md)
 - 架构理解 → [Code Wiki 架构](code-wiki/01-项目概览与架构.md)
 - 构建 → [构建](build/构建.md)
 - 扩展功能 → [AI 模块](ai/)
