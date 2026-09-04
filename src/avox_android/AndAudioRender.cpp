@@ -42,8 +42,18 @@ void AndAudioRender::onInit() {
     return;
   }
   int32_t bits = audioFormatSize(desc.format) * 8;
-  env->CallIntMethod(jAudioTrack, jmAudioTrack.create, desc.sampleRate,
-                     desc.channels, bits);
+  int32_t status = env->CallIntMethod(jAudioTrack, jmAudioTrack.create,
+                                      desc.sampleRate, desc.channels, bits);
+  if (env->ExceptionCheck()) {
+    env->ExceptionDescribe();
+    env->ExceptionClear();
+  }
+  if (status != 0) {
+    // create失败(如声道数/位深不支持)时Java侧已Destroy, buffer为空, 不能再持有
+    LOGFLF(LogLevel::warn, "audio track create fail, status:", status);
+    env->DeleteLocalRef(jAudioTrack);
+    return;
+  }
   // 保持一个全局引用
   audioTrack = env->NewGlobalRef(jAudioTrack);
   env->DeleteLocalRef(jAudioTrack);
@@ -68,6 +78,10 @@ void AndAudioRender::onRender(const AvoxData& frame) {
   // 获取要写入的音频数据区域
   jbyteArray jaudioBuffer =
       (jbyteArray)env->CallObjectMethod(audioTrack, jmAudioTrack.getDataBuffer);
+  if (!jaudioBuffer) {
+    LOGFLF(LogLevel::warn, "audio data buffer is null");
+    return;
+  }
   uint8_t* pAudioOutBuff = (uint8_t*)env->GetByteArrayElements(jaudioBuffer, 0);
   // 拷贝数据到缓冲区
   memcpy(pAudioOutBuff, frame.data, frame.size);
