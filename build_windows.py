@@ -31,10 +31,19 @@ FREETYPE_CMAKE_ARGS = f"-DDISABLE_FORCE_DEBUG_POSTFIX=ON -DCMAKE_MSVC_RUNTIME_LI
 # SHERPA_ONNX_ENABLE_C_API=ON 启用 C API（用于 C++ 集成）
 # SHERPA_ONNX_ENABLE_BINARY=OFF 不构建示例程序
 SHERPA_CMAKE_ARGS = "-DSHERPA_ONNX_ENABLE_C_API=ON -DBUILD_SHARED_LIBS=ON -DSHERPA_ONNX_ENABLE_TESTS=OFF -DSHERPA_ONNX_ENABLE_EXAMPLES=OFF -DSHERPA_ONNX_ENABLE_PYTHON=OFF -DSHERPA_ONNX_ENABLE_BINARY=OFF -DSHERPA_ONNX_USE_PRE_INSTALLED_ONNXRUNTIME_IF_AVAILABLE=OFF -DSHERPA_ONNX_ALREADY_EXISTS_ONNXRUNTIME=ON"
+# g2o - 图优化(虚拟制片标定: 弧形幕墙内参BA/手眼再优化, 插件avox_calib静态链入)
+# 静态库+MT与插件运行时一致, 关闭apps/examples/tests/cholmod/csparse, 仅用dense/eigen求解器
+eigen_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "3rdparty", "eigen"))
+G2O_CMAKE_ARGS = f"-DBUILD_SHARED_LIBS=OFF -DG2O_BUILD_APPS=OFF -DG2O_BUILD_EXAMPLES=OFF -DG2O_BUILD_TESTS=OFF -DG2O_BUILD_BENCHMARKS=OFF -DG2O_USE_OPENMP=OFF -DG2O_USE_CHOLMOD=OFF -DG2O_USE_CSPARSE=OFF -DG2O_USE_OPENGL=OFF -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DCMAKE_MSVC_RUNTIME_LIBRARY={runtime_lib} -DEIGEN3_INCLUDE_DIR={eigen_dir}"
+
+def check_module_g2o():
+    # g2o 的输出目录由其 CMake 固定到源码 bin/ 下
+    g2o_lib = os.path.join(os.path.dirname(__file__), "3rdparty", "g2o", "bin", "Release", "g2o_core.lib")
+    return os.path.exists(g2o_lib)
 
 if __name__ == "__main__":
     # module可以只编译一次，有改动再编译
-    if not build_common.check_module("faad2","faad"): 
+    if not build_common.check_module("faad2","faad"):
         build_common.build_module("faad2")
     if not build_common.check_module_zlmediakit():
         build_common.build_module("zlmediakit",False,ZL_CMAKE_ARGS)
@@ -46,5 +55,7 @@ if __name__ == "__main__":
         build_common.build_module("sherpa-onnx", False, SHERPA_CMAKE_ARGS)
     if not build_common.check_module_sentencepiece():
         build_common.build_module("sentencepiece", False, SPM_CMAKE_ARGS)
+    if not check_module_g2o():
+        build_common.build_module("g2o", False, G2O_CMAKE_ARGS)
     # 全部启用, find_package 找不到库的 plugin 自动跳过, 用户看 plugins/ 文件夹有无 dll 即知功能可用否
     build_common.build_self(AVOX_CMAKE_ARGS) 

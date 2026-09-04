@@ -25,3 +25,9 @@
 [submodule "3rdparty/godot-cpp"]
 	path = 3rdparty/godot-cpp
 	url = https://github.com/godotengine/godot-cpp.git
+[submodule "3rdparty/eigen"]
+	path = 3rdparty/eigen
+	url = https://gitlab.com/libeigen/eigen.git
+[submodule "3rdparty/g2o"]
+	path = 3rdparty/g2o
+	url = https://github.com/RainerKuemmerle/g2o.git

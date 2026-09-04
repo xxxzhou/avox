@@ -26,3 +26,6 @@ option(AVOX_ENABLE_DECKLINK "build avox_decklink DeckLink capture card plugin (W
 option(AVOX_ENABLE_CALIB "build avox_calib virtual production camera calibration (needs OpenCV)" ON)
 # avox_fbx: FBX 场景解析 (ufbx 单文件解析器, 无外部依赖; 虚拟制片幕墙 mesh 标定用)
 option(AVOX_ENABLE_FBX "build avox_fbx FBX scene import plugin (ufbx, no external deps)" ON)
+# g2o 图优化: 虚拟制片标定 M2 (弧形幕墙内参 BA/手眼再优化; 需 3rdparty/g2o,eigen submodule
+# 且 build_windows.py 构建过 g2o, 否则 avox_calib 自动降级 M1 OpenCV 路径)
+option(AVOX_ENABLE_G2O "build avox_calib g2o graph optimizers (needs 3rdparty/g2o+eigen built)" ON)

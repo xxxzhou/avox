@@ -89,6 +89,8 @@ class CalibCameraOffset : public ICameraOffset {
   virtual int32_t compute(const OffsetParamet& paramet, CameraTrackOffset& cameraOffset) override;
   virtual bool getFrameOffset(int32_t frameIndex, FrameOffset& trackOffset,
                               FrameOffset& innerOffset) override;
+  virtual bool getPointCorners(int32_t frameIndex, PointCorners& pointCorners) override;
+  virtual float updateCameraTrack(const CameraTrack& cameraTrack) override;
   virtual const char* getLastError() override;
 };
 

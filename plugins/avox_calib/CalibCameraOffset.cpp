@@ -291,6 +291,48 @@ bool CalibCameraOffset::getFrameOffset(int32_t frameIndex, FrameOffset& trackOff
   AVOX_CALIB_CATCH_RET(false)
 }
 
+bool CalibCameraOffset::getPointCorners(int32_t frameIndex, PointCorners& pointCorners) {
+  if (frameIndex < 0 || frameIndex >= (int32_t)matPoses.size() || matPoses[frameIndex].corners.empty()) {
+    return false;
+  }
+  CalibMatPose& pose = matPoses[frameIndex];
+  pointCorners.count = (int32_t)pose.corners.size();
+  // cv::Point2f/3f 与 vec2f/vec3f 内存布局一致
+  pointCorners.corners = (vec2f*)pose.corners.data();
+  pointCorners.points = (vec3f*)pose.points.data();
+  pointCorners.imageSize = imageSize;
+  return true;
+}
+
+float CalibCameraOffset::updateCameraTrack(const CameraTrack& cameraTrack) {
+  AVOX_CALIB_TRY;
+  scale = cameraTrack.scale;
+  calibMat4x42Mat(cameraTrack.camera2track, camera2trackQ);
+  calibMat4x42Mat(cameraTrack.base2target, base2targetQ);
+  bCompute = true;
+  // 重算全部帧 Track 误差 (均值跳过 >1000px 的离群帧, 它们通常是追踪/时间对齐坏样本)
+  cv::Point2f total = {};
+  int32_t inlierCount = 0;
+  for (auto& pose : matPoses) {
+    cv::Mat track2base(4, 4, CV_64FC1);
+    calibMat2Mat4x4(pose.track2baseR, pose.track2baseT * scale, track2base);
+    cv::Mat camera2target = base2targetQ * track2base * camera2trackQ;
+    cv::Mat target2camera = calibHomogeneousInverse(camera2target);
+    drawPoints->updateCameraPose(target2camera);
+    drawPoints->updatePoints(pose.points);
+    pose.offset = drawPoints->projectOffset(pose.corners);
+    if (pose.offset.x < 1000.0f) {
+      total += pose.offset;
+      inlierCount++;
+    }
+  }
+  if (inlierCount > 0) {
+    total = total / (float)inlierCount;
+  }
+  return total.x;
+  AVOX_CALIB_CATCH_RET(0.0f)
+}
+
 const char* CalibCameraOffset::getLastError() { return lastError.c_str(); }
 
 }  // namespace avox

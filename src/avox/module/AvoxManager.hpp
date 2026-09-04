@@ -150,6 +150,9 @@ class AVOX_EXPORT AvoxManager {
   // FBX 场景导入工厂 (avox_fbx loadModule 时 reg "fbx"; 接口见 AvoxScene.h)
   // 同样必须末尾追加 (ABI 约束同上)。
   RegeditFactory<ISceneImport> sceneImportHub;
+  // 手眼/内参图优化工厂 (avox_calib 且 g2o 可用时 reg "g2o"; 无 g2o 时 create 返 nullptr 走 OpenCV 路径)
+  RegeditFactory<ICameraTrackOptimizer> cameraTrackOptimizerHub;
+  RegeditFactory<ICalibrationOptimizer> calibrationOptimizerHub;
 
  private:
   bool bInit = false;

@@ -220,6 +220,10 @@ class ICameraOffset {
   // 某帧: trackOffset=经标定换算的相机姿态与误差, innerOffset=PnP 直接反推的姿态与误差
   virtual bool getFrameOffset(int32_t frameIndex, FrameOffset& trackOffset,
                               FrameOffset& innerOffset) = 0;
+  // 某帧识别的角点 2D/3D 数据 (指针引用内部数据, 供图优化 fillData)
+  virtual bool getPointCorners(int32_t frameIndex, PointCorners& pointCorners) = 0;
+  // 外部更新手眼结果 (如 g2o 再优化后), 重算全部帧 Track 误差, 返回平均误差
+  virtual float updateCameraTrack(const CameraTrack& cameraTrack) = 0;
   virtual const char* getLastError() = 0;
 };
 
@@ -263,6 +267,58 @@ class ILedMeshBuild {
   virtual float getDistance(const Mat4x4d& camPose) = 0;
   virtual int32_t getItemCount() = 0;
   virtual void clear() = 0;
+  virtual const char* getLastError() = 0;
+};
+
+// 某帧识别的角点数据 (2D/3D), 供图优化器 fillData
+struct TrackCorners {
+  // 当前摄像机在标定板系下姿态 (PnP 结果取逆; identity/invalid 则由优化器按
+  // base2target·track2base·scale·camera2track 反推初值)
+  Mat4x4d cameraPose;
+  // 原始追踪器姿态 (追踪器单位, OpenCV 系)
+  Mat4x4d trackPose;
+  PointCorners pointCorners;
+};
+
+// 手眼图优化参数
+struct HandEyeParamet {
+  // 固定 scale 不参与优化
+  bool bFixScale = false;
+  // 手眼位姿边 Huber 核 delta
+  float handEyeDelta = 0.01f;
+  // 手眼边鲁棒核 (初值较差时开启更稳)
+  bool robustHandEye = true;
+  // 重投影边鲁棒核 (Huber delta=1.0)
+  bool projectionHand = true;
+};
+
+// 手眼标定图优化器 (g2o 实现, 注册名 "g2o"): 参考st_handeye_graph,
+// 同时优化 camera2track/base2target/每帧target2camera/scale,
+// 对初值不敏感且天然吸收追踪器位移缩放
+class ICameraTrackOptimizer {
+ public:
+  virtual ~ICameraTrackOptimizer() = default;
+
+ public:
+  virtual void fillData(int32_t count, const TrackCorners* dataPtr) = 0;
+  virtual CameraTrack compute(const HandEyeParamet& paramet, const LensModel& lensModel,
+                              const CameraTrack& cameraTrack) = 0;
+  virtual const char* getLastError() = 0;
+};
+
+// 内参+畸变+每帧位姿联合 BA 优化器 (g2o 实现, 注册名 "g2o"):
+// 弧形(非平面)标定物上 calibrateCamera 初值估计失效会发散, 此路径可解
+class ICalibrationOptimizer {
+ public:
+  virtual ~ICalibrationOptimizer() = default;
+
+ public:
+  virtual void fillData(int32_t count, const TrackCorners* dataPtr) = 0;
+  // 以传入内参为初值联合优化, 返回优化后内参; 每帧位姿经 getCameraPose 取回
+  virtual LensModel compute(const LensModel& lensModel) = 0;
+  virtual bool getCameraPose(int32_t frameIndex, Mat4x4d& cameraPose) = 0;
+  // 某帧在优化后内参+位姿下的重投影误差 (像素)
+  virtual float getOffset(int32_t frameIndex) = 0;
   virtual const char* getLastError() = 0;
 };
 

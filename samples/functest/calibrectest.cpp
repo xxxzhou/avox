@@ -12,10 +12,19 @@
  * (弧形幕墙 ds1 的 3D 点依赖 FBX mesh, 待 avox_fbx/ILedMeshBuild 后接入)
  *
  * 用法: calibrectest [recordDir] [cellAspect] [meshDir]
- *   recordDir  录制数据目录 (默认 aocec assets record/2, 平面屏参数化 3D 点)
- *   cellAspect 格子宽高比 (默认 1, LED 拉伸铺屏时非 1)
- *   meshDir    幕墙 FBX 目录 (给出时经 avox_fbx + ILedMeshBuild 生成 3D 点,
- *              用于弧形幕墙数据, 如 aocec assets calibration/led)
+ *   recordDir  录制数据目录 (aocec assets 或 aoce开发配置/aoce/SaveRecord 下)
+ *   cellAspect 格子宽高比 (默认 1, 仅无 mesh 的参数化模式用)
+ *   meshDir    幕墙 FBX (目录=加载全部 fbx, 块序=文件名字典序; 也可传单个 .fbx)
+ *
+ * mesh 必须与录制数据的 LED 对应 (两种 LED):
+ *   小 LED 单屏 (428 实验, 如 SaveRecord/0102_170648 等)  ↔ led_4.FBX
+ *   LED 组多屏  (坪山, 如 SaveRecord/0918_205113,1013_* 等) ↔ Circle0-7.fbx
+ * 注意 assets/calibration/led 里的 Mesh1-8.FBX 是另一面墙 (LED_Mesh_W_V002),
+ * 与这些 record 不对应, 勿混用。
+ * 实测基准 (aoce 经验: 内参≤1px, 手眼无g2o 5-10px, g2o后 2-5px):
+ *   小 LED: 内参 0.3-4.1px, Tsai 3.3-7.5px, g2o 1.7-5.0px (scale≈0.115 全组一致)
+ *   LED 组: 内参 0.91-1.13px, Tsai 3.8-5.0px, g2o 1.4-1.8px (scale≈1.00)
+ *   record/2 (1007_163949) 为 aoce 注释"畸变有问题"的数据组, 误差偏大属数据本身
  */
 
 #include <algorithm>
@@ -193,7 +202,9 @@ int main(int argc, char* argv[]) {
   }
   std::vector<vec3f> pts3d;
   if (meshDir != nullptr) {
-    // 弧形/异形幕墙: FBX mesh → Aruco 3D 点 (avox_fbx + ILedMeshBuild)
+    // 幕墙 mesh → Aruco 3D 点 (avox_fbx + ILedMeshBuild)
+    // meshDir 可为目录 (加载其中全部 fbx, 块序=文件名字典序, 必须与录制数据的墙对应!)
+    // 或单个 .fbx 文件 (小 LED 单屏场景)
     std::unique_ptr<ISceneImport> sceneImport(
         AvoxManager::Get().sceneImportHub.create("fbx"));
     std::unique_ptr<ILedMeshBuild> meshBuild(
@@ -203,15 +214,16 @@ int main(int argc, char* argv[]) {
       return 1;
     }
     std::vector<std::string> fbxs;
-    for (auto& entry : std::filesystem::directory_iterator(meshDir)) {
-      std::string ext = entry.path().extension().string();
-      std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-      // 过滤其它数据集的模型 (如 led_4.fbx 属平面屏 428 数据)
-      if (ext == ".fbx" && entry.path().filename().string().find("led") != 0) {
-        fbxs.push_back(entry.path().string());
+    if (std::filesystem::is_regular_file(meshDir)) {
+      fbxs.push_back(meshDir);
+    } else {
+      for (auto& entry : std::filesystem::directory_iterator(meshDir)) {
+        std::string ext = entry.path().extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        if (ext == ".fbx") fbxs.push_back(entry.path().string());
       }
+      std::sort(fbxs.begin(), fbxs.end());
     }
-    std::sort(fbxs.begin(), fbxs.end());
     for (const auto& fbx : fbxs) {
       if (!sceneImport->open(fbx.c_str())) {
         printf("  加载失败: %s (%s)\n", fbx.c_str(), sceneImport->getLastError());
@@ -327,6 +339,76 @@ int main(int argc, char* argv[]) {
     printf("  帧%d: 内参误差=%.2fpx Track误差=%.2fpx\n", i, innerOff.offset.avg, trackOff.offset.avg);
     totalErr += trackOff.offset.avg;
     errCount++;
+  }
+  if (errCount > 0) {
+    printf("  Tsai Track 平均误差=%.3fpx\n", totalErr / errCount);
+  }
+
+  // 5b. M2: g2o 图优化 (弧形幕墙必须; 内参 BA → 手眼再优化)
+  std::unique_ptr<ICalibrationOptimizer> calibOpt(
+      AvoxManager::Get().calibrationOptimizerHub.create("g2o"));
+  std::unique_ptr<ICameraTrackOptimizer> trackOpt(
+      AvoxManager::Get().cameraTrackOptimizerHub.create("g2o"));
+  if (calibOpt && trackOpt) {
+    // 逐帧收集 TrackCorners (PnP 位姿 + 追踪器位姿 + 角点)
+    // 只收 PnP 内参误差好的帧 (坏帧位姿会毒化 BA, 对应 aoce "排列组合选优"思想)
+    const float kMaxPnpErr = 30.0f;
+    std::vector<TrackCorners> corners;
+    std::vector<int32_t> g2oIdx;  // 参与 g2o 优化的帧 (validIdx 下标)
+    for (size_t k = 0; k < validIdx.size(); k++) {
+      FrameOffset trackOff, innerOff;
+      if (!offset->getFrameOffset((int32_t)k, trackOff, innerOff)) continue;
+      if (innerOff.offset.avg > kMaxPnpErr || !innerOff.cameraPose.valid()) {
+        printf("  帧%d PnP 误差 %.1fpx 过大, 剔除\n", (int32_t)k, innerOff.offset.avg);
+        continue;
+      }
+      TrackCorners corner;
+      corner.cameraPose = innerOff.cameraPose;
+      corner.trackPose = records[validIdx[k]].pose;
+      offset->getPointCorners((int32_t)k, corner.pointCorners);
+      corners.push_back(corner);
+      g2oIdx.push_back((int32_t)k);
+    }
+    printf("  g2o 有效帧: %d\n", (int32_t)corners.size());
+    // 5b.1 内参+畸变+每帧位姿联合 BA (非平面场景 calibrateCamera 的替代)
+    calibOpt->fillData((int32_t)corners.size(), corners.data());
+    LensModel lensG2o = calibOpt->compute(lensModel);
+    double g2oFovX = getLensFovX(lensG2o) * 180.0 / 3.14159265358979323846;
+    printf("  g2o内参BA: fx=%.1f fy=%.1f center=(%.3f,%.3f) fovX=%.1f°\n",
+           lensG2o.focalLength.x * imgSize.x, lensG2o.focalLength.y * imgSize.y,
+           lensG2o.focalCenter.x, lensG2o.focalCenter.y, g2oFovX);
+    printf("  g2o畸变: k1=%.5f k2=%.5f p1=%.5f p2=%.5f k3=%.5f\n", lensG2o.k1, lensG2o.k2,
+           lensG2o.p1, lensG2o.p2, lensG2o.k3);
+    for (size_t k = 0; k < corners.size(); k++) {
+      calibOpt->getCameraPose((int32_t)k, corners[k].cameraPose);
+    }
+    // 5b.2 手眼: Tsai 结果为初值 (换用 g2o 内参重解 PnP), g2o 联合再优化
+    std::unique_ptr<ICameraOffset> offset2(AvoxManager::Get().cameraOffsetHub.create("opencv"));
+    offset2->setLensModel(lensG2o, points.get());
+    for (size_t k = 0; k < validIdx.size(); k++) {
+      offset2->saveTrackCornerImage(records[validIdx[k]].pose, images[k].get());
+    }
+    CameraTrackOffset tsaiResult;
+    offset2->compute(paramet, tsaiResult);
+    printf("  Tsai初值: 误差=%.3fpx scale=%.4f\n", tsaiResult.offset, tsaiResult.cameraTrack.scale);
+    trackOpt->fillData((int32_t)corners.size(), corners.data());
+    HandEyeParamet handEyePar;
+    handEyePar.robustHandEye = true;
+    handEyePar.projectionHand = true;
+    CameraTrack g2oTrack = trackOpt->compute(handEyePar, lensG2o, tsaiResult.cameraTrack);
+    printf("  g2o手眼: scale=%.4f camera2track 平移=(%.4f, %.4f, %.4f)m\n", g2oTrack.scale,
+           g2oTrack.camera2track.row3.x, g2oTrack.camera2track.row3.y,
+           g2oTrack.camera2track.row3.z);
+    // g2o 手眼结果逐帧误差 (仅统计参与优化的帧)
+    float g2oAvg = offset2->updateCameraTrack(g2oTrack);
+    printf("  g2o Track 平均误差=%.3fpx\n", g2oAvg);
+    for (size_t k = 0; k < g2oIdx.size(); k++) {
+      FrameOffset trackOff, innerOff;
+      if (!offset2->getFrameOffset(g2oIdx[k], trackOff, innerOff)) continue;
+      printf("  帧%d: g2o Track误差=%.2fpx\n", g2oIdx[k], trackOff.offset.avg);
+    }
+  } else {
+    printf("  (g2o 优化器未编译, 跳过 M2 路径)\n");
   }
   if (errCount > 0) {
     printf("  Track 平均误差=%.3fpx %s\n", totalErr / errCount,

@@ -9,6 +9,7 @@ namespace avox {
 class CalibModule : public IModule {
  public:
   bool loadModule(IOption* option) override;
+  void unloadModule() override;
 };
 
 }  // namespace avox
