@@ -1,6 +1,6 @@
 # avox
 
-跨平台音视频播放器 SDK（C++17）：支持直播流、本地媒体、硬件解码/编码、Vulkan GPU 图像处理、WebRTC 实时通信、AI 能力（语音识别、机器翻译、图像修复、超分辨率），并向虚拟制片、数字人等虚拟场景方向扩展（近期集成）。
+avox 是一套跨平台音视频能力库（C++17），提供从设备采集、硬解硬编、GPU 图像处理到渲染、推流录制的统一管线。播放器是当前最完整的模块；WebRTC 实时通话与 AI 能力（语音识别、机器翻译、图像修复、超分辨率）以插件形式按需整合；虚拟制片、数字人模块已在生产环境验证，正在集成；UE4/UE5、Unity3D、Godot 游戏引擎纹理级直通已打通。
 
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Android%20%7C%20iOS%20%7C%20Linux-blue)]()
 [![Language](https://img.shields.io/badge/Language-C%2B%2B%20%7C%20C%23%20%7C%20Java%20%7C%20JS%20%7C%20Python-orange)]()
@@ -8,15 +8,20 @@
 [![Commercial License](https://img.shields.io/badge/Commercial-Available-success)]()
 [![Version](https://img.shields.io/badge/Version-1.0.0969-green)]()
 
-avox 源自作者多年的音视频/GPU 技术积累，经大模型辅助整理而成：既包含完整的播放器、实时通信、AI 能力，也包含正在合入的虚拟制片模块（近期集成）。技术脉络从早期 [OEIP](https://zhuanlan.zhihu.com/p/104027165)（UE4/Unity3D 多媒体管线）到 [aoce](https://github.com/xxxzhou/aoce)（Vulkan 跨平台 GPU 图像处理），关键实现过程均整理成系列技术文章（[知乎 @天天不在](https://www.zhihu.com/people/zhou-xin-12-70-21/posts)），见下文[技术实现解析](#技术实现解析)。
+avox 源自作者多年的音视频/GPU 技术积累，经大模型辅助整理而成。技术脉络从早期 [OEIP](https://zhuanlan.zhihu.com/p/104027165)（UE4/Unity3D 多媒体管线）到 [aoce](https://github.com/xxxzhou/aoce)（Vulkan 跨平台 GPU 图像处理），关键实现过程均整理成系列技术文章（[知乎 @天天不在](https://www.zhihu.com/people/zhou-xin-12-70-21/posts)），见下文[技术实现解析](#技术实现解析)。
 
 ## 项目优势
 
 - **一套代码，多端运行** - Windows / Android / iOS / Linux 单一 C++17 代码库，CMake 统一构建；硬解硬编、GPU 互操作、窗口系统等平台差异在框架层抹平，扩展新平台只需实现平台层接口
 - **接口一次定义，四语言绑定零手工成本** - 导出层为纯虚抽象接口 + `create*` 工厂 + `addXxxOb/removeXxxOb` 回调注册，禁用 STL 类型（`const char*`、裸指针+计数、回调类），SWIG 从同一套头文件自动生成 C# / Java / Node.js / Python 绑定；回调类经 director 机制在各语言中直接继承覆写，新增接口无需逐语言维护胶水层
 - **全链路 GPU 零拷贝** - 硬解（DX11VA/MediaCodec/VideoToolbox）→ Vulkan 图像处理 → 硬编/渲染，数据全程留在 GPU 不经 CPU 中转；多数开源播放器方案未打通的端到端通路
+  - **Windows** - D3D11VA 硬解帧以 DX11 纹理经 shared handle 与 Vulkan 互操作直入处理管线，结果回 DX11/DX12/Vulkan 渲染到窗口；MF 相机、屏幕捕获经统一数据源接口接入
+  - **Android** - NdkCamera2 相机 OES 纹理直出、跨 EGLContext 与 Vulkan 互通，MediaCodec 硬解输出 AHardwareBuffer 直入管线，结果回 OpenGL ES/Vulkan 渲染到 Surface 或经 MediaCodec GPU 硬编推流
+  - **iOS** - AVFoundation 相机帧与 VideoToolbox 硬解帧经 CVPixelBuffer/IOSurface 与 Vulkan/Metal 纹理互通直入管线，结果回 Metal/Vulkan 渲染或经 VideoToolbox 硬编推流
+  - **游戏引擎** - UE4/UE5、Unity3D、Godot 纹理级零拷贝双向直通（相机/GPU 管线 → 引擎纹理，引擎 RenderTarget → 管线 → 推流）已打通
 - **跟随上游的 WebRTC 整合** - 不 fork、不改 WebRTC 源码，以封装模块扩展解码工厂、AAC 解码、3A 音频、数据源/编码器映射，版本升级无源码包袱
-- **插件化 AI，按需交付** - 语音识别、翻译、图像修复、目标检测以动态插件运行期加载，与播放主链路解耦，按产品形态裁剪交付体积
+- **插件化 AI 能力模块** - 语音识别、翻译、图像修复、目标检测等以动态插件运行期加载，与播放主链路解耦，按产品形态裁剪交付体积
+- **游戏引擎深度接入** - UE4/UE5、Unity3D、Godot 纹理级零拷贝双向直通；播放、通话、AI 能力在引擎内原生可用，而非仅嵌一个播放窗口
 - **真实场景验证，全程有据可查** - 直播播放、多平台双向通话、虚拟制片等场景实战落地，关键实现均有系列技术文章与仓库文档对应，可读、可查、可复现
 
 ## 核心特性
@@ -81,7 +86,7 @@ AI 模块以动态插件（`plugins/`）形式加载，运行期探测能力：
 - **XR 拍摄虚实相机混合** - 相机标定 + 畸变校正，虚实融合重投影误差约 3 像素
 - **相机标定** - g2o 图优化内参标定、手眼标定、变焦镜头单图内参拟合
 - **超低延迟传输** - Rivermax（GPU Direct RDMA）/ NDI 局域网图像传输
-- **游戏引擎直通** - UE4/UE5、Unity3D 纹理级零拷贝对接
+- **游戏引擎直通** - UE4/UE5、Unity3D、Godot 纹理级零拷贝对接（platform/godot）
 
 ### 高级播放功能
 
