@@ -89,6 +89,7 @@ SWIG 绑定: `swig/csharp/`, `swig/nodejs/`, `swig/python/` (Java 绑定构建�
 
 - **API 命名:** `create*` 返回需释放的内存，`get*` 返回托管对象
 - **UE 插件:** avox 的 Unreal Engine 插件在 [platform/ue](platform/ue/README.md)(AvoxPlayer, 参考旧版 aocec/UE4Test 的 AocePlugins), `platform/ue/deploy_ue.ps1 -UeProject <工程路径>` 部署到工程 Plugins/ 后 UBT 编译
+- **Unity 插件:** avox 的 Unity 原生插件在 [platform/unity](platform/unity/README.md)(avox_unity.dll + com.avox.player UPM 包, 帧更新用 IssuePluginCustomTextureUpdateV2; GPU 直通仅 Unity Vulkan 后端, 参考旧版 oeip/oeip-unity3d), `platform/unity/deploy_unity.ps1 -UnityProject <工程路径>` 部署; 顶层 AVOX_ENABLE_UNITY 构建原生 dll
 - **Godot 播放器 Android 打包:** 新机器从零编出含 torrent 的 Android APK 全流程见 [platform/godot/docs/新机器Android打包.md](platform/godot/docs/新机器Android打包.md)(一键脚本 platform/godot/build_android_godot.sh; 坑表含 INTERNET 权限/dex/shader/深链注入)
 - **VSCode 卡顿:** 项目用久了"所有操作卡"是 VSCode 工作区缓存按路径累积所致,解法见 [doc/tools/VSCode卡顿排查.md](doc/tools/VSCode卡顿排查.md)(删 Cache/CachedData/workspaceStorage),别重拉 clone 或改名
 - **子模块重置:** `git -C 3rdparty/sherpa-onnx reset --hard HEAD`

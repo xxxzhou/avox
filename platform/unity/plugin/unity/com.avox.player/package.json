@@ -1,0 +1,18 @@
+{
+  "name": "com.avox.player",
+  "version": "1.0.0",
+  "displayName": "Avox Player",
+  "description": "avox 音视频 SDK 播放器: rtmp/rtsp/http/本地文件/torrent 等地址播放, 硬解, 音频直出; 视频帧 GPU 直通 (Unity Vulkan 后端零拷贝) 或 CPU 回退更新纹理",
+  "unity": "2021.3",
+  "author": {
+    "name": "avox"
+  },
+  "keywords": [
+    "media",
+    "player",
+    "video",
+    "rtmp",
+    "rtsp"
+  ],
+  "dependencies": {}
+}

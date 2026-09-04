@@ -209,6 +209,7 @@ option(AVOX_ENABLE_PLUGINS "build plugin components (opencv/onnx/sherpa/...)" ON
 option(AVOX_ENABLE_AGENT "build Agent client (LM Studio/OpenAI compatible VLM)" ON)
 option(AVOX_ENABLE_CLI "build avox_cli tool" ON)
 option(AVOX_ENABLE_GODOT "build Godot 4 GDExtension plugin (platform/godot/plugin, Windows only)" ON)
+option(AVOX_ENABLE_UNITY "build Unity native plugin (platform/unity/plugin, Windows only)" ON)
 
 # 组件 option 定义(须在 AVOXOptions / add_subdirectory(src) 之前, 保证 src 的 gate 如 inpaint 可见)
 if(AVOX_ENABLE_PLUGINS)
@@ -301,6 +302,11 @@ if(AVOX_ENABLE_GODOT AND (WIN32 OR ANDROID))
     else()
         message(WARNING "AVOX_ENABLE_GODOT=ON 但缺 3rdparty/godot-cpp 子模块, 跳过插件 (git submodule update --init --recursive)")
     endif()
+endif()
+
+# Unity 原生插件 (Windows; avox_unity.dll 供 platform/unity/plugin/unity 的 com.avox.player UPM 包使用)
+if(AVOX_ENABLE_UNITY AND WIN32)
+    add_subdirectory(platform/unity/plugin)
 endif()
 
 if(AVOX_ENABLE_SWIG)
