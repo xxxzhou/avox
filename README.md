@@ -1,6 +1,6 @@
 # avox
 
-avox 是一套跨平台音视频能力库（C++17），提供从设备采集、硬解硬编、GPU 图像处理到渲染、推流录制的统一管线。播放器是当前最完整的模块；WebRTC 实时通话与 AI 能力（语音识别、机器翻译、图像修复、超分辨率）以插件形式按需整合；虚拟制片模块已在生产环境验证并集成，数字人模块正在集成；UE4/UE5、Unity3D、Godot 游戏引擎纹理级直通已打通。
+avox 是一套跨平台音视频能力库（C++17），提供从设备采集、硬解硬编、GPU 图像处理到渲染、推流录制的统一管线。播放器是当前最完整的模块；WebRTC 实时通话与 AI 能力（语音识别、机器翻译、图像修复、超分辨率）以插件形式按需整合；XR/VR·MR 相机标定与虚实融合（虚拟制片）模块已在生产环境验证并集成，虚拟人（数字人）模块正在集成；UE4/UE5、Unity3D、Godot 游戏引擎纹理级直通已打通。
 
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Android%20%7C%20iOS%20%7C%20Linux-blue)]()
 [![Language](https://img.shields.io/badge/Language-C%2B%2B%20%7C%20C%23%20%7C%20Java%20%7C%20JS%20%7C%20Python-orange)]()
@@ -22,7 +22,7 @@ avox 源自作者多年的音视频/GPU 技术积累，经大模型辅助整理�
 - **跟随上游的 WebRTC 整合** - 不 fork、不改 WebRTC 源码，以封装模块扩展解码工厂、AAC 解码、3A 音频、数据源/编码器映射，版本升级无源码包袱
 - **插件化 AI 能力模块** - 语音识别、翻译、图像修复、目标检测等以动态插件运行期加载，与播放主链路解耦，按产品形态裁剪交付体积
 - **游戏引擎深度接入** - UE4/UE5、Unity3D、Godot 纹理级零拷贝双向直通；播放、通话、AI 能力在引擎内原生可用，而非仅嵌一个播放窗口
-- **真实场景验证，全程有据可查** - 直播播放、多平台双向通话、虚拟制片等场景实战落地，关键实现均有系列技术文章与仓库文档对应，可读、可查、可复现
+- **真实场景验证，全程有据可查** - 直播播放、多平台双向通话、XR/VR·MR 相机标定与虚实融合（虚拟制片）等场景实战落地，关键实现均有系列技术文章与仓库文档对应，可读、可查、可复现
 
 Android Godot GPU 直通播放磁力链接演示![Android Godot GPU直通播放磁力链接](assets/images/godot/avox_android_menu.png)
 
@@ -80,15 +80,16 @@ AI 模块以动态插件（`plugins/`）形式加载，运行期探测能力：
 - **AI 推理** - ONNX Runtime / NCNN 通用推理（YOLO 检测、人脸关键点等），支持 Vulkan 显存直连输入输出
 - **多模态 Agent** - LLM 集成，支持图文对话、工具链调用
 
-### 虚拟制片
+### XR / VR·MR 相机标定与虚实融合（虚拟制片）
 
-虚拟制片相关模块已在生产环境验证并集成进 avox：
+VR/MR 相机跟踪、虚拟制片相机标定、MR 虚实融合等相关模块已在生产环境验证并集成进 avox：
 
-- **LED 虚拟拍摄相机跟踪** - 对标 Redspy/MoSys：单目+IMU、红外反光点方案
-- **XR 拍摄虚实相机混合** - 相机标定 + 畸变校正，虚实融合重投影误差约 3 像素
-- **相机标定** - g2o 图优化内参标定、手眼标定、变焦镜头单图内参拟合
+- **VR/MR 相机跟踪** - LED 虚拟拍摄相机跟踪，对标 Redspy/MoSys：单目+IMU、红外反光点方案
+- **相机标定（虚拟制片标定）** - g2o 图优化内参标定、手眼标定、变焦镜头单图内参拟合
+- **MR 虚实融合** - XR 拍摄虚实相机混合：相机标定 + 畸变校正，虚实融合重投影误差约 3 像素
+- **虚拟人（数字人）** - 虚拟人驱动与渲染管线对接（模块正在集成）
 - **超低延迟传输** - Rivermax（GPU Direct RDMA）/ NDI 局域网图像传输
-- **游戏引擎直通** - UE4/UE5、Unity3D、Godot 纹理级零拷贝对接（platform/godot）
+- **游戏引擎直通** - UE4/UE5、Unity3D、Godot 纹理级零拷贝对接（platform/godot、platform/unity、platform/ue）
 
 ### 高级播放功能
 
@@ -152,7 +153,7 @@ AI 模块以动态插件（`plugins/`）形式加载，运行期探测能力：
 
 - [使用Swig转换C++到别的编程语言](https://zhuanlan.zhihu.com/p/379049985) / [Swig与Node.js原生扩展的跨线程回调](https://zhuanlan.zhihu.com/p/1969758141236372869)
 
-## 技术演进与虚拟制片
+## 技术演进与 XR / 虚拟制片
 
 avox 的能力来自多年的持续积累：
 
@@ -160,16 +161,17 @@ avox 的能力来自多年的持续积累：
 |------|------|----------|
 | 2019-2020 | oeip（Windows） | CUDA/DX11 图像管线、FFmpeg 推拉流、UE4/Unity3D 纹理直通、CUDA Grabcut/导向滤波、YOLO 整合游戏引擎 |
 | 2020-2021 | [aoce](https://github.com/xxxzhou/aoce)（跨平台） | Vulkan Compute 图像管线、GPUImage 100+ 滤镜移植、Android/iOS 相机采集、蓝绿幕扣像、NCNN 端侧推理、SWIG 多语言 |
-| 2024-至今 | avox | 播放器 SDK：多平台硬解硬编、零拷贝 GPU 通路、WebRTC 全家桶、AI 字幕/修复/超分、多语言 SDK；虚拟制片模块已集成 |
+| 2024-至今 | avox | 播放器 SDK：多平台硬解硬编、零拷贝 GPU 通路、WebRTC 全家桶、AI 字幕/修复/超分、多语言 SDK；XR/VR·MR 相机标定与虚实融合模块已集成 |
 
-**虚拟制片模块**（前期在 aoce 上完整验证，已集成进 avox）：
+**XR / 虚拟制片模块**（VR/MR 相机跟踪、虚拟制片标定、MR 虚实融合等，前期在 aoce 上完整验证，已集成进 avox）：
 
-- LED 虚拟拍摄相机跟踪（[跟踪算法](https://zhuanlan.zhihu.com/p/705932365)，对标 Redspy/MoSys：单目+IMU、红外反光点方案）
-- XR 拍摄虚实相机混合（[实现解析](https://zhuanlan.zhihu.com/p/705965901)，标定+畸变校正，重投影误差约 3 像素）
+- VR/MR 相机跟踪 — LED 虚拟拍摄相机跟踪（[跟踪算法](https://zhuanlan.zhihu.com/p/705932365)，对标 Redspy/MoSys：单目+IMU、红外反光点方案）
+- MR 虚实融合 — XR 拍摄虚实相机混合（[实现解析](https://zhuanlan.zhihu.com/p/705965901)，标定+畸变校正，重投影误差约 3 像素）
 - 仿 SLAM 流程生成 LED 幕墙点云/Mesh（[实现解析](https://zhuanlan.zhihu.com/p/705975323)，ORB_SLAM3）
-- g2o 图优化重写相机内参标定（[实现解析](https://zhuanlan.zhihu.com/p/705988110)，重投影误差建模）
+- 虚拟制片相机标定 — g2o 图优化重写相机内参标定（[实现解析](https://zhuanlan.zhihu.com/p/705988110)，重投影误差建模）
 - Rivermax 超低延迟图像传输（[实现解析](https://zhuanlan.zhihu.com/p/706037895)，GPU Direct RDMA，解决 NDI 100ms+ 延迟不可接受的问题）
 - UE4/UE5、Unity3D 纹理级直通对接（相机→GPU 管线→引擎纹理，引擎 RenderTarget→管线→推流）
+- 虚拟人（数字人）驱动与渲染管线对接（模块正在集成）
 
 ## 快速开始
 

@@ -18,7 +18,7 @@ avox 是跨平台音视频播放器 SDK，支持直播流、本地媒体、硬�
 |------|------|
 | [player](player/README.md) | 播放器: 核心/时间同步/硬解渲染/数据源/平台集成/问题记录 |
 | [webrtc](webrtc/) | WebRTC 集成、编译、编解码器对接、双向通话 |
-| [virtualproduction](virtualproduction/README.md) | 虚拟制片: XR 演播/标定/追踪/传输 (来自 aocec 整理同步) |
+| [virtualproduction](virtualproduction/README.md) | VR/MR·XR 相机标定、手眼标定、虚实融合、超低延迟传输、游戏引擎直通 (虚拟制片, 来自 aocec 整理同步) |
 | [platforms](platforms/) | 平台开发: Android / iOS / Linux (硬解、NDK、Xcode 等) |
 | [code-wiki](code-wiki/README.md) | 代码架构 Wiki: 概览/目录/核心类/依赖/构建 |
 | [ai](ai/) | AI 功能: inpaint 图像修复、语音转文字 |
