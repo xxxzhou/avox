@@ -642,7 +642,19 @@ void blitFillImage(VkCommandBuffer cmd, const VkTexture* src, VkImage dest,
 }
 
 void copyImage(VkCommandBuffer cmd, const VkTexture* src, VkImage dest) {
-  copyImage(cmd, src->image, dest, src->width, src->height);
+  // GENERAL (计算着色器存储图输出, 如字幕 FontLayer) 可直接作为拷贝源布局,
+  // 无需 TRANSFER_SRC 用法位; 其他布局按习惯转 TRANSFER_SRC_OPTIMAL
+  const VkImageLayout srcLayout = src->layout == VK_IMAGE_LAYOUT_GENERAL
+                                      ? VK_IMAGE_LAYOUT_GENERAL
+                                      : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+  VkImageCopy copyRegion = {};
+  copyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  copyRegion.srcSubresource.layerCount = 1;
+  copyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  copyRegion.dstSubresource.layerCount = 1;
+  copyRegion.extent = {(uint32_t)src->width, (uint32_t)src->height, 1};
+  vkCmdCopyImage(cmd, src->image, srcLayout, dest,
+                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
 }
 
 void copyImage(VkCommandBuffer cmd, VkImage src, VkImage dest, int32_t width,

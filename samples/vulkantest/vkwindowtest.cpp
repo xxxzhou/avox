@@ -46,7 +46,9 @@ int main() {
   // mp->open("rtsp://127.0.0.1/live/test");
   // mp->open("rtsp://192.168.1.100:554/live/0123456789ab_0");
   mp->setIoPlan(IoPlan::ffmpeg);
-  mp->open("D://Back//美好_h265.mp4");
+  mp->open("D://Back//美好.mp4");
+  // 字幕渲染验证: 加载同目录 SRT
+  mp->getSubtitle()->loadSrt("D://Back//美好.srt");
   // mp->setIoPlan(IoPlan::zlmediakit);
   // mp->open("D://Back//2.mp4");
   // 多播放器

@@ -40,8 +40,11 @@ void VkWinImage::release() {
 }
 
 void VkWinImage::bindD3D(ID3D11Device* device, ImageFormat format_) {
+  LOGFLF(LogLevel::info, "[dx11dbg] bindD3D enter interopType:", (int32_t)interopType,
+         " w:", format_.width, " h:", format_.height);
   release();
   if (interopType == InteropType::none) {
+    LOGFLF(LogLevel::info, "[dx11dbg] bindD3D skip: interopType none");
     return;
   }
 #ifdef VK_KHR_external_memory_win32
@@ -168,6 +171,7 @@ void VkWinImage::bindD3D(ID3D11Device* device, ImageFormat format_) {
   AVOX_VULKAN_LOG(vkBindImageMemory(vkDevice, vkImage, memory, 0),
                  "bind memory failed");
   bInit = true;
+  LOGFLF(LogLevel::info, "[dx11dbg] bindD3D done, bInit=1");
 }
 
 void VkWinImage::updateInputContext(IRenderContext* context) {

@@ -56,6 +56,10 @@ int main(int argc, char** argv) {
     printf("FAIL: enableVkOutputDx11 timeout (10s)\n");
     return 1;
   }
+  // 字幕联动验证 (与 Unity 时序一致: enable 后加载)
+  if (mp->getSubtitle()) {
+    printf("srt load: %d\n", (int)mp->getSubtitle()->loadSrt("D:/Work/github/avox/assets/video/avox_electron.srt"));
+  }
   // ── 轮询共享句柄 (图异步构建) ──
   uint64_t texHandle = 0;
   for (int i = 0; i < 100 && !texHandle; ++i) {

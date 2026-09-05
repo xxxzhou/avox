@@ -71,7 +71,15 @@ void VkOutputLayer::onInitVkBuffer() {
   }
 #ifdef WIN32
   if (paramet.bGpu && bWinInterop) {
+    LOGFLF(LogLevel::info, "[dx11dbg] onInitVkBuffer call bindD3D, dx11Output:",
+           bDx11Output, " outW:", outFormats[0].width, " outH:", outFormats[0].height);
     winImage->bindD3D(vkPipeGraph->getD3D11Device(), outFormats[0]);
+    LOGFLF(LogLevel::info, "[dx11dbg] onInitVkBuffer bindD3D returned, init:",
+           winImage->getInit() ? 1 : 0);
+  } else {
+    LOGFLF(LogLevel::info, "[dx11dbg] onInitVkBuffer skip bindD3D, bGpu:",
+           (int32_t)paramet.bGpu, " bWinInterop:", bWinInterop,
+           " bDx11Output:", bDx11Output);
   }
 #endif
 #if __ANDROID_API__ >= 26
@@ -172,9 +180,12 @@ void VkOutputLayer::onCommand() {
     bInterop = true;
 #endif
     if (bInterop && destImage) {
-      inTexs[0]->addBarrier(cmd, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                            VK_PIPELINE_STAGE_TRANSFER_BIT,
-                            VK_ACCESS_TRANSFER_READ_BIT);
+      // 字幕等计算层输出停在 GENERAL 布局, copyImage 支持源 GENERAL, 免转移
+      if (inTexs[0]->layout != VK_IMAGE_LAYOUT_GENERAL) {
+        inTexs[0]->addBarrier(cmd, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                              VK_PIPELINE_STAGE_TRANSFER_BIT,
+                              VK_ACCESS_TRANSFER_READ_BIT);
+      }
       changeLayout(cmd, destImage, VK_IMAGE_LAYOUT_GENERAL,
                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                    VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -202,9 +213,11 @@ void VkOutputLayer::onCommand() {
   // VkDevice-VkDevice 交互: 复制到导出的 sharedImage
   if (bVkInterop && sharedImage && sharedImage->isValid()) {
     VkImage exportImage = sharedImage->getImage();
-    inTexs[0]->addBarrier(cmd, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                          VK_PIPELINE_STAGE_TRANSFER_BIT,
-                          VK_ACCESS_TRANSFER_READ_BIT);
+    if (inTexs[0]->layout != VK_IMAGE_LAYOUT_GENERAL) {
+      inTexs[0]->addBarrier(cmd, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                            VK_PIPELINE_STAGE_TRANSFER_BIT,
+                            VK_ACCESS_TRANSFER_READ_BIT);
+    }
     changeLayout(cmd, exportImage, VK_IMAGE_LAYOUT_UNDEFINED,
                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                  VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
