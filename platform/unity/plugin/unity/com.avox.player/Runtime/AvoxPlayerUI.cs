@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Text;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -34,6 +36,9 @@ namespace Avox
         Slider _seek, _volume;
         Button _playBtn, _recordBtn;
         Text _playLabel, _recordLabel;
+        Dropdown _srt;
+        string[] _srtFiles = Array.Empty<string>();
+        bool _srtRefreshing;
         Dropdown _speed;
         Toggle _hardToggle, _infoToggle;
         InputField _url;
@@ -144,12 +149,7 @@ namespace Avox
                          player != null ? player.url : "");
             var openBtn = Button(inner.transform, "Open", "打开", font, new Vector2(950, 0), new Vector2(60, 30), ColBtn);
             Left(openBtn.gameObject);
-            openBtn.onClick.AddListener(() =>
-            {
-                if (player == null) return;
-                player.url = _url.text;
-                player.Open(player.url);
-            });
+            openBtn.onClick.AddListener(() => OpenUrl(_url.text));
 #if UNITY_EDITOR
             var browseBtn = Button(inner.transform, "Browse", "浏览", font, new Vector2(1018, 0), new Vector2(60, 30), ColBtn);
             Left(browseBtn.gameObject);
@@ -158,7 +158,7 @@ namespace Avox
                 var p = UnityEditor.EditorUtility.OpenFilePanel("选择视频文件", "", "mp4,mkv,flv,mov,ts,avi;所有文件,*");
                 if (string.IsNullOrEmpty(p)) return;
                 _url.text = p;
-                if (player != null) { player.url = p; player.Open(p); }
+                OpenUrl(p);
             });
 #endif
 
@@ -184,17 +184,17 @@ namespace Avox
             _recordLabel = _recordBtn.GetComponentInChildren<Text>();
             Left(_recordBtn.gameObject);
             _recordBtn.onClick.AddListener(ToggleRecord);
-#if UNITY_EDITOR
-            var srtBtn = Button(inner.transform, "Srt", "字幕", font, new Vector2(514, -38), new Vector2(60, 28), ColBtn);
-            Left(srtBtn.gameObject);
-            srtBtn.onClick.AddListener(() =>
+            // 字幕下拉: 随视频同目录 .srt 自动填充 (见 RefreshSubtitles)
+            _srt = Dropdown(inner.transform, "Srt", font, new Vector2(514, -38), new Vector2(210, 26));
+            Left(_srt.gameObject);
+            _srt.interactable = false;
+            _srt.onValueChanged.AddListener(i =>
             {
-                if (player == null) return;
-                var p = UnityEditor.EditorUtility.OpenFilePanel("选择 SRT 字幕", "", "srt");
-                if (!string.IsNullOrEmpty(p)) player.LoadSrt(p);
+                if (_srtRefreshing || player == null) return;
+                if (i <= 0) player.CloseSubtitle();
+                else player.LoadSrt(_srtFiles[i - 1]);
             });
-#endif
-            _infoToggle = Toggle(inner.transform, "InfoTgl", font, "信息", new Vector2(600, -38), ColText);
+            _infoToggle = Toggle(inner.transform, "InfoTgl", font, "信息", new Vector2(744, -38), ColText);
             Left(_infoToggle.gameObject);
             _infoToggle.isOn = showInfoOnStart;
 
@@ -225,9 +225,40 @@ namespace Avox
             else if (s == AvoxPlayerState.Playing) player.Pause();
             else if (s == AvoxPlayerState.None || s == AvoxPlayerState.Stopped || s == AvoxPlayerState.Completed)
             {
-                player.url = _url.text;
-                player.Open(player.url);
+                OpenUrl(_url.text);
             }
+        }
+
+        void OpenUrl(string url)
+        {
+            if (player == null || string.IsNullOrEmpty(url)) return;
+            player.url = url;
+            player.Open(url);
+            RefreshSubtitles();
+        }
+
+        // 字幕下拉填充: 同目录候选 + 已自动加载项置当前
+        void RefreshSubtitles()
+        {
+            if (player == null) return;
+            _srtFiles = AvoxPlayer.FindSubtitles(player.url);
+            var opts = new List<Dropdown.OptionData> { new Dropdown.OptionData("字幕: 关") };
+            foreach (var f in _srtFiles)
+                opts.Add(new Dropdown.OptionData(Path.GetFileName(f)));
+            _srt.options = opts;
+            _srtRefreshing = true;
+            var sel = 0;
+            if (player.SubtitlePath != null)
+                for (int i = 0; i < _srtFiles.Length; i++)
+                    if (string.Equals(_srtFiles[i], player.SubtitlePath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        sel = i + 1;
+                        break;
+                    }
+            _srt.value = sel;
+            _srt.RefreshShownValue();
+            _srtRefreshing = false;
+            _srt.interactable = _srtFiles.Length > 0;
         }
 
         void ToggleRecord()
@@ -270,6 +301,20 @@ namespace Avox
             // 录制键文案
             var recText = player.RecordState == 2 ? "■ 停止" : "● 录制";
             if (_recordLabel.text != recText) _recordLabel.text = recText;
+            // 自动加载完成后把下拉切到当前字幕 (RefreshSubtitles 在 Open 时可能早于赋值)
+            if (_srtFiles.Length > 0 && player.SubtitlePath != null && !_srtRefreshing)
+            {
+                for (int i = 0; i < _srtFiles.Length; i++)
+                    if (string.Equals(_srtFiles[i], player.SubtitlePath, StringComparison.OrdinalIgnoreCase)
+                        && _srt.value != i + 1)
+                    {
+                        _srtRefreshing = true;
+                        _srt.value = i + 1;
+                        _srt.RefreshShownValue();
+                        _srtRefreshing = false;
+                        break;
+                    }
+            }
             // 信息面板
             if (_infoPanel.activeSelf)
             {

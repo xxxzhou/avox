@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Text;
 using UnityEngine;
 using UnityEngine.Events;
@@ -91,6 +93,15 @@ namespace Avox
         {
             if (_player == IntPtr.Zero) return;
             PollEvents();
+            // 待加载字幕: 等就绪/播放中再挂 (open 后 subtitle 才有效)
+            if (_pendingSrt != null &&
+                (State == AvoxPlayerState.Ready || State == AvoxPlayerState.Playing))
+            {
+                var sub = _pendingSrt;
+                _pendingSrt = null;
+                SubtitlePath = sub;
+                if (LoadSrt(sub)) Debug.Log($"[AvoxPlayer] 字幕已加载: {sub}", this);
+            }
             // GPU 直通: 主线程处理 enableVkOutput + NT句柄导入 (非Vulkan后端快速返回)
             AvoxNative.avoxPlayerUpdateGpu(_player);
             EnsureTexture();
@@ -145,9 +156,60 @@ namespace Avox
             url = urlToOpen;
             ApplyConfig();
             AvoxNative.avoxPlayerOpen(_player, url);
+            // 同目录字幕自动发现 (精确同名/唯一候选自动加载, 多候选由 UI 下拉选择)
+            var subs = FindSubtitles(url);
+            SubtitlePath = null;
+            _pendingSrt = null;
+            if (subs.Length > 0)
+            {
+                var exact = Path.GetFileNameWithoutExtension(url);
+                var isExact = Path.GetFileName(subs[0]).Equals(exact + ".srt", StringComparison.OrdinalIgnoreCase);
+                if (isExact || subs.Length == 1) _pendingSrt = subs[0];
+            }
         }
 
-        public void Close() => AvoxNative.avoxPlayerClose(_player);
+        string _pendingSrt;
+
+        /// <summary>当前(或待加载)的字幕文件路径, 无则 null</summary>
+        public string SubtitlePath { get; private set; }
+
+        // 同目录字幕发现: 与视频同名/同前缀的 .srt (精确同名排最前); 网络流返回空
+        public static string[] FindSubtitles(string videoPath)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(videoPath)) return Array.Empty<string>();
+                var p = videoPath;
+                if (p.StartsWith("file://", StringComparison.OrdinalIgnoreCase)) p = new Uri(p).LocalPath;
+                if (p.Contains("://")) return Array.Empty<string>();
+                var dir = Path.GetDirectoryName(p);
+                var baseName = Path.GetFileNameWithoutExtension(p);
+                if (string.IsNullOrEmpty(dir) || string.IsNullOrEmpty(baseName)) return Array.Empty<string>();
+                var files = Directory.GetFiles(dir, baseName + "*.srt");
+                Array.Sort(files, StringComparer.OrdinalIgnoreCase);
+                var exact = Path.Combine(dir, baseName + ".srt");
+                if (Array.IndexOf(files, exact) > 0)
+                {
+                    var list = new List<string>(files.Length) { exact };
+                    foreach (var f in files)
+                        if (!f.Equals(exact, StringComparison.OrdinalIgnoreCase))
+                            list.Add(f);
+                    return list.ToArray();
+                }
+                return files;
+            }
+            catch
+            {
+                return Array.Empty<string>();
+            }
+        }
+
+        public void Close()
+        {
+            _pendingSrt = null;
+            SubtitlePath = null;
+            AvoxNative.avoxPlayerClose(_player);
+        }
 
         public void Pause() => AvoxNative.avoxPlayerPause(_player);
 
