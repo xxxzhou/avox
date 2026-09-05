@@ -1,8 +1,0 @@
-[configuration]
-entry_symbol = "avox_godot_init"
-compatibility_minimum = 4.3
-
-[libraries]
-windows.debug.x86_64 = "res://addons/avox_godot/bin/avox_godot.dll"
-windows.release.x86_64 = "res://addons/avox_godot/bin/avox_godot.dll"
-android.arm64 = "res://addons/avox_godot/bin_android/libavox_godot.so"
