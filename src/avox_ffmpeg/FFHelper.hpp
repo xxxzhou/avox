@@ -32,6 +32,8 @@ AVOX_EXPORT VCodecId ffVCodec(AVCodecID codecId);
 AVOX_EXPORT ACodecId ffACodec(AVCodecID codecId);
 // AVSampleFormat
 AVOX_EXPORT YuvType ffYuvType(AVPixelFormat format);
+// 流色彩空间(矩阵标准+量程): 容器/VUI 标记优先, 未标记按分辨率(>=720p=709)与编码族(H264/H265/MPEG=limited)惯例推断
+AVOX_EXPORT ColorSpaceDesc ffColorSpace(AVCodecParameters* par);
 AVOX_EXPORT AudioFormat ffAudioFromat(int32_t audioFormat);
 AVOX_EXPORT AvoxPacket ffAvoxPacket(AVPacket *packet);
 AVOX_EXPORT AVPixelFormat getFFVideoFormat(YuvType type);

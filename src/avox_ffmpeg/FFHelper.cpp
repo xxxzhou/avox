@@ -193,6 +193,49 @@ YuvType ffYuvType(AVPixelFormat format) {
   return YuvType::other;
 }
 
+ColorSpaceDesc ffColorSpace(AVCodecParameters* par) {
+  ColorSpaceDesc cs = {};
+  // 矩阵标准: VUI/容器标记优先, 未标记按高清/标清惯例
+  switch (par->color_space) {
+    case AVCOL_SPC_BT709:
+      cs.standard = YuvStandard::bt709;
+      break;
+    case AVCOL_SPC_BT2020_NCL:
+    case AVCOL_SPC_BT2020_CL:
+      cs.standard = YuvStandard::bt2020;
+      break;
+    case AVCOL_SPC_SMPTE170M:
+    case AVCOL_SPC_BT470BG:
+    case AVCOL_SPC_FCC:
+    case AVCOL_SPC_SMPTE240M:
+    case AVCOL_SPC_CHROMA_DERIVED_NCL:
+    case AVCOL_SPC_CHROMA_DERIVED_CL:
+      cs.standard = YuvStandard::bt601;
+      break;
+    default:
+      cs.standard = par->height >= 720 ? YuvStandard::bt709 : YuvStandard::bt601;
+      break;
+  }
+  // 量程: MPEG 系为 16~235; 未标记时 H264/H265/MPEG 家族按 VUI 默认 limited
+  switch (par->color_range) {
+    case AVCOL_RANGE_MPEG:
+      cs.range = YuvRange::limited;
+      break;
+    case AVCOL_RANGE_JPEG:
+      cs.range = YuvRange::full;
+      break;
+    default:
+      cs.range = (par->codec_id == AV_CODEC_ID_H264 ||
+                  par->codec_id == AV_CODEC_ID_HEVC ||
+                  par->codec_id == AV_CODEC_ID_MPEG2VIDEO ||
+                  par->codec_id == AV_CODEC_ID_MPEG4)
+                     ? YuvRange::limited
+                     : YuvRange::full;
+      break;
+  }
+  return cs;
+}
+
 AudioFormat ffAudioFromat(int32_t audioFormat) {
   switch (audioFormat) {
     case AV_SAMPLE_FMT_U8:

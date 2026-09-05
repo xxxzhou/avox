@@ -269,6 +269,7 @@ void IOParseFF::onRunTask() {
       vdesc.desc.height = st->codecpar->height;
       vdesc.desc.fps = av_q2d(st->codecpar->framerate);
       vdesc.desc.type = ffYuvType((AVPixelFormat)st->codecpar->format);
+      vdesc.desc.colorSpace = ffColorSpace(st->codecpar);
       addVideoDesc(vdesc);
     } else if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO &&
                !bDisableAudio) {
