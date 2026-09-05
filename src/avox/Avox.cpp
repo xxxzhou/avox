@@ -695,7 +695,9 @@ bool enableVkOutput(ISurfaceRender* sr, int32_t w, int32_t h) {
   desc.width = w;
   desc.height = h;
   desc.format = VK_FORMAT_R8G8B8A8_UNORM;
-  desc.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+  // SAMPLED: 共享内存被 D3D11 OpenSharedResource1 导入时需要映射 SHADER_RESOURCE 绑定位
+  desc.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+               VK_IMAGE_USAGE_SAMPLED_BIT;
 #ifdef _WIN32
   desc.handleType = VkShareHandleType::opaqueWin32;
 #elif defined(__ANDROID__)
@@ -757,6 +759,54 @@ void disableVkOutput(ISurfaceRender* sr) {
     outputLayer->setVkInterop(false);
   }
   LOGFLF(LogLevel::info, "disableVkOutput: done");
+}
+
+// ── D3D11 输出: AVOX 自建 NT 共享纹理,VK 每帧拷入,外部 DX11 设备打开复制 ──
+
+static VkOutputLayer* getVkOutputLayerDx11(ISurfaceRender* sr) {
+  if (!sr) {
+    return nullptr;
+  }
+  VkVideoRender* vkRender = getVkVideoRender(sr);
+  return vkRender ? vkRender->getOutputLayer() : nullptr;
+}
+
+bool enableVkOutputDx11(ISurfaceRender* sr) {
+  VkOutputLayer* outputLayer = getVkOutputLayerDx11(sr);
+  if (!outputLayer) {
+    LOGFLF(LogLevel::warn, "enableVkOutputDx11: outputLayer is null");
+    return false;
+  }
+  outputLayer->setDx11Output(true);
+  LOGFLF(LogLevel::info, "enableVkOutputDx11: ok");
+  return true;
+}
+
+uint64_t getVkOutputDx11Handle(ISurfaceRender* sr) {
+  VkOutputLayer* outputLayer = getVkOutputLayerDx11(sr);
+  if (!outputLayer || !outputLayer->getWinImage() ||
+      !outputLayer->getWinImage()->getInit()) {
+    return 0;
+  }
+  return (uint64_t)(uintptr_t)outputLayer->getWinImage()->getHandle();
+}
+
+uint64_t getVkOutputDx11FenceHandle(ISurfaceRender* sr) {
+  VkOutputLayer* outputLayer = getVkOutputLayerDx11(sr);
+  if (!outputLayer || !outputLayer->getWinImage() ||
+      !outputLayer->getWinImage()->getInit()) {
+    return 0;
+  }
+  return (uint64_t)(uintptr_t)outputLayer->getWinImage()->getFenceHandle();
+}
+
+void disableVkOutputDx11(ISurfaceRender* sr) {
+  VkOutputLayer* outputLayer = getVkOutputLayerDx11(sr);
+  if (!outputLayer) {
+    return;
+  }
+  outputLayer->setDx11Output(false);
+  LOGFLF(LogLevel::info, "disableVkOutputDx11: done");
 }
 
 // ── 输入: 外部写,AVOX 读 ──
@@ -851,6 +901,13 @@ bool enableVkOutput(ISurfaceRender* sr, int32_t w, int32_t h) {
 }
 bool getVkOutputHandle(ISurfaceRender* sr, VkSharedHandle* out) { return false; }
 void disableVkOutput(ISurfaceRender* sr) {}
+bool enableVkOutputDx11(ISurfaceRender* sr) {
+  LOGFLF(LogLevel::warn, "enableVkOutputDx11: Vulkan not enabled");
+  return false;
+}
+uint64_t getVkOutputDx11Handle(ISurfaceRender* sr) { return 0; }
+uint64_t getVkOutputDx11FenceHandle(ISurfaceRender* sr) { return 0; }
+void disableVkOutputDx11(ISurfaceRender* sr) {}
 bool enableVkInput(ISurfaceRender* sr, int32_t w, int32_t h) {
   LOGFLF(LogLevel::warn, "enableVkInput: Vulkan not enabled");
   return false;

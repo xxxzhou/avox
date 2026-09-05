@@ -339,6 +339,8 @@ class ISurfaceRender {
   // setSurface默认只输出到GPU到窗口,搭配setSurface使用
   virtual void enableYuvOut(YuvType ytype) = 0;
   virtual void disableYuvOut() = 0;
+  // 设置源视频色彩空间(矩阵标准+量程), 决定 yuv2RGBA/rgba2YUV 转换, 运行时可调
+  virtual void setColorSpace(const ColorSpaceDesc& cs) {};
   // 调用方须先对 buf 调用 setImageFormat 设定 width/height/imageType(当前仅
   // rgba8); 每帧按该 ImageFormat 经 GPU 缩放后零拷贝写入 buf, 读取时以
   // buf->getImageFormat() 为准(rowPitch 可能对齐到 16 字节) buf 由调用方持有,
@@ -500,6 +502,19 @@ AVOX_EXPORT bool enableVkOutput(ISurfaceRender* sr, int32_t w, int32_t h);
 AVOX_EXPORT bool getVkOutputHandle(ISurfaceRender* sr, VkSharedHandle* out);
 // 断开输出交互
 AVOX_EXPORT void disableVkOutput(ISurfaceRender* sr);
+
+// ── D3D11 输出: AVOX 自建 NT 共享纹理,VK 每帧拷入,外部 DX11 设备打开复制 ──
+// 在 avox 自身 D3D11 设备上创建 MISC_SHARED_NTHANDLE 纹理并导入 VK 管线
+// (需 AVOX_ENABLE_VULKAN; 图未建时自动在构建后生效)
+AVOX_EXPORT bool enableVkOutputDx11(ISurfaceRender* sr);
+// 共享纹理 NT 句柄: 外部 DX11 设备 OpenSharedResource1 使用
+// 图未建/绑定完成前返回 0,需轮询; 分辨率变化(重绑)后需重新获取
+AVOX_EXPORT uint64_t getVkOutputDx11Handle(ISurfaceRender* sr);
+// 共享 fence NT 句柄: 外部 OpenSharedFence 后 GetCompletedValue 轮询同步
+// 每帧拷入完成后 avox 会 Signal 一次 (0 表示不可用)
+AVOX_EXPORT uint64_t getVkOutputDx11FenceHandle(ISurfaceRender* sr);
+// 关闭 D3D11 共享输出并重置管线
+AVOX_EXPORT void disableVkOutputDx11(ISurfaceRender* sr);
 
 // ── VkDevice-VkDevice 输入: 外部写,AVOX 读 ──
 // 准备输入层,每帧自动从 sharedImage 拷到管线

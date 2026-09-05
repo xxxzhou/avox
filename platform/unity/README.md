@@ -1,5 +1,9 @@
 # AvoxPlayer Unity 插件 (platform/unity)
 
+> **本模块的插件工程已独立为私有仓 `avox-unity`**（UPM 包源码真身 + demo 工程 + 部署/回归/合规工具 + 文档）。
+> 本目录保留原生插件 C++ 源码（`plugin/src`，由 avox CMake `AVOX_ENABLE_UNITY` 构建）与本文档存档。
+> 使用/开发入口见私有仓 `D:\Work\github\avox-unity\README.md`。
+
 avox SDK 的 Unity 原生插件, 让 Unity 项目直接使用 avox 的音视频播放能力 (rtmp/rtsp/http/本地文件/torrent 等地址, 硬解, 音频直出)。
 
 参考旧版 `xxxzhou/oeip` 的 oeip-unity3d 结构; 帧更新机制按现行做法重写 —— 旧版手写 D3D11 渲染线程方案已过时, 本插件采用 Unity 官方 [NativeRenderingPlugin](https://github.com/unity-technologies/nativerenderingplugin) TextureUpdate 示例 ([keijiro/TextureUpdateExample](https://github.com/keijiro/TextureUpdateExample) 同款) 的 `CommandBuffer.IssuePluginCustomTextureUpdateV2`, 与 Godot 插件 ([platform/godot/plugin](../godot/plugin)) 的双路架构一致:
@@ -18,6 +22,7 @@ avox SDK 的 Unity 原生插件, 让 Unity 项目直接使用 avox 的音视频�
 platform/unity/
 ├── README.md                    # 本文档
 ├── deploy_unity.ps1             # 部署: UPM 包 + 原生 dll → <工程>/Packages/com.avox.player
+├── test_unity.ps1               # 一键回归: 冒烟 + 真实播放测试 (batchmode, 默认找 D:\Work\unity 编辑器)
 └── plugin/
     ├── CMakeLists.txt           # avox_unity 目标 (顶层 AVOX_ENABLE_UNITY, Windows 默认 ON)
     ├── unity/com.avox.player/   # UPM 包 (部署到 <工程>/Packages/)
@@ -48,6 +53,19 @@ platform/unity/
 
 脚本把 UPM 包复制到 `<工程>/Packages/com.avox.player` (Unity 自动识别本地包), 原生 dll 复制到包内 `Runtime/Plugins/Windows/x86_64/`。打开工程即用, 无需 .meta 入库 (Unity 自动生成)。
 
+## 回归测试
+
+```powershell
+./platform/unity/test_unity.ps1 -UnityProject D:\Work\unity\AvoxTest
+```
+
+脚本向工程 `Assets/Editor/` 写入两个 batchmode 测试 (反射调 internal AvoxNative, 不污染工程配置) 后依次执行:
+
+- **冒烟**: 原生 dll 链加载 → `avoxPlayerCreate/Destroy` → `AvoxPlayer` 组件挂载
+- **播放** (软解): 打开 `assets/video/avox_electron.mp4` → 等 Ready/Playing → 校验帧尺寸与 2 秒进度推进
+
+编辑器默认优先找 `D:\Work\unity\*\Editor\Unity.exe`, 兜底 Unity Hub 目录; 可用 `-UnityEditor` 指定, `-SkipPlay` 只跑冒烟。全绿退出码 0。
+
 ## 使用
 
 1. 场景里给任意 GameObject 添加 **Avox / Avox Media Player** 组件
@@ -57,6 +75,8 @@ platform/unity/
    - **代码/UI**: 读 `VideoTexture` 属性或监听 `onTextureCreated` 事件, 自行赋给 RawImage/Material
 4. 事件: `onStateChanged` / `onReady` / `onComplete` / `onError`
 5. 控制: `Pause()` / `Resume()` / `Seek(ms)` / `SetSpeed()` / `SetVolume()` / `ioPlan` (torrent 等, 下次 Open 生效)
+6. 扩展: `SetOptionInt/String/...` / `GetOption*` (键值参数透传 `IMediaPlayer::getOption`), `StartRecord(path)` / `StopRecord()` / `RecordState` (ffmpeg 封装录制), `LoadSrt(path)` / `CloseSubtitle()` (SRT 字幕; ASR/翻译依赖可选模块)
+7. 色彩: 源 colorSpace (BT.601/709/2020 × full/limited) 自码流元数据解析, 渲染管线 shader 与 CPU 回退转换同参切换
 
 ```csharp
 var player = gameObject.AddComponent<Avox.Player.AvoxPlayer>();
@@ -100,6 +120,7 @@ onFrame(YUVFrame) ↓                    UpdateTextureBegin: 按 Unity 纹理尺
 
 - 仅 Win64; Android 需 AHardwareBuffer 导入 + Gradle 接入 (godot 侧已有 AHB 流程可参照), iOS 需 Metal 路径
 - GPU 直通要求 Vulkan 后端 (见上); D3D11 直通待 avox DX11 导出
-- YUV 转换 BT.601 full-range (同 godot/UE 插件), BT.709 源轻微偏色
+- YUV 转换矩阵/量程由源 colorSpace 元数据驱动 (容器/VUI 标记优先, 未标记按 ≥720p=BT.709、H264/H265/MPEG=limited 惯例推断, 见 `FFHelper::ffColorSpace`); godot/UE 插件尚未接入该元数据, 仍固定 BT.601 full-range
+- GPU 直通勿在 batchmode/headless 验证: 无 Game View 渲染循环时 `enableVkOutput` 因 outputLayer 未建失败, 且该场景下 Unity 进程可能段错误 (2026-09-05 实测); 交互式编辑器不受影响
 - IL2CPP 正常工作 (纯 blittable P/Invoke); Unity 6 可选升级 `[LibraryImport]` 源生成
-- `getOption`/`getMuxer`/`getSubtitle` 未封装, 需要时参照 PlayerBridge 现有模式扩展
+- `getPingback`/埋点未封装; ASR/翻译字幕依赖 avox_sherpa/translation 可选模块, 未集成时 `LoadSrt` 仅文件字幕可用

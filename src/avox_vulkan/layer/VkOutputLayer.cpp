@@ -19,6 +19,10 @@ void VkOutputLayer::onInitGraph() {
   winImage = std::make_unique<VkWinImage>();
   winImage->setVkContext(vkPipeGraph);
   bWinInterop = wphyDevcie->bInterpDx11();
+  if (bDx11Output) {
+    // 底层自建共享纹理模式: 每帧管线拷入, 外部 DX11 设备经 NT 句柄读取
+    winImage->setInteropType(InteropType::output);
+  }
 #elif __ANDROID_API__ >= 26
   bAndInterop = wphyDevcie->bInterpAndroid() && supportSharedGpuBuffer();
   if (bAndInterop) {
@@ -206,6 +210,12 @@ void VkOutputLayer::onCommand() {
                  VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                  VK_PIPELINE_STAGE_TRANSFER_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
     copyImage(cmd, inTexs[0].get(), exportImage);
+    // 拷入后留在 GENERAL: 跨 VkDevice 共享的标准约定, 外部设备拷出/采样
+    // 不经过 UNDEFINED 丢弃语义 (UE 直通读黑问题, 2026-09-05)
+    changeLayout(cmd, exportImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                 VK_IMAGE_LAYOUT_GENERAL,
+                 VK_PIPELINE_STAGE_TRANSFER_BIT,
+                 VK_PIPELINE_STAGE_TRANSFER_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
   }
 }
 
@@ -374,5 +384,21 @@ void VkOutputLayer::setAspect(float aspect_) {
   }
   aspect = aspect_;
 }
+
+#ifdef WIN32
+void VkOutputLayer::setDx11Output(bool bDx11) {
+  if (bDx11Output == bDx11) {
+    return;
+  }
+  bDx11Output = bDx11;
+  if (winImage) {
+    if (bDx11Output) {
+      winImage->setInteropType(InteropType::output);
+    }
+    // 已建图后开关需重绑共享纹理, 重置管线走 onInitVkBuffer 重新 bindD3D
+    resetGraph();
+  }
+}
+#endif
 
 }

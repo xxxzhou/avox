@@ -1,4 +1,5 @@
 using System;
+using System.Text;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.Rendering;
@@ -56,9 +57,21 @@ namespace Avox
         public double Progress => AvoxNative.avoxPlayerGetProgress(_player);
         // 是否已走 GPU 直通 (Unity Vulkan 后端); 否则为 CPU 回退
         public bool GpuPassthrough => AvoxNative.avoxPlayerIsGpuMode(_player) != 0;
+        // 0 无 1 Vulkan 导入 (外部纹理) 2 D3D11 拷贝 (普通纹理+渲染事件)
+        public int GpuFlavor => AvoxNative.avoxGetGpuFlavor();
+        // 原生播放器实例 id (渲染事件 eventId)
+        public int GetId() => _player != IntPtr.Zero ? (int)AvoxNative.avoxPlayerGetId(_player) : 0;
+        // D3D11 拷贝链路诊断: 渲染事件数/实际拷贝数/目标缺失数/最近 fence 值/打开次数
+        public string GetDx11Debug()
+        {
+            if (_player == IntPtr.Zero) return "player=null";
+            AvoxNative.avoxPlayerGetDx11Debug(_player, out int ev, out int cp, out int tn, out long fv, out int op);
+            return $"events={ev} copies={cp} targetNull={tn} fence={fv} opens={op}";
+        }
 
         IntPtr _player = IntPtr.Zero;
         Texture2D _texture;
+        IntPtr _wrappedNative = IntPtr.Zero;  // 外部纹理包裹的原生指针 (重绑检测)
         CommandBuffer _command;
         MaterialPropertyBlock _mpb;
         int _texW;
@@ -88,6 +101,14 @@ namespace Avox
                     AvoxNative.avoxGetTextureUpdateCallback(), _texture, AvoxNative.avoxPlayerGetId(_player));
                 Graphics.ExecuteCommandBuffer(_command);
                 _command.Clear();
+            }
+            else if (GpuPassthrough && GpuFlavor == 2)
+            {
+                // D3D11 拷贝模式: 渲染线程把 avox 共享纹理 CopyResource 到插件自建
+                // 目标纹理 (fence 去重)。纹理未就绪也要发: 首次事件负责打开共享纹理、
+                // 建目标纹理并回填尺寸, C# 据此 CreateExternalTexture
+                GL.IssuePluginEvent(AvoxNative.avoxGetRenderEventFunc(),
+                                    (int)AvoxNative.avoxPlayerGetId(_player));
             }
         }
 
@@ -142,6 +163,41 @@ namespace Avox
             AvoxNative.avoxPlayerSetVolume(_player, volume);
         }
 
+        // ── Option (键值参数透传, 具体可用 key 见 avox 文档) ──
+
+        public bool SetOptionBool(string key, bool value) => _player != IntPtr.Zero && AvoxNative.avoxPlayerSetOptionBool(_player, key, value ? 1 : 0) != 0;
+        public bool SetOptionInt(string key, long value) => _player != IntPtr.Zero && AvoxNative.avoxPlayerSetOptionInt(_player, key, value) != 0;
+        public bool SetOptionNumber(string key, double value) => _player != IntPtr.Zero && AvoxNative.avoxPlayerSetOptionNumber(_player, key, value) != 0;
+        public bool SetOptionString(string key, string value) => _player != IntPtr.Zero && AvoxNative.avoxPlayerSetOptionString(_player, key, value) != 0;
+        public long GetOptionInt(string key) => AvoxNative.avoxPlayerGetOptionInt(_player, key);
+        public double GetOptionNumber(string key) => AvoxNative.avoxPlayerGetOptionNumber(_player, key);
+
+        public string GetOptionString(string key)
+        {
+            if (_player == IntPtr.Zero) return null;
+            var type = AvoxNative.avoxPlayerGetOptionType(_player, key);
+            if (type != AvoxNative.ArgTypeString) return null;
+            var buf = new byte[512];
+            int n = AvoxNative.avoxPlayerGetOptionString(_player, key, buf, buf.Length);
+            return n < 0 ? null : Encoding.UTF8.GetString(buf, 0, n);
+        }
+
+        // ── 录制 (ffmpeg 封装; 录制中再次 StartRecord 会先停旧再开新) ──
+
+        public bool StartRecord(string path, bool transcode = false) =>
+            _player != IntPtr.Zero && AvoxNative.avoxPlayerStartRecord(_player, path, transcode ? 1 : 0) != 0;
+
+        public void StopRecord() => AvoxNative.avoxPlayerStopRecord(_player);
+
+        // 0 none 1 opening 2 recording 3 completed
+        public int RecordState => AvoxNative.avoxPlayerGetRecordState(_player);
+
+        // ── 字幕 ──
+
+        public bool LoadSrt(string path) => _player != IntPtr.Zero && AvoxNative.avoxPlayerLoadSrt(_player, path) != 0;
+
+        public void CloseSubtitle() => AvoxNative.avoxPlayerCloseSubtitle(_player);
+
         void ApplyConfig()
         {
             AvoxNative.avoxPlayerSetHardDecode(_player, hardDecode ? 1 : 0);
@@ -177,14 +233,23 @@ namespace Avox
         void EnsureTexture()
         {
             if (AvoxNative.avoxPlayerGetFrameInfo(_player, out int w, out int h) == 0) return;
-            if (_texture != null && w == _texW && h == _texH) return;
-            // 首帧或分辨率变化重建: GPU=收养导入的 VkImage, CPU=普通纹理(回调上传)
+            IntPtr nativeTex = IntPtr.Zero;
+            if (GpuPassthrough)
+            {
+                nativeTex = (IntPtr)AvoxNative.avoxPlayerGetExternalTexture(_player);
+                if (nativeTex == IntPtr.Zero) return;
+            }
+            // 首帧/分辨率变化/原生纹理重建(重绑) 时重建包裹
+            if (_texture != null && w == _texW && h == _texH && nativeTex == _wrappedNative) return;
             DestroyTexture();
             if (GpuPassthrough)
             {
-                IntPtr nativeTex = (IntPtr)AvoxNative.avoxPlayerGetExternalTexture(_player);
-                if (nativeTex == IntPtr.Zero) return;
-                _texture = Texture2D.CreateExternalTexture(w, h, TextureFormat.RGBA32, false, false, nativeTex);
+                // GPU 模式统一走外部纹理: VK=导入的 VkImage / D3D11=插件自建目标纹理
+                // D3D11 共享纹理是 R8G8B8A8_UNORM, 必须用 RGBA32 包裹
+                // (BGRA32 在 Linear 项目映射 B8G8R8A8_TYPELESS, SRV 创建失败采样全黑)
+                _texture = Texture2D.CreateExternalTexture(w, h, TextureFormat.RGBA32,
+                                                           false, false, nativeTex);
+                _wrappedNative = nativeTex;
             }
             else
             {
@@ -215,6 +280,7 @@ namespace Avox
                 Destroy(_texture);
                 _texture = null;
             }
+            _wrappedNative = IntPtr.Zero;
             _texW = 0;
             _texH = 0;
         }

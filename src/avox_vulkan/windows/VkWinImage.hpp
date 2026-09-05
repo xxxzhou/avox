@@ -48,6 +48,9 @@ class VkWinImage : public VkContextRef {
   inline const ImageFormat& getFormat() { return format; }
   inline VkImage getImage() { return vkImage; }
   inline HANDLE getHandle() { return shardTex ? shardTex->sharedHandle : nullptr; };
+  inline HANDLE getFenceHandle() { return shardTex ? shardTex->getInteropFenceHandle() : nullptr; }
+  // 无外部 IRenderContext 时直接指定交互方向 (如插件输出到外部 DX11 设备)
+  void setInteropType(InteropType type) { interopType = type; }
 #if defined(VK_KHR_external_fence_win32)
   inline VkFence getExternalFence() { return vkExternalFence; }
 #endif

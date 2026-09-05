@@ -30,6 +30,8 @@ class VkOutputLayer : public VOutputLayer, public VkLayer {
 #ifdef WIN32
   std::unique_ptr<VkWinImage> winImage = nullptr;
   bool bWinInterop = false;
+  // D3D11 共享输出: 无外部 IRenderContext, 由 enableVkOutputDx11 直接开启
+  bool bDx11Output = false;
 #elif __ANDROID__
   std::unique_ptr<VkAndImage> vkAndImage = nullptr;
   bool bAndInterop = false;
@@ -76,6 +78,12 @@ class VkOutputLayer : public VOutputLayer, public VkLayer {
   void setAspect(float aspect);
   // VkDevice-VkDevice 交互访问
   VkSharedImage* getSharedImage() const { return sharedImage.get(); }
+#ifdef WIN32
+  // D3D11 共享输出访问 (enableVkOutputDx11 用)
+  VkWinImage* getWinImage() { return winImage.get(); }
+  // 开关底层自建 NT 共享纹理输出 (VK 每帧拷入, 外部 DX11 设备打开复制)
+  void setDx11Output(bool bDx11);
+#endif
   void setVkInterop(bool bEnable) {
     if (bVkInterop != bEnable) {
       bVkInterop = bEnable;

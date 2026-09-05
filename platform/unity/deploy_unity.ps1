@@ -67,6 +67,17 @@ foreach ($dll in $Dlls) {
     if (Test-Path $src) { Copy-Item $src $BinDst -Force }
 }
 
+# ── 布置运行时资产 (glsl 着色器等, VK 离屏管线必需; 缺失表现为静默无帧) ──
+$AssetSrc = Join-Path $AvoxRelease "assets"
+if (Test-Path $AssetSrc) {
+    Write-Host "==> 复制运行时资产 -> $BinDst\assets"
+    robocopy "$AssetSrc" (Join-Path $BinDst "assets") /E /NFL /NDL /NJH /NJS | Out-Null
+    if ($LASTEXITCODE -ge 8) { Write-Error "robocopy 资产复制失败 (code=$LASTEXITCODE)" }
+    $global:LASTEXITCODE = 0
+} else {
+    Write-Warning "构建树没有 assets 目录 ($AssetSrc), VK 离屏管线将无法渲染 (静默无帧)"
+}
+
 Write-Host ""
 Write-Host "部署完成: $PkgDst" -ForegroundColor Green
 Write-Host "下一步:"
