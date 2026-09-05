@@ -324,7 +324,7 @@ bool SurfaceTextureBridge::importSharedImage() {
     return true;
 }
 
-void SurfaceTextureBridge::releaseSharedImage() {
+void SurfaceTextureBridge::releaseImport() {
     RenderingDevice *rd = RenderingServer::get_singleton()->get_rendering_device();
     if (!rd) return;
 
@@ -359,7 +359,11 @@ void SurfaceTextureBridge::releaseSharedImage() {
         importedAhb = nullptr;
     }
 #endif
+}
 
+void SurfaceTextureBridge::releaseSharedImage() {
+    releaseImport();
+    // 维度一并复位: 尺寸变化后由 setVideoSize 重新喂入
     gpuW = 0;
     gpuH = 0;
 }
@@ -372,13 +376,20 @@ void SurfaceTextureBridge::update() {
         if (needReimport.exchange(false)) {
             releaseSharedImage();
         }
-        // 等渲染线程泵入首帧后, VkVideoRender 才有 outputLayer。每帧重试 enableVkOutput
-        // 直到成功 (PipeGraph::reset 只置标志, 实际重建在渲染线程, 主线程调用线程安全)。
-        if (!gpuOutputEnabled && gpuW > 0 && surfaceRender) {
-            if (avox::enableVkOutput(surfaceRender, gpuW, gpuH)) {
+        // 等渲染线程泵入首帧后, VkVideoRender 才有 outputLayer。
+        // enableVkOutput 幂等(已激活直接 true), 每帧调用安全:
+        // - 图重建(字幕/锐化等功能开关)后新 outputLayer 未激活 → 自动重新建立
+        // - 图重建窗口期 getOutputLayer 返回空 → false, 下帧重试, 无竞态
+        // (PipeGraph::reset 只置标志, 实际重建在渲染线程)
+        if (gpuW > 0 && surfaceRender) {
+            bool ok = avox::enableVkOutput(surfaceRender, gpuW, gpuH);
+            if (ok && !gpuOutputEnabled) {
+                // 首次建立或重建后重新建立: 新共享内存, 释放旧导入(保留维度), 下方重导
+                releaseImport();
                 gpuOutputEnabled = true;
                 UtilityFunctions::print("[avox_gpu] enableVkOutput 成功 ", gpuW, "x", gpuH);
             }
+            gpuOutputEnabled = ok;
         }
         if (gpuOutputEnabled && importedImage == VK_NULL_HANDLE && surfaceRender) {
             importSharedImage();

@@ -690,6 +690,10 @@ bool enableVkOutput(ISurfaceRender* sr, int32_t w, int32_t h) {
     LOGFLF(LogLevel::warn, "enableVkOutput: outputLayer is null");
     return false;
   }
+  // 幂等: 已建立直接返回。图重建(功能开关等)后新层未激活, 会重新走建立流程
+  if (outputLayer->isInteropActive()) {
+    return true;
+  }
   // 用传入的 w,h 创建可导出的 VkSharedImage
   VkSharedImageDesc desc = {};
   desc.width = w;

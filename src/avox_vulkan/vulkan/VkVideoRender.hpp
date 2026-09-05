@@ -16,6 +16,8 @@
 #include "avox/module/RunTask.hpp"
 #include "avox/video/VideoRender.hpp"
 
+#include <atomic>
+
 #ifdef AVOX_ENABLE_FREETYPE
 #include "avox_freetype/FontRender.hpp"
 #endif
@@ -64,6 +66,9 @@ class VkVideoRender : public VideoRender, public IVOutputLayerOb {
   int32_t lutIndex = 0;
   VKTNodePtr<VkLookupLayer> lutLayer = nullptr;
   std::unique_ptr<ImageBuffer> lutImage = nullptr;
+  // 图重建窗口标志: 重建期间外部经 getOutputLayer/getInputLayer 拿到空,
+  // 避免 enable/disable 类调用与半重建状态竞态 (渲染线程置位)
+  std::atomic<bool> bRebuilding{false};
   // 基础图像调整(色调/亮度/对比度/饱和度/伽玛) - 单组开关
   bool bBasicAdjust = false;
   BasicAdjustParamet basicAdjustValue = {};
@@ -92,14 +97,16 @@ class VkVideoRender : public VideoRender, public IVOutputLayerOb {
   VKTNodePtr<VkGeometryLayer> geometryLayer = nullptr;
 
  public:
+  // 图重建期间(渲染线程)返回空: 外部 enableVkOutput 等拿不到层, 自然失败下帧重试,
+  // 避免与半重建状态竞态。bRebuilding 于 vaildAndInitGraph/releaseGraph 置位
   VkOutputLayer* getOutputLayer() {
-    if (!outputLayer) {
+    if (!outputLayer || bRebuilding.load()) {
       return nullptr;
     }
     return outputLayer->get();
   }
   VkInputLayer* getInputLayer() {
-    if (!inputLayer) {
+    if (!inputLayer || bRebuilding.load()) {
       return nullptr;
     }
     return inputLayer->get();

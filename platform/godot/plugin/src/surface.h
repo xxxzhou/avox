@@ -79,7 +79,8 @@ private:
     int32_t gpuW = 0, gpuH = 0;
 
     bool importSharedImage();   // 导入 NT 句柄 + 收养 importedImage
-    void releaseSharedImage();  // 释放所有 GPU 资源
+    void releaseSharedImage();  // 释放所有 GPU 资源 (并清 gpuW/H, 等待 setVideoSize 重新喂入)
+    void releaseImport();       // 仅释放导入资源, 保留 gpuW/H (图重建后同尺寸重导用)
 
     // ── CPU 回退模式 ──
     struct PendingFrame {

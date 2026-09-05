@@ -307,6 +307,18 @@ String MediaPlayer::getUrl() const {
     return url;
 }
 
+bool MediaPlayer::loadSubtitle(const String &p_path) {
+    if (!player) return false;
+    // 同目录扫描/自动加载/多候选选择在 GDScript 侧 (同 Unity 的 C# 层), 桥接只管加载
+    return player->getSubtitle()->loadSrt(p_path.utf8().get_data());
+}
+
+void MediaPlayer::closeSubtitle() {
+    if (player) {
+        player->getSubtitle()->close();
+    }
+}
+
 void MediaPlayer::setGpuPassthrough(bool p_enable) {
     gpuPassthrough = p_enable;
     if (surfaceBridge) {
@@ -395,6 +407,8 @@ void MediaPlayer::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_io_plan", "plan"), &MediaPlayer::setIoPlan);
     ClassDB::bind_method(D_METHOD("get_option"), &MediaPlayer::getOption);
     ClassDB::bind_method(D_METHOD("set_option", "key", "value"), &MediaPlayer::setOption);
+    ClassDB::bind_method(D_METHOD("load_subtitle", "path"), &MediaPlayer::loadSubtitle);
+    ClassDB::bind_method(D_METHOD("close_subtitle"), &MediaPlayer::closeSubtitle);
     ClassDB::bind_method(D_METHOD("get_texture"), &MediaPlayer::getTexture);
 
     //属性

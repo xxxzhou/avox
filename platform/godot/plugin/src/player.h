@@ -56,6 +56,12 @@ public:
     // IOParseTorrent 在 onOpen 快照前必能收到); 播放器已存在时立即写入。
     void setOption(const String &p_key, const Variant &p_value);
 
+    // ── 字幕 ──
+    // 加载外挂字幕文件(.srt)。每次 play() 重建播放器会清掉字幕, 须在 onReady 后重新加载。
+    bool loadSubtitle(const String &p_path);
+    // 关闭已加载字幕 (同时关闭 ASR)
+    void closeSubtitle();
+
     // ── 属性 ──
     void setUrl(const String &p_url);
     String getUrl() const;

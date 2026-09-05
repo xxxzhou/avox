@@ -91,6 +91,11 @@ class VkOutputLayer : public VOutputLayer, public VkLayer {
       resetGraph();
     }
   }
+  // interop 是否已建立。图重建(功能开关等)会重造本层使 interop 失效,
+  // enableVkOutput 据此幂等: 已建立直接返回, 未建立(新层)重新建立
+  bool isInteropActive() {
+    return bVkInterop && sharedImage && sharedImage->isValid();
+  }
   void requestRelease() { bPendingRelease = true; }
   const ImageFormat& getOutFormat() const { return outFormat; }
   // 设置外部输出 buffer: 每帧零拷贝引用 staging 映射内存写入它 (enableImage 用)

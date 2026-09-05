@@ -229,6 +229,8 @@ bool VkVideoRender::vaildAndInitGraph() {
     onParametUpdate();
     return true;
   }
+  // 重建窗口开始: getOutputLayer/getInputLayer 对外部返回空, 直至重建完成
+  bRebuilding.store(true);
   VkContext* ctx = nullptr;
   graph = std::make_unique<VkPipeGraph>(ctx);
   inputLayer = graph->addNode<VkInputLayer>();
@@ -388,11 +390,14 @@ bool VkVideoRender::vaildAndInitGraph() {
   if (surface || !bOutCpuYuv) {
     outNode->addLine(outputLayer);
   }
+  bRebuilding.store(false);
   bResetFlag = false;
   return true;
 }
 
 void VkVideoRender::releaseGraph() {
+  // 图已销毁, 后续外部 getOutputLayer/getInputLayer 返回空直至下次重建
+  bRebuilding.store(true);
 #ifdef AVOX_ENABLE_FREETYPE
   fontRender->setFontLayer(nullptr);
 #endif
