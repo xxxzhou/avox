@@ -10,7 +10,7 @@
 - **相机标定** — VR/MR 相机标定: g2o 图优化内参标定、手眼标定、变焦镜头单图内参拟合
 - **虚实融合 (XR/MR 拍摄)** — 虚实相机混合: 相机标定 + 畸变校正, 虚实融合重投影误差约 3 像素
 - **超低延迟传输** — Rivermax (GPU Direct RDMA) / NDI 局域网图像传输
-- **游戏引擎直通** — UE4/UE5、Unity3D、Godot 纹理级零拷贝对接 (`platform/godot`、`platform/unity`、`platform/ue`)
+- **游戏引擎直通** — UE5、Unity3D、Godot 纹理级零拷贝对接 (`platform/godot`、`platform/unity`、`platform/ue`)
 
 ## 阅读顺序建议
 
