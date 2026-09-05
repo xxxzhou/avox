@@ -5,6 +5,7 @@
 | 目录 | 作用 |
 |------|------|
 | **`plugin/`** | **把 avox 封装给 Godot 用**。将 avox SDK（音视频播放/采集/录制/AI 等）包装成 Godot 4 GDExtension 插件（`avox_godot`），Godot 项目里直接 `MediaPlayer.new()` 即可使用。随 avox 一起构建，产物输出到 avox install 树。 |
+| **`samples/`** | **官方示例工程**。4 个可运行场景（本地播放/直播流/相机采集/语音字幕），脚本即文档，发布素材的录屏来源。 |
 | **`tools/`** | **Godot 实测项目（UI 工具箱）**。一个真实 Godot 项目，用来做各种 UI 工具与验证场景（当前是视频播放器 UI 测试）。通过 `deploy_godot.ps1` 把插件部署进来实测。 |
 | **`package/`** | **打包脚本**。`pack_godot_tools.ps1`（旧的：免导出整合，拷 171M 编辑器进 Release + `--path` 跑源码）；首选 `script/package/pack_godot.py`（见下，导出发布版，干净可分发）。 |
 

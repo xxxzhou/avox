@@ -1,0 +1,17 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+
+config_version=5
+
+[application]
+
+config/name="avox Godot Samples"
+config/description="avox_godot 插件示例：本地播放 / 直播流 / 相机采集 / 语音字幕"
+run/main_scene="res://scenes/hub.tscn"
+config/features=PackedStringArray("4.3", "Forward Plus")
+config/icon="res://icon.svg"
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
