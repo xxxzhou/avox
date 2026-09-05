@@ -236,11 +236,20 @@ void MediaPlayer::onReady() {
   ioDuration = ioSource->duration();
   LOGFLF(LogLevel::info, "io duration:", ioDuration);
   // 设置
-  for (int32_t i = 0; i < aTracks.size(); i++) {
+  // 源轨道数可能超过播放器轨位上限(AVOX_MAX_TRACK=4): 多码率HLS每个变体
+  // 都会各挂一套音视频轨(FFmpeg IO把全部变体暴露为独立track), 越界访问
+  // audioTracks/videoTracks 会踩穿堆; 只挂前 MAX_TRACK 路
+  if (aTracks.size() > audioTracks.size() || vTracks.size() > videoTracks.size()) {
+    LOGFLF(LogLevel::warn, "source tracks exceed player max track, drop extra: audio ",
+           aTracks.size(), " video ", vTracks.size());
+  }
+  size_t aCount = aTracks.size() < audioTracks.size() ? aTracks.size() : audioTracks.size();
+  for (size_t i = 0; i < aCount; i++) {
     // 基本的初始化信息,对应track开始有效
     audioTracks[i]->setTrackDesc(aTracks[i]);
   }
-  for (int32_t i = 0; i < vTracks.size(); i++) {
+  size_t vCount = vTracks.size() < videoTracks.size() ? vTracks.size() : videoTracks.size();
+  for (size_t i = 0; i < vCount; i++) {
     videoTracks[i]->setTrackDesc(vTracks[i]);
   }
   // 通知播放器开始执行ready命令
