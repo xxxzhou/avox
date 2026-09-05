@@ -38,7 +38,7 @@ class PlayerBridge : public avox::IMediaPlayerOb, public avox::ISurfaceRenderOb 
   explicit PlayerBridge(uint32_t id);
   ~PlayerBridge() override;
 
-  uint32_t id() const { return id_; }
+  uint32_t id() const { return playerId; }
 
   // ── 配置 (open 前调用) ──
   void setHardDecode(bool bEnable);
@@ -53,7 +53,7 @@ class PlayerBridge : public avox::IMediaPlayerOb, public avox::ISurfaceRenderOb 
   void resume();
   void seek(int64_t pos);
   // 状态/信息 (getDuration 等主线程直调, 同 godot 插件用法)
-  int32_t state() const { return stateCache_.load(); }
+  int32_t state() const { return stateCache.load(); }
   int64_t duration() const;
   int64_t position() const;
   double progress() const;
@@ -62,9 +62,9 @@ class PlayerBridge : public avox::IMediaPlayerOb, public avox::ISurfaceRenderOb 
   // 帧尺寸 (GPU=导入纹理尺寸, CPU=BGRA槽尺寸), 无帧返回 false
   bool frameInfo(int32_t* w, int32_t* h);
   // 是否 GPU 直通模式
-  bool gpuMode() const { return gpuMode_; }
+  bool gpuMode() const { return bGpuMode; }
   // GPU 导入的 VkImage (Unity CreateExternalTexture 用), 未就绪返回 0
-  uint64_t gpuImage() const { return importedImage_; }
+  uint64_t gpuImage() const { return importedImage; }
 
   // ── GPU 直通主线程处理 (Unity Update 里调):
   // volk 延迟初始化 + enableVkOutput/Dx11 + 句柄获取/导入 + 尺寸变化重导
@@ -75,17 +75,17 @@ class PlayerBridge : public avox::IMediaPlayerOb, public avox::ISurfaceRenderOb 
   // 打开共享纹理 + fence 去重 + CopyResource 到 C# 纹理
   void renderDx11Copy();
   // C# 纹理 GetNativeTexturePtr (主线程设置, 渲染线程读取)
-  void setDx11Target(void* nativeTex) { dx11Target_.store(nativeTex); }
+  void setDx11Target(void* nativeTex) { dx11Target.store(nativeTex); }
   // 插件自建的目标纹理 (Unity 设备上, C# CreateExternalTexture 包裹用)
   uint64_t dx11NativeTex();
   // 拷贝链路诊断: 事件数/实际拷贝数/目标缺失数/最近 fence 值/打开次数
   void dx11Debug(uint32_t* events, uint32_t* copies, uint32_t* targetNull,
                  uint64_t* fenceVal, uint32_t* opens) {
-    if (events) *events = dbgEvents_.load();
-    if (copies) *copies = dx11_.copyCount;
-    if (targetNull) *targetNull = dbgTargetNull_.load();
-    if (fenceVal) *fenceVal = dbgFenceVal_.load();
-    if (opens) *opens = dx11_.openCount;
+    if (events) *events = dbgEvents.load();
+    if (copies) *copies = dx11.copyCount;
+    if (targetNull) *targetNull = dbgTargetNull.load();
+    if (fenceVal) *fenceVal = dbgFenceVal.load();
+    if (opens) *opens = dx11.openCount;
   }
 
   // CPU 路径回调取帧 (IssuePluginCustomTextureUpdateV2 UpdateTextureBegin):
@@ -141,54 +141,54 @@ class PlayerBridge : public avox::IMediaPlayerOb, public avox::ISurfaceRenderOb 
   avox::IOption* option() const;
 
 
-  uint32_t id_;
-  avox::IMediaPlayer* player_ = nullptr;
-  avox::ISurfaceRender* surface_ = nullptr;
-  avox::ColorSpaceDesc colorSpace_;  // onReady 时取自源 VideoDesc, 转换/渲染共用
-  avox::IMediaMuxer* muxer_ = nullptr;
+  uint32_t playerId;
+  avox::IMediaPlayer* player = nullptr;
+  avox::ISurfaceRender* surface = nullptr;
+  avox::ColorSpaceDesc colorSpace;  // onReady 时取自源 VideoDesc, 转换/渲染共用
+  avox::IMediaMuxer* muxer = nullptr;
 
   // ── 配置缓存 (open 前设置) ──
-  bool hardDecode_ = true;
-  float volume_ = 1.0f;
-  int32_t ioPlan_ = 0;
-  double speed_ = 1.0;
+  bool hardDecode = true;
+  float volume = 1.0f;
+  int32_t ioPlan = 0;
+  double speed = 1.0;
 
   // ── GPU 直通状态 ──
-  bool gpuMode_ = false;        // 绑定时按全局可用性决定
-  bool gpuOutputOn_ = false;    // enableVkOutput/enableVkOutputDx11 已调用
-  bool gpuErrorPushed_ = false; // 失败错误只推一次 (重试期不刷事件)
-  uint32_t gpuRetry_ = 0;       // 重试帧计数 (超时判断配合)
-  std::chrono::steady_clock::time_point gpuRetryStart_{};  // 重试窗口起点 (时间制)
-  std::atomic<bool> pendingGpuInit_{false};    // 尺寸就绪待主线程导入
-  std::atomic<bool> pendingGpuResize_{false};  // 尺寸变化待主线程重导
-  std::atomic<int32_t> videoW_{0};
-  std::atomic<int32_t> videoH_{0};
-  uint64_t importedImage_ = 0;  // VkImage (Unity CreateExternalTexture 收养)
-  uint64_t importedMemory_ = 0;
-  int32_t gpuW_ = 0;
-  int32_t gpuH_ = 0;
+  bool bGpuMode = false;        // 绑定时按全局可用性决定
+  bool gpuOutputOn = false;    // enableVkOutput/enableVkOutputDx11 已调用
+  bool gpuErrorPushed = false; // 失败错误只推一次 (重试期不刷事件)
+  uint32_t gpuRetry = 0;       // 重试帧计数 (超时判断配合)
+  std::chrono::steady_clock::time_point gpuRetryStart{};  // 重试窗口起点 (时间制)
+  std::atomic<bool> pendingGpuInit{false};    // 尺寸就绪待主线程导入
+  std::atomic<bool> pendingGpuResize{false};  // 尺寸变化待主线程重导
+  std::atomic<int32_t> videoW{0};
+  std::atomic<int32_t> videoH{0};
+  uint64_t importedImage = 0;  // VkImage (Unity CreateExternalTexture 收养)
+  uint64_t importedMemory = 0;
+  int32_t gpuW = 0;
+  int32_t gpuH = 0;
 
   // ── D3D11 拷贝模式 (flavor 2) ──
-  // dx11_ 仅渲染线程触碰; 句柄/尺寸跨线程用 atomic
-  std::atomic<uint64_t> dx11Handle_{0};      // avox 共享纹理 NT 句柄 (avox 持有, 勿 CloseHandle)
-  std::atomic<uint64_t> dxFenceHandle_{0};   // 共享 fence NT 句柄 (可空)
-  std::atomic<int32_t> dx11W_{0};            // 打开后由渲染线程回填实际尺寸
-  std::atomic<int32_t> dx11H_{0};
-  std::atomic<void*> dx11Target_{nullptr};   // C# 纹理 nativeTex
-  std::atomic<bool> dx11PendingClose_{false};// 释放请求转交渲染线程执行
-  std::atomic<uint32_t> dbgEvents_{0};       // 诊断: 渲染事件次数
-  std::atomic<uint32_t> dbgTargetNull_{0};   // 诊断: 目标为空的次数
-  std::atomic<uint64_t> dbgFenceVal_{0};     // 诊断: 最近一次观察到的 fence 值
-  UnityDx11CopyState dx11_;
+  // dx11 仅渲染线程触碰; 句柄/尺寸跨线程用 atomic
+  std::atomic<uint64_t> dx11Handle{0};      // avox 共享纹理 NT 句柄 (avox 持有, 勿 CloseHandle)
+  std::atomic<uint64_t> dxFenceHandle{0};   // 共享 fence NT 句柄 (可空)
+  std::atomic<int32_t> dx11W{0};            // 打开后由渲染线程回填实际尺寸
+  std::atomic<int32_t> dx11H{0};
+  std::atomic<void*> dx11Target{nullptr};   // C# 纹理 nativeTex
+  std::atomic<bool> dx11PendingClose{false};// 释放请求转交渲染线程执行
+  std::atomic<uint32_t> dbgEvents{0};       // 诊断: 渲染事件次数
+  std::atomic<uint32_t> dbgTargetNull{0};   // 诊断: 目标为空的次数
+  std::atomic<uint64_t> dbgFenceVal{0};     // 诊断: 最近一次观察到的 fence 值
+  UnityDx11CopyState dx11;
 
   // ── CPU 帧槽 (mutex, 新帧覆盖旧帧) ──
-  std::mutex frameMutex_;
-  std::vector<uint8_t> frameBgra_;
-  int32_t frameW_ = 0;
-  int32_t frameH_ = 0;
+  std::mutex frameMutex;
+  std::vector<uint8_t> frameBgra;
+  int32_t frameW = 0;
+  int32_t frameH = 0;
 
   // ── 状态与事件队列 ──
-  std::atomic<int32_t> stateCache_{0};
-  std::mutex eventMutex_;
-  std::deque<AvoxUnityEvent> events_;
+  std::atomic<int32_t> stateCache{0};
+  std::mutex eventMutex;
+  std::deque<AvoxUnityEvent> events;
 };

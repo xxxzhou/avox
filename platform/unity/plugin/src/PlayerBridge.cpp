@@ -20,199 +20,199 @@ PlayerBridge* findBridge(uint32_t id) {
   return it == g_registry.end() ? nullptr : it->second;
 }
 
-PlayerBridge::PlayerBridge(uint32_t id) : id_(id) {
+PlayerBridge::PlayerBridge(uint32_t id) : playerId(id) {
   std::lock_guard<std::mutex> lock(g_regMutex);
-  g_registry[id_] = this;
+  g_registry[playerId] = this;
 }
 
 PlayerBridge::~PlayerBridge() { destroyPlayer(); }
 
-void PlayerBridge::setHardDecode(bool bEnable) { hardDecode_ = bEnable; }
+void PlayerBridge::setHardDecode(bool bEnable) { hardDecode = bEnable; }
 
-void PlayerBridge::setVolume(float volume) { volume_ = volume; }
+void PlayerBridge::setVolume(float volume_) { volume = volume_; }
 
-void PlayerBridge::setIoPlan(int32_t plan) { ioPlan_ = plan; }
+void PlayerBridge::setIoPlan(int32_t plan) { ioPlan = plan; }
 
-void PlayerBridge::setSpeed(double speed) { speed_ = speed; }
+void PlayerBridge::setSpeed(double speed_) { speed = speed_; }
 
 void PlayerBridge::open(const char* url) {
   // 复用中的播放器直接重建, 规避流切换的状态残留 (同 godot/UE 插件)
   destroyPlayer();
   createPlayer();
-  stateCache_.store((int32_t)avox::PlayerState::opening);
+  stateCache.store((int32_t)avox::PlayerState::opening);
   pushState((int32_t)avox::PlayerState::opening);
-  player_->open(url);
+  player->open(url);
 }
 
 void PlayerBridge::close() { destroyPlayer(); }
 
 void PlayerBridge::pause() {
-  if (player_) player_->pause();
+  if (player) player->pause();
 }
 
 void PlayerBridge::resume() {
-  if (player_) player_->resume();
+  if (player) player->resume();
 }
 
 void PlayerBridge::seek(int64_t pos) {
-  if (player_) player_->seek(pos);
+  if (player) player->seek(pos);
 }
 
 int64_t PlayerBridge::duration() const {
-  return player_ ? player_->getDuration() : 0;
+  return player ? player->getDuration() : 0;
 }
 
 int64_t PlayerBridge::position() const {
-  return player_ ? player_->getPosition() : 0;
+  return player ? player->getPosition() : 0;
 }
 
 double PlayerBridge::progress() const {
-  return player_ ? player_->getProcess() : 0.0;
+  return player ? player->getProcess() : 0.0;
 }
 
 void PlayerBridge::createPlayer() {
-  if (player_) return;
-  player_ = avox::createMediaPlayer();
+  if (player) return;
+  player = avox::createMediaPlayer();
   // 本类同时是 IMediaPlayerOb 与 ISurfaceRenderOb
-  avox::addMediaPlayerOb(player_, this);
-  player_->setHardDecode(hardDecode_);
-  if (ioPlan_ != 0) {
-    player_->setIoPlan(static_cast<avox::IoPlan>(ioPlan_));
+  avox::addMediaPlayerOb(player, this);
+  player->setHardDecode(hardDecode);
+  if (ioPlan != 0) {
+    player->setIoPlan(static_cast<avox::IoPlan>(ioPlan));
   }
-  if (volume_ >= 0.0f && volume_ < 1.0f) {
-    if (auto* audio = player_->getAudioRender()) audio->setVolume(volume_);
+  if (volume >= 0.0f && volume < 1.0f) {
+    if (auto* audio = player->getAudioRender()) audio->setVolume(volume);
   }
   bindSurface();
 }
 
 void PlayerBridge::bindSurface() {
-  surface_ = player_->getSurfaceRender();
-  if (!surface_) return;
+  surface = player->getSurfaceRender();
+  if (!surface) return;
   // GPU 直通模式: 保持默认 Vulkan 渲染, 尺寸就绪后 enableVkOutput (同 godot)
   // CPU 回退模式: 离屏渲染 + YUV输出, setOffSurface传ytype即自动enableYuvOut
-  gpuMode_ = unityGpuPassthroughAvailable();
-  if (!gpuMode_) {
+  bGpuMode = unityGpuPassthroughAvailable();
+  if (!bGpuMode) {
     // CPU 回退: 保留 avox 自身 Vulkan 离屏管线渲染 (enableYuvOut 走 VK 回读),
     // 需要部署 assets/glsl 着色器; 不能 setVulkan(false) (DX11 回读未启用, 无帧)
-    surface_->setOffSurface(avox::YuvType::nv12);
-    surface_->enableYuvOut(avox::YuvType::nv12);
+    surface->setOffSurface(avox::YuvType::nv12);
+    surface->enableYuvOut(avox::YuvType::nv12);
   }
-  avox::addSurfaceRenderOb(surface_, this);
+  avox::addSurfaceRenderOb(surface, this);
 }
 
 void PlayerBridge::unbindSurface() {
-  if (!surface_) return;
-  avox::removeSurfaceRenderOb(surface_, this);
-  if (gpuMode_) {
+  if (!surface) return;
+  avox::removeSurfaceRenderOb(surface, this);
+  if (bGpuMode) {
     // 先释放导入再断输出 (surface render 仍有效, 同 godot unbindSurface)
     releaseGpuImport();
-    if (gpuOutputOn_) {
-      avox::disableVkOutput(surface_);
-      gpuOutputOn_ = false;
+    if (gpuOutputOn) {
+      avox::disableVkOutput(surface);
+      gpuOutputOn = false;
     }
-    pendingGpuInit_.store(false);
-    pendingGpuResize_.store(false);
-    gpuErrorPushed_ = false;
-    gpuRetry_ = 0;
+    pendingGpuInit.store(false);
+    pendingGpuResize.store(false);
+    gpuErrorPushed = false;
+    gpuRetry = 0;
   }
-  surface_ = nullptr;
+  surface = nullptr;
 }
 
 void PlayerBridge::destroyPlayer() {
-  if (!player_) return;
+  if (!player) return;
   // 先解绑/断GPU输出再关播放器 (解绑需要 surface render 仍有效, 同 godot)
   unbindSurface();
   stopRecord();
-  player_->close();
-  avox::removeMediaPlayerOb(player_, this);
+  player->close();
+  avox::removeMediaPlayerOb(player, this);
   // createMediaPlayer() 是裸 new 无 destroy API, delete 是唯一释放路径
-  delete player_;
-  player_ = nullptr;
-  stateCache_.store((int32_t)avox::PlayerState::none);
+  delete player;
+  player = nullptr;
+  stateCache.store((int32_t)avox::PlayerState::none);
   {
-    std::lock_guard<std::mutex> lock(frameMutex_);
-    frameBgra_.clear();
-    frameW_ = 0;
-    frameH_ = 0;
+    std::lock_guard<std::mutex> lock(frameMutex);
+    frameBgra.clear();
+    frameW = 0;
+    frameH = 0;
   }
   {
-    std::lock_guard<std::mutex> lock(eventMutex_);
-    events_.clear();
+    std::lock_guard<std::mutex> lock(eventMutex);
+    events.clear();
   }
   pushState((int32_t)avox::PlayerState::none);
-  videoW_.store(0);
-  videoH_.store(0);
+  videoW.store(0);
+  videoH.store(0);
 }
 
 bool PlayerBridge::pollEvent(AvoxUnityEvent* out) {
-  std::lock_guard<std::mutex> lock(eventMutex_);
-  if (events_.empty()) return false;
-  *out = events_.front();
-  events_.pop_front();
+  std::lock_guard<std::mutex> lock(eventMutex);
+  if (events.empty()) return false;
+  *out = events.front();
+  events.pop_front();
   return true;
 }
 
 bool PlayerBridge::frameInfo(int32_t* w, int32_t* h) {
-  if (gpuMode_) {
+  if (bGpuMode) {
     if (unityGpuImportFlavor() == 2) {
       // D3D11 拷贝模式: 渲染线程打开共享纹理后回填实际尺寸
-      const int32_t dw = dx11W_.load();
-      const int32_t dh = dx11H_.load();
+      const int32_t dw = dx11W.load();
+      const int32_t dh = dx11H.load();
       if (dw <= 0 || dh <= 0) return false;
       if (w) *w = dw;
       if (h) *h = dh;
       return true;
     }
-    if (!importedImage_ || gpuW_ <= 0 || gpuH_ <= 0) return false;
-    if (w) *w = gpuW_;
-    if (h) *h = gpuH_;
+    if (!importedImage || gpuW <= 0 || gpuH <= 0) return false;
+    if (w) *w = gpuW;
+    if (h) *h = gpuH;
     return true;
   }
-  std::lock_guard<std::mutex> lock(frameMutex_);
-  if (frameW_ <= 0 || frameH_ <= 0) return false;
-  if (w) *w = frameW_;
-  if (h) *h = frameH_;
+  std::lock_guard<std::mutex> lock(frameMutex);
+  if (frameW <= 0 || frameH <= 0) return false;
+  if (w) *w = frameW;
+  if (h) *h = frameH;
   return true;
 }
 
 void PlayerBridge::updateGpu() {
-  if (!gpuMode_ || !surface_) return;
+  if (!bGpuMode || !surface) return;
   if (!unityVulkanInit()) return;
   const bool flavorDx11 = (unityGpuImportFlavor() == 2);
   // 就绪标志: VK=已导入 Unity 设备 / D3D11=共享句柄已取到
-  const bool ready = flavorDx11 ? dx11Handle_.load() != 0 : importedImage_ != 0;
+  const bool ready = flavorDx11 ? dx11Handle.load() != 0 : importedImage != 0;
   // 尺寸变化: 释放旧导入 → 断输出 → 重新 enable + 导入
-  if (ready && pendingGpuResize_.exchange(false)) {
+  if (ready && pendingGpuResize.exchange(false)) {
     releaseGpuImport();
     if (flavorDx11) {
-      avox::disableVkOutputDx11(surface_);
+      avox::disableVkOutputDx11(surface);
     } else {
-      avox::disableVkOutput(surface_);
+      avox::disableVkOutput(surface);
     }
-    gpuOutputOn_ = false;
-    startGpuImport(videoW_.load(), videoH_.load());
+    gpuOutputOn = false;
+    startGpuImport(videoW.load(), videoH.load());
   }
-  if (!ready && pendingGpuInit_.exchange(false)) {
-    startGpuImport(videoW_.load(), videoH_.load());
+  if (!ready && pendingGpuInit.exchange(false)) {
+    startGpuImport(videoW.load(), videoH.load());
     // enable/句柄获取失败多为渲染管线尚未建好 (outputLayer 未生成), 限次重试
-    const bool nowReady = flavorDx11 ? dx11Handle_.load() != 0 : importedImage_ != 0;
+    const bool nowReady = flavorDx11 ? dx11Handle.load() != 0 : importedImage != 0;
     if (!nowReady) {
-      if (gpuRetry_ == 0) {
-        gpuRetryStart_ = std::chrono::steady_clock::now();
+      if (gpuRetry == 0) {
+        gpuRetryStart = std::chrono::steady_clock::now();
       }
-      gpuRetry_++;
+      gpuRetry++;
       // 按时间窗口重试 (batchmode 帧率不定, 纯计数会瞬间烧完)
       const auto retryMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                               std::chrono::steady_clock::now() - gpuRetryStart_)
+                               std::chrono::steady_clock::now() - gpuRetryStart)
                                .count();
       if (retryMs < 15000) {
-        pendingGpuInit_.store(true);
-      } else if (!gpuErrorPushed_) {
-        gpuErrorPushed_ = true;
+        pendingGpuInit.store(true);
+      } else if (!gpuErrorPushed) {
+        gpuErrorPushed = true;
         pushError(-1, "gpu passthrough import failed repeatedly");
       }
     } else {
-      gpuRetry_ = 0;
+      gpuRetry = 0;
     }
   }
 }
@@ -221,25 +221,25 @@ void PlayerBridge::startGpuImport(int32_t w, int32_t h) {
   if (unityGpuImportFlavor() == 2) {
     // D3D11 拷贝模式: avox 底层自建共享纹理 (尺寸随管线), 句柄就绪后
     // 由渲染线程 avoxDx11RenderEvent 打开并拷贝
-    if (!avox::enableVkOutputDx11(surface_)) {
+    if (!avox::enableVkOutputDx11(surface)) {
       // 可重试: 管线未建好等瞬态, 静默 (由 updateGpu 限次重试)
       return;
     }
-    gpuOutputOn_ = true;
-    const uint64_t handle = avox::getVkOutputDx11Handle(surface_);
+    gpuOutputOn = true;
+    const uint64_t handle = avox::getVkOutputDx11Handle(surface);
     if (!handle) return;
-    dx11Handle_.store(handle);
-    dxFenceHandle_.store(avox::getVkOutputDx11FenceHandle(surface_));
+    dx11Handle.store(handle);
+    dxFenceHandle.store(avox::getVkOutputDx11FenceHandle(surface));
     return;
   }
   if (w <= 0 || h <= 0) return;
-  if (!avox::enableVkOutput(surface_, w, h)) {
+  if (!avox::enableVkOutput(surface, w, h)) {
     // 可重试: 管线未建好等瞬态, 静默 (由 updateGpu 限次重试)
     return;
   }
-  gpuOutputOn_ = true;
+  gpuOutputOn = true;
   avox::VkSharedHandle handle = {};
-  if (!avox::getVkOutputHandle(surface_, &handle) || handle.memHandle == 0) {
+  if (!avox::getVkOutputHandle(surface, &handle) || handle.memHandle == 0) {
     return;
   }
   uint64_t image = 0;
@@ -248,10 +248,10 @@ void PlayerBridge::startGpuImport(int32_t w, int32_t h) {
     CloseHandle((HANDLE)handle.memHandle);
     return;
   }
-  importedImage_ = image;
-  importedMemory_ = memory;
-  gpuW_ = w;
-  gpuH_ = h;
+  importedImage = image;
+  importedMemory = memory;
+  gpuW = w;
+  gpuH = h;
   // 所有权归调用方: NT 句柄用完即关
   CloseHandle((HANDLE)handle.memHandle);
 }
@@ -260,38 +260,47 @@ void PlayerBridge::releaseGpuImport() {
   if (unityGpuImportFlavor() == 2) {
     // D3D11 拷贝模式: 打开的资源仅渲染线程可碰, 转交渲染线程释放;
     // 句柄由 avox 持有, 不 CloseHandle
-    dx11PendingClose_.store(true);
-    dx11Handle_.store(0);
-    dxFenceHandle_.store(0);
-    dx11W_.store(0);
-    dx11H_.store(0);
-    dx11Target_.store(nullptr);
+    dx11PendingClose.store(true);
+    dx11Handle.store(0);
+    dxFenceHandle.store(0);
+    dx11W.store(0);
+    dx11H.store(0);
+    dx11Target.store(nullptr);
     return;
   }
-  if (!importedImage_) return;
-  unityReleaseImported(&importedImage_, &importedMemory_);
-  gpuW_ = 0;
-  gpuH_ = 0;
+  if (!importedImage) return;
+  unityReleaseImported(&importedImage, &importedMemory);
+  gpuW = 0;
+  gpuH = 0;
 }
 
 void PlayerBridge::renderDx11Copy() {
-  dbgEvents_.fetch_add(1);
-  if (dx11PendingClose_.exchange(false)) {
-    unityDx11Close(&dx11_);
+  dbgEvents.fetch_add(1);
+  if (dx11PendingClose.exchange(false)) {
+    unityDx11Close(&dx11);
   }
-  const uint64_t handle = dx11Handle_.load();
+  // 管线重建 (字幕层启停/分辨率变化等) 会重绑共享纹理产生新 NT 句柄,
+  // 每帧刷新: 变化即重开, C# 侧检测原生指针变化自动重建外部纹理包裹
+  if (surface) {
+    const uint64_t fresh = avox::getVkOutputDx11Handle(surface);
+    if (fresh != 0 && fresh != dx11Handle.load()) {
+      dx11Handle.store(fresh);
+      dxFenceHandle.store(avox::getVkOutputDx11FenceHandle(surface));
+    }
+  }
+  const uint64_t handle = dx11Handle.load();
   if (!handle) return;
-  if (!unityDx11EnsureOpened(&dx11_, handle, dxFenceHandle_.load())) return;
-  dx11W_.store(dx11_.width);
-  dx11H_.store(dx11_.height);
-  dbgFenceVal_.store(unityDx11FenceValue(&dx11_));
+  if (!unityDx11EnsureOpened(&dx11, handle, dxFenceHandle.load())) return;
+  dx11W.store(dx11.width);
+  dx11H.store(dx11.height);
+  dbgFenceVal.store(unityDx11FenceValue(&dx11));
   // 拷到插件自建的目标纹理 (格式与共享纹理一致), C# 经 CreateExternalTexture 包裹
-  if (unityDx11CopyFrame(&dx11_)) return;
-  dbgTargetNull_.fetch_add(1);
+  if (unityDx11CopyFrame(&dx11)) return;
+  dbgTargetNull.fetch_add(1);
 }
 
 uint64_t PlayerBridge::dx11NativeTex() {
-  return dx11_.targetTex;
+  return dx11.targetTex;
 }
 
 bool PlayerBridge::allocCpuFrame(uint32_t w, uint32_t h, uint32_t bpp, void** texData) {
@@ -301,9 +310,9 @@ bool PlayerBridge::allocCpuFrame(uint32_t w, uint32_t h, uint32_t bpp, void** te
   if (!buf) return false;
   bool hasFrame = false;
   {
-    std::lock_guard<std::mutex> lock(frameMutex_);
-    if (!frameBgra_.empty() && frameW_ == (int32_t)w && frameH_ == (int32_t)h) {
-      memcpy(buf, frameBgra_.data(), bytes);
+    std::lock_guard<std::mutex> lock(frameMutex);
+    if (!frameBgra.empty() && frameW == (int32_t)w && frameH == (int32_t)h) {
+      memcpy(buf, frameBgra.data(), bytes);
       hasFrame = true;
     }
   }
@@ -314,7 +323,7 @@ bool PlayerBridge::allocCpuFrame(uint32_t w, uint32_t h, uint32_t bpp, void** te
 
 // ── Option/录制/字幕 ──
 
-avox::IOption* PlayerBridge::option() const { return player_ ? player_->getOption() : nullptr; }
+avox::IOption* PlayerBridge::option() const { return player ? player->getOption() : nullptr; }
 
 bool PlayerBridge::setOptionBool(const char* key, bool value) {
   if (!option() || !key) return false;
@@ -363,32 +372,32 @@ int32_t PlayerBridge::optionString(const char* key, char* buf, int32_t bufSize) 
 }
 
 bool PlayerBridge::startRecord(const char* path, bool bTranscode) {
-  if (!player_ || !path || !path[0]) return false;
+  if (!player || !path || !path[0]) return false;
   stopRecord();
-  muxer_ = player_->getMuxer(bTranscode);
-  if (!muxer_) return false;
-  muxer_->setMuxerType(avox::MuxerType::ffmpeg);
-  return muxer_->open(path);
+  muxer = player->getMuxer(bTranscode);
+  if (!muxer) return false;
+  muxer->setMuxerType(avox::MuxerType::ffmpeg);
+  return muxer->open(path);
 }
 
 void PlayerBridge::stopRecord() {
-  if (!muxer_) return;
-  muxer_->close();
-  muxer_ = nullptr;
+  if (!muxer) return;
+  muxer->close();
+  muxer = nullptr;
 }
 
 int32_t PlayerBridge::recordState() {
-  return muxer_ ? (int32_t)muxer_->getState() : 0;
+  return muxer ? (int32_t)muxer->getState() : 0;
 }
 
 bool PlayerBridge::loadSrt(const char* path) {
-  auto* sub = player_ ? player_->getSubtitle() : nullptr;
+  auto* sub = player ? player->getSubtitle() : nullptr;
   return sub && path && path[0] ? sub->loadSrt(path) : false;
 }
 
 void PlayerBridge::closeSubtitle() {
-  if (player_) {
-    if (auto* sub = player_->getSubtitle()) sub->close();
+  if (player) {
+    if (auto* sub = player->getSubtitle()) sub->close();
   }
 }
 
@@ -396,24 +405,24 @@ void PlayerBridge::closeSubtitle() {
 
 void PlayerBridge::onStateChange(avox::PlayerState preState, avox::PlayerState state) {
   (void)preState;
-  stateCache_.store((int32_t)state);
+  stateCache.store((int32_t)state);
   pushState((int32_t)state);
 }
 
 void PlayerBridge::onReady() {
   // onReady 时 sourceInfo 一定有效, 取视频尺寸 (同 godot)
-  avox::ISourceInfo* info = player_ ? player_->getSourceInfo() : nullptr;
+  avox::ISourceInfo* info = player ? player->getSourceInfo() : nullptr;
   if (info && info->videoSize() > 0) {
     avox::VTrackDesc vd = info->getVideoDesc(0);
-    videoW_.store(vd.desc.width);
-    videoH_.store(vd.desc.height);
+    videoW.store(vd.desc.width);
+    videoH.store(vd.desc.height);
     // 色彩空间就绪: 下发渲染管线 (shader 矩阵热更新) + CPU 回退转换共用
-    if (vd.desc.colorSpace.standard != colorSpace_.standard ||
-        vd.desc.colorSpace.range != colorSpace_.range) {
-      colorSpace_ = vd.desc.colorSpace;
-      if (surface_) surface_->setColorSpace(colorSpace_);
+    if (vd.desc.colorSpace.standard != colorSpace.standard ||
+        vd.desc.colorSpace.range != colorSpace.range) {
+      colorSpace = vd.desc.colorSpace;
+      if (surface) surface->setColorSpace(colorSpace);
     }
-    if (gpuMode_ && !gpuOutputOn_) pendingGpuInit_.store(true);
+    if (bGpuMode && !gpuOutputOn) pendingGpuInit.store(true);
   }
   AvoxUnityEvent e;
   e.type = (int32_t)AvoxUnityEvent::EType::ready;
@@ -441,7 +450,7 @@ void PlayerBridge::onDecodeError(avox::TrackType trackType, avox::DecodeResult e
 
 void PlayerBridge::onFrame(const avox::YUVFrame& frame) {
   static std::atomic<uint32_t> frameCount{0};
-  if (gpuMode_) return;
+  if (bGpuMode) return;
   const int32_t w = frame.format.width;
   const int32_t h = frame.format.height;
   if (frameCount.fetch_add(1) == 0)
@@ -450,25 +459,25 @@ void PlayerBridge::onFrame(const avox::YUVFrame& frame) {
   std::vector<uint8_t> bgra;
   bgra.resize((size_t)w * h * 4);
   if (frame.format.type == avox::YuvType::nv12) {
-    ConvertNv12(frame, bgra.data(), colorSpace_);
+    ConvertNv12(frame, bgra.data(), colorSpace);
   } else {
-    ConvertYuv420P(frame, bgra.data(), colorSpace_);
+    ConvertYuv420P(frame, bgra.data(), colorSpace);
   }
   {
-    std::lock_guard<std::mutex> lock(frameMutex_);
-    frameBgra_ = std::move(bgra);
-    frameW_ = w;
-    frameH_ = h;
+    std::lock_guard<std::mutex> lock(frameMutex);
+    frameBgra = std::move(bgra);
+    frameW = w;
+    frameH = h;
   }
 }
 
 void PlayerBridge::onWinSizeChange(int32_t width, int32_t height) {
-  if (gpuMode_) {
+  if (bGpuMode) {
     // 渲染中途尺寸变化: 标记待主线程重导 (同 godot needReimport)
     if (width > 0 && height > 0) {
-      videoW_.store(width);
-      videoH_.store(height);
-      if (gpuOutputOn_) pendingGpuResize_.store(true);
+      videoW.store(width);
+      videoH.store(height);
+      if (gpuOutputOn) pendingGpuResize.store(true);
     }
     return;
   }
@@ -494,10 +503,10 @@ void PlayerBridge::pushError(int32_t code, const char* msg) {
 }
 
 void PlayerBridge::pushEvent(const AvoxUnityEvent& e) {
-  std::lock_guard<std::mutex> lock(eventMutex_);
+  std::lock_guard<std::mutex> lock(eventMutex);
   // 限长防堆积 (主线程卡住时丢弃最旧)
-  if (events_.size() > 64) events_.pop_front();
-  events_.push_back(e);
+  if (events.size() > 64) events.pop_front();
+  events.push_back(e);
 }
 
 // ── YUV → BGRA (矩阵标准/量程取自源 colorSpace, 与渲染管线 shader 同参) ──
