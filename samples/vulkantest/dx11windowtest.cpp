@@ -12,10 +12,10 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
   IMediaPlayer* mp = createMediaPlayer();
   mp->setHardDecode(true);
   mp->setIoPlan(IoPlan::ffmpeg); 
-  mp->open("D://Back/为美好的世界献上爆焰12.mp4");
+  mp->open("D:/Work/github/avox/assets/video/avox_electron.mp4");
   // mp->open("rtsp://127.0.0.1/live/test");
   // mp->open("D://Back/tt.mp4");
-  mp->getSurfaceRender()->setVulkan(false);
+  mp->getSurfaceRender()->setVulkan(true);
   mp->getSurfaceRender()->setSurface(nullptr);
   bool m_running = true;
   MSG msg;
