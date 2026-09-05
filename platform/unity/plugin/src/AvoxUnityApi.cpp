@@ -1,5 +1,6 @@
 #include "AvoxUnityApi.h"
 #include "PlayerBridge.h"
+#include "SourceBridge.h"
 #include "GpuPassthrough.h"
 
 AVOX_UNITY_API void* avoxGetTextureUpdateCallback(void) {
@@ -191,4 +192,62 @@ AVOX_UNITY_API int32_t avoxPlayerLoadSrt(avox_player_t player, const char* path)
 
 AVOX_UNITY_API void avoxPlayerCloseSubtitle(avox_player_t player) {
   if (player) ((PlayerBridge*)player)->closeSubtitle();
+}
+
+// ── 设备源 (相机/采集卡) ──
+
+AVOX_UNITY_API avox_source_t avoxSourceCreate(void) {
+  static std::atomic<uint32_t> nextSrcId{5001};
+  return new SourceBridge(nextSrcId.fetch_add(1));
+}
+
+AVOX_UNITY_API void avoxSourceDestroy(avox_source_t source) {
+  delete (SourceBridge*)source;
+}
+
+AVOX_UNITY_API uint32_t avoxSourceGetId(avox_source_t source) {
+  return source ? ((SourceBridge*)source)->id() : 0;
+}
+
+AVOX_UNITY_API int32_t avoxVideoDeviceCount(void) {
+  auto* mgr = avox::getVideoManager(avox::getDefaltVideoSdk());
+  if (!mgr) return 0;
+  mgr->refreshDevices();
+  return mgr->getDeviceCount();
+}
+
+AVOX_UNITY_API int32_t avoxVideoDeviceName(int32_t index, char* buf, int32_t bufSize) {
+  auto* mgr = avox::getVideoManager(avox::getDefaltVideoSdk());
+  if (!mgr || index < 0 || index >= mgr->getDeviceCount()) return -1;
+  auto* dev = mgr->getDevice(index);
+  if (!dev || !dev->getDeviceName()) return -1;
+  const char* name = dev->getDeviceName();
+  int32_t len = (int32_t)strlen(name);
+  if (buf && bufSize > 0) {
+    int32_t copy = len < bufSize - 1 ? len : bufSize - 1;
+    memcpy(buf, name, copy);
+    buf[copy] = 0;
+  }
+  return len + 1;
+}
+
+AVOX_UNITY_API void avoxSourceSetDevice(avox_source_t source, int32_t index) {
+  if (source) ((SourceBridge*)source)->setDeviceIndex(index);
+}
+
+AVOX_UNITY_API int32_t avoxSourceOpen(avox_source_t source) {
+  return source && ((SourceBridge*)source)->open() ? 1 : 0;
+}
+
+AVOX_UNITY_API void avoxSourceClose(avox_source_t source) {
+  if (source) ((SourceBridge*)source)->close();
+}
+
+AVOX_UNITY_API int32_t avoxSourceGetState(avox_source_t source) {
+  return source ? ((SourceBridge*)source)->state() : 0;
+}
+
+AVOX_UNITY_API int32_t avoxSourceGetFrameInfo(avox_source_t source, int32_t* w, int32_t* h) {
+  if (!source) return 0;
+  return ((SourceBridge*)source)->frameInfo(w, h) ? 1 : 0;
 }

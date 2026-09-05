@@ -1,5 +1,6 @@
 #include "GpuPassthrough.h"
 #include "PlayerBridge.h"
+#include "SourceBridge.h"
 
 
 #ifndef VK_NO_PROTOTYPES
@@ -286,8 +287,15 @@ void __stdcall avoxTextureUpdateCallback(int eventID, void* data) {
   UnityRenderingExtTextureUpdateParamsV2* params = (UnityRenderingExtTextureUpdateParamsV2*)data;
   if (eventID == kUnityRenderingExtEventUpdateTextureBeginV2) {
     void* texData = nullptr;
-    PlayerBridge* bridge = findBridge((uint32_t)params->userData);
-    if (!bridge || !bridge->allocCpuFrame(params->width, params->height, params->bpp, &texData)) {
+    const uint32_t id = (uint32_t)params->userData;
+    PlayerBridge* bridge = findBridge(id);
+    bool ok = bridge && bridge->allocCpuFrame(params->width, params->height, params->bpp, &texData);
+    if (!ok) {
+      // 设备源 (相机等 SourceBridge) 复用同一上传回调
+      SourceBridge* source = findSourceBridge(id);
+      ok = source && source->allocCpuFrame(params->width, params->height, params->bpp, &texData);
+    }
+    if (!ok) {
       // 无帧/异常: 黑帧兜底 (Unity 总是上传 texData)
       texData = calloc((size_t)params->width * params->height * params->bpp, 1);
     }

@@ -9,6 +9,7 @@
 add_library(avox_unity SHARED
     src/AvoxUnityApi.cpp
     src/PlayerBridge.cpp
+    src/SourceBridge.cpp
     src/GpuPassthrough.cpp
     src/volk_impl.c
 )

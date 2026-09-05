@@ -450,9 +450,9 @@ void PlayerBridge::onFrame(const avox::YUVFrame& frame) {
   std::vector<uint8_t> bgra;
   bgra.resize((size_t)w * h * 4);
   if (frame.format.type == avox::YuvType::nv12) {
-    convertNv12(frame, bgra.data(), colorSpace_);
+    ConvertNv12(frame, bgra.data(), colorSpace_);
   } else {
-    convertYuv420P(frame, bgra.data(), colorSpace_);
+    ConvertYuv420P(frame, bgra.data(), colorSpace_);
   }
   {
     std::lock_guard<std::mutex> lock(frameMutex_);
@@ -531,7 +531,7 @@ inline int expandY(int y, bool limited) { return limited ? ((1192 * y - 19072) >
 inline int expandC(int c, bool limited) { return limited ? ((1166 * (c - 128)) >> 10) : c - 128; }
 }  // namespace
 
-void PlayerBridge::convertNv12(const avox::YUVFrame& frame, uint8_t* dst,
+void PlayerBridge::ConvertNv12(const avox::YUVFrame& frame, uint8_t* dst,
                                const avox::ColorSpaceDesc& cs) {
   const int32_t w = frame.format.width;
   const int32_t h = frame.format.height;
@@ -566,7 +566,7 @@ void PlayerBridge::convertNv12(const avox::YUVFrame& frame, uint8_t* dst,
   }
 }
 
-void PlayerBridge::convertYuv420P(const avox::YUVFrame& frame, uint8_t* dst,
+void PlayerBridge::ConvertYuv420P(const avox::YUVFrame& frame, uint8_t* dst,
                                   const avox::ColorSpaceDesc& cs) {
   const int32_t w = frame.format.width;
   const int32_t h = frame.format.height;

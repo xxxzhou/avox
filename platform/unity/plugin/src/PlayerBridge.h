@@ -91,6 +91,11 @@ class PlayerBridge : public avox::IMediaPlayerOb, public avox::ISurfaceRenderOb 
   // CPU 路径回调取帧 (IssuePluginCustomTextureUpdateV2 UpdateTextureBegin):
   // 按 Unity 纹理尺寸分配 BGRA 数据, 无帧/尺寸不符时补黑边, 失败返回 false
   bool allocCpuFrame(uint32_t w, uint32_t h, uint32_t bpp, void** texData);
+  // 色彩转换 (SourceBridge CPU 路径复用)
+  static void ConvertNv12(const avox::YUVFrame& frame, uint8_t* dst,
+                          const avox::ColorSpaceDesc& cs);
+  static void ConvertYuv420P(const avox::YUVFrame& frame, uint8_t* dst,
+                             const avox::ColorSpaceDesc& cs);
 
   // ── Option (键值参数, 透传 IMediaPlayer::getOption) ──
   bool setOptionBool(const char* key, bool value);
@@ -135,10 +140,6 @@ class PlayerBridge : public avox::IMediaPlayerOb, public avox::ISurfaceRenderOb 
   void pushEvent(const AvoxUnityEvent& e);
   avox::IOption* option() const;
 
-  static void convertNv12(const avox::YUVFrame& frame, uint8_t* dst,
-                          const avox::ColorSpaceDesc& cs);
-  static void convertYuv420P(const avox::YUVFrame& frame, uint8_t* dst,
-                             const avox::ColorSpaceDesc& cs);
 
   uint32_t id_;
   avox::IMediaPlayer* player_ = nullptr;
