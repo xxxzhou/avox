@@ -14,7 +14,7 @@ avox 源自作者多年的音视频/GPU 技术积累，经大模型辅助整理�
 
 - **一套代码，多端运行** - Windows / Android / iOS / Linux 单一 C++17 代码库，CMake 统一构建；硬解硬编、GPU 互操作、窗口系统等平台差异在框架层抹平，扩展新平台只需实现平台层接口
 - **接口一次定义，四语言绑定零手工成本** - 导出层为纯虚抽象接口 + `create*` 工厂 + `addXxxOb/removeXxxOb` 回调注册，禁用 STL 类型（`const char*`、裸指针+计数、回调类），SWIG 从同一套头文件自动生成 C# / Java / Node.js / Python 绑定；回调类经 director 机制在各语言中直接继承覆写，新增接口无需逐语言维护胶水层
-- **全链路 GPU 零拷贝** - 硬解（DX11VA/MediaCodec/VideoToolbox）→ Vulkan 图像处理 → 硬编/渲染，数据全程留在 GPU 不经 CPU 中转；多数开源播放器方案未打通的端到端通路
+- **全链路 GPU 零拷贝** - 硬解（DX11VA/MediaCodec/VideoToolbox）→ Vulkan 图像处理 → 硬编/渲染，数据全程留在 GPU 不经 CPU 中转。
   - **Windows** - D3D11VA 硬解帧以 DX11 纹理经 shared handle 与 Vulkan 互操作直入处理管线，结果回 DX11/DX12/Vulkan 渲染到窗口；MF 相机、屏幕捕获经统一数据源接口接入
   - **Android** - NdkCamera2 相机 OES 纹理直出、跨 EGLContext 与 Vulkan 互通，MediaCodec 硬解输出 AHardwareBuffer 直入管线，结果回 OpenGL ES/Vulkan 渲染到 Surface 或经 MediaCodec GPU 硬编推流
   - **iOS** - AVFoundation 相机帧与 VideoToolbox 硬解帧经 CVPixelBuffer/IOSurface 与 Vulkan/Metal 纹理互通直入管线，结果回 Metal/Vulkan 渲染或经 VideoToolbox 硬编推流
