@@ -265,6 +265,16 @@ Command cmdPlay() {
     // 几何叠加层 (跟随OSD开关, I=装饰颜色循环)
     IGeometryLayer* geoLayer = nullptr;
     int geoColorIdx = 3;  // 默认红色(3=红, OSD 文本默认1=绿)
+    // 当前 Lut 效果名(与 freetype 无关, 声明在所有使用点之前)
+    auto lutName = [](int idx) -> const char* {
+      static const char* names[] = {"关", "amatorka", "miss_etikate"};
+      return names[idx];
+    };
+    // 当前 sizeScale 名 (idx 2 = 1.0 = 关闭)
+    auto scaleName = [](int idx) -> const char* {
+      static const char* names[] = {"1/4", "1/2", "关", "2"};
+      return names[idx];
+    };
 #ifdef AVOX_ENABLE_FREETYPE
     IFontLayer* fontLayer = nullptr;
     bool osdVisible = true;
@@ -610,16 +620,6 @@ Command cmdPlay() {
       } else {
         printf("  screenshot save failed: %s\n", path.c_str());
       }
-    };
-    // 当前 Lut 效果名(与 freetype 无关)
-    auto lutName = [](int idx) -> const char* {
-      static const char* names[] = {"关", "amatorka", "miss_etikate"};
-      return names[idx];
-    };
-    // 当前 sizeScale 名 (idx 2 = 1.0 = 关闭)
-    auto scaleName = [](int idx) -> const char* {
-      static const char* names[] = {"1/4", "1/2", "关", "2"};
-      return names[idx];
     };
     // 切换 Lut (B 键, 与 sizeScale 互相独立) -> 验证 ISurfaceRender::enableLut
     // 循环: off -> 1(amatorka) -> 2(miss_etikate) -> off
