@@ -39,6 +39,7 @@ namespace Avox
         [DllImport(Lib)] public static extern ulong avoxPlayerGetExternalTexture(IntPtr player);
         [DllImport(Lib)] public static extern void avoxPlayerUpdateGpu(IntPtr player);
         [DllImport(Lib)] public static extern void avoxPlayerSetDx11Target(IntPtr player, IntPtr nativeTex);
+        [DllImport(Lib)] public static extern void avoxPlayerSetDx12Target(IntPtr player, IntPtr nativeTex);
 
         // ── 设备源 (相机/采集卡) ──
         [DllImport(Lib)] public static extern IntPtr avoxSourceCreate();
@@ -53,6 +54,7 @@ namespace Avox
         [DllImport(Lib)] public static extern int avoxSourceGetState(IntPtr source);
         [DllImport(Lib)] public static extern int avoxSourceGetFrameInfo(IntPtr source, out int w, out int h);
         [DllImport(Lib)] public static extern void avoxPlayerGetDx11Debug(IntPtr player, out int events, out int copies, out int targetNull, out long fenceVal, out int opens);
+        [DllImport(Lib)] public static extern void avoxPlayerGetDx12Debug(IntPtr player, out int noTarget, out int noCl, out int copies, out int opens);
 
         // ── Option ──
         [DllImport(Lib)] public static extern int avoxPlayerGetOptionType(IntPtr player, string key);

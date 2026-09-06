@@ -70,23 +70,36 @@ class PlayerBridge : public avox::IMediaPlayerOb, public avox::ISurfaceRenderOb 
   // volk 延迟初始化 + enableVkOutput/Dx11 + 句柄获取/导入 + 尺寸变化重导
   void updateGpu();
 
-  // D3D11 拷贝模式 (flavor 2): Unity 渲染线程事件入口
+  // D3D11/D3D12 拷贝模式 (flavor 2/3): Unity 渲染线程事件入口
   // (GetRenderEventFunc → GL.IssuePluginEvent, eventId = id())
-  // 打开共享纹理 + fence 去重 + CopyResource 到 C# 纹理
+  // 打开共享纹理 + fence 去重 + CopyResource 到 C# 纹理 (按 flavor 分派 D3D11/D3D12)
   void renderDx11Copy();
   // C# 纹理 GetNativeTexturePtr (主线程设置, 渲染线程读取)
   void setDx11Target(void* nativeTex) { dx11Target.store(nativeTex); }
-  // 插件自建的目标纹理 (Unity 设备上, C# CreateExternalTexture 包裹用)
+  // D3D12 模式 C# 纹理 nativeTex (拷贝目的)
+  void setDx12Target(void* nativeTex) { dx12Target.store(nativeTex); }
+  // 外部纹理句柄 (C# CreateExternalTexture 收养): D3D11=目标纹理 / D3D12=目标 SRV 描述符
   uint64_t dx11NativeTex();
   // 拷贝链路诊断: 事件数/实际拷贝数/目标缺失数/最近 fence 值/打开次数
   void dx11Debug(uint32_t* events, uint32_t* copies, uint32_t* targetNull,
                  uint64_t* fenceVal, uint32_t* opens) {
     if (events) *events = dbgEvents.load();
-    if (copies) *copies = dx11.copyCount;
+    const bool dx12Mode = (unityGpuImportFlavor() == 3);
+    if (copies) *copies = dx12Mode ? dx12.copyCount : dx11.copyCount;
     if (targetNull) *targetNull = dbgTargetNull.load();
-    if (fenceVal) *fenceVal = dbgFenceVal.load();
-    if (opens) *opens = dx11.openCount;
+    if (fenceVal) *fenceVal = dx12Mode ? unityDx12FenceValue(&dx12) : dbgFenceVal.load();
+    if (opens) *opens = dx12Mode ? dx12.openCount : dx11.openCount;
   }
+
+  // D3D12 拷贝链路诊断: 目标未解析次数/无命令列表次数/拷贝数/打开次数
+  void dx12Debug(uint32_t* noTarget, uint32_t* noCl, uint32_t* copies, uint32_t* opens) {
+    if (noTarget) *noTarget = dx12.noTarget;
+    if (noCl) *noCl = dx12.noCl;
+    if (copies) *copies = dx12.copyCount;
+    if (opens) *opens = dx12.openCount;
+  }
+  // 诊断: 当前共享纹理 NT 句柄快照 (转储用)
+  uint64_t dx11HandleSnapshot() const { return dx11Handle.load(); }
 
   // CPU 路径回调取帧 (IssuePluginCustomTextureUpdateV2 UpdateTextureBegin):
   // 按 Unity 纹理尺寸分配 BGRA 数据, 无帧/尺寸不符时补黑边, 失败返回 false
@@ -168,18 +181,20 @@ class PlayerBridge : public avox::IMediaPlayerOb, public avox::ISurfaceRenderOb 
   int32_t gpuW = 0;
   int32_t gpuH = 0;
 
-  // ── D3D11 拷贝模式 (flavor 2) ──
-  // dx11 仅渲染线程触碰; 句柄/尺寸跨线程用 atomic
+  // ── D3D11/D3D12 拷贝模式 (flavor 2/3, 产出同为 enableVkOutputDx11) ──
+  // dx11/dx12 状态仅渲染线程触碰; 句柄/尺寸跨线程用 atomic
   std::atomic<uint64_t> dx11Handle{0};      // avox 共享纹理 NT 句柄 (avox 持有, 勿 CloseHandle)
   std::atomic<uint64_t> dxFenceHandle{0};   // 共享 fence NT 句柄 (可空)
   std::atomic<int32_t> dx11W{0};            // 打开后由渲染线程回填实际尺寸
   std::atomic<int32_t> dx11H{0};
   std::atomic<void*> dx11Target{nullptr};   // C# 纹理 nativeTex
+  std::atomic<void*> dx12Target{nullptr};   // D3D12 模式 C# 纹理 nativeTex (拷贝目的)
   std::atomic<bool> dx11PendingClose{false};// 释放请求转交渲染线程执行
   std::atomic<uint32_t> dbgEvents{0};       // 诊断: 渲染事件次数
   std::atomic<uint32_t> dbgTargetNull{0};   // 诊断: 目标为空的次数
   std::atomic<uint64_t> dbgFenceVal{0};     // 诊断: 最近一次观察到的 fence 值
   UnityDx11CopyState dx11;
+  UnityDx12CopyState dx12;
 
   // ── CPU 帧槽 (mutex, 新帧覆盖旧帧) ──
   std::mutex frameMutex;

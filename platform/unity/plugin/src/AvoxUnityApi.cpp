@@ -127,9 +127,25 @@ AVOX_UNITY_API int32_t avoxPlayerIsGpuMode(avox_player_t player) {
 AVOX_UNITY_API uint64_t avoxPlayerGetExternalTexture(avox_player_t player) {
   if (!player) return 0;
   auto* bridge = (PlayerBridge*)player;
-  // D3D11 拷贝模式: 返回插件自建的目标纹理 (格式一致, CreateExternalTexture 包裹)
+  // D3D11 拷贝模式: 返回插件自建的目标纹理 (格式一致, CreateExternalTexture 包裹);
+  // D3D12 拷贝模式不走外部纹理 (C# 普通纹理 + 每帧拷贝)
   if (unityGpuImportFlavor() == 2) return bridge->dx11NativeTex();
   return bridge->gpuImage();
+}
+
+AVOX_UNITY_API void avoxPlayerSetDx12Target(avox_player_t player, void* nativeTex) {
+  if (player) ((PlayerBridge*)player)->setDx12Target(nativeTex);
+}
+
+AVOX_UNITY_API void avoxPlayerGetDx12Debug(avox_player_t player, int32_t* noTarget,
+                                           int32_t* noCl, int32_t* copies, int32_t* opens) {
+  if (!player) return;
+  ((PlayerBridge*)player)->dx12Debug((uint32_t*)noTarget, (uint32_t*)noCl,
+                                     (uint32_t*)copies, (uint32_t*)opens);
+}
+
+AVOX_UNITY_API void avoxDx11DumpSharedById(uint32_t playerId, const char* path) {
+  unityDx11DumpShared(nullptr, playerId, path);
 }
 
 AVOX_UNITY_API void avoxPlayerUpdateGpu(avox_player_t player) {

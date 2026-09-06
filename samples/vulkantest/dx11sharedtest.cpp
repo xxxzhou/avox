@@ -34,6 +34,28 @@ static uint64_t sampleChecksum(ID3D11DeviceContext* ctx, ID3D11Texture2D* stagin
   return sum;
 }
 
+// 共享纹理内容转储 (D3D11 侧视角的地面真值, 行序按映射顺序 = 纹理行序)
+static void dumpPpm(ID3D11DeviceContext* ctx, ID3D11Texture2D* staging,
+                    const D3D11_TEXTURE2D_DESC& desc, const char* path) {
+  D3D11_MAPPED_SUBRESOURCE map = {};
+  if (FAILED(ctx->Map(staging, 0, D3D11_MAP_READ, 0, &map))) {
+    return;
+  }
+  FILE* f = fopen(path, "wb");
+  if (f) {
+    fprintf(f, "P6\n%u %u\n255\n", desc.Width, desc.Height);
+    for (UINT y = 0; y < desc.Height; ++y) {
+      const uint8_t* row = (const uint8_t*)map.pData + y * map.RowPitch;
+      for (UINT x = 0; x < desc.Width; ++x) {
+        fwrite(row + x * 4, 1, 3, f);
+      }
+    }
+    fclose(f);
+    printf("dumped: %s\n", path);
+  }
+  ctx->Unmap(staging, 0);
+}
+
 int main(int argc, char** argv) {
   const char* video = argc > 1 ? argv[1] : "D:/Work/github/avox/assets/video/avox_electron.mp4";
   int durationSec = argc > 2 ? atoi(argv[2]) : 10;
@@ -61,9 +83,11 @@ int main(int argc, char** argv) {
     printf("srt load: %d\n", (int)mp->getSubtitle()->loadSrt("D:/Work/github/avox/assets/video/avox_electron.srt"));
   }
   // ── 轮询共享句柄 (图异步构建) ──
+  // 字幕加载等会触发图重建并丢失 dx11 声明, 轮询期幂等重声明 (同 Unity/Godot 桥)
   uint64_t texHandle = 0;
   for (int i = 0; i < 100 && !texHandle; ++i) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    enableVkOutputDx11(sr);
     texHandle = getVkOutputDx11Handle(sr);
   }
   if (!texHandle) {
@@ -125,7 +149,7 @@ int main(int argc, char** argv) {
   }
   // ── 读回循环: 每帧复制->读回->校验, 检测画面变化 ──
   uint64_t lastSum = 0;
-  int changedFrames = 0, totalReads = 0;
+  int changedFrames = 0, totalReads = 0, dumpCount = 0;
   auto tStart = std::chrono::steady_clock::now();
   while (true) {
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -139,6 +163,10 @@ int main(int argc, char** argv) {
     }
     ctxB->CopyResource(staging, texB);
     uint64_t sum = sampleChecksum(ctxB, staging, desc);
+    if (elapsed > 5000 && dumpCount == 0) {
+      dumpCount++;
+      dumpPpm(ctxB, staging, desc, "shared_dump.ppm");
+    }
     if (sum) {
       totalReads++;
       if (sum != lastSum) {

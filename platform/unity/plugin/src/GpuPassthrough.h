@@ -4,11 +4,11 @@
 
 // Unity 插件加载/GPU 直通支持 (对应 godot 插件 gpu_passthrough + GPU 导入部分)
 
-// 全局 GPU 直通可用性: Unity Vulkan/D3D11 后端
+// 全局 GPU 直通可用性: Unity Vulkan/D3D11/D3D12 后端
 // 由 bindSurface 读取决定 GPU 模式还是 CPU 回退
 bool unityGpuPassthroughAvailable();
 
-// 导入方式: 0 无 / 1 Vulkan (VkImage 跨设备导入) / 2 D3D11 (底层共享纹理 + 渲染线程拷贝)
+// 导入方式: 0 无 / 1 Vulkan (VkImage 导入) / 2 D3D11 / 3 D3D12 (底层共享纹理 + 渲染线程拷贝)
 int unityGpuImportFlavor();
 
 // 主线程延迟初始化 (Vulkan: volk 加载 Unity 的 instance/device; D3D11: 探测设备接口),
@@ -53,6 +53,47 @@ void unityDx11Close(UnityDx11CopyState* st);
 
 // 渲染线程: 当前观察到的共享 fence 值 (未打开返回 0)
 uint64_t unityDx11FenceValue(UnityDx11CopyState* st);
+
+// ── D3D12 拷贝模式 (flavor 3) ──
+// 同一个 avox D3D11 出生 NT 句柄, D3D12 OpenSharedHandle 标准互操作打开
+// (同 UE 插件 openDx12 / avox Dx12SharedTex); 每帧把共享纹理 CopyResource 到
+// C# 普通纹理 (经 CommandRecordingState 录入 Unity 命令列表, 同 UE 每帧
+// CopyTexture 到 VideoTexture; 零拷贝包裹实测画面冻结不可用)
+
+// 每播放器一份的 D3D12 状态 (仅 Unity 渲染线程触碰, 同 UnityDx11CopyState 约定)
+struct UnityDx12CopyState {
+  uint64_t srcHandle = 0;     // 已打开的 avox NT 句柄 (变化时重开)
+  uint64_t sharedTex = 0;     // 打开的 ID3D12Resource* (D3D11 出生共享, 拷贝源)
+  uint64_t sharedFence = 0;   // 打开的 ID3D12Fence* (可空, 拷贝去重)
+  uint64_t targetTex = 0;     // ID3D12Resource* (C# Texture2D native, 拷贝目的)
+  uint64_t targetNative = 0;  // 上次解析的 C# nativeTex (变化即重解析)
+  uint64_t lastFenceVal = 0;  // 上次拷贝时的 fence 值 (去重)
+  int32_t width = 0;
+  int32_t height = 0;
+  uint32_t copyCount = 0;
+  uint32_t openCount = 0;
+  uint32_t noTarget = 0;      // 诊断: 目标未解析次数
+  uint32_t noCl = 0;          // 诊断: 事件期无 Unity 命令列表次数
+};
+
+// 渲染线程: OpenSharedHandle 打开共享纹理/fence (失败单次不重试)
+bool unityDx12EnsureOpened(UnityDx12CopyState* st, uint64_t texHandle, uint64_t fenceHandle);
+
+// 渲染线程: 绑定 C# 纹理 nativeTex 为拷贝目的 (变化即重解析)
+void unityDx12SetTarget(UnityDx12CopyState* st, void* nativeTex);
+
+// 渲染线程: fence 前进时把共享纹理拷到 C# 纹理 (录 Unity 命令列表)
+// 返回 0 成功/去重跳过, 1 目标未解析, 2 无命令列表
+int unityDx12CopyFrame(UnityDx12CopyState* st);
+
+// 渲染线程: 释放本侧打开的资源
+void unityDx12Close(UnityDx12CopyState* st);
+
+// 渲染线程: 当前观察到的共享 fence 值 (未打开返回 0)
+uint64_t unityDx12FenceValue(UnityDx12CopyState* st);
+
+// 诊断: 用独立 D3D11 设备打开当前共享纹理并转储一帧 PPM (Unity 进程内地面真值)
+void unityDx11DumpShared(void* bridge, uint32_t playerId, const char* path);
 
 // Unity 渲染事件入口 (C# GL.IssuePluginEvent 触发, eventId = PlayerBridge id)
 #ifdef _WIN32

@@ -14,11 +14,13 @@
 #include <d3d11.h>
 #include <d3d11_1.h>
 #include <d3d11_4.h>
+#include <d3d12.h>
 
 #include "unity/IUnityInterface.h"
 #include "unity/IUnityGraphics.h"
 #include "unity/IUnityGraphicsVulkan.h"
 #include "unity/IUnityGraphicsD3D11.h"
+#include "unity/IUnityGraphicsD3D12.h"
 #include "unity/IUnityRenderingExtensions.h"
 
 // ── Unity 插件接口 (UnityPluginLoad 自动调用) ──
@@ -28,8 +30,35 @@ static IUnityGraphicsVulkan* s_GfxVulkan = nullptr;
 static IUnityGraphicsD3D11* s_GfxD3D11 = nullptr;
 static bool s_VolkReady = false;
 static bool s_GpuAvailable = false;
-// 导入方式: 0 无 / 1 Vulkan (VkImage 导入) / 2 D3D11 (OpenSharedResource1 导入)
+// 导入方式: 0 无 / 1 Vulkan (VkImage 导入) / 2 D3D11 / 3 D3D12 (底层共享纹理 + 渲染线程拷贝)
 static int s_GpuFlavor = 0;
+
+// D3D12 插件接口: 拷贝路径需要 GetDevice/CommandRecordingState/TextureFromNativeTexture
+// (v6 起齐全; 拷贝录 Unity 自己的命令列表, 无需自建 allocator/queue)
+struct UnityDx12Api {
+  ID3D12Device* (UNITY_INTERFACE_API * getDevice)() = nullptr;
+  bool (UNITY_INTERFACE_API * commandRecordingState)(UnityGraphicsD3D12RecordingState*) = nullptr;
+  ID3D12Resource* (UNITY_INTERFACE_API * textureFromNativeTexture)(UnityTextureID) = nullptr;
+  bool ok() const { return getDevice && commandRecordingState && textureFromNativeTexture; }
+};
+static UnityDx12Api s_Dx12Api;
+
+static void resolveDx12Api(IUnityInterfaces* ui) {
+  if (s_Dx12Api.ok()) return;
+  if (auto* v8 = ui->Get<IUnityGraphicsD3D12v8>()) {
+    s_Dx12Api.getDevice = v8->GetDevice;
+    s_Dx12Api.commandRecordingState = v8->CommandRecordingState;
+    s_Dx12Api.textureFromNativeTexture = v8->TextureFromNativeTexture;
+  } else if (auto* v7 = ui->Get<IUnityGraphicsD3D12v7>()) {
+    s_Dx12Api.getDevice = v7->GetDevice;
+    s_Dx12Api.commandRecordingState = v7->CommandRecordingState;
+    s_Dx12Api.textureFromNativeTexture = v7->TextureFromNativeTexture;
+  } else if (auto* v6 = ui->Get<IUnityGraphicsD3D12v6>()) {
+    s_Dx12Api.getDevice = v6->GetDevice;
+    s_Dx12Api.commandRecordingState = v6->CommandRecordingState;
+    s_Dx12Api.textureFromNativeTexture = v6->TextureFromNativeTexture;
+  }
+}
 
 extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API
 UnityPluginLoad(IUnityInterfaces* unityInterfaces) {
@@ -37,6 +66,7 @@ UnityPluginLoad(IUnityInterfaces* unityInterfaces) {
   s_Graphics = unityInterfaces->Get<IUnityGraphics>();
   s_GfxVulkan = unityInterfaces->Get<IUnityGraphicsVulkan>();
   s_GfxD3D11 = unityInterfaces->Get<IUnityGraphicsD3D11>();
+  resolveDx12Api(unityInterfaces);
 }
 
 extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API UnityPluginUnload() {
@@ -44,6 +74,7 @@ extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API UnityPluginUnload() {
   s_Graphics = nullptr;
   s_GfxVulkan = nullptr;
   s_GfxD3D11 = nullptr;
+  s_Dx12Api = {};
   s_VolkReady = false;
   s_GpuAvailable = false;
   s_GpuFlavor = 0;
@@ -85,6 +116,13 @@ bool unityVulkanInit() {
   if (renderer == kUnityGfxRendererD3D11) {
     s_GpuFlavor = 2;
     s_GpuAvailable = (s_GfxD3D11 != nullptr);
+    return s_GpuAvailable;
+  }
+  // Unity D3D12 后端: 同一个 avox D3D11 出生共享句柄, D3D12 OpenSharedHandle 打开
+  // (同 UE 插件/avox Dx12SharedTex), 经自有命令环 ExecuteCommandList 拷贝
+  if (renderer == kUnityGfxRendererD3D12) {
+    s_GpuFlavor = 3;
+    s_GpuAvailable = s_Dx12Api.ok();
     return s_GpuAvailable;
   }
   return false;
@@ -278,6 +316,187 @@ void unityDx11Close(UnityDx11CopyState* st) {  if (!st) return;
 void __stdcall avoxDx11RenderEvent(int eventId) {
   PlayerBridge* bridge = findBridge((uint32_t)eventId);
   if (bridge) bridge->renderDx11Copy();
+}
+
+// ── 诊断: 独立 D3D11 设备打开共享纹理转储一帧 (与 Unity 消费端无关的地面真值) ──
+void unityDx11DumpShared(void* bridge, uint32_t playerId, const char* path) {
+  PlayerBridge* pb = findBridge(playerId);
+  if (!pb || !path) return;
+  const uint64_t handle = pb->dx11HandleSnapshot();
+  if (!handle) {
+    printf("[avoxdump] no handle\n");
+    return;
+  }
+  ID3D11Device* dev = nullptr;
+  ID3D11DeviceContext* ctx = nullptr;
+  D3D_FEATURE_LEVEL fl = D3D_FEATURE_LEVEL_11_0;
+  if (FAILED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0,
+                               nullptr, 0, D3D11_SDK_VERSION, &dev, &fl, &ctx))) {
+    printf("[avoxdump] create device failed\n");
+    return;
+  }
+  ID3D11Device1* dev1 = nullptr;
+  ID3D11Texture2D* tex = nullptr;
+  HRESULT hr = E_NOINTERFACE;
+  if (SUCCEEDED(dev->QueryInterface(__uuidof(ID3D11Device1), (void**)&dev1))) {
+    hr = dev1->OpenSharedResource1((HANDLE)(uintptr_t)handle,
+                                   __uuidof(ID3D11Texture2D), (void**)&tex);
+    dev1->Release();
+  }
+  if (FAILED(hr) || !tex) {
+    printf("[avoxdump] open shared failed hr=0x%08lx\n", (unsigned long)hr);
+    ctx->Release();
+    dev->Release();
+    return;
+  }
+  D3D11_TEXTURE2D_DESC desc = {};
+  tex->GetDesc(&desc);
+  D3D11_TEXTURE2D_DESC sdesc = desc;
+  sdesc.Usage = D3D11_USAGE_STAGING;
+  sdesc.BindFlags = 0;
+  sdesc.MiscFlags = 0;
+  sdesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+  ID3D11Texture2D* staging = nullptr;
+  if (FAILED(dev->CreateTexture2D(&sdesc, nullptr, &staging))) {
+    tex->Release();
+    ctx->Release();
+    dev->Release();
+    return;
+  }
+  ctx->CopyResource(staging, tex);
+  D3D11_MAPPED_SUBRESOURCE map = {};
+  if (SUCCEEDED(ctx->Map(staging, 0, D3D11_MAP_READ, 0, &map))) {
+    FILE* f = fopen(path, "wb");
+    if (f) {
+      fprintf(f, "P6\n%u %u\n255\n", desc.Width, desc.Height);
+      for (UINT y = 0; y < desc.Height; ++y) {
+        const uint8_t* row = (const uint8_t*)map.pData + y * map.RowPitch;
+        for (UINT x = 0; x < desc.Width; ++x) {
+          fwrite(row + x * 4, 1, 3, f);
+        }
+      }
+      fclose(f);
+      printf("[avoxdump] dumped: %s\n", path);
+    }
+    ctx->Unmap(staging, 0);
+  }
+  staging->Release();
+  tex->Release();
+  ctx->Release();
+  dev->Release();
+}
+
+// ── D3D12 拷贝模式 (flavor 3): 以下函数均只在 Unity 渲染线程调用 ──
+
+bool unityDx12EnsureOpened(UnityDx12CopyState* st, uint64_t texHandle, uint64_t fenceHandle) {
+  (void)fenceHandle;
+  if (!st || !texHandle || !s_Dx12Api.ok()) return false;
+  if (st->sharedTex && st->srcHandle == texHandle) return true;
+  // 句柄变化 (首开/管线重建重绑): 释放旧资源再单次打开 (失败不重试)
+  unityDx12Close(st);
+  ID3D12Device* device = s_Dx12Api.getDevice();
+  if (!device) return false;
+  // D3D11 出生 NT 句柄在 D3D12 标准互操作打开 (同 UE 插件 openDx12/avox Dx12SharedTex)
+  ID3D12Resource* tex = nullptr;
+  if (FAILED(device->OpenSharedHandle((HANDLE)(uintptr_t)texHandle,
+                                      __uuidof(ID3D12Resource), (void**)&tex)) ||
+      !tex) {
+    return false;
+  }
+  D3D12_RESOURCE_DESC desc = tex->GetDesc();
+  st->sharedTex = (uint64_t)(uintptr_t)tex;
+  st->srcHandle = texHandle;
+  st->width = (int32_t)desc.Width;
+  st->height = (int32_t)desc.Height;
+  st->openCount++;
+  st->lastFenceVal = 0;
+  // fence 可选: 打开失败仅退化为每帧拷贝
+  if (fenceHandle) {
+    ID3D12Fence* fence = nullptr;
+    if (SUCCEEDED(device->OpenSharedHandle((HANDLE)(uintptr_t)fenceHandle,
+                                           __uuidof(ID3D12Fence), (void**)&fence))) {
+      st->sharedFence = (uint64_t)(uintptr_t)fence;
+    }
+  }
+  return true;
+}
+
+void unityDx12SetTarget(UnityDx12CopyState* st, void* nativeTex) {
+  if (!st) return;
+  if (!nativeTex || (uint64_t)(uintptr_t)nativeTex == st->targetNative) return;
+  // C# GetNativeTexturePtr 在 D3D12 后端即 ID3D12Resource* (官方 NativeRenderingPlugin
+  // 同款); TextureFromNativeTexture 对外部纹理实测返回 null, 直接强转
+  st->targetTex = (uint64_t)(uintptr_t)nativeTex;
+  st->targetNative = (uint64_t)(uintptr_t)nativeTex;
+}
+
+int unityDx12CopyFrame(UnityDx12CopyState* st) {
+  if (!st || !st->sharedTex || !st->targetTex) {
+    if (st) st->noTarget++;
+    return 1;
+  }
+  if (st->sharedFence) {
+    // fence 去重: avox 未写新帧则跳过拷贝
+    UINT64 val = ((ID3D12Fence*)(uintptr_t)st->sharedFence)->GetCompletedValue();
+    if (val == st->lastFenceVal) return 0;
+    st->lastFenceVal = val;
+  }
+  // 录入 Unity 当前命令列表 (渲染事件期间可取), 无需自建 allocator/queue
+  UnityGraphicsD3D12RecordingState rs = {};
+  if (!s_Dx12Api.commandRecordingState(&rs) || !rs.commandList) {
+    st->noCl++;
+    return 2;
+  }
+  ID3D12GraphicsCommandList* cl = rs.commandList;
+  // 源: 外来共享资源按 COMMON 语义自行插屏障; 目的: C# 纹理采样态 ↔ COPY_DEST
+  D3D12_RESOURCE_BARRIER b[2];
+  for (auto& x : b) {
+    x.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    x.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+    x.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+  }
+  b[0].Transition.pResource = (ID3D12Resource*)(uintptr_t)st->sharedTex;
+  b[0].Transition.StateBefore = D3D12_RESOURCE_STATE_COMMON;
+  b[0].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+  cl->ResourceBarrier(1, b);
+  b[0].Transition.pResource = (ID3D12Resource*)(uintptr_t)st->targetTex;
+  b[0].Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+  b[0].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
+  cl->ResourceBarrier(1, b);
+  cl->CopyResource((ID3D12Resource*)(uintptr_t)st->targetTex,
+                   (ID3D12Resource*)(uintptr_t)st->sharedTex);
+  b[0].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+  b[0].Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+  cl->ResourceBarrier(1, b);
+  b[0].Transition.pResource = (ID3D12Resource*)(uintptr_t)st->sharedTex;
+  b[0].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
+  b[0].Transition.StateAfter = D3D12_RESOURCE_STATE_COMMON;
+  cl->ResourceBarrier(1, b);
+  st->copyCount++;
+  return 0;
+}
+
+uint64_t unityDx12FenceValue(UnityDx12CopyState* st) {
+  if (!st || !st->sharedFence) return 0;
+  return ((ID3D12Fence*)(uintptr_t)st->sharedFence)->GetCompletedValue();
+}
+
+void unityDx12Close(UnityDx12CopyState* st) {
+  if (!st) return;
+  if (st->sharedFence) {
+    ((ID3D12Fence*)(uintptr_t)st->sharedFence)->Release();
+    st->sharedFence = 0;
+  }
+  if (st->sharedTex) {
+    ((ID3D12Resource*)(uintptr_t)st->sharedTex)->Release();
+    st->sharedTex = 0;
+  }
+  st->targetTex = 0;   // C# 纹理非本插件所有, 不 Release
+  st->targetNative = 0;
+  st->srcHandle = 0;
+  st->width = 0;
+  st->height = 0;
+  st->lastFenceVal = 0;
 }
 
 // ── CPU 路径: IssuePluginCustomTextureUpdateV2 纹理更新回调 (渲染线程调用) ──

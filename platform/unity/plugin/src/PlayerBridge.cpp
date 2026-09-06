@@ -107,7 +107,11 @@ void PlayerBridge::unbindSurface() {
     // 先释放导入再断输出 (surface render 仍有效, 同 godot unbindSurface)
     releaseGpuImport();
     if (gpuOutputOn) {
-      avox::disableVkOutput(surface);
+      if (unityGpuImportFlavor() != 1) {
+        avox::disableVkOutputDx11(surface);
+      } else {
+        avox::disableVkOutput(surface);
+      }
       gpuOutputOn = false;
     }
     pendingGpuInit.store(false);
@@ -154,8 +158,8 @@ bool PlayerBridge::pollEvent(AvoxUnityEvent* out) {
 
 bool PlayerBridge::frameInfo(int32_t* w, int32_t* h) {
   if (bGpuMode) {
-    if (unityGpuImportFlavor() == 2) {
-      // D3D11 拷贝模式: 渲染线程打开共享纹理后回填实际尺寸
+    if (unityGpuImportFlavor() != 1) {
+      // D3D11/D3D12 拷贝模式: 渲染线程打开共享纹理后回填实际尺寸
       const int32_t dw = dx11W.load();
       const int32_t dh = dx11H.load();
       if (dw <= 0 || dh <= 0) return false;
@@ -178,7 +182,7 @@ bool PlayerBridge::frameInfo(int32_t* w, int32_t* h) {
 void PlayerBridge::updateGpu() {
   if (!bGpuMode || !surface) return;
   if (!unityVulkanInit()) return;
-  const bool flavorDx11 = (unityGpuImportFlavor() == 2);
+  const bool flavorDx11 = (unityGpuImportFlavor() != 1);
   // 就绪标志: VK=已导入 Unity 设备 / D3D11=共享句柄已取到
   const bool ready = flavorDx11 ? dx11Handle.load() != 0 : importedImage != 0;
   // 尺寸变化: 释放旧导入 → 断输出 → 重新 enable + 导入
@@ -218,8 +222,8 @@ void PlayerBridge::updateGpu() {
 }
 
 void PlayerBridge::startGpuImport(int32_t w, int32_t h) {
-  if (unityGpuImportFlavor() == 2) {
-    // D3D11 拷贝模式: avox 底层自建共享纹理 (尺寸随管线), 句柄就绪后
+  if (unityGpuImportFlavor() != 1) {
+    // D3D11/D3D12 拷贝模式: avox 底层自建共享纹理 (尺寸随管线), 句柄就绪后
     // 由渲染线程 avoxDx11RenderEvent 打开并拷贝
     if (!avox::enableVkOutputDx11(surface)) {
       // 可重试: 管线未建好等瞬态, 静默 (由 updateGpu 限次重试)
@@ -257,8 +261,8 @@ void PlayerBridge::startGpuImport(int32_t w, int32_t h) {
 }
 
 void PlayerBridge::releaseGpuImport() {
-  if (unityGpuImportFlavor() == 2) {
-    // D3D11 拷贝模式: 打开的资源仅渲染线程可碰, 转交渲染线程释放;
+  if (unityGpuImportFlavor() != 1) {
+    // D3D11/D3D12 拷贝模式: 打开的资源仅渲染线程可碰, 转交渲染线程释放;
     // 句柄由 avox 持有, 不 CloseHandle
     dx11PendingClose.store(true);
     dx11Handle.store(0);
@@ -275,21 +279,46 @@ void PlayerBridge::releaseGpuImport() {
 }
 
 void PlayerBridge::renderDx11Copy() {
+  const bool dx12Mode = (unityGpuImportFlavor() == 3);
   dbgEvents.fetch_add(1);
   if (dx11PendingClose.exchange(false)) {
-    unityDx11Close(&dx11);
+    if (dx12Mode) {
+      unityDx12Close(&dx12);
+    } else {
+      unityDx11Close(&dx11);
+    }
   }
-  // 管线重建 (字幕层启停/分辨率变化等) 会重绑共享纹理产生新 NT 句柄,
-  // 每帧刷新: 变化即重开, C# 侧检测原生指针变化自动重建外部纹理包裹
+  // 管线重建 (字幕层启停/分辨率变化等) 重造 outputLayer, dx11 声明随旧对象
+  // 丢失 (新层句柄读回 0): 重新幂等声明触发重绑导出 (同 Godot 桥每帧重调);
+  // 有句柄时每帧刷新: 变化即重开, C# 侧检测原生指针变化自动重建外部纹理包裹
   if (surface) {
     const uint64_t fresh = avox::getVkOutputDx11Handle(surface);
-    if (fresh != 0 && fresh != dx11Handle.load()) {
-      dx11Handle.store(fresh);
-      dxFenceHandle.store(avox::getVkOutputDx11FenceHandle(surface));
+    if (fresh != 0) {
+      if (fresh != dx11Handle.load()) {
+        dx11Handle.store(fresh);
+        dxFenceHandle.store(avox::getVkOutputDx11FenceHandle(surface));
+      }
+    } else if (dx11Handle.load() != 0) {
+      // 曾有句柄而读不到了: 重建把绑定丢了, 声明后等新句柄 (重建窗口内层为
+      // 空, enableVkOutputDx11 内部拒绝, 下帧重试)
+      avox::enableVkOutputDx11(surface);
+      return;
     }
   }
   const uint64_t handle = dx11Handle.load();
   if (!handle) return;
+  if (dx12Mode) {
+    // D3D12: OpenSharedHandle 打开, 每帧录 Unity 命令列表拷到 C# 纹理
+    if (!unityDx12EnsureOpened(&dx12, handle, dxFenceHandle.load())) return;
+    dx11W.store(dx12.width);
+    dx11H.store(dx12.height);
+    unityDx12SetTarget(&dx12, dx12Target.load());
+    dbgFenceVal.store(unityDx12FenceValue(&dx12));
+    const int r = unityDx12CopyFrame(&dx12);
+    if (r == 0) return;
+    if (r == 1) dbgTargetNull.fetch_add(1);
+    return;
+  }
   if (!unityDx11EnsureOpened(&dx11, handle, dxFenceHandle.load())) return;
   dx11W.store(dx11.width);
   dx11H.store(dx11.height);
