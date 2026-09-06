@@ -83,7 +83,7 @@ class StaticLinkModule {
   // 工厂独立于本对象(不捕获 this), registerModule 内拷贝进 std::function 即可。
   explicit StaticLinkModule(const std::string& name) {
     ModuleMgr::Get().registerModule(
-        name, []() -> IModule* { return new module(); });
+        name.c_str(), []() -> IModule* { return new module(); });
   }
 };
 }
