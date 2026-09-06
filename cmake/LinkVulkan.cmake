@@ -37,12 +37,15 @@ if(APPLE)
     # # 修改此处，正确获取环境变量的值
     message(STATUS "VULKAN_SDK: $ENV{VULKAN_SDK}")
     # CMake has a bug in 3.28 that doesn't handle xcframeworks.  Do it by hand for now.
-    if(IOS)        
-        set(VULKAN_MVK_PATH $ENV{VULKAN_SDK}/lib/MoltenVK.xcframework/ios-arm64)       
+    if(IOS)
+        set(VULKAN_MVK_PATH $ENV{VULKAN_SDK}/lib/MoltenVK.xcframework/ios-arm64)
     else()
+        # macos 切片目录名: LunarG 旧版 macos-arm64, 新版(1.4.35x+)为 macos-arm64_x86_64, 新版 SDK 也可能只有散装 dylib
         set(VULKAN_MVK_PATH $ENV{VULKAN_SDK}/lib/MoltenVK.xcframework/macos-arm64)
+        list(APPEND VULKAN_MVK_PATH $ENV{VULKAN_SDK}/lib/MoltenVK.xcframework/macos-arm64_x86_64)
+        list(APPEND VULKAN_MVK_PATH $ENV{VULKAN_SDK}/lib)
     endif()
-    message(STATUS "VULKAN_MVK_PATH: ${VULKAN_MVK_PATH}")   
+    message(STATUS "VULKAN_MVK_PATH: ${VULKAN_MVK_PATH}")
     find_library(Vulkan_MoltenVK_LIBRARY NAMES MoltenVK HINTS ${VULKAN_MVK_PATH})
     find_path(Vulkan_MoltenVK_INCLUDE_DIR NAMES MoltenVK/mvk_vulkan.h HINTS $ENV{VULKAN_SDK}/include)
     message(STATUS "Vulkan_MoltenVK_LIBRARY: ${Vulkan_MoltenVK_LIBRARY}")
