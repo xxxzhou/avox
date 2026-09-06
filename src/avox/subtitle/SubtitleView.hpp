@@ -4,6 +4,7 @@
 
 #include "Subtitle.hpp"
 #include "SubtitleAsr.hpp"
+#include "SubtitleFile.hpp"
 #include "../AvoxAudio.h"
 #include "../AvoxLayer.h"
 #include "../player/Clock.hpp"
@@ -13,8 +14,6 @@
 #endif
 
 namespace avox {
-
-class SubtitleFile;
 
 // 继承 ISurfaceRenderOb，在渲染线程同步显示字幕
 class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
