@@ -71,6 +71,8 @@ elseif(WIN32)
     target_compile_definitions(vulkan INTERFACE VK_USE_PLATFORM_WIN32_KHR)
 elseif(APPLE)
     target_compile_definitions(vulkan INTERFACE VK_USE_PLATFORM_METAL_EXT)
+    # Xcode 15 新 ld(ld_prime)链接 iOS 插件 dylib 时静默崩溃无任何诊断, 回退经典 ld
+    target_link_options(vulkan INTERFACE "-Wl,-ld_classic")
 elseif(ONLY_LINUX)
     # X11
     target_compile_definitions(vulkan INTERFACE VK_USE_PLATFORM_XLIB_KHR)
