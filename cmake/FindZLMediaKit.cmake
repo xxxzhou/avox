@@ -30,16 +30,18 @@ else()
 endif()
 
 # iOS: 静态 libmk_api.a 需显式补齐内部依赖库(mac 为 dylib, 依赖在 dylib 内自带解析)
-# ZLToolKit 在模块构建树内(build/<system>/zlmediakit/3rdpart/ZLToolKit/lib/<config>/)
+# 经典 ld 对静态库单遍扫描不回溯(Factory.o 引用同库/他库后成员的 mediakit::*_plugin 不解析),
+# 对 release 目录下全部 ZLMediaKit 归档 force_load——该目录的库本就是自包含集合
 if(APPLE AND IOS)
-    # 经典 ld 对静态库单遍扫描(Factory.o 引用同库后续成员不会回扫), 依赖组重复两遍
-    foreach(i RANGE 1)
-        find_library_list(ZLMEDIAKIT_LIBRARIES Mediakit_LIB_DIR mk_api zlmediakit flv mov mpeg jsoncpp)
-        file(GLOB ZLTOOLKIT_LIBS ${PROJECT_SOURCE_DIR}/build/*/zlmediakit/3rdpart/ZLToolKit/lib/*/libZLToolKit.a)
-        if(NOT ZLTOOLKIT_LIBS)
-            message(WARNING "libZLToolKit.a not found for iOS link")
-        endif()
-        list(APPEND ZLMEDIAKIT_LIBRARIES ${ZLTOOLKIT_LIBS})
+    find_library_list(ZLMEDIAKIT_LIBRARIES Mediakit_LIB_DIR mk_api zlmediakit flv mov mpeg jsoncpp)
+    file(GLOB ZLTOOLKIT_LIBS ${PROJECT_SOURCE_DIR}/build/*/zlmediakit/3rdpart/ZLToolKit/lib/*/libZLToolKit.a)
+    if(NOT ZLTOOLKIT_LIBS)
+        message(WARNING "libZLToolKit.a not found for iOS link")
+    endif()
+    list(APPEND ZLMEDIAKIT_LIBRARIES ${ZLTOOLKIT_LIBS})
+    file(GLOB ZLM_ALL_ARCHS "${Mediakit_LIB_DIR}/*.a")
+    foreach(ARCH_PATH ${ZLM_ALL_ARCHS})
+        list(APPEND ZLMEDIAKIT_LIBRARIES "-Wl,-force_load,${ARCH_PATH}")
     endforeach()
 endif()
 
