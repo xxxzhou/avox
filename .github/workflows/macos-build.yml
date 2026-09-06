@@ -1,17 +1,8 @@
 name: Apple Build (iOS/macOS)
 
+# 仅手动触发: Actions 页 Run workflow, 或 gh workflow run macos-build.yml --ref <分支>
 on:
   workflow_dispatch:
-  push:
-    branches: [main, "ci/**"]
-    paths:
-      - "src/**"
-      - "cmake/**"
-      - "CMakeLists.txt"
-      - "build_mac.py"
-      - "build_ios.py"
-      - "build_common.py"
-      - ".github/workflows/macos-build.yml"
 
 concurrency:
   group: apple-build-${{ github.ref }}
