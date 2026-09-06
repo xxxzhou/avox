@@ -430,7 +430,7 @@ endif()
 # avox_apple模块需要的框架列表(Apple 平台通用; Metal/VideoToolbox/AVFoundation 相关代码无条件编译, 框架不随功能开关)
 if(APPLE)
   if(IOS)
-    set(COMMON_FRAMEWORKS Foundation UIKit GLKit OpenGLES IOSurface)
+    set(COMMON_FRAMEWORKS Foundation UIKit GLKit OpenGLES IOSurface Metal QuartzCore)
   else()
     # macOS: iOS 独有(UIKit/GLKit/OpenGLES)换 AppKit, avox_apple 依赖的媒体框架全列
     set(COMMON_FRAMEWORKS Foundation AppKit QuartzCore Metal IOSurface CoreGraphics CoreMedia CoreVideo VideoToolbox AudioToolbox AudioUnit CoreAudio AVFoundation Security CoreFoundation CFNetwork)
