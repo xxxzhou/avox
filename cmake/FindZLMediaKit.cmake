@@ -39,9 +39,10 @@ if(APPLE AND IOS)
         message(WARNING "libZLToolKit.a not found for iOS link")
     endif()
     list(APPEND ZLMEDIAKIT_LIBRARIES ${ZLTOOLKIT_LIBS})
+    # force_load 旗标单独存放: ZLMEDIAKIT_LIBRARIES 会被 avox_run_module_copy 逐项 file(COPY), 不能混入非路径项
     file(GLOB ZLM_ALL_ARCHS "${Mediakit_LIB_DIR}/*.a")
     foreach(ARCH_PATH ${ZLM_ALL_ARCHS})
-        list(APPEND ZLMEDIAKIT_LIBRARIES "-Wl,-force_load,${ARCH_PATH}")
+        list(APPEND ZLMEDIAKIT_LINK_FLAGS "-Wl,-force_load,${ARCH_PATH}")
     endforeach()
 endif()
 
@@ -93,4 +94,9 @@ if(ZLMEDIAKIT_FOUND)
     else()
         avox_run_module_copy("${ZLMEDIAKIT_LIBRARIES}")
     endif()
+endif()
+
+# iOS 链接旗标(force_load ZLMediaKit 全部归档, 含 ext-codec 的编解码插件)在资源复制之后并入
+if(APPLE AND IOS AND ZLMEDIAKIT_LINK_FLAGS)
+    list(APPEND ZLMEDIAKIT_LIBRARIES ${ZLMEDIAKIT_LINK_FLAGS})
 endif()
