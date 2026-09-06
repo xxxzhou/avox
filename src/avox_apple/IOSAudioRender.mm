@@ -1,5 +1,6 @@
 #include "IOSAudioRender.hpp"
 
+#include <TargetConditionals.h>
 #include "avox/module/AvoxManager.hpp"
 #include "avox/player/MediaPlayer.hpp"
 
@@ -74,7 +75,8 @@ void IOSAudioRender::onInit() {
     return;
   }
 
-  // 设置音频会话
+  // 设置音频会话(仅 iOS, macOS 无 AVAudioSession)
+#if TARGET_OS_IPHONE
   NSError* error = nil;
   AVAudioSession* session = [AVAudioSession sharedInstance];
   [session setCategory:AVAudioSessionCategoryPlayback error:&error];
@@ -92,6 +94,12 @@ void IOSAudioRender::onInit() {
   renderDesc.sampleRate = session.sampleRate;
   renderDesc.channels = 2;  // iOS 立体声输出
   renderDesc.format = AudioFormat::AVOX_AUDIO_FLT;  // iOS 使用浮点格式
+#else
+  // macOS 无音频会话, 沿用输入描述(DefaultOutput 内部转换到设备格式), TODO: 查询设备默认采样率
+  renderDesc.sampleRate = desc.sampleRate;
+  renderDesc.channels = desc.channels;
+  renderDesc.format = desc.format;
+#endif
 
 #ifdef AVOX_ENABLE_FFMPEG
   if (!resample->init(desc, renderDesc)) {
@@ -99,10 +107,14 @@ void IOSAudioRender::onInit() {
   }
 #endif
 
-  // 创建 Audio Unit
+  // 创建 Audio Unit(iOS 为 RemoteIO, macOS 为 DefaultOutput)
   AudioComponentDescription compDesc = {};
   compDesc.componentType = kAudioUnitType_Output;
+#if TARGET_OS_IPHONE
   compDesc.componentSubType = kAudioUnitSubType_RemoteIO;
+#else
+  compDesc.componentSubType = kAudioUnitSubType_DefaultOutput;
+#endif
   compDesc.componentManufacturer = kAudioUnitManufacturer_Apple;
   compDesc.componentFlags = 0;
   compDesc.componentFlagsMask = 0;
@@ -329,8 +341,10 @@ void IOSAudioRender::onClose() {
     audioUnit = nullptr;
   }
 
+#if TARGET_OS_IPHONE
   AVAudioSession* session = [AVAudioSession sharedInstance];
   [session setActive:NO error:nil];
+#endif
 
   ringBuffer.clear();
   log(LogLevel::info, "iOS AudioUnit render close");

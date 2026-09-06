@@ -1,0 +1,66 @@
+name: macOS Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "cmake/**"
+      - "CMakeLists.txt"
+      - "build_mac.py"
+      - "build_common.py"
+      - "build_ios.py"
+      - ".github/workflows/macos-build.yml"
+
+concurrency:
+  group: macos-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-macos:
+    runs-on: macos-14
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Cache Git Submodules
+        uses: actions/cache@v4
+        id: cache-submodules
+        with:
+          path: |
+            .git/modules
+            3rdparty
+          key: submodules-macos-${{ hashFiles('.gitmodules') }}
+
+      - name: Checkout Submodules
+        if: steps.cache-submodules.outputs.cache-hit != 'true'
+        run: |
+          # SSH 协议的 submodule URL 改为 HTTPS
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init --recursive --depth=1
+
+      - name: Install Vulkan SDK (MoltenVK)
+        run: |
+          # LinkVulkan.cmake 约定: ~/VulkanSDK/<版本>/macOS 下找 MoltenVK.xcframework
+          curl -L -o /tmp/vksdk.dmg "https://sdk.lunarg.com/sdk/download/1.4.313.0/mac/vulkansdk-macos-1.4.313.0.dmg"
+          hdiutil attach /tmp/vksdk.dmg -mountpoint /tmp/vksdk -nobrowse
+          mkdir -p ~/VulkanSDK
+          if [ -d /tmp/vksdk/vulkansdk-1.4.313.0 ]; then
+            cp -R /tmp/vksdk/vulkansdk-1.4.313.0 ~/VulkanSDK/1.4.313.0
+          else
+            cp -R /tmp/vksdk/ ~/VulkanSDK/1.4.313.0
+          fi
+          hdiutil detach /tmp/vksdk -force || true
+          test -d ~/VulkanSDK/1.4.313.0/macOS/lib/MoltenVK.xcframework && echo "MoltenVK OK" || { echo "MoltenVK.xcframework 缺失, 实际布局:"; find ~/VulkanSDK -maxdepth 4 -name "*olten*"; exit 1; }
+
+      - name: Build (build_mac.py)
+        run: python3 build_mac.py
+
+      - name: Verify SDK Product
+        run: |
+          libs=$(find build/macos -name "libavox*" 2>/dev/null | head -10)
+          echo "$libs"
+          test -n "$libs" || { echo "未找到 avox SDK 产物"; exit 1; }

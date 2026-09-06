@@ -18,7 +18,7 @@
 #include "avox_egl/EglWindow.hpp"
 #endif
 #ifdef __APPLE__
-#include "avox_ios/MetalWindow.hpp"
+#include "avox_apple/MetalWindow.hpp"
 #endif
 
 namespace avox {

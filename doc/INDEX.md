@@ -67,7 +67,7 @@ avox 是跨平台音视频播放器 SDK，支持直播流、本地媒体、硬�
 |------|------|------|------|------|
 | avox_windows | `src/avox_windows/` | Windows 平台实现 | - | ✅ |
 | avox_android | `src/avox_android/` | Android 平台实现 | [Android硬解](platforms/android/Android硬解Vulkan.md) | ✅ |
-| avox_ios | `src/avox_ios/` | iOS 平台实现 | [IOS硬解](platforms/ios/IOS硬解Vulkan.md) | ✅ |
+| avox_apple | `src/avox_apple/` | Apple 平台实现 (iOS/macOS) | [IOS硬解](platforms/ios/IOS硬解Vulkan.md) | ✅ |
 | avox_linux | `src/avox_linux/` | Linux 平台实现 | - | ✅ |
 | avox_egl | `src/avox_egl/` | EGL 上下文 | - | ✅ |
 

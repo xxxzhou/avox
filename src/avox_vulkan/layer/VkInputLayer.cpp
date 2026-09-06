@@ -6,7 +6,7 @@
 #include "avox_egl/GLESContext.hpp"
 #endif
 #ifdef __APPLE__
-#include "avox_ios/MetalContext.hpp"
+#include "avox_apple/MetalContext.hpp"
 #endif
 
 namespace avox {

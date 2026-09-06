@@ -195,6 +195,6 @@ CMake 流程：根 `option(AVOX_ENABLE_XXX)` → `cmake/FindXXX.cmake` 查找 �
 |------|-----|------|
 | Windows | `_WIN32` | `avox_windows/` |
 | Android | `__ANDROID__` | `avox_android/` |
-| iOS | `__IPHONEOS__` | `avox_ios/` |
+| iOS/macOS | `__APPLE__` + `TARGET_OS_IPHONE`/`TARGET_OS_OSX` | `avox_apple/` |
 | Linux | `__LINUX__` | `avox_linux/` |
 | WASM | `__EMSCRIPTEN__` | 条件编译 |

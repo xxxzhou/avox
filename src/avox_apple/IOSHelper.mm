@@ -3,9 +3,14 @@
 #include "MetalWindow.hpp"
 #include "avox/module/AvoxManager.hpp"
 #include <Foundation/Foundation.h>
-#import <UIKit/UIKit.h>
+#include <TargetConditionals.h>
 #include <iostream>
 #import <AVFoundation/AVFoundation.h>
+#if TARGET_OS_IPHONE
+#import <UIKit/UIKit.h>
+#else
+#import <AppKit/AppKit.h>
+#endif
 
 // 定义一个简单的通知处理对象（因为 NotificationCenter 需要一个 Target）
 // 不能有命名空间
@@ -37,16 +42,24 @@ __attribute__((constructor)) void onLibraryLoad() {
   // 在主线程注册通知
   dispatch_async(dispatch_get_main_queue(), ^{
       lifecycleObserver = [[AppLifecycleObserver alloc] init];
+      // 生命周期通知名按系统区分(UIApplication*/NSApplication*)
+#if TARGET_OS_IPHONE
+      NSString* willResignActive = UIApplicationWillResignActiveNotification;
+      NSString* didBecomeActive = UIApplicationDidBecomeActiveNotification;
+#else
+      NSString* willResignActive = NSApplicationWillResignActiveNotification;
+      NSString* didBecomeActive = NSApplicationDidBecomeActiveNotification;
+#endif
       // 1. 即将进入后台 (最关键：此时 GPU 权限还在，赶紧停！)
       [[NSNotificationCenter defaultCenter] addObserver:lifecycleObserver
                                                selector:@selector(handleWillResignActive)
-                                                   name:UIApplicationWillResignActiveNotification
+                                                   name:willResignActive
                                                  object:nil];
 
       // 2. 已经回到前台
       [[NSNotificationCenter defaultCenter] addObserver:lifecycleObserver
                                                selector:@selector(handleDidBecomeActive)
-                                                   name:UIApplicationDidBecomeActiveNotification
+                                                   name:didBecomeActive
                                                  object:nil];
   });
 }
@@ -104,10 +117,16 @@ const char *getModelPath(const char *modelName){
 }
 
 float getIosDeviceSystemVersion() {
+#if TARGET_OS_IPHONE
   return [[UIDevice currentDevice].systemVersion floatValue];
+#else
+  NSOperatingSystemVersion v = [[NSProcessInfo processInfo] operatingSystemVersion];
+  return v.majorVersion + v.minorVersion / 100.0f;
+#endif
 }
 
 void setIosAudioRoute(bool bSpeaker) {
+#if TARGET_OS_IPHONE
     AVAudioSession *session = [AVAudioSession sharedInstance];
     NSError *error = nil;
     // 必须用 PlayAndRecord 才能支持 WebRTC 的双向通信和扬声器切换
@@ -129,6 +148,10 @@ void setIosAudioRoute(bool bSpeaker) {
         // 调用你之前的 logApple 记录错误
         logApple("", "warn", [[NSString stringWithFormat:@"SetAudioRoute Error: %@", error.localizedDescription] UTF8String]);
     }
+#else
+    // macOS 无 AVAudioSession, 输出路由走 CoreAudio 设备选择, 待真机补
+    (void)bSpeaker;
+#endif
 }
 
 }

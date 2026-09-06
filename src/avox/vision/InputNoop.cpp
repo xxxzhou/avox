@@ -1,6 +1,6 @@
 // 非 Windows 平台的 no-op 兜底实现, 保证 createInputController 链接通过。
 // 各方法返回 false + getLastError() 提示"本平台未实现"。后续 Linux(X11 XTest)/
-// macOS(CGEvent) 各自在 src/avox_linux|avox_ios 下提供真实实现时, 把本文件的
+// macOS(CGEvent) 各自在 src/avox_linux|avox_apple 下提供真实实现时, 把本文件的
 // 守护条件收紧即可 (如 #if !defined(_WIN32) && !defined(__LINUX__))。
 
 #include "avox/AvoxInput.h"

@@ -46,6 +46,7 @@
 python build_windows.py   # Windows x64
 python build_android.py   # Android arm64-v8a/armeabi-v7a (需 NDK 26.1.10909125)
 python build_ios.py       # iOS arm64/x86_64
+python build_mac.py       # macOS arm64/x64/universal (需 macOS + Xcode)
 python build_linux.py     # Linux x64
 
 # 单元测试 (随构建自动编译, 手动运行:)
@@ -59,6 +60,7 @@ ctest --test-dir build/windows/avplay --output-on-failure -C Release
 | Windows | x64 | DX11 | DX11/DX12/Vulkan |
 | Android | arm64-v8a, armeabi-v7a | MediaCodec | OpenGL ES/Vulkan |
 | iOS | arm64, x86_64 | VideoToolbox | Metal/Vulkan |
+| macOS | arm64, x64 | VideoToolbox(待验证) | Metal/Vulkan(待验证, 结构就绪 `python build_mac.py`) |
 | Linux | x64 | VAAPI(计划) | Vulkan |
 | WebAssembly | wasm32 | 软件 | WebGL(计划) |
 

@@ -30,7 +30,7 @@ Android Godot GPU 直通播放磁力链接演示![Android Godot GPU直通播放�
 
 ### 多源播放
 
-- **直播流** - RTSP/RTMP/HTTP-FLV/HLS 等协议，ZLMediaKit 流媒体解析与 FFmpeg 双通道支持
+- **直播流** - RTSP/RTMP/HTTP-FLV/HLS 等协议，磁力链接，WebRTC，ZLMediaKit 流媒体解析与 FFmpeg 双通道支持
 - **本地媒体** - 支持常见音视频格式
 - **设备采集** - 相机、麦克风、屏幕捕获统一数据源模型（Windows Media Foundation / Android NdkCamera2 OES 纹理直出 / iOS 相机）
 
@@ -39,8 +39,8 @@ Android Godot GPU 直通播放磁力链接演示![Android Godot GPU直通播放�
 | 平台 | 硬件解码 | 硬解帧 → Vulkan 零拷贝通路 | 渲染后端 |
 |------|----------|---------------------------|----------|
 | Windows | DX11 (D3D11VA) | DX11 纹理 ↔ Vulkan 互操作 | DX11/DX12/Vulkan |
-| Android | MediaCodec | AHardwareBuffer → Vulkan | OpenGL ES/Vulkan |
-| iOS | VideoToolbox | IOSurface → Vulkan | Metal/Vulkan |
+| Android | MediaCodec | AHardwareBuffer ↔ Vulkan | OpenGL ES/Vulkan |
+| iOS | VideoToolbox | IOSurface ↔ Vulkan | Metal/Vulkan |
 | Linux | VAAPI (计划中) | - | Vulkan |
 
 - 硬解输出的原生 GPU 纹理直接进入 Vulkan 处理管线或映射到渲染窗口，不经 CPU 内存中转
@@ -204,6 +204,7 @@ cmake -DAVOX_EXTERNAL_LIBRARY_DIR=/path/to/avc_library ...
 python build_windows.py   # Windows x64
 python build_android.py   # Android arm64-v8a/armeabi-v7a
 python build_ios.py       # iOS arm64/x86_64
+python build_mac.py       # macOS arm64/x64/universal (需 macOS + Xcode)
 python build_linux.py     # Linux x64
 
 # 单元测试 (随构建自动编译, 手动运行:)
@@ -237,7 +238,7 @@ avox/
 │   ├── avox_cmd/               # 命令行接口 (CLI)
 │   ├── avox_windows/           # Windows 平台实现
 │   ├── avox_android/           # Android 平台实现
-│   ├── avox_ios/               # iOS 平台实现
+│   ├── avox_apple/             # Apple 平台实现 (iOS/macOS)
 │   └── avox_linux/             # Linux 平台实现
 ├── plugins/                   # 动态插件模块 (运行期加载)
 │   ├── avox_webrtc/            # WebRTC 集成

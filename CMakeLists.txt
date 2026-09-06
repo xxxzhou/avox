@@ -342,7 +342,7 @@ copy_head("avox_zlmediakit/ZlmExport.h")
 # 核心导出 IRtcPlayer/createWebRtcPlayer/createZlTestSdpAgent/addRtcPlayerOb/removeRtcPlayerOb 已在 avox/AvoxPlayer.h
 copy_head("avox_freetype/FreetypeExport.h")
 # 平台相关
-copy_head("avox_ios/IOSHelper.h")
+copy_head("avox_apple/IOSHelper.h")
 copy_head("avox_windows/WinExport.h")
 copy_head("avox_android/AndHelper.h")
 copy_head("avox_egl/EglExport.h")

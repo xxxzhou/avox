@@ -47,7 +47,7 @@ endif()
 
 # ios系统
 if(APPLE)
-    add_sub_path(avox_ios AVOX_HEADER AVOX_SOURCE)
+    add_sub_path(avox_apple AVOX_HEADER AVOX_SOURCE)
 endif()
 
 # linux系统 UNIX LINUX

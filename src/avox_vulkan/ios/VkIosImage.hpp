@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../VkContext.hpp"
-// #include "avox_ios/MetalContext.hpp"
+// #include "avox_apple/MetalContext.hpp"
 
 namespace avox {
 

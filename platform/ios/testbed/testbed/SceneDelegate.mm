@@ -7,7 +7,7 @@
 
 #import "SceneDelegate.h"
 #include "avox_freetype/FreetypeExport.h"
-#include "avox_ios/IOSHelper.h"
+#include "avox_apple/IOSHelper.h"
 #include "avox/AvoxCore.h"
 #include "avox/AvoxPlayer.h"
 #include "avox_zlmediakit/ZlmExport.h"

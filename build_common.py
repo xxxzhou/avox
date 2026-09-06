@@ -16,10 +16,10 @@ if sys.stdout.encoding != 'utf-8':
 _default_build_type = os.environ.get("AVOX_BUILD_TYPE", "Debug")
 AVOX_BUILD_TYPE = _default_build_type   
 # windows下可编译android,一个是host,一个是target
-# windows/android/linux/ios
+# windows/android/linux/ios/macos
 AVOX_TARGET_SYSTEM = "windows" 
 # target对应的cpu架构，windows下可编译x86_64,linux下可编译x86_64/arm64-v8a
-# x64/arm64-v8a/arm64/x86_64（iOS 真机 arm64，模拟器 x86_64）
+# x64/arm64-v8a/arm64/x86_64（iOS 真机 arm64，模拟器 x86_64；macOS arm64/x64/universal）
 AVOX_TARGET_ARCH = "x64"
 # 是否强制重新构建，默认False,True会删除build目录下的所有文件
 AVOX_FORCE_REBUILD = False
@@ -48,6 +48,9 @@ AVOX_WIN_VS_ARCH_LIST = ["x64", "x86"]
 AVOX_IOS_DEPLOYMENT_TARGET = "15.0" 
 # iOS 支持的架构，arm64 为真机，x86_64 为模拟器
 AVOX_IOS_ARCH_LIST = ["arm64"]  
+
+# macOS 部署目标版本(arm64 下限 11.0)
+AVOX_MACOS_DEPLOYMENT_TARGET = "11.0"
 
 
 def get_current_target():
@@ -119,6 +122,8 @@ def build_module(module_name, bOnlyMake=False,build_args="",bself=False):
             build_windows(cmake_args)
         elif target_system == "ios": 
             build_ios(cmake_args)
+        elif target_system == "macos":
+            build_macos(cmake_args)
         elif target_system == "linux":  
             build_linux(cmake_args)
         if bself:
@@ -317,6 +322,38 @@ def build_ios(cmake_args):
     ]
     print(f"ios cmake_args: {cmake_args}")
 
+# macOS 构建函数(与 iOS 共用 ios.toolchain.cmake, 系统由 PLATFORM 区分, CMAKE_SYSTEM_NAME 自动为 Darwin)
+def build_macos(cmake_args):
+    global AVOX_TARGET_ARCH
+    # arch -> 工具链 PLATFORM / CMAKE_OSX_ARCHITECTURES
+    platform_map = {"arm64": "MAC_ARM64", "x64": "MAC", "x86_64": "MAC", "universal": "MAC_UNIVERSAL"}
+    arch_map = {"arm64": "arm64", "x64": "x86_64", "x86_64": "x86_64", "universal": "arm64;x86_64"}
+    if AVOX_TARGET_ARCH not in platform_map:
+        print(f"警告：不支持的 macOS 架构 {AVOX_TARGET_ARCH}，自动切换为 arm64")
+        AVOX_TARGET_ARCH = "arm64"
+    # 检查 Xcode 路径
+    xcode_path = subprocess.check_output(['xcode-select', '-p']).decode('utf-8').strip()
+    toolchain_path = os.path.join(xcode_path, 'Toolchains/XcodeDefault.xctoolchain')
+    print(f"xcode工具链路径: {toolchain_path}")
+    if not os.path.exists(toolchain_path):
+        raise ValueError(f"未找到 Xcode 工具链: {toolchain_path}")
+    # 获取项目根目录
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__)))
+    ios_toolchain_path = os.path.join(project_root, "cmake", "ios.toolchain.cmake")
+    if not os.path.exists(ios_toolchain_path):
+        raise ValueError(f"未找到 iOS 工具链文件: {ios_toolchain_path}")
+    cmake_args += [
+        f"-DCMAKE_TOOLCHAIN_FILE={ios_toolchain_path}",
+        "-DCMAKE_CXX_COMPILER=/usr/bin/clang++",
+        "-DCMAKE_C_COMPILER=/usr/bin/clang",
+        f"-DCMAKE_OSX_ARCHITECTURES={arch_map[AVOX_TARGET_ARCH]}",
+        f"-DCMAKE_OSX_DEPLOYMENT_TARGET={AVOX_MACOS_DEPLOYMENT_TARGET}",
+        "-DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO",
+        f"-DPLATFORM={platform_map[AVOX_TARGET_ARCH]}",
+        "-G", "Xcode"
+    ]
+    print(f"macos cmake_args: {cmake_args}")
+
 def build_windows(cmake_args):
     global AVOX_TARGET_ARCH
     if AVOX_TARGET_ARCH not in AVOX_WIN_VS_ARCH_LIST:
@@ -368,7 +405,9 @@ def check_module(module_name, dll_name):
                     os.path.join(module_dir, f"lib{dll_name}.a"),
                     os.path.join(module_dir, f"lib{dll_name}d.a")],
         "ios": [os.path.join(module_dir, f"{build_type}-iphoneos/lib{dll_name}{suffix}"),
-                os.path.join(module_dir, f"{build_type}-iphoneos/lib{dll_name}d{suffix}")]
+                os.path.join(module_dir, f"{build_type}-iphoneos/lib{dll_name}d{suffix}")],
+        "macos": [os.path.join(module_dir, f"{build_type}/lib{dll_name}{suffix}"),
+                  os.path.join(module_dir, f"{build_type}/lib{dll_name}d{suffix}")]
     }    
     # 查找路径
     for path in path_templates.get(current_target, [os.path.join(module_dir, f"lib{dll_name}{suffix}")]):
@@ -388,6 +427,8 @@ def check_module_zlmediakit():
     elif get_current_target() == "windows":
         bin_dri = os.path.join(project_root, f"3rdparty/zlmediakit/release/{AVOX_TARGET_SYSTEM}/{AVOX_BUILD_TYPE}/{AVOX_BUILD_TYPE}/mk_api{suffix}")
     elif get_current_target() == "ios":
+        bin_dri = os.path.join(project_root, f"3rdparty/zlmediakit/release/{AVOX_TARGET_SYSTEM}/{AVOX_BUILD_TYPE}/{AVOX_BUILD_TYPE}/libmk_api{suffix}")
+    elif get_current_target() == "macos":
         bin_dri = os.path.join(project_root, f"3rdparty/zlmediakit/release/{AVOX_TARGET_SYSTEM}/{AVOX_BUILD_TYPE}/{AVOX_BUILD_TYPE}/libmk_api{suffix}")
     elif get_current_target() == "linux":
         # linux大小写敏感
@@ -413,6 +454,8 @@ def check_module_sherpa():
         lib_path = os.path.join(project_root, f"build/{AVOX_TARGET_SYSTEM}/sherpa-onnx/lib/libsherpa-onnx-c-api.a")
     elif current_target == "ios":
         lib_path = os.path.join(project_root, f"build/{AVOX_TARGET_SYSTEM}/sherpa-onnx/{build_type}-iphoneos/libsherpa-onnx-c-api.a")
+    elif current_target == "macos":
+        lib_path = os.path.join(project_root, f"build/{AVOX_TARGET_SYSTEM}/sherpa-onnx/{build_type}/libsherpa-onnx-c-api.a")
     else:
         return False
 
@@ -435,6 +478,8 @@ def check_module_sentencepiece():
         lib_path = os.path.join(project_root, f"build/{AVOX_TARGET_SYSTEM}/sentencepiece/src/libsentencepiece.a")
     elif current_target == "ios":
         lib_path = os.path.join(project_root, f"build/{AVOX_TARGET_SYSTEM}/sentencepiece/src/{build_type}-iphoneos/libsentencepiece.a")
+    elif current_target == "macos":
+        lib_path = os.path.join(project_root, f"build/{AVOX_TARGET_SYSTEM}/sentencepiece/src/{build_type}/libsentencepiece.a")
     else:
         return False
 

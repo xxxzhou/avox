@@ -6,7 +6,7 @@
 #include "sdk/android/native_api/audio_device_module/audio_device_android.h"
 #endif
 #ifdef __APPLE__
-#include "avox_ios/IOSHelper.h"
+#include "avox_apple/IOSHelper.h"
 #endif
 #include "audio/RtcAudioDecoderFactory.hpp"
 #include "audio/RtcAudioEncoderFactory.hpp"

@@ -426,7 +426,7 @@ if(IOS)
   link_directories(${SYSTEM_LIBRARY_SEARCH_PATHS})
   message(STATUS "Set iOS system library search paths: ${SYSTEM_LIBRARY_SEARCH_PATHS}")
 
-  # avox_ios本身需要的框架列表
+  # avox_apple模块需要的框架列表(iOS分支; macOS 分支待真机验证后补)
   set(COMMON_FRAMEWORKS Foundation UIKit GLKit OpenGLES IOSurface)
   if(AVOX_ENABLE_FFMPEG)
     avox_list_append_unique(COMMON_FRAMEWORKS AVFoundation CoreGraphics CoreMedia VideoToolbox AudioToolbox CoreVideo z bz2 iconv)

@@ -2,7 +2,7 @@
 
 #include "avox/module/AvoxManager.hpp"
 #ifdef __APPLE__
-#include "avox_ios/IOSHelper.h"
+#include "avox_apple/IOSHelper.h"
 #endif
 
 namespace avox {

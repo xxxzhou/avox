@@ -748,7 +748,7 @@ if __name__ == "__main__":
 如果xcode demo用来调试，直接引用播放器模块，并需要把CMake里引用的模块全加到xcode模块中。
 
 ``` cmake
-  # avox_ios本身需要的框架列表
+  # avox_apple模块需要的框架列表
   set(COMMON_FRAMEWORKS Foundation UIKit GLKit OpenGLES)
 
   if(AVOX_ENABLE_FFMPEG)

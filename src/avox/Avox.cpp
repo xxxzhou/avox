@@ -44,7 +44,7 @@ namespace fs = std::experimental::filesystem;
 // 引入包含 MAXPATHLEN 定义的头文件
 #include <sys/param.h>
 // 引入 Foundation 框架头文件
-#include "avox_ios/IOSHelper.h"
+#include "avox_apple/IOSHelper.h"
 #elif defined(__ONLY_LINUX__)
 #include <fcntl.h>
 #include <limits.h>
