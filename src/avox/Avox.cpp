@@ -765,7 +765,8 @@ void disableVkOutput(ISurfaceRender* sr) {
   LOGFLF(LogLevel::info, "disableVkOutput: done");
 }
 
-// ── D3D11 输出: AVOX 自建 NT 共享纹理,VK 每帧拷入,外部 DX11 设备打开复制 ──
+// ── D3D11 输出: AVOX 自建 NT 共享纹理,VK 每帧拷入,外部 DX11 设备打开复制(仅 Windows) ──
+#ifdef _WIN32
 
 static VkOutputLayer* getVkOutputLayerDx11(ISurfaceRender* sr) {
   if (!sr) {
@@ -812,6 +813,22 @@ void disableVkOutputDx11(ISurfaceRender* sr) {
   outputLayer->setDx11Output(false);
   LOGFLF(LogLevel::info, "disableVkOutputDx11: done");
 }
+#else
+// 非 Windows 无 D3D11 互操作, 保留导出符号
+bool enableVkOutputDx11(ISurfaceRender* sr) {
+  (void)sr;
+  return false;
+}
+uint64_t getVkOutputDx11Handle(ISurfaceRender* sr) {
+  (void)sr;
+  return 0;
+}
+uint64_t getVkOutputDx11FenceHandle(ISurfaceRender* sr) {
+  (void)sr;
+  return 0;
+}
+void disableVkOutputDx11(ISurfaceRender* sr) { (void)sr; }
+#endif
 
 // ── 输入: 外部写,AVOX 读 ──
 

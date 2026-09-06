@@ -1,6 +1,7 @@
 #include "IOSVDecoder.hpp"
 #include "IOSHelper.h"
 #include "avox/codec/H26XHelper.hpp"
+#include <TargetConditionals.h>
 #include <iostream>
 
 namespace avox {
@@ -163,6 +164,7 @@ DecodeResult IOSVDecoder::onPreDecoder() {
   // NV12 kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
   // YUV420P  kCVPixelFormatType_420YpCbCr8PlanarVideoRange
   NSDictionary *attr = nullptr;
+#if TARGET_OS_IPHONE
   attr = [NSDictionary
       dictionaryWithObjectsAndKeys:
           [NSNumber numberWithBool:NO],
@@ -170,6 +172,14 @@ DecodeResult IOSVDecoder::onPreDecoder() {
           [NSNumber
               numberWithInt:kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange],
           (id)kCVPixelBufferPixelFormatTypeKey, nil];
+#else
+  // macOS 无 GLES 兼容键, 仅指定 NV12 像素格式
+  attr = [NSDictionary
+      dictionaryWithObjectsAndKeys:
+          [NSNumber
+              numberWithInt:kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange],
+          (id)kCVPixelBufferPixelFormatTypeKey, nil];
+#endif
   status = VTDecompressionSessionCreate(
       kCFAllocatorDefault, videoFormatDescription, nullptr,
       (__bridge CFDictionaryRef)attr, &callback, &decompressionSession);
@@ -221,7 +231,7 @@ DecodeResult IOSVDecoder::decode(const AvoxPacket &packet_) {
     return DecodeResult::dataError;
   }
   CMSampleBufferRef sampleBuffer = nullptr;
-  const size_t sampleSizeArray[] = {packet.data.size};
+  const size_t sampleSizeArray[] = {(size_t)packet.data.size};
   CMSampleTimingInfo timingInfo = {};
   int32_t timeScale = 90000;
   timingInfo.presentationTimeStamp =
