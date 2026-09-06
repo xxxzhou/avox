@@ -75,6 +75,8 @@ jobs:
       - name: Build (build_${{ matrix.platform }})
         env:
           AVOX_FORCE_REBUILD: "False"
+          # Release: Debug 全量调试信息下 iOS 大 dylib 链接内存吃紧(ld 静默失败)
+          AVOX_BUILD_TYPE: "Release"
         run: python3 ${{ matrix.script }}
 
       - name: Verify SDK Product

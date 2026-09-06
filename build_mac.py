@@ -9,8 +9,8 @@ import build_common
 build_common.AVOX_TARGET_SYSTEM = "macos"
 # 指定架构（arm64 为 Apple Silicon，x64 为 Intel，universal 为通用二进制）
 build_common.AVOX_TARGET_ARCH = "arm64"
-# 指定构建类型（Debug 或 Release）
-build_common.AVOX_BUILD_TYPE = "Debug"
+# 指定构建类型（Debug 或 Release; CI 大链接内存吃紧可置 Release）
+build_common.AVOX_BUILD_TYPE = os.environ.get("AVOX_BUILD_TYPE", "Debug")
 # vscode里改C++代码，在脚本里编译，需要强制重新编译才能应用改动代码；CI 缓存场景可置 AVOX_FORCE_REBUILD=False 复用已编译模块
 build_common.AVOX_FORCE_REBUILD = os.environ.get("AVOX_FORCE_REBUILD", "True") == "True"
 # 是否只构建项目，不编译
@@ -47,7 +47,7 @@ if __name__ == "__main__":
     if not build_common.check_module_sentencepiece():
         build_common.build_module("sentencepiece", onlyMake, SPM_CMAKE_ARGS)
     # Agent/Tool 仅 Windows, 其他平台关闭; AVOX_CMAKE_ARGS 可透传额外参数
-    extra_args = "-DAVOX_ENABLE_AGENT=OFF -DAVOX_ENABLE_CLI=OFF"
+    extra_args = "-DAVOX_ENABLE_AGENT=OFF -DAVOX_ENABLE_CLI=OFF -DAVOX_ENABLE_SWIG=OFF"
     if AVOX_CMAKE_ARGS:
         extra_args = f"{extra_args} {AVOX_CMAKE_ARGS}"
     build_common.build_self(extra_args)
