@@ -25,7 +25,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [macos, ios]
+        include:
+          - platform: macos
+            script: build_mac.py
+          - platform: ios
+            script: build_ios.py
     steps:
       - uses: actions/checkout@v4
         with:
@@ -68,10 +72,10 @@ jobs:
             3rdparty/zlmediakit/release
           key: ${{ matrix.platform }}-modules-v1-${{ hashFiles('.gitmodules') }}
 
-      - name: Build (build_${{ matrix.platform }}.py)
+      - name: Build (build_${{ matrix.platform }})
         env:
           AVOX_FORCE_REBUILD: "False"
-        run: python3 build_${{ matrix.platform }}.py
+        run: python3 ${{ matrix.script }}
 
       - name: Verify SDK Product
         run: |

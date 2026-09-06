@@ -166,10 +166,10 @@ function(avox_copy_ios_assets BUNDLE_NAME BUNDLE_PATH title SRC_FILES)
       COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --green "Created directory: ${RESOURCES_DIR}"
       COMMENT "Creating ${title} directory for iOS bundle"
       COMMAND_EXPAND_LISTS VERBATIM) 
-  # 直接复制整个文件列表到目标目录
+  # 直接复制整个文件列表到目标目录(源目录缺失时跳过, 对齐 avox_copy_assets 的容错)
   add_custom_command(TARGET ${BUNDLE_NAME} POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --blue "Copying ${title} files to ${RESOURCES_DIR}"
-      COMMAND ${CMAKE_COMMAND} -E copy_directory "${SRC_FILES}" "${RESOURCES_DIR}"
+      COMMAND test -d "${SRC_FILES}" && ${CMAKE_COMMAND} -E copy_directory "${SRC_FILES}" "${RESOURCES_DIR}" || ${CMAKE_COMMAND} -E cmake_echo_color --yellow "Source directory not found, skipping: ${SRC_FILES}"
       COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --green "Copied ${title} files successfully"
       COMMENT "Copying ${title} files to iOS bundle"
       COMMAND_EXPAND_LISTS VERBATIM) 
