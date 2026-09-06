@@ -21,6 +21,7 @@
 #include <windows.h>
 #else
 #include <csignal>
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
@@ -111,7 +112,12 @@ static void ensureFileDir(const std::string& path) {
   }
   CreateDirectoryA(dir.c_str(), nullptr);
 #else
-  system(("mkdir -p \"" + dir + "\"").c_str());
+  // 逐级创建目录(iOS 禁用 system(), 用 POSIX mkdir)
+  size_t idx = 0;
+  while ((idx = dir.find_first_of('/', idx + 1)) != std::string::npos) {
+    mkdir(dir.substr(0, idx).c_str(), 0755);
+  }
+  mkdir(dir.c_str(), 0755);
 #endif
 }
 

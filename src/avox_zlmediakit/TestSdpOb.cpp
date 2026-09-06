@@ -4,8 +4,8 @@
 
 namespace avox {
 
-// C回调函数
-static void onTestHttpComplete(void* user_data, int code, const char* err_msg) {
+// C回调函数(与 TestSdpOb.hpp 的 friend 声明对应, 不能加 static)
+void onTestHttpComplete(void* user_data, int code, const char* err_msg) {
   auto* self = static_cast<TestSdpOb*>(user_data);
   if (!self) return;
 
