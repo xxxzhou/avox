@@ -316,16 +316,6 @@ Command cmdPlay() {
       struct tm* lt = gmtime(&t);
       snprintf(buf, len, "%02d:%02d:%02d", lt->tm_hour, lt->tm_min, lt->tm_sec);
     };
-    // 当前 Lut 效果名
-    auto lutName = [](int idx) -> const char* {
-      static const char* names[] = {"关", "amatorka", "miss_etikate"};
-      return names[idx];
-    };
-    // 当前 sizeScale 名 (idx 2 = 1.0 = 关闭)
-    auto scaleName = [](int idx) -> const char* {
-      static const char* names[] = {"1/4", "1/2", "关", "2"};
-      return names[idx];
-    };
     // 刷新全部 OSD 行 (每 ~250ms 或按键后调用; 只 drawText, 廉价)
     // 分块顺序: 状态 / 播放控制 / 截图录屏 / 图像处理 / quit
     auto refreshOsd = [&]() {
@@ -621,6 +611,16 @@ Command cmdPlay() {
         printf("  screenshot save failed: %s\n", path.c_str());
       }
     };
+    // 当前 Lut 效果名(与 freetype 无关)
+    auto lutName = [](int idx) -> const char* {
+      static const char* names[] = {"关", "amatorka", "miss_etikate"};
+      return names[idx];
+    };
+    // 当前 sizeScale 名 (idx 2 = 1.0 = 关闭)
+    auto scaleName = [](int idx) -> const char* {
+      static const char* names[] = {"1/4", "1/2", "关", "2"};
+      return names[idx];
+    };
     // 切换 Lut (B 键, 与 sizeScale 互相独立) -> 验证 ISurfaceRender::enableLut
     // 循环: off -> 1(amatorka) -> 2(miss_etikate) -> off
     auto cycleLut = [&]() {
@@ -647,6 +647,7 @@ Command cmdPlay() {
       printf("  sizeScale: %s\n", scaleName(scaleIdx));
     };
     // 切换 OSD 颜色 (C 键, 独立)
+#ifdef AVOX_ENABLE_FREETYPE
     auto cycleColor = [&]() {
       if (!fontLayer) return;
       colorIdx = (colorIdx + 1) % kOsdColorCount;
@@ -654,6 +655,7 @@ Command cmdPlay() {
       fontLayer->setColor(c.r, c.g, c.b, 0.0f);
       printf("  OSD color: %s\n", c.name);
     };
+#endif
     // 组装当前各调整值并下发整组基础调整 -> ISurfaceRender::enableBasicAdjust
     auto applyBasic = [&]() {
       BasicAdjustParamet p;
@@ -762,7 +764,9 @@ Command cmdPlay() {
               cycleScale();
               break;
             case 'C':  // OSD 颜色循环 (独立)
+#ifdef AVOX_ENABLE_FREETYPE
               cycleColor();
+#endif
               break;
             case 'O':  // 切换 OSD 文字显示
 #ifdef AVOX_ENABLE_FREETYPE

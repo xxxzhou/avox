@@ -17,7 +17,20 @@
 #endif
 
 #ifdef __APPLE__
+#import <Foundation/Foundation.h>
 #include "avox_apple/IOSHelper.h"
+#endif
+
+#ifndef _WIN32
+#include <sys/stat.h>
+// 逐级创建目录(iOS 禁用 system())
+static void ensureDir(const std::string& dir) {
+  size_t idx = 0;
+  while ((idx = dir.find_first_of('/', idx + 1)) != std::string::npos) {
+    mkdir(dir.substr(0, idx).c_str(), 0755);
+  }
+  mkdir(dir.c_str(), 0755);
+}
 #endif
 
 #ifdef __linux__
@@ -157,7 +170,7 @@ bool AssetLoader::saveToFile(const char* relativePath, const std::vector<uint8_t
       }
       CreateDirectoryA(dir.c_str(), nullptr);
 #else
-      system(("mkdir -p \"" + dir + "\"").c_str());
+      ensureDir(dir);
 #endif
     }
     std::ofstream file(fullPath, std::ios::binary);
@@ -253,7 +266,7 @@ bool AssetLoader::saveToAssets(const char* relativePath, const std::vector<uint8
       }
       CreateDirectoryA(dir.c_str(), nullptr);
 #else
-      system(("mkdir -p \"" + dir + "\"").c_str());
+      ensureDir(dir);
 #endif
     }
     std::ofstream file(fullPath, std::ios::binary);
