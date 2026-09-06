@@ -12,9 +12,9 @@
 #include "avox/module/Sha256.hpp"
 namespace avox {
 
-// 前向声明 HTTP 回调
-static void onTencentHttpResponse(void* user_data, int code,
-                                  const char* err_msg);
+// 前向声明 HTTP 回调(hpp 里已 friend, 不能加 static)
+void onTencentHttpResponse(void* user_data, int code,
+                           const char* err_msg);
 
 // ========== HttpTranslator 实现 ==========
 
@@ -273,9 +273,9 @@ const char* HttpTranslator::translate(const char* text) {
 
 bool HttpTranslator::ready() const { return loaded; }
 
-// HTTP 回调
-static void onTencentHttpResponse(void* user_data, int code,
-                                  const char* err_msg) {
+// HTTP 回调(hpp 里已 friend, 不能加 static)
+void onTencentHttpResponse(void* user_data, int code,
+                           const char* err_msg) {
   auto* self = static_cast<HttpTranslator*>(user_data);
   if (!self) return;
 
