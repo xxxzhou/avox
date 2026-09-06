@@ -53,6 +53,21 @@ jobs:
         with:
           cache: true
 
+      # 1.4.357.x 起 LunarG SDK 不再内嵌 MoltenVK.xcframework, 从 KhronosGroup 官方 release 补齐
+      # LinkVulkan.cmake 约定切片目录名 ios-arm64 / macos-arm64, Khronos 的 macos 切片名为 macos-arm64_x86_64 需链接
+      - name: Add MoltenVK xcframework to Vulkan SDK
+        run: |
+          curl -sL -o /tmp/mvk.tar "https://github.com/KhronosGroup/MoltenVK/releases/download/v1.4.2/MoltenVK-all.tar"
+          mkdir -p /tmp/mvk && tar -xf /tmp/mvk.tar -C /tmp/mvk
+          xcf=$(find /tmp/mvk -type d -name "MoltenVK.xcframework" | head -1)
+          test -n "$xcf" || { echo "未找到 MoltenVK.xcframework"; ls -R /tmp/mvk | head -40; exit 1; }
+          mkdir -p "$VULKAN_SDK/lib"
+          rm -rf "$VULKAN_SDK/lib/MoltenVK.xcframework"
+          cp -R "$xcf" "$VULKAN_SDK/lib/MoltenVK.xcframework"
+          cd "$VULKAN_SDK/lib/MoltenVK.xcframework"
+          [ -d macos-arm64 ] || ln -s macos-arm64_x86_64 macos-arm64
+          [ -d ios-arm64 ] && [ -d macos-arm64 ] && echo "MoltenVK slices OK: $(ls)"
+
       # 缓存已编译的第三方模块, 后续迭代只重编 avplay; submodule 升级时手动换 key 版本号
       - name: Cache 3rdparty Module Builds
         uses: actions/cache@v4
