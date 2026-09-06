@@ -3,7 +3,7 @@ name: macOS Build
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, "ci/**"]
     paths:
       - "src/**"
       - "cmake/**"
@@ -43,20 +43,27 @@ jobs:
           git submodule update --init --recursive --depth=1
 
       - name: Install Vulkan SDK (MoltenVK)
-        run: |
-          # LinkVulkan.cmake 约定: ~/VulkanSDK/<版本>/macOS 下找 MoltenVK.xcframework
-          curl -L -o /tmp/vksdk.dmg "https://sdk.lunarg.com/sdk/download/1.4.313.0/mac/vulkansdk-macos-1.4.313.0.dmg"
-          hdiutil attach /tmp/vksdk.dmg -mountpoint /tmp/vksdk -nobrowse
-          mkdir -p ~/VulkanSDK
-          if [ -d /tmp/vksdk/vulkansdk-1.4.313.0 ]; then
-            cp -R /tmp/vksdk/vulkansdk-1.4.313.0 ~/VulkanSDK/1.4.313.0
-          else
-            cp -R /tmp/vksdk/ ~/VulkanSDK/1.4.313.0
-          fi
-          hdiutil detach /tmp/vksdk -force || true
-          test -d ~/VulkanSDK/1.4.313.0/macOS/lib/MoltenVK.xcframework && echo "MoltenVK OK" || { echo "MoltenVK.xcframework 缺失, 实际布局:"; find ~/VulkanSDK -maxdepth 4 -name "*olten*"; exit 1; }
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          cache: true
+
+      # 缓存已编译的第三方模块, 后续迭代只重编 avplay; submodule 升级时手动换 key 版本号
+      - name: Cache 3rdparty Module Builds
+        uses: actions/cache@v4
+        id: cache-mac-modules
+        with:
+          path: |
+            build/macos/faad2
+            build/macos/fdk-aac
+            build/macos/freetype
+            build/macos/sherpa-onnx
+            build/macos/sentencepiece
+            3rdparty/zlmediakit/release
+          key: macos-modules-v1-${{ hashFiles('.gitmodules') }}
 
       - name: Build (build_mac.py)
+        env:
+          AVOX_FORCE_REBUILD: "False"
         run: python3 build_mac.py
 
       - name: Verify SDK Product
