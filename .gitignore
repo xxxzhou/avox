@@ -145,3 +145,6 @@ results/torrent_bench/
 swig/nodejs/files
 deploy/
 assets/video/hls*
+
+# FFmpeg GPL 构建备份 (LGPL 替换后留档, 不入库)
+3rdparty/library/windows/ffmpeg/bin-gpl-backup*/
