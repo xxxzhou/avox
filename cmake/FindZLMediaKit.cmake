@@ -29,6 +29,17 @@ else()
     find_library_list(ZLMEDIAKIT_LIBRARIES Mediakit_LIB_DIR "mk_api")
 endif()
 
+# iOS: 静态 libmk_api.a 需显式补齐内部依赖库(mac 为 dylib, 依赖在 dylib 内自带解析)
+# ZLToolKit 在模块构建树内(build/<system>/zlmediakit/3rdpart/ZLToolKit/lib/<config>/)
+if(APPLE AND IOS)
+    find_library_list(ZLMEDIAKIT_LIBRARIES Mediakit_LIB_DIR zlmediakit flv mov mpeg jsoncpp)
+    file(GLOB ZLTOOLKIT_LIBS ${PROJECT_SOURCE_DIR}/build/*/zlmediakit/3rdpart/ZLToolKit/lib/*/libZLToolKit.a)
+    if(NOT ZLTOOLKIT_LIBS)
+        message(WARNING "libZLToolKit.a not found for iOS link")
+    endif()
+    list(APPEND ZLMEDIAKIT_LIBRARIES ${ZLTOOLKIT_LIBS})
+endif()
+
 message(STATUS "Mediakit_LIB_DIR: ${Mediakit_LIB_DIR}")
 message(STATUS "Mediakit_LIB_PATHS: ${ZLMEDIAKIT_LIBRARIES}")
 # 查找ZLMediaKit库和mk_api库
