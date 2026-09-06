@@ -53,8 +53,9 @@ if(APPLE)
     if(Vulkan_MoltenVK_LIBRARY AND Vulkan_MoltenVK_INCLUDE_DIR)
         target_link_libraries(vulkan INTERFACE ${Vulkan_MoltenVK_LIBRARY})
         target_include_directories(vulkan SYSTEM INTERFACE ${Vulkan_MoltenVK_INCLUDE_DIR})
-        # Xcode 15 ld 对 -dead_strip + MoltenVK prelink 静态库组合会静默崩溃(iOS 插件 dylib 复现), 关闭 dead_strip
-        target_link_options(vulkan INTERFACE "-Wl,-no_dead_strip")
+        # Xcode 15 ld 对 -dead_strip + MoltenVK prelink 静态库组合会静默崩溃(iOS 插件 dylib 复现);
+        # 从工程设置关 dead_strip(-Wl,-no_dead_strip 拼写新版 ld 不认)
+        set(CMAKE_XCODE_ATTRIBUTE_DEAD_CODE_STRIPPING NO)
         # 复制 MoltenVK 库到构建目录
         # /Users/zhouxin/VulkanSDK/1.4.313.0/iOS/lib/MoltenVK.xcframework
         file(COPY ${Vulkan_MoltenVK_LIBRARY} DESTINATION "${CMAKE_INSTALL_PREFIX}")
