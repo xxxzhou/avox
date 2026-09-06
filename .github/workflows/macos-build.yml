@@ -1,4 +1,4 @@
-name: macOS Build
+name: Apple Build (iOS/macOS)
 
 on:
   workflow_dispatch:
@@ -9,18 +9,23 @@ on:
       - "cmake/**"
       - "CMakeLists.txt"
       - "build_mac.py"
-      - "build_common.py"
       - "build_ios.py"
+      - "build_common.py"
       - ".github/workflows/macos-build.yml"
 
 concurrency:
-  group: macos-build-${{ github.ref }}
+  group: apple-build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build-macos:
+  build:
+    name: build-${{ matrix.platform }}
     runs-on: macos-14
     timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [macos, ios]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,7 +38,7 @@ jobs:
           path: |
             .git/modules
             3rdparty
-          key: submodules-macos-${{ hashFiles('.gitmodules') }}
+          key: submodules-apple-${{ hashFiles('.gitmodules') }}
 
       - name: Checkout Submodules
         if: steps.cache-submodules.outputs.cache-hit != 'true'
@@ -42,6 +47,7 @@ jobs:
           git config --global url."https://github.com/".insteadOf "git@github.com:"
           git submodule update --init --recursive --depth=1
 
+      # MoltenVK.xcframework 同时含 ios-arm64/macos-arm64 切片, 两个平台共用本步骤; action 会设 VULKAN_SDK 环境变量
       - name: Install Vulkan SDK (MoltenVK)
         uses: jakoch/install-vulkan-sdk-action@v1
         with:
@@ -53,21 +59,21 @@ jobs:
         id: cache-mac-modules
         with:
           path: |
-            build/macos/faad2
-            build/macos/fdk-aac
-            build/macos/freetype
-            build/macos/sherpa-onnx
-            build/macos/sentencepiece
+            build/${{ matrix.platform }}/faad2
+            build/${{ matrix.platform }}/fdk-aac
+            build/${{ matrix.platform }}/freetype
+            build/${{ matrix.platform }}/sherpa-onnx
+            build/${{ matrix.platform }}/sentencepiece
             3rdparty/zlmediakit/release
-          key: macos-modules-v1-${{ hashFiles('.gitmodules') }}
+          key: ${{ matrix.platform }}-modules-v1-${{ hashFiles('.gitmodules') }}
 
-      - name: Build (build_mac.py)
+      - name: Build (build_${{ matrix.platform }}.py)
         env:
           AVOX_FORCE_REBUILD: "False"
-        run: python3 build_mac.py
+        run: python3 build_${{ matrix.platform }}.py
 
       - name: Verify SDK Product
         run: |
-          libs=$(find build/macos -name "libavox*" 2>/dev/null | head -10)
+          libs=$(find build/${{ matrix.platform }} -name "libavox*" 2>/dev/null | head -10)
           echo "$libs"
           test -n "$libs" || { echo "未找到 avox SDK 产物"; exit 1; }
