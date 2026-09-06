@@ -55,8 +55,10 @@ jobs:
 
       # 1.4.357.x 的 MoltenVK.xcframework 内嵌在 SDK 里, 但 macos 切片名为 macos-arm64_x86_64
       # 而 LinkVulkan.cmake 找的是 macos-arm64, 补一个符号链接即可(ios-arm64 本来就有)
+      # zip 解出的目录是只读的, 先补写权限
       - name: Link MoltenVK macos-arm64 slice
         run: |
+          chmod -R u+w "$VULKAN_SDK/lib/MoltenVK.xcframework"
           cd "$VULKAN_SDK/lib/MoltenVK.xcframework"
           [ -d macos-arm64 ] || ln -s macos-arm64_x86_64 macos-arm64
           ls
