@@ -87,7 +87,9 @@ class PlayerBridge : public avox::IMediaPlayerOb, public avox::ISurfaceRenderOb 
     const bool dx12Mode = (unityGpuImportFlavor() == 3);
     if (copies) *copies = dx12Mode ? dx12.copyCount : dx11.copyCount;
     if (targetNull) *targetNull = dbgTargetNull.load();
+#ifdef _WIN32
     if (fenceVal) *fenceVal = dx12Mode ? unityDx12FenceValue(&dx12) : dbgFenceVal.load();
+#endif
     if (opens) *opens = dx12Mode ? dx12.openCount : dx11.openCount;
   }
 
@@ -178,6 +180,7 @@ class PlayerBridge : public avox::IMediaPlayerOb, public avox::ISurfaceRenderOb 
   std::atomic<int32_t> videoH{0};
   uint64_t importedImage = 0;  // VkImage (Unity CreateExternalTexture 收养)
   uint64_t importedMemory = 0;
+  void* importedAhb = nullptr;  // Android: avox 转移来的 AHardwareBuffer (release 随 releaseGpuImport)
   int32_t gpuW = 0;
   int32_t gpuH = 0;
 

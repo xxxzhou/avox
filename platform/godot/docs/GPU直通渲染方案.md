@@ -115,3 +115,13 @@ avox 的 `exportSemaphore/importSemaphore` 是"建好但未接 submit"的 Phase 
 ## 8. 未来优化(真零拷贝)
 
 avox 用 `VkContext::initContext(instance, physDev, device)` 三参重载**共享 Godot 的 VkDevice**,使 avox 输出 VkImage 直接长在 Godot 设备上 → 免每帧 copy,直接采样。风险:image layout/usage 需与 Godot 期望一致;需在 player 首次建图前注入 `gVkContext`。**注意**:此路线曾在 Intel igvk64 上以 ImageView 崩溃失败(§2),除非驱动修复,否则仅作为跨平台/离散 GPU 的候选。
+
+## 9. Android 状态 (2026-09-07 真机 vermeer/Adreno 740)
+
+全链两端代码已就绪并真机验证到引擎层限制处:
+
+- **导出侧 (avox 核心, 已修)**: `enableVkOutput`→`VkSharedImage::createExportable` 创建 AHB 可导出 image。此前 Adreno 直接 SIGSEGV (tombstone: qglinternal::vkBindImageMemory), 根因是可导出内存未用专用分配; 已改 `VkMemoryDedicatedAllocateInfo` + `vkBindImageMemory2`, 真机通过。
+- **导入侧 (插件 surface.cpp, 已就绪)**: AHB 属性/格式一次查询 + dedicated 导入 + 严格内存类型交集 + bind2; volk 扩展指针缺失时防护并走运行时降级 (连续 3 次失败自动 CPU, 不再无限重试)。
+- **引擎层阻塞**: Godot 建 VkDevice 未启用 `VK_ANDROID_external_memory_android_hardware_buffer` → 驱动对未启用扩展: 设备级 GetDeviceProcAddr 返回 NULL; 实例级获取到的函数调用返回全零属性 (format=0/memTypeBits=0)。GDExtension 无设备创建注入点 (无 Unity InterceptVulkan 等价物), 零拷贝暂不可行。
+- **当前行为**: gpu_passthrough 探测通过→GPU 尝试→3 帧内自动降级 CPU (Vulkan 管线保留 + YUV 回调), 真机播放正常无崩溃。待 Godot 侧启用该扩展 (官方支持或自编引擎) 后, 导入链路即插即用。
+- **同步**: 沿用 CPU vkWaitForFences + gralloc 隐式同步, 无外部 fence。

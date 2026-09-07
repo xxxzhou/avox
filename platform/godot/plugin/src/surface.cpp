@@ -170,6 +170,15 @@ bool SurfaceTextureBridge::importSharedImage() {
     if (w <= 0 || h <= 0) return false;
 
 #ifdef __ANDROID__
+    // volk 设备扩展指针缺失 (未被加载) 时直接调用会 PC=0 崩溃, 先行防护并走降级
+    if (!vkGetAndroidHardwareBufferPropertiesANDROID || !vkBindImageMemory2) {
+        UtilityFunctions::print("[avox_gpu] volk 指针缺失 ahbProps=",
+                                (int64_t)(void*)vkGetAndroidHardwareBufferPropertiesANDROID,
+                                " bind2=", (int64_t)(void*)vkBindImageMemory2);
+        AHardwareBuffer_release(ahb);
+        importedAhb = nullptr;
+        return false;
+    }
     // AHB 属性+格式一次查询: image format / allocationSize / 内存类型都以此为准
     // (对照仓内已验证可用的 VkAndImage::bindVK 写法)
     VkAndroidHardwareBufferFormatPropertiesANDROID ahbFmt = {};

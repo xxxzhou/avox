@@ -305,7 +305,7 @@ if(AVOX_ENABLE_GODOT AND (WIN32 OR ANDROID))
 endif()
 
 # Unity 原生插件 (Windows; avox_unity.dll 供 platform/unity/plugin/unity 的 com.avox.player UPM 包使用)
-if(AVOX_ENABLE_UNITY AND WIN32)
+if(AVOX_ENABLE_UNITY AND (WIN32 OR ANDROID))
     add_subdirectory(platform/unity/plugin)
 endif()
 

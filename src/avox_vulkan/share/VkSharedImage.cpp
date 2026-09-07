@@ -140,6 +140,15 @@ bool VkSharedImage::createExportable(const VkSharedImageDesc& desc_) {
   VkExportMemoryAllocateInfo exportMemInfo = {
       VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO};
   exportMemInfo.handleTypes = vkHandleType;
+#ifdef __ANDROID__
+  // AHB 可导出内存绑定单张 image 必须专用分配 (VUID 02603 同源要求):
+  // Adreno 等驱动对非 dedicated 的 exportable 分配在 vkBindImageMemory 直接
+  // SIGSEGV 而非返回错误, 真机 tombstone 栈: qglinternal::vkBindImageMemory
+  VkMemoryDedicatedAllocateInfo dedicatedInfo = {
+      VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO};
+  dedicatedInfo.image = vkImage;
+  exportMemInfo.pNext = &dedicatedInfo;
+#endif
 
   VkMemoryAllocateInfo allocInfo = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
   allocInfo.pNext = &exportMemInfo;
@@ -159,9 +168,18 @@ bool VkSharedImage::createExportable(const VkSharedImageDesc& desc_) {
   AVOX_VULKAN_LOG(vkAllocateMemory(vkDevice, &allocInfo, nullptr, &memory),
                  "allocate exportable memory failed");
 
-  // 4. 绑定
+  // 4. 绑定 (AHB 导出绑定用 bind2, 与 dedicated 分配配套)
+#ifdef __ANDROID__
+  VkBindImageMemoryInfo bindInfo = {VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO};
+  bindInfo.image = vkImage;
+  bindInfo.memory = memory;
+  bindInfo.memoryOffset = 0;
+  AVOX_VULKAN_LOG(vkBindImageMemory2(vkDevice, 1, &bindInfo),
+                 "bind exportable image memory failed");
+#else
   AVOX_VULKAN_LOG(vkBindImageMemory(vkDevice, vkImage, memory, 0),
                  "bind exportable image memory failed");
+#endif
 
   bExported = true;
   LOGFLF(LogLevel::info, "VkSharedImage::createExportable vkImage:", vkImage,

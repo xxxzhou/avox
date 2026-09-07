@@ -20,6 +20,11 @@ bool unityVulkanInit();
 bool unityImportSharedImage(uint64_t memHandle, int32_t w, int32_t h, uint64_t* outImage,
                             uint64_t* outMemory);
 
+// Android: 把 avox 导出的 AHardwareBuffer 导入 Unity VkDevice (flavor 1, dedicated 导入)
+// 镜像 godot surface.cpp / avox VkAndImage 的规范导入写法
+bool unityImportSharedImageAhb(void* ahb, int32_t w, int32_t h, uint64_t* outImage,
+                               uint64_t* outMemory);
+
 // 释放导入的 VkImage/VkDeviceMemory (Unity 主线程调用)
 void unityReleaseImported(uint64_t* image, uint64_t* memory);
 

@@ -104,6 +104,11 @@ void MediaPlayer::createPlayer() {
     avox::addMediaPlayerOb(player, playerOb);
     //配置
     player->setHardDecode(hardDecode);
+    // setIoPlan 是 per-player 状态, play() 会 destroyPlayer+createPlayer 重建,
+    // 这里重放, 否则重建后回落 auto, GDScript 侧 play 前设置的 io_plan 失效
+    if (ioPlan != 0) {
+        player->setIoPlan(static_cast<avox::IoPlan>(ioPlan));
+    }
     // 预设选项落库 (set_option 在首次 play 前存的键; 此时 open 命令尚未入队)
     if (pendingOptions.size() > 0) {
         Ref<AvoxOption> opt = AvoxOption::from_native_borrowed(player->getOption());
@@ -276,6 +281,7 @@ Dictionary MediaPlayer::getMediaInfo() const {
 }
 
 void MediaPlayer::setIoPlan(int p_plan) {
+    ioPlan = p_plan;  // 缓存供重建后重放
     if (player) {
         // IoPlan: zlmediakit=1, ffmpeg=2。注释 "下次打开启用" — 立即写入, 下次 open() 生效。
         player->setIoPlan(static_cast<avox::IoPlan>(p_plan));

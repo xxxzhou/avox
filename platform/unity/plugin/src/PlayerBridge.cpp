@@ -6,7 +6,11 @@
 #include <cstring>
 #include <unordered_map>
 
+#ifdef _WIN32
 #include <windows.h>
+#elif defined(__ANDROID__)
+#include <android/hardware_buffer.h>
+#endif
 
 // ── 注册表: id → bridge (C API 与纹理更新回调共用) ──
 namespace {
@@ -243,11 +247,11 @@ void PlayerBridge::startGpuImport(int32_t w, int32_t h) {
   }
   gpuOutputOn = true;
   avox::VkSharedHandle handle = {};
-  if (!avox::getVkOutputHandle(surface, &handle) || handle.memHandle == 0) {
-    return;
-  }
+  if (!avox::getVkOutputHandle(surface, &handle)) return;
   uint64_t image = 0;
   uint64_t memory = 0;
+#ifdef _WIN32
+  if (handle.memHandle == 0) return;
   if (!unityImportSharedImage((uint64_t)handle.memHandle, w, h, &image, &memory)) {
     CloseHandle((HANDLE)handle.memHandle);
     return;
@@ -258,6 +262,21 @@ void PlayerBridge::startGpuImport(int32_t w, int32_t h) {
   gpuH = h;
   // 所有权归调用方: NT 句柄用完即关
   CloseHandle((HANDLE)handle.memHandle);
+#else
+  // Android: AHB 转移语义 (avox getVkOutputHandle 返回的引用归本类),
+  // 导入失败当场释放; 成功后引用由 releaseGpuImport 释放
+  void* ahb = handle.ahb;
+  if (ahb == nullptr) return;
+  if (!unityImportSharedImageAhb(ahb, w, h, &image, &memory)) {
+    AHardwareBuffer_release((AHardwareBuffer*)ahb);
+    return;
+  }
+  importedImage = image;
+  importedMemory = memory;
+  importedAhb = ahb;
+  gpuW = w;
+  gpuH = h;
+#endif
 }
 
 void PlayerBridge::releaseGpuImport() {
@@ -274,11 +293,22 @@ void PlayerBridge::releaseGpuImport() {
   }
   if (!importedImage) return;
   unityReleaseImported(&importedImage, &importedMemory);
+#ifdef __ANDROID__
+  if (importedAhb) {
+    AHardwareBuffer_release((AHardwareBuffer*)importedAhb);
+    importedAhb = nullptr;
+  }
+#endif
   gpuW = 0;
   gpuH = 0;
 }
 
 void PlayerBridge::renderDx11Copy() {
+#ifndef _WIN32
+  // Android 无 D3D 拷贝模式 (flavor 只有 0/1), C# 侧也不会下发渲染事件
+  (void)this;
+  return;
+#else
   const bool dx12Mode = (unityGpuImportFlavor() == 3);
   dbgEvents.fetch_add(1);
   if (dx11PendingClose.exchange(false)) {
@@ -326,6 +356,7 @@ void PlayerBridge::renderDx11Copy() {
   // 拷到插件自建的目标纹理 (格式与共享纹理一致), C# 经 CreateExternalTexture 包裹
   if (unityDx11CopyFrame(&dx11)) return;
   dbgTargetNull.fetch_add(1);
+#endif  // _WIN32
 }
 
 uint64_t PlayerBridge::dx11NativeTex() {

@@ -125,7 +125,8 @@ adb install -r "D:/绝对路径/avox_tools_debug.apk"
 | 音频起不来 (logcat "not find audio track class") | AndAudioRender 依赖 `avox.android.library.AvoxAudioTrack` Java 类, Godot APK 没有 → deploy 编 dex + patch 注入 `classesN.dex` (API 21+ 自动加载) |
 | dex 注入后 App 启动崩 (ClassNotFound) | Godot APK 自带 classes2..N.dex, **固定名会顶掉 Godot 自己的类**; 必须取现有最大 N+1 (patch_apk 已做幂等: 已含 AvoxAudioTrack 则跳过) |
 | 视频起播即 SIGSEGV (AAsset_getLength) | VkVideoRender 初始化经 AAssetManager 读 `glsl/*.spv`, **APK 没打这些资产**; release 下 assert 被编译掉直接空指针。patch_apk 注入 assets/glsl/ (源 glsl/target/ 已在库) + loadShader 已加空保护 |
-| 起播渲染崩在 Adreno 驱动 (vkBindImageMemory SEGV) | Adreno 对 exportable image 的绑定不返回错误直接崩。**Android 暂禁 GPU 直通** (godot_init gpu init 直接 return), 走 CPU 回退; AHB 直通待专修 |
+| 起播渲染崩在 Adreno 驱动 (vkBindImageMemory SEGV) | 根因在 **avox 核心导出侧**: VkSharedImage::createExportable 对 AHB 可导出内存未用专用分配 (dedicated) + 裸 vkBindImageMemory, Adreno 直接 SIGSEGV。已改 dedicated + vkBindImageMemory2 (2026-09-07 真机过)。注意 Adreno 对未启用扩展的设备, vkGetDeviceProcAddr(AHB 扩展函数) 返回 NULL, 实例级获取后查询也回全零 → **Godot 建 VkDevice 未启用 AHB 扩展, 引擎层零拷贝仍不可用**, godot_init 探测后自动 CPU 回退 (导入失败 3 次运行时降级兜底) |
+| http/本地文件 mp4 卡死 opening (无任何请求) | tools 工程 io_plan=auto 时本地无 scheme 路径被分给 ZLMediaKit, ZL 报 "not supported play schema" 后挂死不回退; 且 MediaPlayer::play() 会 destroy+create 重建播放器, play 前 set_io_plan 被丢掉。已修: 插件缓存 ioPlan 在 createPlayer 重放; 本地文件请显式 ffmpeg IO |
 | 开流后 "no audio track" (logcat: unsupported audio codec:86017) | `ffACodec` 映射表没有 mp3/ac3 → 整个音频被关。已补 ACodecId mp3=7/ac3=8 + ffACodec/getFFCodecId 双向映射 (BBB 的音轨就是 mp3+ac3) |
 | 强杀 (force-stop) 播放中的种子后重开卡死 | piece 0 可能失效, 重取极慢 → first piece timeout。清缓存重下: `adb shell "run-as com.avox.godottools rm -rf cache/avplay_torrent/<infohash>"` |
 | patch 步骤跑了两遍, 注入重复/丢失 | **别并发跑多条 build_android_godot.sh** (两份 patch 同时写同一 APK); patch 本身已幂等 (dex 按 AvoxAudioTrack 判重) |

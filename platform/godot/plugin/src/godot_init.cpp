@@ -149,7 +149,23 @@ void avox_gpu_passthrough_init() {
             UtilityFunctions::print("[avox_gpu] android: 无 AHB 外部内存扩展, CPU 回退");
             return;
         }
-        UtilityFunctions::print("[avox_gpu] init OK (android, AHB GPU passthrough)");
+        // Godot 建设备未启用 AHB 扩展时 GetDeviceProcAddr 对扩展函数返回 NULL;
+        // 扩展在物理设备上受支持, 退回实例级获取 (驱动侧同一入口, 实测可用)
+        if (!vkGetAndroidHardwareBufferPropertiesANDROID && vkGetInstanceProcAddr) {
+            auto fn = vkGetInstanceProcAddr(reinterpret_cast<VkInstance>(vkInstance),
+                                            "vkGetAndroidHardwareBufferPropertiesANDROID");
+            if (fn) {
+                vkGetAndroidHardwareBufferPropertiesANDROID =
+                    reinterpret_cast<PFN_vkGetAndroidHardwareBufferPropertiesANDROID>(fn);
+            }
+        }
+        if (!vkGetAndroidHardwareBufferPropertiesANDROID || !vkBindImageMemory2) {
+            UtilityFunctions::print("[avox_gpu] android: AHB 扩展函数不可用, CPU 回退");
+            return;
+        }
+        UtilityFunctions::print("[avox_gpu] init OK (android, AHB GPU passthrough) ahbProps=",
+                                (int64_t)(void*)vkGetAndroidHardwareBufferPropertiesANDROID,
+                                " bind2=", (int64_t)(void*)vkBindImageMemory2);
 #endif
 
         gGpuPassthroughAvailable = true;

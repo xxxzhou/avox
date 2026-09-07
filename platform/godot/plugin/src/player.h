@@ -102,6 +102,7 @@ private:
     // 配置缓存 (open 前设置)
     String url;
     bool hardDecode = true;
+    int ioPlan = 0;  // avox::IoPlan 缓存 (0=none 走 auto); play() 重建播放器后由 createPlayer 重放
     bool gpuPassthrough = true;
     float volume = 1.0f;
     // 预设选项暂存 (createPlayer 时落库; play 前设置的场景)

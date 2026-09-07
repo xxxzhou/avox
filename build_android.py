@@ -62,9 +62,12 @@ if __name__ == "__main__":
         build_common.build_module("sentencepiece", onlyMake, SPM_CMAKE_ARGS)  
     swig_flag = os.environ.get("AVOX_ENABLE_SWIG", "OFF")
     godot_flag = "OFF" if os.environ.get("AVOX_GODOT_ANDROID", "1") == "0" else "ON"
+    unity_flag = "OFF" if os.environ.get("AVOX_UNITY_ANDROID", "1") == "0" else "ON"
+    sherpa_flag = os.environ.get("AVOX_ENABLE_SHERPA", "ON")
     extra_args = ("-DAVOX_ENABLE_AGENT=ON -DAVOX_ENABLE_CLI=OFF "
-                  f"-DAVOX_ENABLE_GODOT={godot_flag} -DAVOX_ENABLE_WEBRTC=OFF "
-                  f"-DAVOX_ENABLE_SWIG={swig_flag}")
+                  f"-DAVOX_ENABLE_GODOT={godot_flag} -DAVOX_ENABLE_UNITY={unity_flag} "
+                  f"-DAVOX_ENABLE_SHERPA={sherpa_flag} "
+                  f"-DAVOX_ENABLE_WEBRTC=OFF -DAVOX_ENABLE_SWIG={swig_flag}")
     build_common.build_self(extra_args)
 
     # 复制 NDK 的 libc++_shared.so 到输出目录，确保打包进 APK

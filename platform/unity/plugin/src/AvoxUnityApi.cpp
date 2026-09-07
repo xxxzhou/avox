@@ -1,7 +1,9 @@
 #include "AvoxUnityApi.h"
 #include "PlayerBridge.h"
 #include "SourceBridge.h"
+#ifdef _WIN32
 #include "RtcPlayerBridge.h"
+#endif
 #include "GpuPassthrough.h"
 
 AVOX_UNITY_API void* avoxGetTextureUpdateCallback(void) {
@@ -146,7 +148,11 @@ AVOX_UNITY_API void avoxPlayerGetDx12Debug(avox_player_t player, int32_t* noTarg
 }
 
 AVOX_UNITY_API void avoxDx11DumpSharedById(uint32_t playerId, const char* path) {
+#ifdef _WIN32
   unityDx11DumpShared(nullptr, playerId, path);
+#else
+  (void)playerId; (void)path;
+#endif
 }
 
 AVOX_UNITY_API void avoxPlayerUpdateGpu(avox_player_t player) {
@@ -269,7 +275,9 @@ AVOX_UNITY_API int32_t avoxSourceGetFrameInfo(avox_source_t source, int32_t* w, 
   return ((SourceBridge*)source)->frameInfo(w, h) ? 1 : 0;
 }
 
+#ifdef _WIN32
 // ── WebRTC 推拉流 (RtcPlayerBridge, 对应 UE AvoxRtcPlayerComponent / godot RtcPlayer) ──
+// Android 不编译 (核心 WEBRTC=OFF); C# DllImport 惰性解析, 不调用不报错
 
 AVOX_UNITY_API avox_player_t avoxRtcCreate(void) {
   static std::atomic<uint32_t> nextRtcId{1};
@@ -412,3 +420,4 @@ AVOX_UNITY_API int32_t avoxRtcGetFrameInfo(avox_player_t player, int32_t* w, int
 AVOX_UNITY_API int32_t avoxRtcIsGpuMode(avox_player_t player) {
   return player ? (((RtcPlayerBridge*)player)->gpuMode() ? 1 : 0) : 0;
 }
+#endif  // _WIN32 (WebRTC 导出段)
