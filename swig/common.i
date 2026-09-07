@@ -8,9 +8,7 @@
 %feature("director") IVideoSourceOb;
 %feature("director") IAudioSourceOb;
 %feature("director") IAVSourceOb;
-%feature("director") ISdpAgentOb;
 // webrtc v2: 信令通道(引擎侧实现)与rtc扩展回调
-%feature("director") ISignalChannel;
 %feature("director") IRtcEventOb;
 %feature("director") IAudioSttOb;
 %feature("director") IAudioTtsOb;
@@ -44,7 +42,7 @@
 #include "avox/AvoxCore.h"
 #include "avox_agent/AgentExport.h"
 #include "avox_vulkan/VkExport.h"
-// avox_webrtc 已迁 plugins/avox_webrtc; IRtcPlayer/RtcRollType/ISdpAgentOb/createWebRtcPlayer/createZlTestSdpAgent
+// avox_webrtc 已迁 plugins/avox_webrtc; IRtcPlayer/RtcRollType/IRtcEventOb/createWebRtcPlayer/createZlTestSdpAgent
 // addRtcPlayerOb/removeRtcPlayerOb 均由 %include "avox/AvoxPlayer.h" 绑定(AVOX_EXPORT, 随 avox.dll)
 // addRtcPlayerOb/removeRtcPlayerOb 通过 dynamic_cast<BasePlayer*> cross-cast 实现, 核心层无需知道 RtcPlayer
 #include "avox_freetype/FreetypeExport.h"
