@@ -1,6 +1,7 @@
 #include "GpuPassthrough.h"
 #include "PlayerBridge.h"
 #include "SourceBridge.h"
+#include "RtcPlayerBridge.h"
 
 
 #ifndef VK_NO_PROTOTYPES
@@ -513,6 +514,11 @@ void __stdcall avoxTextureUpdateCallback(int eventID, void* data) {
       // 设备源 (相机等 SourceBridge) 复用同一上传回调
       SourceBridge* source = findSourceBridge(id);
       ok = source && source->allocCpuFrame(params->width, params->height, params->bpp, &texData);
+    }
+    if (!ok) {
+      // WebRTC 远端画面 (RtcPlayerBridge) 复用同一上传回调
+      RtcPlayerBridge* rtc = findRtcBridge(id);
+      ok = rtc && rtc->allocCpuFrame(params->width, params->height, params->bpp, &texData);
     }
     if (!ok) {
       // 无帧/异常: 黑帧兜底 (Unity 总是上传 texData)

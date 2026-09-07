@@ -66,6 +66,15 @@ foreach ($dll in $Dlls) {
     $src = Join-Path $AvoxRelease $dll
     if (Test-Path $src) { Copy-Item $src $BinDst -Force }
 }
+# avox 动态插件 (WebRTC 等): avox 运行期从 <avox.dll目录>/plugins/ 扫描加载,
+# AvoxRtcPlayer 组件依赖 plugins/avox_webrtc.dll, 缺失时 avoxRtcCreate 返回 null
+$RtcDll = Join-Path $AvoxRelease "plugins\avox_webrtc.dll"
+if (Test-Path $RtcDll) {
+    New-Item -ItemType Directory -Force -Path (Join-Path $BinDst "plugins") | Out-Null
+    Copy-Item $RtcDll (Join-Path $BinDst "plugins") -Force
+} else {
+    Write-Warning "没有 plugins\avox_webrtc.dll (WebRTC 组件将不可用, 其余功能不受影响)"
+}
 
 # ── 布置运行时资产 (glsl 着色器等, VK 离屏管线必需; 缺失表现为静默无帧) ──
 $AssetSrc = Join-Path $AvoxRelease "assets"

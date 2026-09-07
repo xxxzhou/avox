@@ -1,4 +1,5 @@
 #include "player.h"
+#include "rtc_player.h"
 #include "source_player.h"
 #include "source_probe.h"
 #include "recorder.h"
@@ -519,6 +520,7 @@ void avoxGodotInit(ModuleInitializationLevel p_level) {
         avoxAndroidBootstrap();  // 插件目录解压 + AndroidEnv, 必须先于任何 avox 模块使用
 #endif
         ClassDB::register_class<MediaPlayer>();
+        ClassDB::register_class<RtcPlayer>();
         ClassDB::register_class<SourcePlayer>();
         ClassDB::register_class<DeviceManager>();
         ClassDB::register_class<MediaRecorder>();

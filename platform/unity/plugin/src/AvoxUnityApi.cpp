@@ -1,6 +1,7 @@
 #include "AvoxUnityApi.h"
 #include "PlayerBridge.h"
 #include "SourceBridge.h"
+#include "RtcPlayerBridge.h"
 #include "GpuPassthrough.h"
 
 AVOX_UNITY_API void* avoxGetTextureUpdateCallback(void) {
@@ -266,4 +267,148 @@ AVOX_UNITY_API int32_t avoxSourceGetState(avox_source_t source) {
 AVOX_UNITY_API int32_t avoxSourceGetFrameInfo(avox_source_t source, int32_t* w, int32_t* h) {
   if (!source) return 0;
   return ((SourceBridge*)source)->frameInfo(w, h) ? 1 : 0;
+}
+
+// ── WebRTC 推拉流 (RtcPlayerBridge, 对应 UE AvoxRtcPlayerComponent / godot RtcPlayer) ──
+
+AVOX_UNITY_API avox_player_t avoxRtcCreate(void) {
+  static std::atomic<uint32_t> nextRtcId{1};
+  return new RtcPlayerBridge(nextRtcId.fetch_add(1));
+}
+
+AVOX_UNITY_API void avoxRtcDestroy(avox_player_t player) {
+  delete (RtcPlayerBridge*)player;
+}
+
+AVOX_UNITY_API uint32_t avoxRtcGetId(avox_player_t player) {
+  return player ? ((RtcPlayerBridge*)player)->id() : 0;
+}
+
+// ── 配置 (open 前调用) ──
+
+AVOX_UNITY_API void avoxRtcSetRollType(avox_player_t player, int32_t type) {
+  if (player) ((RtcPlayerBridge*)player)->setRollType(type);
+}
+
+AVOX_UNITY_API void avoxRtcSetVideoDirection(avox_player_t player, int32_t dir) {
+  if (player) ((RtcPlayerBridge*)player)->setVideoDirection(dir);
+}
+
+AVOX_UNITY_API void avoxRtcSetAudioDirection(avox_player_t player, int32_t dir) {
+  if (player) ((RtcPlayerBridge*)player)->setAudioDirection(dir);
+}
+
+AVOX_UNITY_API void avoxRtcAddIceServer(avox_player_t player, const char* url,
+                                        const char* user, const char* pwd) {
+  if (player) ((RtcPlayerBridge*)player)->addIceServer(url, user, pwd);
+}
+
+AVOX_UNITY_API void avoxRtcSetAutoReconnect(avox_player_t player, int32_t bEnable,
+                                            int32_t retries) {
+  if (player) ((RtcPlayerBridge*)player)->setAutoReconnect(bEnable != 0, retries);
+}
+
+AVOX_UNITY_API void avoxRtcSetSendVideoBitrate(avox_player_t player, int32_t kbps) {
+  if (player) ((RtcPlayerBridge*)player)->setSendVideoBitrate(kbps);
+}
+
+AVOX_UNITY_API void avoxRtcSetSendVideoFps(avox_player_t player, int32_t fps) {
+  if (player) ((RtcPlayerBridge*)player)->setSendVideoFps(fps);
+}
+
+AVOX_UNITY_API void avoxRtcSetPreferredVideoCodec(avox_player_t player, const char* codec) {
+  if (player) ((RtcPlayerBridge*)player)->setPreferredVideoCodec(codec);
+}
+
+AVOX_UNITY_API void avoxRtcSetEnableDataChannel(avox_player_t player, int32_t bEnable) {
+  if (player) ((RtcPlayerBridge*)player)->setEnableDataChannel(bEnable != 0);
+}
+
+AVOX_UNITY_API void avoxRtcSetVolume(avox_player_t player, float volume) {
+  if (player) ((RtcPlayerBridge*)player)->setVolume(volume);
+}
+
+// ── 连接控制 ──
+
+// HTTP 信令一键连接 (ZLM/WHEP, Offer 拉流主路径)
+AVOX_UNITY_API int32_t avoxRtcConnect(avox_player_t player, const char* url) {
+  return player && ((RtcPlayerBridge*)player)->connectSignaling(url) ? 1 : 0;
+}
+
+// 自定义信令模式: 先监听 localSdp/iceCandidate 事件再调
+AVOX_UNITY_API void avoxRtcOpen(avox_player_t player) {
+  if (player) ((RtcPlayerBridge*)player)->openRtc();
+}
+
+AVOX_UNITY_API void avoxRtcClose(avox_player_t player) {
+  if (player) ((RtcPlayerBridge*)player)->close();
+}
+
+AVOX_UNITY_API void avoxRtcReconnect(avox_player_t player) {
+  if (player) ((RtcPlayerBridge*)player)->reconnect();
+}
+
+// ── 信令回填 (自定义信令) ──
+
+AVOX_UNITY_API void avoxRtcSetRemoteSdp(avox_player_t player, const char* sdp) {
+  if (player) ((RtcPlayerBridge*)player)->setRemoteSdp(sdp);
+}
+
+AVOX_UNITY_API void avoxRtcAddIceCandidate(avox_player_t player, const char* candidate,
+                                           const char* mid, int32_t mline) {
+  if (player) ((RtcPlayerBridge*)player)->addIceCandidate(candidate, mid, mline);
+}
+
+// ── DataChannel ──
+
+AVOX_UNITY_API int32_t avoxRtcSendDataChannel(avox_player_t player, const uint8_t* data,
+                                              int32_t size) {
+  return player && ((RtcPlayerBridge*)player)->sendDataChannel(data, size) ? 1 : 0;
+}
+
+// 弹出一条 DataChannel 消息, 返回字节数 (0=无)
+AVOX_UNITY_API int32_t avoxRtcPollDataChannel(avox_player_t player, uint8_t* buf,
+                                              int32_t bufSize) {
+  return player ? ((RtcPlayerBridge*)player)->pollDataChannel(buf, bufSize) : 0;
+}
+
+// ── 查询 ──
+
+AVOX_UNITY_API int32_t avoxRtcGetState(avox_player_t player) {
+  return player ? ((RtcPlayerBridge*)player)->state() : 0;
+}
+
+AVOX_UNITY_API int32_t avoxRtcGetConnectionState(avox_player_t player) {
+  return player ? ((RtcPlayerBridge*)player)->connectionState() : 5;
+}
+
+AVOX_UNITY_API double avoxRtcGetFps(avox_player_t player) {
+  return player ? ((RtcPlayerBridge*)player)->fps() : 0.0;
+}
+
+AVOX_UNITY_API float avoxRtcGetLossRate(avox_player_t player) {
+  return player ? ((RtcPlayerBridge*)player)->lossRate() : 0.0f;
+}
+
+AVOX_UNITY_API int32_t avoxRtcGetRttMs(avox_player_t player) {
+  return player ? ((RtcPlayerBridge*)player)->rttMs() : -1;
+}
+
+AVOX_UNITY_API int32_t avoxRtcPollEvent(avox_player_t player, void* out) {
+  if (!player || !out) return 0;
+  return ((RtcPlayerBridge*)player)->pollEvent((AvoxRtcEvent*)out) ? 1 : 0;
+}
+
+// 本地 SDP (localSdp 事件后拉取, 返回长度; -1=无)
+AVOX_UNITY_API int32_t avoxRtcGetLocalSdp(avox_player_t player, char* buf, int32_t bufSize) {
+  return player ? ((RtcPlayerBridge*)player)->localSdp(buf, bufSize) : -1;
+}
+
+AVOX_UNITY_API int32_t avoxRtcGetFrameInfo(avox_player_t player, int32_t* w, int32_t* h) {
+  if (!player) return 0;
+  return ((RtcPlayerBridge*)player)->frameInfo(w, h) ? 1 : 0;
+}
+
+AVOX_UNITY_API int32_t avoxRtcIsGpuMode(avox_player_t player) {
+  return player ? (((RtcPlayerBridge*)player)->gpuMode() ? 1 : 0) : 0;
 }

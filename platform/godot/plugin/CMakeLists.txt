@@ -46,6 +46,7 @@ add_library(avox_godot SHARED
     src/body.cpp
     src/image.cpp
     src/option.cpp
+    src/rtc_player.cpp
     ${_PLATFORM_SRCS}
     ${_AGENT_SRC}
 )
