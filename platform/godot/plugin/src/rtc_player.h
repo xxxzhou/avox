@@ -62,6 +62,8 @@ public:
     // ── 信令回填 (自定义信令) ──
     // 设置远端 SDP (Offer 方填 answer, Answer 方填 offer)
     void set_remote_sdp(const String &p_sdp);
+    // 本地 SDP (open 后生成, 也可等 local_sdp 信号)
+    String get_local_sdp() const;
     void add_ice_candidate(const String &p_candidate, const String &p_mid, int p_mline);
 
     // ── DataChannel ──

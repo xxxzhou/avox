@@ -119,11 +119,37 @@ void avox_gpu_passthrough_init() {
         UtilityFunctions::print("[avox_gpu] init OK, GetMemWin32HandleProps=",
                                 (int64_t)(void*)g_vkGetMemoryWin32HandlePropertiesKHR);
 #else
-        // Android: GPU 直通走 AHardwareBuffer 导入(surface.cpp), 无 Win32 句柄查询。
-        // MVP 暂不启用: Adreno 驱动对 exportable image 的 vkBindImageMemory 直接
-        // SIGSEGV (不返回 vk error), CPU 回退路径工作正常, AHB 直通后续专修
-        UtilityFunctions::print("[avox_gpu] init OK (android, CPU fallback MVP)");
-        return;
+        // Android: GPU 直通走 AHardwareBuffer 导入 (surface.cpp)。
+        // 探测设备 AHB 外部内存扩展, 缺失 (老驱动/模拟器) 保持 CPU 回退;
+        // 有扩展但导入仍失败时由 update() 运行时降级兜底
+        uint64_t vkPhysDevU = rd->get_driver_resource(RenderingDevice::DRIVER_RESOURCE_PHYSICAL_DEVICE, RID(), 0);
+        VkPhysicalDevice physDev = reinterpret_cast<VkPhysicalDevice>(vkPhysDevU);
+        if (!physDev) {
+            UtilityFunctions::print("[avox_gpu] android: physical device 为 null, CPU 回退");
+            return;
+        }
+        uint32_t extCount = 0;
+        if (vkEnumerateDeviceExtensionProperties(physDev, nullptr, &extCount, nullptr) != VK_SUCCESS || extCount == 0) {
+            UtilityFunctions::print("[avox_gpu] android: 枚举设备扩展失败, CPU 回退");
+            return;
+        }
+        std::vector<VkExtensionProperties> exts(extCount);
+        if (vkEnumerateDeviceExtensionProperties(physDev, nullptr, &extCount, exts.data()) != VK_SUCCESS) {
+            UtilityFunctions::print("[avox_gpu] android: 枚举设备扩展失败, CPU 回退");
+            return;
+        }
+        bool ahbExt = false;
+        for (const auto &e : exts) {
+            if (strcmp(e.extensionName, "VK_ANDROID_external_memory_android_hardware_buffer") == 0) {
+                ahbExt = true;
+                break;
+            }
+        }
+        if (!ahbExt) {
+            UtilityFunctions::print("[avox_gpu] android: 无 AHB 外部内存扩展, CPU 回退");
+            return;
+        }
+        UtilityFunctions::print("[avox_gpu] init OK (android, AHB GPU passthrough)");
 #endif
 
         gGpuPassthroughAvailable = true;

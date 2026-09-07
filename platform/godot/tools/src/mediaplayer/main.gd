@@ -4,7 +4,7 @@ extends Control
 ## 依赖: addons/avox_godot 已部署 (platform/godot/plugin/deploy_godot.ps1)。
 ## 播放地址: 命令行 `-- <url>` 首个参数, 否则用 DEFAULT_URL。
 
-const DEFAULT_URL := ""                       # 空: 启动不自动播放, 用「文件」菜单或拖入文件
+const DEFAULT_URL := "http://127.0.0.1:8907/avox_electron.mp4"  # 真机验证临时: adb reverse tcp:8907→PC 取流 (原值为空串)
 const HARD_DECODE := false                    # true=硬解(DX11)  false=软解
 const ACCENT     := Color("#3B82F6")
 const PANEL_BG   := Color(0.03, 0.04, 0.055, 0.70)   # alpha 足够压亮画面, 否则磨砂在亮帧上泛灰
@@ -280,6 +280,8 @@ func _build_player() -> void:
 		if not a.begins_with("--"):
 			url = a
 			break
+	if url.is_empty():
+		url = DEFAULT_URL  # 真机验证临时: 命令行未给 URL 时用默认地址 (原逻辑不回退, 直接空态)
 	if url.is_empty():
 		# 默认空路径: 不自动播放, 空态门面提示拖入/菜单打开
 		_title.text = "avox 播放器"

@@ -144,13 +144,17 @@ bool SurfaceTextureBridge::importSharedImage() {
     if (!avox::getVkOutputHandle(surfaceRender, &handle)) return false;
     if (handle.memHandle == 0) return false;
 #else
-    // 从 AVOX 拿 AHardwareBuffer (avox 核心导出到位前 getVkOutputHandle 返回 false → CPU 回退)
+    // 从 AVOX 拿 AHardwareBuffer。getVkOutputHandle 是转移语义 (返回的引用归本类),
+    // releaseImport/失败路径 release 一次即可, 不得再 acquire (否则净泄漏一个引用)
+    // 上次导入失败遗留的引用先释放 (导入仅在 importedImage==NULL 时发起, 无活跃绑定)
+    if (importedAhb) {
+        AHardwareBuffer_release(reinterpret_cast<AHardwareBuffer *>(importedAhb));
+        importedAhb = nullptr;
+    }
     avox::VkSharedHandle handle = {};
     if (!avox::getVkOutputHandle(surfaceRender, &handle)) return false;
     AHardwareBuffer *ahb = reinterpret_cast<AHardwareBuffer *>(handle.ahb);
     if (ahb == nullptr) return false;
-    // 所有权转移到本类 (releaseSharedImage 时 release)
-    AHardwareBuffer_acquire(ahb);
     importedAhb = ahb;
 #endif
 
@@ -164,6 +168,28 @@ bool SurfaceTextureBridge::importSharedImage() {
     int32_t w = gpuW;
     int32_t h = gpuH;
     if (w <= 0 || h <= 0) return false;
+
+#ifdef __ANDROID__
+    // AHB 属性+格式一次查询: image format / allocationSize / 内存类型都以此为准
+    // (对照仓内已验证可用的 VkAndImage::bindVK 写法)
+    VkAndroidHardwareBufferFormatPropertiesANDROID ahbFmt = {};
+    ahbFmt.sType = VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_FORMAT_PROPERTIES_ANDROID;
+    VkAndroidHardwareBufferPropertiesANDROID ahbProps = {};
+    ahbProps.sType = VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_PROPERTIES_ANDROID;
+    ahbProps.pNext = &ahbFmt;
+    VkResult ahbRes = vkGetAndroidHardwareBufferPropertiesANDROID(device, ahb, &ahbProps);
+    UtilityFunctions::print("[avox_gpu] ahb props res=", (int)ahbRes, " format=", (int)ahbFmt.format,
+                            " allocSize=", (int64_t)ahbProps.allocationSize,
+                            " memTypeBits=0x", (int64_t)ahbProps.memoryTypeBits);
+    if (ahbRes != VK_SUCCESS) {
+        AHardwareBuffer_release(ahb);
+        importedAhb = nullptr;
+        return false;
+    }
+    // avox 导出端固定 R8G8B8A8, 查询值兜底防驱动回告不一致
+    VkFormat ahbFormat = ahbFmt.format != VK_FORMAT_UNDEFINED
+                             ? ahbFmt.format : VK_FORMAT_R8G8B8A8_UNORM;
+#endif
 
     // ═══════════════════════════════════════════════════════════
     // 1. 导入外部 memory image (来自 avox 的另一个 VkDevice)
@@ -184,7 +210,11 @@ bool SurfaceTextureBridge::importSharedImage() {
     importInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     importInfo.pNext = &extMemImg;
     importInfo.imageType = VK_IMAGE_TYPE_2D;
+#ifdef __ANDROID__
+    importInfo.format = ahbFormat;
+#else
     importInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+#endif
     importInfo.extent = {static_cast<uint32_t>(w), static_cast<uint32_t>(h), 1};
     importInfo.mipLevels = 1;
     importInfo.arrayLayers = 1;
@@ -197,34 +227,27 @@ bool SurfaceTextureBridge::importSharedImage() {
 
     VkResult res = vkCreateImage(device, &importInfo, nullptr, &importedImage);
     UtilityFunctions::print("[avox_gpu] import vkCreateImage result=", (int)res);
-    if (res != VK_SUCCESS) return false;
+    if (res != VK_SUCCESS) {
+#ifndef _WIN32
+        AHardwareBuffer_release(ahb);
+        importedAhb = nullptr;
+#endif
+        return false;
+    }
 
     // 查询内存需求
     VkMemoryRequirements memReqs = {};
     vkGetImageMemoryRequirements(device, importedImage, &memReqs);
 
+    // 内存类型选择: image bits ∩ handle bits
+    uint32_t memoryTypeIndex = UINT32_MAX;
+    uint32_t handleBits = 0xFFFFFFFFu;
 #ifdef _WIN32
     // 导入外部内存 (NT 句柄)
     VkImportMemoryWin32HandleInfoKHR importMemInfo = {};
     importMemInfo.sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_WIN32_HANDLE_INFO_KHR;
     importMemInfo.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT;
     importMemInfo.handle = reinterpret_cast<HANDLE>(handle.memHandle);
-#else
-    // 导入外部内存 (AHardwareBuffer)
-    VkImportAndroidHardwareBufferInfoANDROID importMemInfo = {};
-    importMemInfo.sType = VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID;
-    importMemInfo.buffer = ahb;
-#endif
-
-    VkMemoryAllocateInfo allocInfo = {};
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize = memReqs.size;
-    allocInfo.pNext = &importMemInfo;
-
-    // 内存类型选择: image bits ∩ handle bits
-    uint32_t memoryTypeIndex = UINT32_MAX;
-    uint32_t handleBits = 0xFFFFFFFFu;
-#ifdef _WIN32
     if (vkGetMemoryWin32HandlePropertiesKHR) {
         VkMemoryWin32HandlePropertiesKHR win32Props = {};
         win32Props.sType = VK_STRUCTURE_TYPE_MEMORY_WIN32_HANDLE_PROPERTIES_KHR;
@@ -237,19 +260,42 @@ bool SurfaceTextureBridge::importSharedImage() {
                                 " propsRes=", (int)propsRes);
     }
 #else
-    {
-        VkAndroidHardwareBufferPropertiesANDROID ahbProps = {};
-        ahbProps.sType = VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_PROPERTIES_ANDROID;
-        VkResult propsRes = vkGetAndroidHardwareBufferPropertiesANDROID(device, ahb, &ahbProps);
-        handleBits = ahbProps.memoryTypeBits;
-        UtilityFunctions::print("[avox_gpu] ahb memTypeBits=0x", (int64_t)handleBits,
-                                " image memTypeBits=0x", (int64_t)memReqs.memoryTypeBits,
-                                " propsRes=", (int)propsRes);
-    }
+    // 导入外部内存 (AHardwareBuffer)。
+    // AHB 导入绑定 image 必须专用分配 (VkMemoryDedicatedAllocateInfo 与 import 同链,
+    // 同 VkAndImage.cpp), 否则部分驱动 (Adreno) 在 bind 阶段直接 SIGSEGV 而非报错
+    VkImportAndroidHardwareBufferInfoANDROID importMemInfo = {};
+    importMemInfo.sType = VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID;
+    importMemInfo.buffer = ahb;
+    VkMemoryDedicatedAllocateInfo dedicatedInfo = {};
+    dedicatedInfo.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO;
+    dedicatedInfo.pNext = &importMemInfo;
+    dedicatedInfo.image = importedImage;
+    handleBits = ahbProps.memoryTypeBits;
 #endif
+
+    VkMemoryAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+#ifdef _WIN32
+    allocInfo.allocationSize = memReqs.size;
+    allocInfo.pNext = &importMemInfo;
+#else
+    // AHB 导入的分配大小用 AHB 属性值, 非 image memReqs.size
+    allocInfo.allocationSize = ahbProps.allocationSize;
+    allocInfo.pNext = &dedicatedInfo;
+#endif
+
+    // 严格交集: AHB 导入不得回退 image 自身 bits (非法内存类型部分驱动直接崩)
     uint32_t inter = memReqs.memoryTypeBits & handleBits;
     if (inter == 0) {
-        inter = memReqs.memoryTypeBits;
+        UtilityFunctions::print("[avox_gpu] 内存类型无交集 (image=0x", (int64_t)memReqs.memoryTypeBits,
+                                " handle=0x", (int64_t)handleBits, ")");
+        vkDestroyImage(device, importedImage, nullptr);
+        importedImage = VK_NULL_HANDLE;
+#ifndef _WIN32
+        AHardwareBuffer_release(ahb);
+        importedAhb = nullptr;
+#endif
+        return false;
     }
     for (uint32_t i = 0; i < 32; ++i) {
         if (inter & (1u << i)) {
@@ -261,6 +307,10 @@ bool SurfaceTextureBridge::importSharedImage() {
         UtilityFunctions::print("[avox_gpu] 无可用内存类型 (inter=0x", (int64_t)inter, ")");
         vkDestroyImage(device, importedImage, nullptr);
         importedImage = VK_NULL_HANDLE;
+#ifndef _WIN32
+        AHardwareBuffer_release(ahb);
+        importedAhb = nullptr;
+#endif
         return false;
     }
     UtilityFunctions::print("[avox_gpu] import memoryTypeIndex=", (int)memoryTypeIndex);
@@ -273,12 +323,23 @@ bool SurfaceTextureBridge::importSharedImage() {
         importedImage = VK_NULL_HANDLE;
 #ifndef _WIN32
         AHardwareBuffer_release(ahb);
+        importedAhb = nullptr;
 #endif
         return false;
     }
 
+#ifdef _WIN32
     res = vkBindImageMemory(device, importedImage, importedMemory, 0);
-    UtilityFunctions::print("[avox_gpu] import vkBindImageMemory result=", (int)res);
+#else
+    // AHB 专用分配用规范绑法 bind2
+    VkBindImageMemoryInfo bindInfo = {};
+    bindInfo.sType = VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO;
+    bindInfo.image = importedImage;
+    bindInfo.memory = importedMemory;
+    bindInfo.memoryOffset = 0;
+    res = vkBindImageMemory2(device, 1, &bindInfo);
+#endif
+    UtilityFunctions::print("[avox_gpu] import bindImageMemory result=", (int)res);
     if (res != VK_SUCCESS) {
         vkFreeMemory(device, importedMemory, nullptr);
         importedMemory = VK_NULL_HANDLE;
@@ -286,6 +347,7 @@ bool SurfaceTextureBridge::importSharedImage() {
         importedImage = VK_NULL_HANDLE;
 #ifndef _WIN32
         AHardwareBuffer_release(ahb);
+        importedAhb = nullptr;
 #endif
         return false;
     }
@@ -294,7 +356,11 @@ bool SurfaceTextureBridge::importSharedImage() {
     // usage 用 SAMPLING_BIT — Godot 直接采样 importedImage, 不再做 per-frame copy。
     importedRid = rd->texture_create_from_extension(
         RenderingDevice::TEXTURE_TYPE_2D,
+#ifdef __ANDROID__
+        static_cast<RenderingDevice::DataFormat>(ahbFormat),
+#else
         RenderingDevice::DATA_FORMAT_R8G8B8A8_UNORM,
+#endif
         RenderingDevice::TEXTURE_SAMPLES_1,
         RenderingDevice::TEXTURE_USAGE_SAMPLING_BIT,
         reinterpret_cast<uint64_t>(importedImage),
@@ -307,6 +373,10 @@ bool SurfaceTextureBridge::importSharedImage() {
         importedMemory = VK_NULL_HANDLE;
         vkDestroyImage(device, importedImage, nullptr);
         importedImage = VK_NULL_HANDLE;
+#ifndef _WIN32
+        AHardwareBuffer_release(ahb);
+        importedAhb = nullptr;
+#endif
         return false;
     }
 
@@ -392,7 +462,19 @@ void SurfaceTextureBridge::update() {
             gpuOutputEnabled = ok;
         }
         if (gpuOutputEnabled && importedImage == VK_NULL_HANDLE && surfaceRender) {
-            importSharedImage();
+            if (importSharedImage()) {
+                importFailCount = 0;
+            } else if (++importFailCount >= 3) {
+                // 连续导入失败 (驱动不支持/扩展缺失等): 一次性降级 CPU, 不再每帧重试。
+                // 不调 setVulkan(false) — SurfaceRenderVk 运行中不支持切换,
+                // 保留 Vulkan 管线, 改走 YUV 回调出 CPU 帧 (enableYuvOut → onFrame)。
+                UtilityFunctions::print("[avox_gpu] 连续导入失败, 降级 CPU 回退");
+                avox::disableVkOutput(surfaceRender);
+                gpuOutputEnabled = false;
+                surfaceRender->setOffSurface(avox::YuvType::nv12);
+                surfaceRender->enableYuvOut(avox::YuvType::nv12);
+                gpuMode = false;
+            }
         }
         // 零拷贝直采: 无 per-frame copy。texture_copy 需要本机 image 才能随时 copy,
         // 跨 VkDevice 外部内存直采后 content 直接由 avox 渲染线程写入,

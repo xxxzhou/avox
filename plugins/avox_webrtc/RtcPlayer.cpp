@@ -411,10 +411,11 @@ void RtcPlayer::onRemoteFrame(bool bVideo) {
   }
   if (state == PlayerState::ready) {
     setState(PlayerState::playing);
-    // 首帧只对视频派发
-    if (bVideo) {
-      Observer<IRtcPlayerOb>::dispatch(&IRtcPlayerOb::onFirstVideoFrame);
-    }
+  }
+  // 首个视频帧独立标记(先到音频帧时状态切换不丢视频首帧事件)
+  if (bVideo && !bFirstFrame) {
+    bFirstFrame = true;
+    Observer<IRtcPlayerOb>::dispatch(&IRtcPlayerOb::onFirstVideoFrame);
   }
 }
 

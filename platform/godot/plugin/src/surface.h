@@ -62,6 +62,7 @@ private:
     bool gpuPassthroughEnabled = true;  // 用户开关 (GDScript: MediaPlayer.gpu_passthrough)
     bool gpuMode = false;
     bool gpuOutputEnabled = false;  // enableVkOutput 已调用
+    int importFailCount = 0;        // GPU 模式导入连续失败计数 (达阈值降级 CPU)
     std::atomic<bool> needReimport{false};  // avox 线程 onWinSizeChange 请求主线程重导 VkImage
 
     // 导入的外部 memory image (来自 avox 的 NT 句柄/AHB, usage=TRANSFER_SRC|DST|SAMPLED)

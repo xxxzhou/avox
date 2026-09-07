@@ -304,6 +304,12 @@ void RtcPlayer::set_remote_sdp(const String &p_sdp) {
     player->setRemoteSdp(p_sdp.utf8().get_data());
 }
 
+String RtcPlayer::get_local_sdp() const {
+    if (!player) return String();
+    const char *sdp = player->getLocalSdp();
+    return String(sdp ? sdp : "");
+}
+
 void RtcPlayer::add_ice_candidate(const String &p_candidate, const String &p_mid, int p_mline) {
     if (!player || p_candidate.is_empty()) return;
     player->addIceCandidate(p_candidate.utf8().get_data(), p_mid.utf8().get_data(), p_mline);
@@ -363,6 +369,8 @@ void RtcPlayer::_bind_methods() {
     ClassDB::bind_method(D_METHOD("reconnect_rtc"), &RtcPlayer::reconnect_rtc);
 
     // 配置
+    ClassDB::bind_method(D_METHOD("set_signaling_url", "url"), &RtcPlayer::set_signaling_url);
+    ClassDB::bind_method(D_METHOD("get_signaling_url"), &RtcPlayer::get_signaling_url);
     ClassDB::bind_method(D_METHOD("set_roll_type", "type"), &RtcPlayer::set_roll_type);
     ClassDB::bind_method(D_METHOD("get_roll_type"), &RtcPlayer::get_roll_type);
     ClassDB::bind_method(D_METHOD("set_video_direction", "dir"), &RtcPlayer::set_video_direction);
@@ -382,6 +390,7 @@ void RtcPlayer::_bind_methods() {
 
     // 信令回填 / DataChannel
     ClassDB::bind_method(D_METHOD("set_remote_sdp", "sdp"), &RtcPlayer::set_remote_sdp);
+    ClassDB::bind_method(D_METHOD("get_local_sdp"), &RtcPlayer::get_local_sdp);
     ClassDB::bind_method(D_METHOD("add_ice_candidate", "candidate", "mid", "mline"), &RtcPlayer::add_ice_candidate);
     ClassDB::bind_method(D_METHOD("send_data_channel", "data"), &RtcPlayer::send_data_channel);
 
