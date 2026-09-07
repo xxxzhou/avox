@@ -148,7 +148,7 @@ LogTask::LogTask() {
   startTask();
 }
 
-LogTask::~LogTask() {}
+LogTask::~LogTask() { stopTask(); }
 
 void LogTask::addItem(LogLevel level, const char* message) {
   LogItem item = {};

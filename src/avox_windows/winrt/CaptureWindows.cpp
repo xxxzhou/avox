@@ -190,7 +190,10 @@ void CaptureWindows::onRunTask() {
 
 RTCaptureWindows::RTCaptureWindows() {}
 
-RTCaptureWindows::~RTCaptureWindows() {}
+RTCaptureWindows::~RTCaptureWindows() {
+  // 本级先停线程(晚到 ~RunTask 时 framePool/session 已析构), 与 onClose 幂等
+  stopTask();
+}
 
 bool RTCaptureWindows::onOpen() {
   if (!hwnd && !hmon) {

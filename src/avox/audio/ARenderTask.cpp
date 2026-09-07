@@ -15,7 +15,7 @@ ARenderTask::ARenderTask() {
   audioRender = std::unique_ptr<AudioOutput>(getDefaultAudioOutput());
 }
 
-ARenderTask::~ARenderTask() {}
+ARenderTask::~ARenderTask() { stopTask(); }
 
 void ARenderTask::start(class AudioTrack* context) {
   close();

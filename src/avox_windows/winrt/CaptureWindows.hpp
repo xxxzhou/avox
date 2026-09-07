@@ -60,7 +60,8 @@ class WinCaptureBase : public VideoSource, public Dx11Context {
 class CaptureWindows : public WinCaptureBase, public RunTask {
  public:
   CaptureWindows() = default;
-  virtual ~CaptureWindows() = default;
+  // 基类 ~RunTask 才 join(晚于成员销毁), 本级先停线程
+  virtual ~CaptureWindows() { stopTask(); }
 
  protected:
   virtual void onRunTask() override;

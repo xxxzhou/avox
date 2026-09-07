@@ -57,7 +57,7 @@ Android Godot GPU 直通播放磁力链接演示![Android Godot GPU直通播放�
 ### Vulkan GPU 图像处理
 
 - 100+ 滤镜/特效：GPUImage 全系滤镜移植为 Vulkan Compute Shader
-- Layer + PipeGraph 可组合计算管线图，跨平台 GPU 数据映射（OpenGL ES/Metal/DX11 → Vulkan）
+- Layer + PipeGraph 可组合计算管线图，跨平台 GPU 数据映射（OpenGL ES/Metal/DX11 ↔ Vulkan）
 - FreeType + Compute Shader 文本渲染，支持时间戳/字幕叠加
 - Anime4K 超分辨率整合（GLSL 转 Vulkan Compute Shader，适配内置管线组合）
 - 性能参考：1080p 单处理层 0.1~0.3ms（RTX 2070，见[滤镜耗时实测](https://zhuanlan.zhihu.com/p/1931653908276704034)）

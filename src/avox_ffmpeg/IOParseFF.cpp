@@ -83,8 +83,9 @@ IOParseFF::IOParseFF() {
 }
 
 IOParseFF::~IOParseFF() {
-  // 析构路径不经 close(): ~RunTask 会 join 读线程, 先置打断防干等
+  // 析构不经 close(): 本级先打断再 join, 拖到 ~RunTask 时 fmtCtx 已析构(线程还在 av_read_frame 会 UAF)
   bStopIo = true;
+  stopTask();
 }
 
 bool IOParseFF::parseStream(int32_t streamId, AVCodecParameters* codecpar) {
