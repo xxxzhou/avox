@@ -277,6 +277,8 @@ class ISignalOb {
 
 // 信令通道: 把本地SDP/ICE送到对端, 远端消息经ISignalOb回填
 // 一次性HTTP(WHIP/offer)或长连接(answer/WS)由实现决定, offer/answer都能用
+// 注意: 本接口全部方法由IRtcPlayer内部驱动调用, 上层只实现并setSignalChannel注册;
+// setSignalOb是注入槽(open时player传入自身), 实现方存住用于回填远端消息, 不得自行调用
 // 回调onRemoteXxx可来自实现线程, IRtcPlayer内部已做线程转移
 class ISignalChannel {
  public:
