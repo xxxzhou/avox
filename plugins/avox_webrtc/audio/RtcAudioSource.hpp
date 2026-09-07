@@ -21,10 +21,16 @@ class RtcAudioSource : public webrtc::AudioSourceInterface,
   std::set<webrtc::AudioTrackSinkInterface*> sinks;
   // 项目已实现的音频源
   avox::AudioSource* source = nullptr;
+  // 本地源描述
+  AudioDesc adesc = {};
 
  public:
   void setSource(IAudioSource* source);
   void close();
+  // 是否设置了推流源(决定open时是否AddTrack)
+  bool hasSource();
+  // 本地源描述(onAudioDesc后有效)
+  AudioDesc getAudioDesc();
 
   // IAudioSourceOb
  public:

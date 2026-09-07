@@ -29,7 +29,7 @@ void RtcAudioSource::close() {
     std::lock_guard<std::mutex> lock(sinkLock);
     if (source) {
       source->close();
-      source->removeObserver(this);            
+      source->removeObserver(this);
     }
     sinks.clear();
   }
@@ -39,9 +39,23 @@ void RtcAudioSource::close() {
   LOGFLF(LogLevel::info, "rtc audio source closed");
 }
 
+bool RtcAudioSource::hasSource() {
+  std::lock_guard<std::mutex> lock(sinkLock);
+  return source != nullptr;
+}
+
+AudioDesc RtcAudioSource::getAudioDesc() {
+  std::lock_guard<std::mutex> lock(sinkLock);
+  return adesc;
+}
+
 void RtcAudioSource::onAudioDesc(const AudioDesc& desc) {
   srcDesc = desc;
   outDesc = desc;
+  {
+    std::lock_guard<std::mutex> lock(sinkLock);
+    adesc = desc;
+  }
   // 转化成WebRTC音频源需要的格式
   if (desc.sampleRate == 44100) {
     outDesc.sampleRate = 48000;

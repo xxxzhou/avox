@@ -24,6 +24,8 @@ class RtcVideoSource : public webrtc::VideoTrackSource, public IVideoSourceOb {
   std::mutex sinkLock;
   // 项目当前视频源
   avox::VideoSource* videoSource = nullptr;
+  // 本地源描述
+  VideoDesc vdesc = {};
   // 对应videoSource的本地渲染器及图像处理
   std::unique_ptr<WindowRender> localVRender;
   // localVRender的图像处理器
@@ -34,7 +36,11 @@ class RtcVideoSource : public webrtc::VideoTrackSource, public IVideoSourceOb {
  public:
   void setSource(IVideoSource* source);
   void close();
-  WindowRender* getSurfaceRender() { return localVRender.get(); };  
+  // 是否设置了推流源(决定open时是否AddTrack)
+  bool hasSource();
+  WindowRender* getSurfaceRender() { return localVRender.get(); };
+  // 本地源描述(onVideoDesc后有效)
+  VideoDesc getVideoDesc();
 
  public:
   void AddOrUpdateSink(webrtc::VideoSinkInterface<webrtc::VideoFrame>* sink,

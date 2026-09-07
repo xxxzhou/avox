@@ -42,8 +42,8 @@ void RtcVideoSource::setSource(IVideoSource* source) {
 void RtcVideoSource::close() {
   std::lock_guard<std::mutex> lock(sinkLock);
   // 1. 停止并移除上游视频源监听
-  if (videoSource) { 
-    videoSource->close();  
+  if (videoSource) {
+    videoSource->close();
     videoSource->removeObserver(this);
   }
   // 2. 销毁本地渲染资源（防止显存/纹理泄漏）
@@ -58,6 +58,16 @@ void RtcVideoSource::close() {
   // 通知
   //  FireOnChanged();
   LOGFLF(LogLevel::info, "rtc video source closed");
+}
+
+bool RtcVideoSource::hasSource() {
+  std::lock_guard<std::mutex> lock(sinkLock);
+  return videoSource != nullptr;
+}
+
+VideoDesc RtcVideoSource::getVideoDesc() {
+  std::lock_guard<std::mutex> lock(sinkLock);
+  return vdesc;
 }
 
 webrtc::VideoSourceInterface<webrtc::VideoFrame>* RtcVideoSource::source() {
@@ -171,6 +181,8 @@ void RtcVideoSource::pushFrame() {
 
 void RtcVideoSource::onVideoDesc(const VideoDesc& desc) {
   // 更新描述信息，sstate 在第一个 Sink 进来时已经设为 kLive
+  std::lock_guard<std::mutex> lock(sinkLock);
+  vdesc = desc;
 }
 
 void RtcVideoSource::onVideoError(AVError error, const char* msg) {

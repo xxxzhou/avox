@@ -33,6 +33,9 @@ class AVOX_EXPORT RawSource : public BaseSource,
   void checkTrackReady();
   // 在音频与视频都设置完成后，为true
   bool readying() { return bReady; }
+  // 打开后按协商结果修正期望媒体(如webrtc对端只发视频), 绕过bOpen守卫, 内部重查ready
+  void updateExpectVideo(bool bExpect);
+  void updateExpectAudio(bool bExpect);
 
  protected:
   // 如果开了音频与视频，需要等待音频与视频都ready

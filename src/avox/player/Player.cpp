@@ -47,12 +47,33 @@ void addRtcPlayerOb(IRtcPlayer* player, IMediaPlayerOb* ob) {
   if (bp) {
     bp->Observer<IMediaPlayerOb>::addObserver(ob);
   }
+  // rtc扩展回调(连接状态/首帧/DataChannel): ob为IRtcPlayerOb时同时注册
+  IRtcPlayerOb* rob = dynamic_cast<IRtcPlayerOb*>(ob);
+  if (rob) {
+    player->addOb(rob);
+  }
 }
 
 void removeRtcPlayerOb(IRtcPlayer* player, IMediaPlayerOb* ob) {
   BasePlayer* bp = dynamic_cast<BasePlayer*>(player);
   if (bp) {
     bp->Observer<IMediaPlayerOb>::removeObserver(ob);
+  }
+  IRtcPlayerOb* rob = dynamic_cast<IRtcPlayerOb*>(ob);
+  if (rob) {
+    player->removeOb(rob);
+  }
+}
+
+const char* getRtcConnStateStr(RtcConnState state) {
+  switch (state) {
+#define XX(name, value, str)   \
+  case RtcConnState::name:     \
+    return str;
+    AVOX_MAP_RTC_CONN_STATE(XX)
+#undef XX
+    default:
+      return "unknow";
   }
 }
 

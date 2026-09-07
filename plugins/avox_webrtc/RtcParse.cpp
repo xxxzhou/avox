@@ -5,10 +5,88 @@
 #ifdef __APPLE__
 #include "avox_apple/IOSHelper.h"
 #endif
+#include "api/stats/rtc_stats_collector_callback.h"
+#include "api/stats/rtcstats_objects.h"
+#include "rtc_base/copy_on_write_buffer.h"
 
 namespace avox {
 
 using namespace webrtc;
+
+namespace {
+
+// codec名大小写不敏感比较
+bool bSameCodecName(const std::string& a, const std::string& b) {
+  if (a.size() != b.size()) {
+    return false;
+  }
+  for (size_t i = 0; i < a.size(); i++) {
+    if (tolower((unsigned char)a[i]) != tolower((unsigned char)b[i])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// 轨道方向转webrtc方向: 发送还需实际有源(bSend)
+RtpTransceiverDirection toRtcDirection(RtpDirection direction, bool bSend) {
+  bool bRecv = direction == RtpDirection::recvOnly ||
+               direction == RtpDirection::sendRecv;
+  bool bCanSend = bSend && (direction == RtpDirection::sendOnly ||
+                            direction == RtpDirection::sendRecv);
+  if (bCanSend && bRecv) {
+    return RtpTransceiverDirection::kSendRecv;
+  }
+  if (bCanSend) {
+    return RtpTransceiverDirection::kSendOnly;
+  }
+  if (bRecv) {
+    return RtpTransceiverDirection::kRecvOnly;
+  }
+  return RtpTransceiverDirection::kInactive;
+}
+
+// GetStats回调: 提取RTT与丢包率
+class RtcStatsCallback : public RTCStatsCollectorCallback {
+ public:
+  RtcStatsCallback(std::atomic<int32_t>* rttMs_, std::atomic<float>* lossRate_)
+      : rttMs(rttMs_), lossRate(lossRate_) {}
+  virtual ~RtcStatsCallback() = default;
+
+ private:
+  std::atomic<int32_t>* rttMs = nullptr;
+  std::atomic<float>* lossRate = nullptr;
+
+ public:
+  virtual void OnStatsDelivered(const scoped_refptr<const RTCStatsReport>&
+                                    report) override {
+    for (const auto* pair :
+         report->GetStatsOfType<RTCIceCandidatePairStats>()) {
+      if (pair->current_round_trip_time.has_value()) {
+        rttMs->store((int32_t)(*pair->current_round_trip_time * 1000),
+                     std::memory_order_release);
+        break;
+      }
+    }
+    int64_t lost = 0;
+    int64_t recv = 0;
+    for (const auto* stat :
+         report->GetStatsOfType<RTCInboundRtpStreamStats>()) {
+      if (stat->packets_lost.has_value()) {
+        lost += *stat->packets_lost;
+      }
+      if (stat->packets_received.has_value()) {
+        recv += *stat->packets_received;
+      }
+    }
+    if (recv + lost > 0) {
+      lossRate->store((float)((double)lost / (double)(recv + lost)),
+                      std::memory_order_release);
+    }
+  }
+};
+
+}  // namespace
 
 // regWebRtcRawSource 已移至 WebrtcModule::loadModule
 
@@ -31,7 +109,68 @@ void RtcParse::setRollType(RtcRollType type) {
 }
 
 void RtcParse::addIceServer(const char* uri, const char* username,
-                            const char* password) {}
+                            const char* password) {
+  if (!uri) {
+    return;
+  }
+  if (pc != nullptr) {
+    LOGFLF(LogLevel::warn, "must close before addIceServer");
+    return;
+  }
+  // 同uri去重,允许重复配置只保留一份
+  for (auto& server : iceServers) {
+    if (server.uri == uri) {
+      return;
+    }
+  }
+  IceServer server;
+  server.uri = uri;
+  server.username = username ? username : "";
+  server.password = password ? password : "";
+  iceServers.push_back(server);
+}
+
+void RtcParse::setVideoDirection(RtpDirection direction) {
+  if (pc != nullptr) {
+    LOGFLF(LogLevel::warn, "must close before setVideoDirection");
+    return;
+  }
+  videoDirection = direction;
+}
+
+void RtcParse::setAudioDirection(RtpDirection direction) {
+  if (pc != nullptr) {
+    LOGFLF(LogLevel::warn, "must close before setAudioDirection");
+    return;
+  }
+  audioDirection = direction;
+}
+
+void RtcParse::setSendVideoBitrate(int32_t maxKbps) {
+  maxVideoBitrateKbps = maxKbps;
+  // 已连接时立即生效
+  applySendParams();
+}
+
+void RtcParse::setSendVideoFps(int32_t maxFps) {
+  maxVideoFps = maxFps;
+  applySendParams();
+}
+
+void RtcParse::setPreferredVideoCodec(const char* codec) {
+  preferredVideoCodec = codec ? codec : "";
+  if (pc != nullptr) {
+    applyCodecPreference();
+  }
+}
+
+void RtcParse::setEnableDataChannel(bool bEnable) {
+  if (pc != nullptr) {
+    LOGFLF(LogLevel::warn, "must close before setEnableDataChannel");
+    return;
+  }
+  bEnableDataChannel = bEnable;
+}
 
 bool RtcParse::open() {
   if (!RtcEngine::Get().ensureInitialized()) {
@@ -44,33 +183,34 @@ bool RtcParse::open() {
   }
   LOGFLF(LogLevel::info, "start open webrtc source,type:",
          rollType == RtcRollType::offer ? "offer" : "answer");
+  // 重置轨道/就绪状态与统计
+  RawSource::open();
+  connState.store(RtcConnState::init, std::memory_order_release);
+  rttMs.store(-1, std::memory_order_release);
+  lossRate.store(0.0f, std::memory_order_release);
+  lastStatsTime.store(0, std::memory_order_release);
   PeerConnectionInterface::RTCConfiguration config = {};
-  // 仅使用核心网络接口，忽略那些不可靠的虚拟接口
+  // 使用全部网络接口
   config.type = webrtc::PeerConnectionInterface::kAll;
   config.continual_gathering_policy =
       webrtc::PeerConnectionInterface::GATHER_ONCE;
-  // 用物理网卡，不使用 VPN
+  // 优先低成本网络类型(物理网卡)
   config.candidate_network_policy = webrtc::PeerConnectionInterface::
       CandidateNetworkPolicy::kCandidateNetworkPolicyLowCost;
   config.sdp_semantics = SdpSemantics::kUnifiedPlan;
-  if (iceServers.size() > 0) {
-    for (auto& server : iceServers) {
-      config.servers.push_back(server.getRtcIceServer());
-    }
-  } else {
+  // ICE服务器: 用户配置优先, 未配置仅默认STUN(局域网/同网段可直连)
+  if (iceServers.empty()) {
     PeerConnectionInterface::IceServer ice_server = {};
     ice_server.uri = "stun:stun.l.google.com:19302";
     config.servers.push_back(ice_server);
-    ice_server.uri = "turn:122.9.78.240:8478";
-    ice_server.username = "demo";
-    ice_server.password = "123456";
-    config.servers.push_back(ice_server);
+  } else {
+    for (auto& server : iceServers) {
+      config.servers.push_back(server.getRtcIceServer());
+    }
   }
-  //
   config.set_cpu_adaptation(false);
   config.rtcp_mux_policy = PeerConnectionInterface::kRtcpMuxPolicyRequire;
   config.bundle_policy = PeerConnectionInterface::kBundlePolicyMaxBundle;
-  // 回调
   webrtc::PeerConnectionDependencies deps(this);
   auto result = factory->CreatePeerConnectionOrError(config, std::move(deps));
   if (!result.ok()) {
@@ -78,38 +218,65 @@ bool RtcParse::open() {
     return false;
   }
   pc = result.MoveValue();
-  if (videoSource) {
+  // 发送=设置了对应源且方向允许发; 接收=方向允许收
+  bSendVideo = videoSource && videoSource->hasSource() &&
+               (videoDirection == RtpDirection::sendOnly ||
+                videoDirection == RtpDirection::sendRecv);
+  bSendAudio = audioSource && audioSource->hasSource() &&
+               (audioDirection == RtpDirection::sendOnly ||
+                audioDirection == RtpDirection::sendRecv);
+  if (bSendVideo) {
     localVideoTrack =
         factory->CreateVideoTrack("video_label", videoSource.get());
-    // AddTrack自动创建Transceiver，先假定为sendrecv
     auto addResult = pc->AddTrack(localVideoTrack, {"stream_id"});
     if (!addResult.ok()) {
-      LOGFLF(LogLevel::warn, "failed: ", addResult.error().message());
+      LOGFLF(LogLevel::warn, "add video track failed: ",
+             addResult.error().message());
+    } else {
+      videoSender = addResult.value();
     }
-  } else if (!bDisableVideo) {
-    // 只有不推,但是要拉,kRecvOnly
+  } else if (videoDirection == RtpDirection::recvOnly ||
+             videoDirection == RtpDirection::sendRecv) {
+    // 只收不推,加recvonly收轨道
     webrtc::RtpTransceiverInit init;
     init.direction = webrtc::RtpTransceiverDirection::kRecvOnly;
     pc->AddTransceiver(webrtc::MediaType::MEDIA_TYPE_VIDEO, init);
   }
-  if (audioSource) {
+  if (bSendAudio) {
     localAudioTrack =
         factory->CreateAudioTrack("audio_label", audioSource.get());
     auto addResult = pc->AddTrack(localAudioTrack, {"stream_id"});
     if (!addResult.ok()) {
-      LOGFLF(LogLevel::warn, "failed: ", addResult.error().message());
+      LOGFLF(LogLevel::warn, "add audio track failed: ",
+             addResult.error().message());
+    } else {
+      audioSender = addResult.value();
     }
-  } else if (!bDisableAudio) {
+  } else if (audioDirection == RtpDirection::recvOnly ||
+             audioDirection == RtpDirection::sendRecv) {
     webrtc::RtpTransceiverInit init;
     init.direction = webrtc::RtpTransceiverDirection::kRecvOnly;
     pc->AddTransceiver(webrtc::MediaType::MEDIA_TYPE_AUDIO, init);
   }
+  // offer方主动建DataChannel, answer方等OnDataChannel
+  if (bEnableDataChannel && rollType == RtcRollType::offer) {
+    webrtc::DataChannelInit init;
+    dataChannel = pc->CreateDataChannel("avox", &init);
+    if (dataChannel) {
+      dataChannel->RegisterObserver(this);
+    }
+  }
+  // 期望媒体按方向初始化,setRemoteSdp后按协商结果修正
+  updateExpectVideo(videoDirection == RtpDirection::recvOnly ||
+                    videoDirection == RtpDirection::sendRecv);
+  updateExpectAudio(audioDirection == RtpDirection::recvOnly ||
+                    audioDirection == RtpDirection::sendRecv);
+  applyCodecPreference();
+  applySendParams();
   // 如果是offer,先得到本地offer,再提交给服务器
   if (rollType == RtcRollType::offer) {
     createOffer();
   }
-  videoTracks.clear();
-  audioTracks.clear();
   LOGFLF(LogLevel::info, "open webrtc source,type:",
          rollType == RtcRollType::offer ? "offer" : "answer");
   return true;
@@ -145,14 +312,34 @@ WindowRender* RtcParse::getLocalSurfaceRender() {
   return nullptr;
 }
 
-IAudioRender* RtcParse::getLocalAudioRender() {
-  if (audioSource) {
+IAudioRender* RtcParse::getLocalAudioRender() { return nullptr; }
+
+VideoDesc RtcParse::getLocalVideoDesc() {
+  if (videoSource) {
+    return videoSource->getVideoDesc();
   }
-  return nullptr;
+  return {};
+}
+
+AudioDesc RtcParse::getLocalAudioDesc() {
+  if (audioSource) {
+    return audioSource->getAudioDesc();
+  }
+  return {};
 }
 
 void RtcParse::close() {
-  localSdp = "";
+  {
+    std::lock_guard<std::mutex> lock(sdpMtx);
+    localSdp = "";
+  }
+  if (dataChannel) {
+    dataChannel->UnregisterObserver();
+    dataChannel = nullptr;
+  }
+  videoSender = nullptr;
+  audioSender = nullptr;
+  connState.store(RtcConnState::closed, std::memory_order_release);
   if (videoSource) {
     videoSource->close();
   }
@@ -183,31 +370,118 @@ void RtcParse::close() {
 
 bool RtcParse::bOpening() { return pc != nullptr; }
 
-const char* RtcParse::getLocalSdp() { return localSdp.c_str(); }
+const char* RtcParse::getLocalSdp() {
+  std::lock_guard<std::mutex> lock(sdpMtx);
+  // 返回内部缓冲,调用方需立即拷贝
+  return localSdp.c_str();
+}
+
+bool RtcParse::sendDataChannel(const char* data, int32_t size) {
+  if (!dataChannel || !data || size <= 0) {
+    return false;
+  }
+  return dataChannel->Send(
+      webrtc::DataBuffer(webrtc::CopyOnWriteBuffer(data, size), true));
+}
+
+void RtcParse::pollStats() {
+  if (!pc) {
+    return;
+  }
+  // 2秒节流,避免并发GetStats
+  int64_t now = timeStampMS();
+  int64_t last = lastStatsTime.load(std::memory_order_relaxed);
+  if (now - last < 2000) {
+    return;
+  }
+  if (!lastStatsTime.compare_exchange_strong(last, now)) {
+    return;
+  }
+  pc->GetStats(webrtc::make_ref_counted<RtcStatsCallback>(&rttMs, &lossRate)
+                   .get());
+}
+
+bool RtcParse::remoteSendsMedia(const std::string& sdp, const char* media) {
+  // 找m=<media>段, 段内recvonly/inactive为对端不发送, 默认sendrecv视为发送
+  std::string tag = std::string("m=") + media + " ";
+  size_t pos = sdp.find(tag);
+  if (pos == std::string::npos) {
+    return false;
+  }
+  size_t end = sdp.find("\nm=", pos + 1);
+  if (end == std::string::npos) {
+    end = sdp.size();
+  }
+  std::string section = sdp.substr(pos, end - pos);
+  return section.find("a=recvonly") == std::string::npos &&
+         section.find("a=inactive") == std::string::npos;
+}
+
+void RtcParse::applyRemoteMediaExpectation(const std::string& sdp) {
+  updateExpectVideo(remoteSendsMedia(sdp, "video"));
+  updateExpectAudio(remoteSendsMedia(sdp, "audio"));
+}
+
+void RtcParse::applyCodecPreference() {
+  if (preferredVideoCodec.empty() || !pc || !factory) {
+    return;
+  }
+  auto capabilities =
+      factory->GetRtpSenderCapabilities(webrtc::MediaType::MEDIA_TYPE_VIDEO);
+  // 偏好的codec置顶,其余保持原相对顺序
+  std::vector<webrtc::RtpCodecCapability> ordered;
+  for (auto& codec : capabilities.codecs) {
+    if (bSameCodecName(codec.name, preferredVideoCodec)) {
+      ordered.push_back(codec);
+    }
+  }
+  if (ordered.empty()) {
+    LOGFLF(LogLevel::warn, "preferred codec not support:", preferredVideoCodec);
+    return;
+  }
+  for (auto& codec : capabilities.codecs) {
+    if (!bSameCodecName(codec.name, preferredVideoCodec)) {
+      ordered.push_back(codec);
+    }
+  }
+  for (auto transceiver : pc->GetTransceivers()) {
+    if (transceiver->media_type() == webrtc::MediaType::MEDIA_TYPE_VIDEO) {
+      auto error = transceiver->SetCodecPreferences(ordered);
+      if (!error.ok()) {
+        LOGFLF(LogLevel::warn, "set codec preference failed: ",
+               error.message());
+      }
+    }
+  }
+}
+
+void RtcParse::applySendParams() {
+  if (!videoSender) {
+    return;
+  }
+  webrtc::RtpParameters params = videoSender->GetParameters();
+  if (params.encodings.empty()) {
+    return;
+  }
+  if (maxVideoBitrateKbps > 0) {
+    params.encodings[0].max_bitrate_bps = maxVideoBitrateKbps * 1000;
+  }
+  if (maxVideoFps > 0) {
+    params.encodings[0].max_framerate = maxVideoFps;
+  }
+  auto error = videoSender->SetParameters(params);
+  if (!error.ok()) {
+    LOGFLF(LogLevel::warn, "set send params failed: ", error.message());
+  }
+}
 
 void RtcParse::setTransceiverDirection() {
   for (auto transceiver : pc->GetTransceivers()) {
     auto media_type = transceiver->media_type();
     if (media_type == webrtc::MediaType::AUDIO) {
-      if (localAudioTrack) {
-        transceiver->SetDirection(
-            bDisableAudio ? webrtc::RtpTransceiverDirection::kSendOnly
-                          : webrtc::RtpTransceiverDirection::kSendRecv);
-      } else {
-        transceiver->SetDirection(
-            bDisableAudio ? webrtc::RtpTransceiverDirection::kInactive
-                          : webrtc::RtpTransceiverDirection::kRecvOnly);
-      }
+      transceiver->SetDirection(toRtcDirection(audioDirection, bSendAudio));
     } else if (media_type == webrtc::MediaType::VIDEO) {
-      if (localVideoTrack) {
-        transceiver->SetDirection(
-            bDisableVideo ? webrtc::RtpTransceiverDirection::kSendOnly
-                          : webrtc::RtpTransceiverDirection::kSendRecv);
-      } else {
-        transceiver->SetDirection(
-            bDisableVideo ? webrtc::RtpTransceiverDirection::kInactive
-                          : webrtc::RtpTransceiverDirection::kRecvOnly);
-      }
+      transceiver->SetDirection(toRtcDirection(videoDirection, bSendVideo));
     }
   }
 }
@@ -219,8 +493,6 @@ void RtcParse::createOffer() {
   webrtc::PeerConnectionInterface::RTCOfferAnswerOptions options;
   pc->CreateOffer(webrtc::make_ref_counted<CreateOfferObserver>(this).get(),
                   options);
-  LOGFLF(LogLevel::info,
-         "now signal state:", getSignalingStateState(pc->signaling_state()));
 }
 
 void RtcParse::createAnswer() {
@@ -230,8 +502,6 @@ void RtcParse::createAnswer() {
   webrtc::PeerConnectionInterface::RTCOfferAnswerOptions options;
   pc->CreateAnswer(webrtc::make_ref_counted<CreateAnswerObserver>(this).get(),
                    options);
-  LOGFLF(LogLevel::info,
-         "now signal state:", getSignalingStateState(pc->signaling_state()));
 }
 
 void RtcParse::onSetLocalSdp(webrtc::SessionDescriptionInterface* desc) {
@@ -243,10 +513,15 @@ void RtcParse::onSetLocalSdp(webrtc::SessionDescriptionInterface* desc) {
   pc->SetLocalDescription(
       absl::WrapUnique(desc),
       webrtc::make_ref_counted<SetLocalDescriptionObserver>());
-  desc->ToString(&localSdp);
-  LOGFLF(LogLevel::info, "set local sdp:", localSdp);
-  if (!localSdp.empty()) {
-    sdpOb->onLocalSdp(localSdp.c_str());
+  std::string sdpStr;
+  desc->ToString(&sdpStr);
+  {
+    std::lock_guard<std::mutex> lock(sdpMtx);
+    localSdp = sdpStr;
+  }
+  LOGFLF(LogLevel::info, "set local sdp:", sdpStr);
+  if (sdpOb && !sdpStr.empty()) {
+    sdpOb->onLocalSdp(sdpStr.c_str());
   }
 }
 
@@ -255,9 +530,11 @@ void RtcParse::setRemoteSdp(const std::string& sdp) {
     LOGFLF(LogLevel::warn, "pc not create");
     return;
   }
+  LOGFLF(LogLevel::info, "set remote sdp:", sdp);
+  // 按远端SDP修正期望媒体,对端只发单媒体时不再等双通道就绪
+  applyRemoteMediaExpectation(sdp);
   webrtc::PeerConnectionInterface::SignalingState nowState =
       pc->signaling_state();
-  LOGFLF(LogLevel::info, "set remote sdp:", sdp);
   if (rollType == RtcRollType::answer) {
     if (nowState != webrtc::PeerConnectionInterface::kStable) {
       LOGFLF(LogLevel::warn,
@@ -309,7 +586,11 @@ void RtcParse::OnSignalingChange(
 
 void RtcParse::OnDataChannel(
     webrtc::scoped_refptr<webrtc::DataChannelInterface> data_channel) {
-  LOGFLF(LogLevel::info, "webrtc onDataChannel");
+  LOGFLF(LogLevel::info, "webrtc onDataChannel:",
+         data_channel->label().c_str());
+  // answer方采用远端创建的通道
+  dataChannel = data_channel;
+  dataChannel->RegisterObserver(this);
 }
 
 void RtcParse::OnIceConnectionChange(
@@ -329,8 +610,6 @@ void RtcParse::OnIceConnectionChange(
     }
     case webrtc::PeerConnectionInterface::IceConnectionState::
         kIceConnectionCompleted: {
-      // dispatch(&IRawSourceOb::onError, AVError::endOfFile, stateStr);
-      // dispatch(&IRawSourceOb::onReady);
       break;
     }
     case webrtc::PeerConnectionInterface::IceConnectionState::
@@ -341,6 +620,35 @@ void RtcParse::OnIceConnectionChange(
     default:
       break;
   }
+}
+
+void RtcParse::OnConnectionChange(
+    webrtc::PeerConnectionInterface::PeerConnectionState new_state) {
+  RtcConnState state = RtcConnState::init;
+  switch (new_state) {
+    case webrtc::PeerConnectionInterface::PeerConnectionState::kNew:
+      state = RtcConnState::init;
+      break;
+    case webrtc::PeerConnectionInterface::PeerConnectionState::kConnecting:
+      state = RtcConnState::connecting;
+      break;
+    case webrtc::PeerConnectionInterface::PeerConnectionState::kConnected:
+      state = RtcConnState::connected;
+      break;
+    case webrtc::PeerConnectionInterface::PeerConnectionState::kDisconnected:
+      state = RtcConnState::disconnected;
+      break;
+    case webrtc::PeerConnectionInterface::PeerConnectionState::kFailed:
+      state = RtcConnState::failed;
+      break;
+    case webrtc::PeerConnectionInterface::PeerConnectionState::kClosed:
+      state = RtcConnState::closed;
+      break;
+    default:
+      break;
+  }
+  connState.store(state, std::memory_order_release);
+  LOGFLF(LogLevel::info, "rtc connection state:", getRtcConnStateStr(state));
 }
 
 void RtcParse::OnIceGatheringChange(
@@ -406,7 +714,6 @@ void RtcParse::OnAddTrack(
     webrtc::AudioTrackInterface* audioTrack =
         static_cast<webrtc::AudioTrackInterface*>(track.get());
     // 不调用这个,下面的RtcParse::OnData音频数据不会回调
-    // 音频的渲染本身由webrtc处理,因此这是否有必要?
     audioTrack->AddSink(this);
     remoteAudioTracks.push_back(
         webrtc::scoped_refptr<webrtc::AudioTrackInterface>(audioTrack));
@@ -490,7 +797,6 @@ void RtcParse::OnFrame(const webrtc::VideoFrame& frame) {
     yuvFrame.pts = frame.render_time_ms();
     dispatch(&IRawSourceOb::onVideoFrame, yuvFrame, 0);
   }
-  // log(LogLevel::info, "webrtc onframe video:", nowTime);
 }
 
 void RtcParse::OnData(const void* data, int bits_per_sample, int sample_rate,
@@ -512,11 +818,21 @@ void RtcParse::OnData(const void* data, int bits_per_sample, int sample_rate,
   aframe.buffer.data = (uint8_t*)data;
   aframe.buffer.size = getAudioFrameSize(adesc, frameMs);
   aframe.buffer.bRef = true;
-  // log(LogLevel::info, "now ms:", timeStampMS(),
-  //     " number_of_frames:", number_of_frames, " size:", aframe.buffer.size);
   // 这里的data还在，需要在onDecode用掉或是保存
   dispatch(&IRawSourceOb::onAudioFrame, aframe, 0);
-  // log(LogLevel::info, "webrtc onframe audio");
+}
+
+void RtcParse::OnStateChange() {
+  if (dataChannel) {
+    LOGFLF(LogLevel::info, "data channel state:", (int32_t)dataChannel->state());
+  }
+}
+
+void RtcParse::OnMessage(const webrtc::DataBuffer& buffer) {
+  if (dataChannelMsgCb) {
+    dataChannelMsgCb((const char*)buffer.data.data(),
+                     (int32_t)buffer.data.size());
+  }
 }
 
 }

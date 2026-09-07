@@ -10,12 +10,12 @@ webrtc.lib ~1GB+ 静态链入 avox.dll → 不需要 WebRTC 时体积浪费。�
 
 | 代码 | 归属 | 理由 |
 |------|------|------|
-| IRtcPlayer / RtcRollType | 核心 `avox/AvoxPlayer.h` | 纯接口，SWIG 友好 |
+| IRtcPlayer / RtcRollType / RtcConnState / RtpDirection / IRtcPlayerOb / ISignalChannel | 核心 `avox/AvoxPlayer.h` | 纯接口，SWIG 友好 |
 | ISdpAgentOb + onRemoteSdp | 核心 `avox/AvoxPlayer.h` | 双向 SDP 交换接口 |
 | TestSdpOb + mk_http | `src/avox_zlmediakit/` | HTTP 信令，零 webrtc 依赖 |
 | createWebRtcPlayer | 核心 AVOX_EXPORT | AvoxManager 工厂，SWIG 可绑定 |
 | createZlTestSdpAgent | 核心 AVOX_EXPORT | 走核心 TestSdpOb |
-| addRtcPlayerOb / removeRtcPlayerOb | 插件 AVOX_PLUGIN_API | dynamic_cast<RtcPlayer*> |
+| addRtcPlayerOb / removeRtcPlayerOb | 核心 AVOX_EXPORT | dynamic_cast<BasePlayer*> cross-cast |
 | RtcPlayer / RtcParse / RtcHelper | 插件 | PeerConnection 实现 |
 | RtcAudioProcess (3A) | 插件 | 依赖 webrtc::AudioProcessing |
 | webrtc.lib | 插件链接 | 体积巨大，按需加载 |
@@ -31,6 +31,40 @@ webrtc.lib ~1GB+ 静态链入 avox.dll → 不需要 WebRTC 时体积浪费。�
 │ createWebRtc    │  createRtc    │                  │
 │ Player()        │  Player()────►│ new RtcPlayer()  │
 └─────────────────┘               └──────────────────┘
+```
+
+## 接口 v2 (扩 UE/Unity/Godot 前固化)
+
+`IRtcPlayer` v2 在纯接口层补齐引擎集成所需能力（实现都在插件）：
+
+| 能力 | 接口 | 说明 |
+|------|------|------|
+| 连接状态 | `getConnectionState` / `IRtcPlayerOb::onConnectionState` | 映射 PeerConnectionState, 播放线程回调 |
+| 首帧 | `IRtcPlayerOb::onFirstVideoFrame` | 隐藏 loading, 解码线程回调 |
+| 轨道方向 | `setVideoDirection` / `setAudioDirection` | recvOnly/sendOnly/sendRecv/inactive, 默认 sendRecv; 发送需设置对应源 |
+| 推流参数 | `setSendVideoBitrate` / `setSendVideoFps` / `setPreferredVideoCodec` | RtpSender 参数 + SetCodecPreferences |
+| 重连 | `reconnect` / `setAutoReconnect(b, maxRetries)` | failed 触发自动重连(3s 间隔), 重连后重新走信令 |
+| 统计 | `getFps` / `getLossRate` / `getRttMs` | 帧率本地统计; 丢包/RTT 走 RTCP GetStats(2s 节流) |
+| DataChannel | `setEnableDataChannel` / `sendDataChannel` / `onDataChannelMsg` | 二进制; offer 方主动建, answer 方用远端的 |
+| 信令通道 | `ISignalChannel` + `setSignalChannel` | 本地 SDP/ICE 自动送出、远端自动回填; 低层钩子 `ISdpAgentOb` 仍可用 |
+| 真实 open 结果 | `open()` 返回 PC 创建结果 | 连接本身异步, 看 `onConnectionState` |
+
+关键修复（v1 遗留）：
+- `addIceServer` 此前为空实现（永远走硬编码 STUN/TURN 兜底）
+- 远端音频此前从不发声（`remoteARender` 未创建且用的是裸 `AudioRender`, 现接 `getDefaultAudioOutput`）
+- 对端只发单媒体(纯视频/纯音频)此前永远不 ready（`setRemoteSdp` 时按远端 SDP 修正期望媒体）
+- 未设推流源时此前仍 AddTrack（SDP 恒 sendrecv）, 现按 `hasSource()` 决定
+
+### 两种信令用法
+
+```
+// 1. 低层钩子(现状): onLocalSdp 里自己换远端 SDP 再 setRemoteSdp/addIceCandidate 回填
+player->setSdpAgentOb(ob);
+player->open();
+
+// 2. 信令通道: 实现 ISignalChannel(HTTP/WS/WHIP), 交换全自动
+player->setSignalChannel(channel);
+player->open();   // 内部 connect, onLocalSdp 时 sendLocalSdp, 远端消息走 onRemoteSdp/onRemoteIceCandidate
 ```
 
 ## SSL 依赖

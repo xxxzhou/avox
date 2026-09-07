@@ -221,10 +221,36 @@ class ISourcePlayer {
   virtual ISourceInfo* getSourceInfo() = 0;
 };
 
+// ============== WebRTC 推拉流 ==============
+
+// WebRTC连接状态(映射PeerConnectionState)
+#define AVOX_MAP_RTC_CONN_STATE(XX)  \
+  XX(init, 0, "new")                \
+  XX(connecting, 1, "connecting")   \
+  XX(connected, 2, "connected")     \
+  XX(disconnected, 3, "disconnected") \
+  XX(failed, 4, "failed")           \
+  XX(closed, 5, "closed")
+
+enum class RtcConnState {
+#define XX(name, value, str) name = value,
+  AVOX_MAP_RTC_CONN_STATE(XX)
+#undef XX
+};
+
+// 轨道方向, inactive=不协商该媒体, 默认sendRecv
+enum class RtpDirection {
+  inactive = 0,
+  recvOnly = 1,
+  sendOnly = 2,
+  sendRecv = 3,
+};
+
 // 暂时只有WebRTC模式使用
 // 协商SDP交互,传入本地SDP,返回远端SDP
 // 从RtcExport.h移植到这,因为nodejs需要这个类
 // 而AVOX_ENABLE_WRBRTC不一定有用
+// 回调线程: WebRTC信令线程, 回调对象生命周期需保证到close之后
 class ISdpAgentOb {
  public:
   virtual ~ISdpAgentOb() = default;
@@ -233,9 +259,48 @@ class ISdpAgentOb {
   // 得到本地SDP,由用户根据需求生成逻辑得到远端SDP
   // 然后请调用对应IMediaPlayer的setRemoteSdp
   virtual void onLocalSdp(const char* localSdp) = 0;
-  // 返回ICE候选
+  // 返回ICE候选, candidate为null表示收集完毕
   virtual void onIceCandidate(const char* candidate, const char* mid,
                               int mlineIndex) {};
+};
+
+// 信令观察者, 由IRtcPlayer内部实现(setSignalChannel时注册)
+class ISignalOb {
+ public:
+  virtual ~ISignalOb() = default;
+
+ public:
+  virtual void onRemoteSdp(const char* sdp) = 0;
+  virtual void onRemoteIceCandidate(const char* candidate, const char* mid,
+                                    int mlineIndex) = 0;
+};
+
+// 信令通道: 把本地SDP/ICE送到对端, 远端消息经ISignalOb回填
+// 一次性HTTP(WHIP/offer)或长连接(answer/WS)由实现决定, offer/answer都能用
+// 回调onRemoteXxx可来自实现线程, IRtcPlayer内部已做线程转移
+class ISignalChannel {
+ public:
+  virtual ~ISignalChannel() = default;
+
+ public:
+  // 建立信令连接(一次性HTTP实现可直接返回true)
+  virtual bool connect() = 0;
+  virtual void close() = 0;
+  virtual bool sendLocalSdp(const char* sdp) = 0;
+  virtual bool sendIceCandidate(const char* candidate, const char* mid,
+                                int mlineIndex) = 0;
+  virtual void setSignalOb(ISignalOb* ob) = 0;
+};
+
+// RtcPlayer扩展回调(连接状态/首帧/DataChannel), 经addOb注册
+// onConnectionState: 播放线程; onFirstVideoFrame: 解码线程; onDataChannelMsg: 信令线程
+class IRtcPlayerOb : public IMediaPlayerOb {
+ public:
+  virtual void onConnectionState(RtcConnState state) {};
+  // 收到远端第一帧视频(用于隐藏loading)
+  virtual void onFirstVideoFrame() {};
+  // 二进制DataChannel消息(需setEnableDataChannel(true))
+  virtual void onDataChannelMsg(const char* data, int32_t size) {};
 };
 
 // 推拉流都可以作为offer/answer
@@ -255,39 +320,89 @@ class IRtcPlayer {
   virtual ~IRtcPlayer() = default;
 
  public:
+  // ============ 配置(需在open()前调用, 非线程安全) ============
   // 有长连接信令通道 → 客户端适合作为 Answer 方（被动等待）
   // 没有长连接信令通道 → 客户端适合作为 Offer 方（主动请求）
   // Answer/Offer,其SetLocalDescription/SetRemoteDescription顺序不同
   virtual void setRollType(RtcRollType type) = 0;
+  // STUN/TURN服务器,可多次调用; 不配置仅默认STUN(局域网/同网段可直连)
   virtual void addIceServer(const char* uri, const char* username,
                             const char* password) = 0;
-  // 当本地SDP/ICE生成后,回调给上层处理
+  // 轨道方向,默认sendRecv; 只拉流用recvOnly,只推流用sendOnly
+  virtual void setVideoDirection(RtpDirection direction) = 0;
+  virtual void setAudioDirection(RtpDirection direction) = 0;
+  // 推流码率上限Kbps(0=GCC自适应)与帧率上限(0=跟随源)
+  virtual void setSendVideoBitrate(int32_t maxKbps) = 0;
+  virtual void setSendVideoFps(int32_t maxFps) = 0;
+  // 编码偏好:"H264"/"H265"/"AV1"/"VP8"/"VP9", 置顶该codec, 空=默认顺序
+  virtual void setPreferredVideoCodec(const char* codec) = 0;
+  // 是否创建DataChannel(默认否, 二进制消息)
+  virtual void setEnableDataChannel(bool bEnable) = 0;
+  // SDP低层钩子: 本地SDP/ICE回调给上层, 上层自行setRemoteSdp/addIceCandidate回填
   virtual void setSdpAgentOb(ISdpAgentOb* ob) = 0;
-  // 如果要推视频流,设置本地视频源,否则设置nullptr
+  // 信令通道: 本地SDP/ICE自动送出, 远端SDP/ICE自动回填, 不再需要手工setRemoteSdp
+  virtual void setSignalChannel(ISignalChannel* channel) = 0;
+  // 如果要推视频流,设置本地视频源,否则不设置(未设置则该媒体只收)
   virtual void setVideoSource(IVideoSource* videoSource) = 0;
-  // 如果要推音频流,设置本地音频源,否则设置nullptr
+  // 如果要推音频流,设置本地音频源,否则不设置
   virtual void setAudioSource(IAudioSource* audioSource) = 0;
-  //
+  // 断线自动重连(仅failed触发, 成功后计数清零; 重连后重新走信令)
+  virtual void setAutoReconnect(bool bEnable, int32_t maxRetries) = 0;
+
+ public:
+  // ============ 连接 ============
+  // 返回PeerConnection创建结果, 信令/连接本身是异步的, 结果看onConnectionState
   virtual bool open() = 0;
-  // 拉流的源信息
-  virtual ISourceInfo* getRemoteSourceInfo() = 0;
-  // 推流的源信息
-  virtual ISourceInfo* getLocalSourceInfo() = 0;
   virtual void close() = 0;
-  // 如果设置了videoSource,则返回本地渲染器,否则返回nullptr
-  virtual ISurfaceRender* getLocalSurfaceRender() = 0;
-  virtual IAudioRender* getLocalAudioRender() = 0;
-  // 返回拉流的远端渲染器
-  virtual ISurfaceRender* getRemoteSurfaceRender() = 0;
-  // 返回拉流的音频渲染
-  virtual IAudioRender* getRemoteAudioRender() = 0;
-  // 得到本地SDP
+  // 手动重连: 重建PeerConnection并重新走信令(offer重发onLocalSdp, answer等远端offer)
+  virtual void reconnect() = 0;
+
+ public:
+  // ============ SDP/ICE(未用setSignalChannel时手工驱动) ============
+  // 得到本地SDP(返回内部缓冲, close后失效, 信令线程会覆盖)
   virtual const char* getLocalSdp() = 0;
   // 设置远端SDP
   virtual void setRemoteSdp(const char* sdp) = 0;
   // 设置ICE候选
   virtual void addIceCandidate(const char* candidate, const char* mid,
                                int mlineIndex) = 0;
+
+ public:
+  // ============ 查询(任意线程) ============
+  virtual PlayerState getState() = 0;
+  virtual RtcConnState getConnectionState() = 0;
+  // 远端视频渲染帧率
+  virtual double getFps() = 0;
+  // 远端丢包率0.0~1.0(RTCP统计, 未连上返回0)
+  virtual float getLossRate() = 0;
+  // 往返延迟毫秒(RTCP统计, 未连上返回-1)
+  virtual int32_t getRttMs() = 0;
+  // 拉流的源信息(onReady后有效)
+  virtual ISourceInfo* getRemoteSourceInfo() = 0;
+  // 推流的源信息(本地源出描述后有效)
+  virtual ISourceInfo* getLocalSourceInfo() = 0;
+
+ public:
+  // ============ 渲染 ============
+  // 如果设置了videoSource,则返回本地渲染器,否则返回nullptr
+  virtual ISurfaceRender* getLocalSurfaceRender() = 0;
+  virtual IAudioRender* getLocalAudioRender() = 0;
+  // 返回拉流的远端渲染器
+  virtual ISurfaceRender* getRemoteSurfaceRender() = 0;
+  // 返回拉流的音频渲染(默认接平台设备输出, openTap可取PCM给引擎音频系统)
+  virtual IAudioRender* getRemoteAudioRender() = 0;
+
+ public:
+  // ============ DataChannel ============
+  // 发送二进制消息(需setEnableDataChannel(true)且连接建立)
+  virtual bool sendDataChannel(const char* data, int32_t size) = 0;
+
+ public:
+  // ============ 观察者 ============
+  // rtc扩展回调(onConnectionState/onFirstVideoFrame/onDataChannelMsg)
+  // addRtcPlayerOb对IRtcPlayerOb实例会自动走到这
+  virtual void addOb(IRtcPlayerOb* ob) = 0;
+  virtual void removeOb(IRtcPlayerOb* ob) = 0;
 };
 
 extern "C" {
@@ -306,11 +421,13 @@ AVOX_EXPORT const char* getARenderTypeStr(ARenderType type);
 AVOX_EXPORT const char* getConfigAddTypeStr(ConfigAddType type);
 AVOX_EXPORT const char* getSpeedTypeStr(SpeedType type);
 // WebRTC: 走AvoxManager工厂, 插件注册实现
+// 释放约定: SWIG语言层由%newobject自动delete, C++层(UE/Godot)直接delete(虚析构)
 AVOX_EXPORT IRtcPlayer* createWebRtcPlayer();
 AVOX_EXPORT void addRtcPlayerOb(IRtcPlayer* player, IMediaPlayerOb* ob);
 AVOX_EXPORT void removeRtcPlayerOb(IRtcPlayer* player, IMediaPlayerOb* ob);
 // SDP信令交换: TestSdpOb(在avox_zlmediakit中, 用mk_http做webrtc SDP交换)
 AVOX_EXPORT ISdpAgentOb* createZlTestSdpAgent(IRtcPlayer* player,
                                              const char* serverUrl);
+AVOX_EXPORT const char* getRtcConnStateStr(RtcConnState state);
 }
 }

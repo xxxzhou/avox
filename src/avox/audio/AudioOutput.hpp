@@ -30,6 +30,7 @@ class AVOX_EXPORT AudioOutput : public AudioRender {
 };
 
 // 获取当前平台默认音频输出(工厂: AvoxManager 注册, WasapiOutput/AndroidATOutput/IOSAUOutput)
-AudioOutput* getDefaultAudioOutput();
+// 导出给插件使用(如avox_webrtc远端音频渲染)
+AVOX_EXPORT AudioOutput* getDefaultAudioOutput();
 
 }

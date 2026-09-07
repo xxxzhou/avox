@@ -50,6 +50,22 @@ void RawSource::checkTrackReady() {
   trackReady();
 }
 
+void RawSource::updateExpectVideo(bool bExpect) {
+  {
+    std::lock_guard<std::mutex> lock(avMtx);
+    bDisableVideo = !bExpect;
+  }
+  checkTrackReady();
+}
+
+void RawSource::updateExpectAudio(bool bExpect) {
+  {
+    std::lock_guard<std::mutex> lock(avMtx);
+    bDisableAudio = !bExpect;
+  }
+  checkTrackReady();
+}
+
 void RawSource::onTrackOpen() {
   bReady = true;
   dispatch(&IRawSourceOb::onReady);
