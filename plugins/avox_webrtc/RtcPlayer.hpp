@@ -97,6 +97,7 @@ class RtcPlayer : public IRtcPlayer,
   virtual void setRemoteSdp(const char* sdp) override;
   virtual void addIceCandidate(const char* candidate, const char* mid,
                                int mlineIndex) override;
+  virtual void reportSdpError(int64_t code, const char* msg) override;
   virtual PlayerState getState() override;
   virtual RtcConnState getConnectionState() override;
   virtual double getFps() override;

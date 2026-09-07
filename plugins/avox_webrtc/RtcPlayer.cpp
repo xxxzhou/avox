@@ -211,6 +211,13 @@ void RtcPlayer::addIceCandidate(const char* candidate, const char* mid,
   source->addIceCandidate(candidate, mid, mlineIndex);
 }
 
+void RtcPlayer::reportSdpError(int64_t code, const char* msg) {
+  // 信令agent(如TestSdpOb)上报: ZLM返回-400/-300或HTTP失败时让上层无感变有感
+  LOGFLF(LogLevel::warn, "sdp error:", code, " msg:", msg ? msg : "");
+  MPOB::dispatch(&IMediaPlayerOb::onIoError, AVError::urlNoSupport,
+                 msg ? msg : "");
+}
+
 void RtcPlayer::onRunTask() {
   while (running()) {
     MPCommandPtr cmd = nullptr;

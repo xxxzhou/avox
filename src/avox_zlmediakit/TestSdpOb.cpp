@@ -11,6 +11,10 @@ void onTestHttpComplete(void* user_data, int code, const char* err_msg) {
 
   if (code != 0) {
     log(LogLevel::warn, "sdp http request failed: ", err_msg ? err_msg : "unknown");
+    // 信令失败必须让上层有感(HTTP超时/连接拒绝等), 否则播放器停在opening无提示
+    if (self->player) {
+      self->player->reportSdpError(code, err_msg ? err_msg : "sdp http request failed");
+    }
     return;
   }
 
@@ -18,6 +22,9 @@ void onTestHttpComplete(void* user_data, int code, const char* err_msg) {
   const char* body = mk_http_requester_get_response_body(self->requester, &body_len);
   if (!body || body_len == 0) {
     log(LogLevel::warn, "sdp http empty response");
+    if (self->player) {
+      self->player->reportSdpError(-1, "sdp http empty response");
+    }
     return;
   }
 
@@ -28,6 +35,10 @@ void onTestHttpComplete(void* user_data, int code, const char* err_msg) {
   if (resp_code != 0) {
     std::string msg = jcontent["msg"];
     log(LogLevel::warn, "sdp http response code:", resp_code, " msg:", msg);
+    // 如 -400 stream not found / -300, 上层据此提示或重试
+    if (self->player) {
+      self->player->reportSdpError(resp_code, msg.c_str());
+    }
     return;
   }
 

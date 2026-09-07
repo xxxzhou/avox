@@ -366,6 +366,9 @@ class IRtcPlayer {
   // 设置ICE候选
   virtual void addIceCandidate(const char* candidate, const char* mid,
                                int mlineIndex) = 0;
+  // 供信令agent上报错误(TestSdpOb等内部使用, 上层一般不调):
+  // 经onIoError通知观察者, 如 ZLM 返回 -400 stream not found
+  virtual void reportSdpError(int64_t code, const char* msg) = 0;
 
  public:
   // ============ 查询(任意线程) ============
