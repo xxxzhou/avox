@@ -1,0 +1,14 @@
+prefix=/Volumes/PSSD/work/github/ffmpeg-mac
+exec_prefix=${prefix}
+libdir=/Volumes/PSSD/work/github/ffmpeg-mac/lib
+includedir=/Volumes/PSSD/work/github/ffmpeg-mac/include
+
+Name: libavcodec
+Description: FFmpeg codec library
+Version: 61.3.100
+Requires: libswresample >= 5.1.100, libavutil >= 59.8.100
+Requires.private: 
+Conflicts:
+Libs: -L${libdir}  -lavcodec -liconv -lm -framework AudioToolbox -pthread -lz -framework VideoToolbox -framework CoreFoundation -framework CoreMedia -framework CoreVideo -framework CoreServices
+Libs.private: 
+Cflags: -I${includedir}

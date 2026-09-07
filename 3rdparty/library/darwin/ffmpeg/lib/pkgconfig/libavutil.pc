@@ -1,0 +1,14 @@
+prefix=/Volumes/PSSD/work/github/ffmpeg-mac
+exec_prefix=${prefix}
+libdir=/Volumes/PSSD/work/github/ffmpeg-mac/lib
+includedir=/Volumes/PSSD/work/github/ffmpeg-mac/include
+
+Name: libavutil
+Description: FFmpeg utility library
+Version: 59.8.100
+Requires: 
+Requires.private: 
+Conflicts:
+Libs: -L${libdir}  -lavutil -pthread -lm -framework VideoToolbox -framework CoreFoundation -framework CoreMedia -framework CoreVideo -framework CoreServices
+Libs.private: 
+Cflags: -I${includedir}

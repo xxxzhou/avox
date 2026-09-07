@@ -1,0 +1,14 @@
+prefix=/Volumes/PSSD/work/github/ffmpeg-mac
+exec_prefix=${prefix}
+libdir=/Volumes/PSSD/work/github/ffmpeg-mac/lib
+includedir=/Volumes/PSSD/work/github/ffmpeg-mac/include
+
+Name: libswresample
+Description: FFmpeg audio resampling library
+Version: 5.1.100
+Requires: libavutil >= 59.8.100
+Requires.private: 
+Conflicts:
+Libs: -L${libdir}  -lswresample -lm
+Libs.private: 
+Cflags: -I${includedir}
