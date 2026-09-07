@@ -24,7 +24,7 @@ IRtcPlayer* sp = nullptr;
 IRawSource* source = nullptr;
 IMediaMuxer* muxer = nullptr;
 
-ISdpAgentOb* sdpOb = nullptr;
+IRtcEventOb* sdpOb = nullptr;
 
 int main(int argc, char* argv[]) {
   sp = createWebRtcPlayer();
@@ -32,7 +32,7 @@ int main(int argc, char* argv[]) {
   const char* url =
       "http://127.0.0.1/index/api/webrtc?app=live&stream=test&type=play";  
   sdpOb = createZlTestSdpAgent(sp, url);
-  sp->setSdpAgentOb(sdpOb);
+  sp->addOb(sdpOb);   // 信令观察者统一走 addOb 挂载
   sp->getRemoteSurfaceRender()->setSurface(nullptr);  
   sp->open();  
   // win32 消息循环

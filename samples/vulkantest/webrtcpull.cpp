@@ -68,8 +68,8 @@ int main(int argc, char* argv[]) {
   sp->setRollType(RtcRollType::offer);
   const char* url =
       "http://127.0.0.1/index/api/webrtc?app=live&stream=test&type=push";
-  ISdpAgentOb* sdpOb = createZlTestSdpAgent(sp, url);
-  sp->setSdpAgentOb(sdpOb);
+  IRtcEventOb* sdpOb = createZlTestSdpAgent(sp, url);
+  sp->addOb(sdpOb);
   IAudioManager* audioMgr = getAudioManager(ADeviceSdk::wasapi);
   IVideoManager* videoMgr = getVideoManager(VDeviceSdk::win_capture);
   int32_t count = videoMgr->getDeviceCount();
