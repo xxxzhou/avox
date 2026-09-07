@@ -246,63 +246,28 @@ enum class RtpDirection {
   sendRecv = 3,
 };
 
-// 暂时只有WebRTC模式使用
-// 协商SDP交互,传入本地SDP,返回远端SDP
-// 从RtcExport.h移植到这,因为nodejs需要这个类
-// 而AVOX_ENABLE_WRBRTC不一定有用
-// 回调线程: WebRTC信令线程, 回调对象生命周期需保证到close之后
-class ISdpAgentOb {
+// RTC专属事件回调(独立接口, 与IMediaPlayerOb并列不继承; 经IRtcPlayer::addOb注册,
+// addRtcPlayerOb对同时实现二者的对象自动双注册)
+// 实现方持有IRtcPlayer指针用于信令回填(自己创建的player, 构造时传入)
+// 信令逻辑: onLocalSdp送服务器 → 服务器返回answer → 调player->setRemoteSdp
+//           (onIceCandidate同; 也可挂createZlTestSdpAgent走内置ZLM/WHEP信令免写交换)
+// onConnectionState/onLocalSdp等来自播放器内部线程, 已做必要保护, 回调内勿重入player
+class IRtcEventOb {
  public:
-  virtual ~ISdpAgentOb() = default;
+  virtual ~IRtcEventOb() = default;
 
  public:
-  // 得到本地SDP,由用户根据需求生成逻辑得到远端SDP
-  // 然后请调用对应IMediaPlayer的setRemoteSdp
-  virtual void onLocalSdp(const char* localSdp) = 0;
-  // 返回ICE候选, candidate为null表示收集完毕
-  virtual void onIceCandidate(const char* candidate, const char* mid,
-                              int mlineIndex) {};
-};
-
-// 信令观察者, 由IRtcPlayer内部实现(setSignalChannel时注册)
-class ISignalOb {
- public:
-  virtual ~ISignalOb() = default;
-
- public:
-  virtual void onRemoteSdp(const char* sdp) = 0;
-  virtual void onRemoteIceCandidate(const char* candidate, const char* mid,
-                                    int mlineIndex) = 0;
-};
-
-// 信令通道: 把本地SDP/ICE送到对端, 远端消息经ISignalOb回填
-// 一次性HTTP(WHIP/offer)或长连接(answer/WS)由实现决定, offer/answer都能用
-// 注意: 本接口全部方法由IRtcPlayer内部驱动调用, 上层只实现并setSignalChannel注册;
-// setSignalOb是注入槽(open时player传入自身), 实现方存住用于回填远端消息, 不得自行调用
-// 回调onRemoteXxx可来自实现线程, IRtcPlayer内部已做线程转移
-class ISignalChannel {
- public:
-  virtual ~ISignalChannel() = default;
-
- public:
-  // 建立信令连接(一次性HTTP实现可直接返回true)
-  virtual bool connect() = 0;
-  virtual void close() = 0;
-  virtual bool sendLocalSdp(const char* sdp) = 0;
-  virtual bool sendIceCandidate(const char* candidate, const char* mid,
-                                int mlineIndex) = 0;
-  virtual void setSignalOb(ISignalOb* ob) = 0;
-};
-
-// RtcPlayer扩展回调(连接状态/首帧/DataChannel), 经addOb注册
-// onConnectionState: 播放线程; onFirstVideoFrame: 解码线程; onDataChannelMsg: 信令线程
-class IRtcPlayerOb : public IMediaPlayerOb {
- public:
+  // WebRTC连接状态(Connected=ICE+DTLS完成, 真正连上)
   virtual void onConnectionState(RtcConnState state) {};
   // 收到远端第一帧视频(用于隐藏loading)
   virtual void onFirstVideoFrame() {};
   // 二进制DataChannel消息(需setEnableDataChannel(true))
   virtual void onDataChannelMsg(const char* data, int32_t size) {};
+  // 本地SDP生成(信令线程回调; 自定义信令模式下上层自行送出并回填)
+  virtual void onLocalSdp(const char* localSdp) {};
+  // 本地ICE候选(trickle; candidate为null表示收集完毕)
+  virtual void onIceCandidate(const char* candidate, const char* mid,
+                              int mlineIndex) {};
 };
 
 // 推拉流都可以作为offer/answer
@@ -340,10 +305,6 @@ class IRtcPlayer {
   virtual void setPreferredVideoCodec(const char* codec) = 0;
   // 是否创建DataChannel(默认否, 二进制消息)
   virtual void setEnableDataChannel(bool bEnable) = 0;
-  // SDP低层钩子: 本地SDP/ICE回调给上层, 上层自行setRemoteSdp/addIceCandidate回填
-  virtual void setSdpAgentOb(ISdpAgentOb* ob) = 0;
-  // 信令通道: 本地SDP/ICE自动送出, 远端SDP/ICE自动回填, 不再需要手工setRemoteSdp
-  virtual void setSignalChannel(ISignalChannel* channel) = 0;
   // 如果要推视频流,设置本地视频源,否则不设置(未设置则该媒体只收)
   virtual void setVideoSource(IVideoSource* videoSource) = 0;
   // 如果要推音频流,设置本地音频源,否则不设置
@@ -405,9 +366,9 @@ class IRtcPlayer {
  public:
   // ============ 观察者 ============
   // rtc扩展回调(onConnectionState/onFirstVideoFrame/onDataChannelMsg)
-  // addRtcPlayerOb对IRtcPlayerOb实例会自动走到这
-  virtual void addOb(IRtcPlayerOb* ob) = 0;
-  virtual void removeOb(IRtcPlayerOb* ob) = 0;
+  // addRtcPlayerOb对IRtcEventOb实例会自动走到这
+  virtual void addOb(IRtcEventOb* ob) = 0;
+  virtual void removeOb(IRtcEventOb* ob) = 0;
 };
 
 extern "C" {
@@ -430,8 +391,8 @@ AVOX_EXPORT const char* getSpeedTypeStr(SpeedType type);
 AVOX_EXPORT IRtcPlayer* createWebRtcPlayer();
 AVOX_EXPORT void addRtcPlayerOb(IRtcPlayer* player, IMediaPlayerOb* ob);
 AVOX_EXPORT void removeRtcPlayerOb(IRtcPlayer* player, IMediaPlayerOb* ob);
-// SDP信令交换: TestSdpOb(在avox_zlmediakit中, 用mk_http做webrtc SDP交换)
-AVOX_EXPORT ISdpAgentOb* createZlTestSdpAgent(IRtcPlayer* player,
+// 内置信令观察者(ZLM/WHEP HTTP自动交换): addOb挂上后onLocalSdp自动POST远端自动回填
+AVOX_EXPORT IRtcEventOb* createZlTestSdpAgent(IRtcPlayer* player,
                                              const char* serverUrl);
 AVOX_EXPORT const char* getRtcConnStateStr(RtcConnState state);
 }

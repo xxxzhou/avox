@@ -16,21 +16,6 @@ RtcPlayerBridge* findRtcBridge(uint32_t id) {
   return it != g_rtcRegistry.end() ? it->second : nullptr;
 }
 
-// ── 自定义信令转发观察者: 本地 SDP/ICE → 事件 (信令线程回调) ──
-// 全局作用域 (头文件里 friend class RtcSdpForwardAgent 指向这里)
-class RtcSdpForwardAgent : public avox::ISdpAgentOb {
- public:
-  RtcPlayerBridge* owner = nullptr;
-
-  void onLocalSdp(const char* localSdp) override {
-    if (owner) owner->onForwardLocalSdp(localSdp);
-  }
-  void onIceCandidate(const char* candidate, const char* mid,
-                      int mlineIndex) override {
-    if (owner) owner->onForwardIceCandidate(candidate, mid, mlineIndex);
-  }
-};
-
 RtcPlayerBridge::RtcPlayerBridge(uint32_t id) : playerId(id) {
   std::lock_guard<std::mutex> lock(g_rtcRegMutex);
   g_rtcRegistry[playerId] = this;
@@ -132,11 +117,6 @@ void RtcPlayerBridge::destroyPlayer() {
   if (!player) return;
   // 先解绑纹理桥接, 再关播放器 (解绑需要 surface render 仍有效)
   unbindSurface();
-  if (sdpForward) {
-    player->setSdpAgentOb(nullptr);
-    delete sdpForward;
-    sdpForward = nullptr;
-  }
   player->close();
   avox::removeRtcPlayerOb(player, this);
   // createWebRtcPlayer() 是裸 new, delete 是唯一释放路径 (基类析构 virtual)
@@ -165,13 +145,13 @@ bool RtcPlayerBridge::connectSignaling(const char* url) {
   destroyPlayer();
   createPlayer();
   if (!player || !url) return false;
-  // HTTP 信令 agent (TestSdpOb): onLocalSdp 自动 POST, 远端 answer 自动回填
-  avox::ISdpAgentOb* agent = avox::createZlTestSdpAgent(player, url);
-  if (!agent) {
+  // 内置信令观察者(ZLM/WHEP): onLocalSdp自动POST, 远端answer自动回填
+  sdpAgent = createZlTestSdpAgent(player, url);
+  if (!sdpAgent) {
     pushError((int32_t)avox::AVError::other, "createZlTestSdpAgent failed");
     return false;
   }
-  player->setSdpAgentOb(agent);
+  player->addOb(sdpAgent);
   player->open();
   return true;
 }
@@ -180,12 +160,8 @@ void RtcPlayerBridge::openRtc() {
   destroyPlayer();
   createPlayer();
   if (!player) return;
-  // 自定义信令: 本地 SDP/ICE 经转发观察者 → 事件, 远端消息 setRemoteSdp 回填
-  if (!sdpForward) {
-    sdpForward = new RtcSdpForwardAgent();
-    static_cast<RtcSdpForwardAgent*>(sdpForward)->owner = this;
-  }
-  player->setSdpAgentOb(sdpForward);
+  // 自定义信令: 本地 SDP/ICE 经 IRtcEventOb::onLocalSdp/onIceCandidate → Unity 事件,
+  // 远端消息 setRemoteSdp/addIceCandidate 回填
   player->open();
 }
 
@@ -327,9 +303,9 @@ void RtcPlayerBridge::onDataChannelMsg(const char* data, int32_t size) {
   dcQueue.emplace_back(data, data + size);
 }
 
-// 自定义信令转发回调 (信令线程, 经 RtcSdpForwardAgent)
+// ── avox::IRtcEventOb: 本地SDP/ICE → 事件 (信令线程回调) ──
 
-void RtcPlayerBridge::onForwardLocalSdp(const char* sdp) {
+void RtcPlayerBridge::onLocalSdp(const char* sdp) {
   {
     std::lock_guard<std::mutex> lock(sdpMutex);
     localSdpStr = sdp ? sdp : "";
@@ -339,8 +315,8 @@ void RtcPlayerBridge::onForwardLocalSdp(const char* sdp) {
   pushEvent(e);
 }
 
-void RtcPlayerBridge::onForwardIceCandidate(const char* candidate,
-                                            const char* mid, int mlineIndex) {
+void RtcPlayerBridge::onIceCandidate(const char* candidate, const char* mid,
+                                     int mlineIndex) {
   AvoxRtcEvent e;
   e.type = (int32_t)AvoxRtcEvent::EType::iceCandidate;
   e.code = mlineIndex;

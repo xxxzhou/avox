@@ -47,8 +47,8 @@ void addRtcPlayerOb(IRtcPlayer* player, IMediaPlayerOb* ob) {
   if (bp) {
     bp->Observer<IMediaPlayerOb>::addObserver(ob);
   }
-  // rtc扩展回调(连接状态/首帧/DataChannel): ob为IRtcPlayerOb时同时注册
-  IRtcPlayerOb* rob = dynamic_cast<IRtcPlayerOb*>(ob);
+  // rtc事件回调(连接状态/首帧/DataChannel/信令): ob为IRtcEventOb时同时注册
+  IRtcEventOb* rob = dynamic_cast<IRtcEventOb*>(ob);
   if (rob) {
     player->addOb(rob);
   }
@@ -59,7 +59,7 @@ void removeRtcPlayerOb(IRtcPlayer* player, IMediaPlayerOb* ob) {
   if (bp) {
     bp->Observer<IMediaPlayerOb>::removeObserver(ob);
   }
-  IRtcPlayerOb* rob = dynamic_cast<IRtcPlayerOb*>(ob);
+  IRtcEventOb* rob = dynamic_cast<IRtcEventOb*>(ob);
   if (rob) {
     player->removeOb(rob);
   }

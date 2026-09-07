@@ -29,13 +29,11 @@ class RtcSourceInfo : public ISourceInfo {
 
 // IRtcPlayer实现: RtcParse封装作为RawSource源
 // 其返回数据remoteVRender/remoteARender处理
-// 本地SDP/ICE经此转发给上层ISdpAgentOb/ISignalChannel
+// 本地SDP/ICE经此转发给内置信令agent与IRtcEventOb观察者
 class RtcPlayer : public IRtcPlayer,
                   public BasePlayer,
                   public IRawSourceOb,
-                  public ISdpAgentOb,
-                  public ISignalOb,
-                  public Observer<IRtcPlayerOb>,
+                  public Observer<IRtcEventOb>,
                   public RunTask {
  public:
   RtcPlayer();
@@ -50,9 +48,6 @@ class RtcPlayer : public IRtcPlayer,
   std::unique_ptr<AudioRender> remoteARender;
   // 远端音频描述是否已设置到渲染器
   bool bAudioDescSet = false;
-  // 上层SDP钩子与信令通道
-  ISdpAgentOb* userSdpOb = nullptr;
-  ISignalChannel* signalChannel = nullptr;
   // open命令结果(cmdOpen在播放线程回填)
   std::mutex cmdMtx;
   std::shared_ptr<std::promise<bool>> openPromise;
@@ -85,8 +80,6 @@ class RtcPlayer : public IRtcPlayer,
   virtual void setSendVideoFps(int32_t maxFps) override;
   virtual void setPreferredVideoCodec(const char* codec) override;
   virtual void setEnableDataChannel(bool bEnable) override;
-  virtual void setSdpAgentOb(ISdpAgentOb* ob) override;
-  virtual void setSignalChannel(ISignalChannel* channel) override;
   virtual void setVideoSource(IVideoSource* videoSource) override;
   virtual void setAudioSource(IAudioSource* audioSource) override;
   virtual void setAutoReconnect(bool bEnable, int32_t maxRetries) override;
@@ -110,8 +103,8 @@ class RtcPlayer : public IRtcPlayer,
   virtual ISurfaceRender* getRemoteSurfaceRender() override;
   virtual IAudioRender* getRemoteAudioRender() override;
   virtual bool sendDataChannel(const char* data, int32_t size) override;
-  virtual void addOb(IRtcPlayerOb* ob) override;
-  virtual void removeOb(IRtcPlayerOb* ob) override;
+  virtual void addOb(IRtcEventOb* ob) override;
+  virtual void removeOb(IRtcEventOb* ob) override;
 
  protected:
   // 播放器线程
@@ -139,17 +132,6 @@ class RtcPlayer : public IRtcPlayer,
                             int32_t trackId = 0) override;
   virtual void onClose() override;
 
- public:
-  // ISdpAgentOb 实现 (注册到RtcParse, 信令线程回调, 转发上层ob/信令通道)
-  virtual void onLocalSdp(const char* localSdp) override;
-  virtual void onIceCandidate(const char* candidate, const char* mid,
-                              int mlineIndex) override;
-
- public:
-  // ISignalOb 实现 (信令通道回填, 可能来自通道线程)
-  virtual void onRemoteSdp(const char* sdp) override;
-  virtual void onRemoteIceCandidate(const char* candidate, const char* mid,
-                                    int mlineIndex) override;
 };
 
 }

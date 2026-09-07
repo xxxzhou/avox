@@ -42,7 +42,9 @@ class RtcParse : public RawSource,
   // localSdp信令线程写/任意线程读
   std::mutex sdpMtx;
   std::string localSdp = "";
-  ISdpAgentOb* sdpOb = nullptr;
+  // 本地SDP/ICE事件(信令线程回调; RtcPlayer设置, 转发agent+派发观察者)
+  std::function<void(const char* localSdp)> localSdpCb = nullptr;
+  std::function<void(const char* candidate, const char* mid, int mlineIndex)> iceCb = nullptr;
   RtcRollType rollType = RtcRollType::offer;
   std::vector<IceServer> iceServers;
   // 轨道方向与推流参数(open前配置)
@@ -86,7 +88,13 @@ class RtcParse : public RawSource,
   void setRollType(RtcRollType type);
   void addIceServer(const char* uri, const char* username,
                     const char* password);
-  void setSdpAgentOb(ISdpAgentOb* ob);
+  // 设置本地SDP/ICE事件回调(信令线程回调)
+  void setSdpEventCb(std::function<void(const char* localSdp)> localSdpCb_,
+                     std::function<void(const char* candidate, const char* mid,
+                                        int mlineIndex)> iceCb_) {
+    localSdpCb = localSdpCb_;
+    iceCb = iceCb_;
+  }
   void setVideoDirection(RtpDirection direction);
   void setAudioDirection(RtpDirection direction);
   void setSendVideoBitrate(int32_t maxKbps);

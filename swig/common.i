@@ -11,7 +11,7 @@
 %feature("director") ISdpAgentOb;
 // webrtc v2: 信令通道(引擎侧实现)与rtc扩展回调
 %feature("director") ISignalChannel;
-%feature("director") IRtcPlayerOb;
+%feature("director") IRtcEventOb;
 %feature("director") IAudioSttOb;
 %feature("director") IAudioTtsOb;
 %feature("director") IAudioFaceOb;

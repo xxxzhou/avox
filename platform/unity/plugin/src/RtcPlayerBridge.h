@@ -47,7 +47,9 @@ struct RtcIceServerCfg {
 // (avoxTextureUpdateCallback → findRtcBridge 第三级查找)。
 // GPU 直通 (Windows Vulkan 导入/D3D11/D3D12 拷贝) 为二期: 移植 PlayerBridge 的
 // startGpuImport/updateGpu/renderDx11Copy 并把 gpuMode() 打开即可, C# 侧逻辑同 AvoxPlayer。
-class RtcPlayerBridge : public avox::IRtcPlayerOb, public avox::ISurfaceRenderOb {
+class RtcPlayerBridge : public avox::IMediaPlayerOb,
+                        public avox::IRtcEventOb,
+                        public avox::ISurfaceRenderOb {
  public:
   explicit RtcPlayerBridge(uint32_t id);
   ~RtcPlayerBridge() override;
@@ -113,6 +115,11 @@ class RtcPlayerBridge : public avox::IRtcPlayerOb, public avox::ISurfaceRenderOb
   void onFirstVideoFrame() override;
   void onDataChannelMsg(const char* data, int32_t size) override;
 
+  // ── avox::IRtcEventOb: 本地SDP/ICE → 事件 (信令线程回调) ──
+  void onLocalSdp(const char* sdp) override;
+  void onIceCandidate(const char* candidate, const char* mid,
+                      int mlineIndex) override;
+
   // ── avox::ISurfaceRenderOb (avox 渲染线程) ──
   void onFrame(const avox::YUVFrame& frame) override;
   void onWinSizeChange(int32_t width, int32_t height) override;
@@ -123,17 +130,13 @@ class RtcPlayerBridge : public avox::IRtcPlayerOb, public avox::ISurfaceRenderOb
   void unbindSurface();
   void pushEvent(const AvoxRtcEvent& e);
   void pushError(int32_t code, const char* msg);
-  // 自定义信令转发回调 (RtcSdpForwardAgent 调, 信令线程)
-  friend class RtcSdpForwardAgent;
-  void onForwardLocalSdp(const char* sdp);
-  void onForwardIceCandidate(const char* candidate, const char* mid, int32_t mline);
 
   uint32_t playerId;
   avox::IRtcPlayer* player = nullptr;
+  // 内置 ZLM/WHEP 信令观察者 (connectSignaling 模式创建)
+  avox::IRtcEventOb* sdpAgent = nullptr;
   avox::ISurfaceRender* surface = nullptr;
   avox::ColorSpaceDesc colorSpace;
-  // 自定义信令转发观察者 (openRtc 模式; 本地SDP/ICE → 事件)
-  avox::ISdpAgentOb* sdpForward = nullptr;
 
   // ── 配置缓存 (open 前设置) ──
   int32_t rollType = 0;

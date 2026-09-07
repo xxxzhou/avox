@@ -88,9 +88,8 @@ private:
     // avox WebRTC 播放器
     avox::IRtcPlayer *player = nullptr;
     avox::IMediaPlayerOb *playerOb = nullptr;
-    // HTTP 信令 agent (connect_signaling 模式) / 自定义信令转发 (open_rtc 模式)
-    avox::ISdpAgentOb *httpAgent = nullptr;
-    avox::ISdpAgentOb *sdpForward = nullptr;
+    // 内置 ZLM/WHEP 信令观察者 (connect_signaling 模式创建)
+    avox::IRtcEventOb *sdpAgent = nullptr;
     // 远端画面纹理桥 (绑 getRemoteSurfaceRender, 与 MediaPlayer 同款)
     SurfaceTextureBridge *surfaceBridge = nullptr;
 

@@ -8,10 +8,11 @@
 namespace godot {
 
 // ── avox 观察者: 只继承 IRtcPlayerOb (它本身派生自 IMediaPlayerOb, 状态回调一并携带;
-//    同时再继承 IMediaPlayerOb 会成菱形继承 → 转 IMediaPlayerOb* 二义) ──
-// addRtcPlayerOb 对 IRtcPlayerOb 实例自动双注册, 一次注册状态/rtc 两路回调都收
+//    同时再继承 IMediaPlayerOb 会成菱形继承 → 转 IMediaPlayerOb* 二义)
+// 信令事件(onLocalSdp/onIceCandidate)也从这来, GDScript 侧监听信号自行交换
+// addRtcPlayerOb 对 IRtcPlayerOb 实例自动双注册, 一次注册状态/信令/rtc 回调都收
 // avox 线程回调 → call_deferred 转主线程发信号 (同 MediaPlayer 模式)
-class RtcPlayerOb : public avox::IRtcPlayerOb {
+class RtcPlayerOb : public avox::IMediaPlayerOb, public avox::IRtcEventOb {
 public:
     RtcPlayer *owner = nullptr;
 
@@ -68,13 +69,6 @@ public:
             owner->call_deferred("emit_signal", "data_channel_msg", bytes);
         }
     }
-};
-
-// ── 自定义信令转发观察者: 本地 SDP/ICE → 信号 (信令线程, deferred) ──
-class RtcSdpAgent : public avox::ISdpAgentOb {
-public:
-    RtcPlayer *owner = nullptr;
-
     void onLocalSdp(const char *localSdp) override {
         if (owner) {
             owner->call_deferred("emit_signal", "local_sdp", String(localSdp ? localSdp : ""));
@@ -142,18 +136,12 @@ void RtcPlayer::createPlayer() {
 
 void RtcPlayer::destroyPlayer() {
     if (!player) return;
-    // 先解绑纹理桥接, 再关播放器 (解绑需要 surface render 仍有效)
+    // 先解绑纹理桥接与信令观察者, 再关播放器 (解绑需要 surface render 仍有效)
     surfaceBridge->unbindSurface();
-    // 信令 agent: 解注册后删除 (TestSdpOb 的虚析构在 avox.dll 内, 跨模块 delete 安全)
-    if (httpAgent) {
-        player->setSdpAgentOb(nullptr);
-        delete httpAgent;
-        httpAgent = nullptr;
-    }
-    if (sdpForward) {
-        player->setSdpAgentOb(nullptr);
-        delete sdpForward;
-        sdpForward = nullptr;
+    if (sdpAgent) {
+        player->removeOb(sdpAgent);
+        delete sdpAgent;
+        sdpAgent = nullptr;
     }
     player->close();
     avox::removeRtcPlayerOb(player, playerOb);
@@ -177,13 +165,13 @@ void RtcPlayer::connect_signaling(const String &p_url) {
     destroyPlayer();
     createPlayer();
     if (!player) return;
-    // HTTP 信令 agent (Offer 拉流): onLocalSdp 自动 POST, 远端 answer 自动回填
-    httpAgent = avox::createZlTestSdpAgent(player, signalingUrl.utf8().get_data());
-    if (!httpAgent) {
+    // ZLM/WHEP信令观察者: onLocalSdp自动POST, 远端answer自动回填
+    sdpAgent = createZlTestSdpAgent(player, signalingUrl.utf8().get_data());
+    if (!sdpAgent) {
         ERR_PRINT("createZlTestSdpAgent 失败 (HTTP 信令 agent 创建失败)");
         return;
     }
-    player->setSdpAgentOb(httpAgent);
+    player->addOb(sdpAgent);
     player->open();
 }
 
@@ -192,9 +180,6 @@ void RtcPlayer::open_rtc() {
     createPlayer();
     if (!player) return;
     // 自定义信令: local_sdp/ice_candidate 信号发出, 远端消息用 set_remote_sdp 回填
-    sdpForward = new RtcSdpAgent();
-    static_cast<RtcSdpAgent *>(sdpForward)->owner = this;
-    player->setSdpAgentOb(sdpForward);
     player->open();
 }
 

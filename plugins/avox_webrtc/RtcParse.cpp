@@ -282,13 +282,6 @@ bool RtcParse::open() {
   return true;
 }
 
-void RtcParse::setSdpAgentOb(ISdpAgentOb* ob) {
-  sdpOb = ob;
-  if (sdpOb && !localSdp.empty()) {
-    sdpOb->onLocalSdp(localSdp.c_str());
-  }
-}
-
 void RtcParse::setAudioSource(IAudioSource* source) {
   if (!audioSource) {
     LOGFLF(LogLevel::warn, "audio source not create");
@@ -520,8 +513,8 @@ void RtcParse::onSetLocalSdp(webrtc::SessionDescriptionInterface* desc) {
     localSdp = sdpStr;
   }
   LOGFLF(LogLevel::info, "set local sdp:", sdpStr);
-  if (sdpOb && !sdpStr.empty()) {
-    sdpOb->onLocalSdp(sdpStr.c_str());
+  if (localSdpCb && !sdpStr.empty()) {
+    localSdpCb(sdpStr.c_str());
   }
 }
 
@@ -665,16 +658,15 @@ void RtcParse::OnIceCandidate(const webrtc::IceCandidateInterface* candidate) {
     candidate->ToString(&candidate_str);
     sdp_mid = candidate->sdp_mid();
     sdp_mline_index = candidate->sdp_mline_index();
-    if (sdpOb) {
-      sdpOb->onIceCandidate(candidate_str.c_str(), sdp_mid.c_str(),
-                            sdp_mline_index);
+    if (iceCb) {
+      iceCb(candidate_str.c_str(), sdp_mid.c_str(), sdp_mline_index);
     }
     avox::log(avox::LogLevel::info, "get ice candidate: ", candidate_str);
   } else {
     avox::log(avox::LogLevel::warn, "get null ice candidate");
     // 空表示收集完毕
-    if (sdpOb) {
-      sdpOb->onIceCandidate(nullptr, nullptr, 0);
+    if (iceCb) {
+      iceCb(nullptr, nullptr, 0);
     }
   }
 }

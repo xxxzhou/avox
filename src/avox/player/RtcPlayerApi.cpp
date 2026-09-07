@@ -9,7 +9,7 @@ IRtcPlayer* createWebRtcPlayer() {
   return AvoxManager::Get().rtcPlayerHub.create("webrtc");
 }
 
-ISdpAgentOb* createZlTestSdpAgent(IRtcPlayer* player, const char* serverUrl) {
+IRtcEventOb* createZlTestSdpAgent(IRtcPlayer* player, const char* serverUrl) {
   if (!player || !serverUrl) {
     return nullptr;
   }

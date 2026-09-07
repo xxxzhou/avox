@@ -69,21 +69,6 @@ void RtcPlayer::setEnableDataChannel(bool bEnable) {
   source->setEnableDataChannel(bEnable);
 }
 
-void RtcPlayer::setSdpAgentOb(ISdpAgentOb* ob) {
-  userSdpOb = ob;
-  // open已生成localSdp时立即回放
-  if (ob) {
-    const char* sdp = source->getLocalSdp();
-    if (sdp && sdp[0] != '\0') {
-      ob->onLocalSdp(sdp);
-    }
-  }
-}
-
-void RtcPlayer::setSignalChannel(ISignalChannel* channel) {
-  signalChannel = channel;
-}
-
 void RtcPlayer::setVideoSource(IVideoSource* videoSource) {
   source->setVideoSource(videoSource);
 }
@@ -185,14 +170,14 @@ bool RtcPlayer::sendDataChannel(const char* data, int32_t size) {
   return source->sendDataChannel(data, size);
 }
 
-void RtcPlayer::addOb(IRtcPlayerOb* ob) {
+void RtcPlayer::addOb(IRtcEventOb* ob) {
   if (ob) {
-    Observer<IRtcPlayerOb>::addObserver(ob);
+    Observer<IRtcEventOb>::addObserver(ob);
   }
 }
 
-void RtcPlayer::removeOb(IRtcPlayerOb* ob) {
-  Observer<IRtcPlayerOb>::removeObserver(ob);
+void RtcPlayer::removeOb(IRtcEventOb* ob) {
+  Observer<IRtcEventOb>::removeObserver(ob);
 }
 
 const char* RtcPlayer::getLocalSdp() { return source->getLocalSdp(); }
@@ -262,23 +247,23 @@ void RtcPlayer::cmdOpen() {
   bAudioDescSet = false;
   remoteVRender->start();
   source->setObserver(this);
-  // 本地SDP/ICE与DataChannel消息经此中转
-  source->setSdpAgentOb(this);
+  // 本地SDP/ICE事件与DataChannel消息派发给IRtcEventOb观察者
+  // (createZlTestSdpAgent创建的内置agent观察者与上层自定义观察者统一走这条路)
+  source->setSdpEventCb(
+      [this](const char* localSdp) {
+        Observer<IRtcEventOb>::dispatch(&IRtcEventOb::onLocalSdp, localSdp);
+      },
+      [this](const char* candidate, const char* mid, int mlineIndex) {
+        Observer<IRtcEventOb>::dispatch(&IRtcEventOb::onIceCandidate, candidate,
+                                        mid, mlineIndex);
+      });
   source->setDataChannelMsgCb([this](const char* data, int32_t size) {
-    Observer<IRtcPlayerOb>::dispatch(&IRtcPlayerOb::onDataChannelMsg, data,
-                                     size);
+    Observer<IRtcEventOb>::dispatch(&IRtcEventOb::onDataChannelMsg, data,
+                                    size);
   });
   bool bOpen = source->open();
   if (bOpen) {
     setState(PlayerState::opening);
-    // 信令通道: 本地SDP/ICE自动送出, 远端消息回填
-    if (signalChannel) {
-      signalChannel->setSignalOb(this);
-      bOpen = signalChannel->connect();
-      if (!bOpen) {
-        LOGFLF(LogLevel::warn, "signal channel connect failed");
-      }
-    }
   } else {
     LOGFLF(LogLevel::warn, "rtc source open failed");
     MPOB::dispatch(&IMediaPlayerOb::onIoError, AVError::urlNoSupport,
@@ -312,9 +297,6 @@ void RtcPlayer::cmdSetRemoteSdp(SetRemoteSdpCommandPtr cmd) {
 void RtcPlayer::cmdClose() {
   // bOpenRequested保留: cmdOpen内部重开也走这里, 不能清掉用户的open意图
   retryAtMs = 0;
-  if (signalChannel) {
-    signalChannel->close();
-  }
   if (remoteARender) {
     remoteARender->close();
   }
@@ -332,7 +314,7 @@ void RtcPlayer::pollConnection() {
   RtcConnState cs = source->getConnState();
   if (cs != lastConnState.load(std::memory_order_acquire)) {
     lastConnState.store(cs, std::memory_order_release);
-    Observer<IRtcPlayerOb>::dispatch(&IRtcPlayerOb::onConnectionState, cs);
+    Observer<IRtcEventOb>::dispatch(&IRtcEventOb::onConnectionState, cs);
   }
   if (cs == RtcConnState::connected) {
     // 连上后重试计数清零,周期采集RTT/丢包
@@ -422,44 +404,8 @@ void RtcPlayer::onRemoteFrame(bool bVideo) {
   // 首个视频帧独立标记(先到音频帧时状态切换不丢视频首帧事件)
   if (bVideo && !bFirstFrame) {
     bFirstFrame = true;
-    Observer<IRtcPlayerOb>::dispatch(&IRtcPlayerOb::onFirstVideoFrame);
+    Observer<IRtcEventOb>::dispatch(&IRtcEventOb::onFirstVideoFrame);
   }
-}
-
-// ISdpAgentOb 实现
-void RtcPlayer::onLocalSdp(const char* localSdp) {
-  // 信令线程回调, 转发上层钩子与信令通道
-  if (userSdpOb) {
-    userSdpOb->onLocalSdp(localSdp);
-  }
-  if (signalChannel) {
-    signalChannel->sendLocalSdp(localSdp);
-  }
-}
-
-void RtcPlayer::onIceCandidate(const char* candidate, const char* mid,
-                               int mlineIndex) {
-  if (userSdpOb) {
-    userSdpOb->onIceCandidate(candidate, mid, mlineIndex);
-  }
-  if (signalChannel) {
-    signalChannel->sendIceCandidate(candidate, mid, mlineIndex);
-  }
-}
-
-// ISignalOb 实现
-void RtcPlayer::onRemoteSdp(const char* sdp) {
-  // 可能来自通道线程,转播放线程与open/close串行
-  if (!sdp) {
-    return;
-  }
-  auto sdpCmd = createCommand<MPCommandType::SetRemoteSdp>(sdp);
-  mpCommands.enqueueWait(sdpCmd);
-}
-
-void RtcPlayer::onRemoteIceCandidate(const char* candidate, const char* mid,
-                                     int mlineIndex) {
-  source->addIceCandidate(candidate, mid, mlineIndex);
 }
 
 }

@@ -7,10 +7,10 @@
 
 namespace avox {
 
-// HTTP SDP信令交换: 将本地SDP POST到信令服务器, 解析远端SDP后调player->setRemoteSdp
-// 替代原ZlTestSdpOb(改名, 去掉Zl前缀, 去掉#if AVOX_ENABLE_ZLMEDIAKIT守卫)
-// 留在核心层: IRtcPlayer已在AvoxPlayer.h, mk_http_requester(avox_zlmediakit已在用)
-class TestSdpOb : public ISdpAgentOb {
+// HTTP SDP信令观察者(ZLM/WHEP): 本地SDP自动POST到信令服务器, 解析远端SDP后
+// 调player->setRemoteSdp回填; createZlTestSdpAgent创建, IRtcPlayer::addOb挂载
+// 用法: auto ob = createZlTestSdpAgent(player, url); player->addOb(ob); player->open();
+class TestSdpOb : public IRtcEventOb {
  public:
   explicit TestSdpOb(const char* serverUrl);
   virtual ~TestSdpOb();
