@@ -36,7 +36,7 @@ namespace avox {
 #define AVOX_MP_IO_TRACK_READY_MS_INT "io.trackready.ms"
 // 转码录制器是否硬解(仅TranscodeRecorder消费)
 #define AVOX_REC_HARD_DECODE_BOOL "rec.hard.decode"
-// 转码录制器是否硬编(windows软编文件更小,仅TranscodeRecorder消费)
+// 转码录制器是否硬编(默认true; 设 false 走 FFmpeg 软编, windows软编文件更小, 仅TranscodeRecorder消费)
 #define AVOX_REC_HARD_ENCODE_BOOL "rec.hard.encode"
 
 // 日志打印

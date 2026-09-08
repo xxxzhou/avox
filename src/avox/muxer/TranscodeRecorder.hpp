@@ -41,8 +41,8 @@ class TranscodeRecorder : public IRecorder,
   // outputFile 为空时转码直出,不编码写文件,经 ISurfaceRender/IAudioRender 对外
   bool bNoOutput = false;
   bool bHardDecode = false;
-  // windows平台软编生成的文件会小很多
-  bool bHardEncode = false;
+  // 默认走平台原生硬编(AndVEncoder/IOSVEncoder/ff_*_dx11); 需要更小文件可显式关走 FFmpeg 软编
+  bool bHardEncode = true;
   // 输出描述，未设置或与源相同则不处理
   VideoDesc outVideoDesc = {};
   AudioDesc outAudioDesc = {};
