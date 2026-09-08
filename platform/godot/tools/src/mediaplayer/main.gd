@@ -915,6 +915,9 @@ func _load_url(url: String) -> void:
 	_title.text = _display_title(url)
 	_center.icon_kind = IconBtn.Icon.ELLIPSIS
 	_center.visible = true
+	# IO 方案 per-URL 重判 (与 live 流程同语义): C++ 侧 ioPlan 跨 play 存活 (createPlayer 重放),
+	# 不重设的话上一个网络流的 zlmediakit 会残留, ZL 拒绝 file schema 导致本地文件卡 opening
+	player.set_io_plan(_resolve_io_plan(url))
 	player.url = url
 	player.stop()
 	player.play()
