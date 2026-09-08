@@ -45,12 +45,21 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "Starting Ninja build..."
 ninja -C "..\build\windows\$BuildType"
 
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "WebRTC Windows $BuildType build successful!"
-    Write-Host "Build directory: $BUILD_DIR"
-} else {
+if ($LASTEXITCODE -ne 0) {
     Write-Host "Build failed, error code: $LASTEXITCODE"
     exit $LASTEXITCODE
+}
+
+# 无符号轻量版: llvm-strip剥CodeView调试信息(带符号版约313MB, 无符号约84MB)
+$llvmStrip = Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\Llvm\x64\bin\llvm-strip.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($llvmStrip) {
+    & $llvmStrip.FullName --strip-debug "$BUILD_DIR\obj\webrtc.lib" -o "$BUILD_DIR\obj\webrtc_nosym.lib"
+    Write-Host "Static library(带符号): $BUILD_DIR\obj\webrtc.lib"
+    Write-Host "Static library(无符号): $BUILD_DIR\obj\webrtc_nosym.lib"
+    Write-Host "拷贝到SDK依赖目录: cp obj\webrtc*.lib <avc_library>\build\windows\release\"
+} else {
+    Write-Host "Warning: llvm-strip not found, skip nosym lib"
+    Write-Host "Static library(带符号): $BUILD_DIR\obj\webrtc.lib"
 }
 
 Write-Host "Build completed!"

@@ -17,7 +17,7 @@ echo "Building WebRTC iOS $BUILD_TYPE static library..."
 cd "$WEBRTC_DIR/src"
 
 IS_DEBUG=false
-if [ "$$BUILD_TYPE" == "debug" ]; then
+if [ "$BUILD_TYPE" == "debug" ]; then
     IS_DEBUG=true
 fi
 # iOS构建参数配置
@@ -33,11 +33,16 @@ gn gen "$BUILD_DIR" --args="$GN_ARGS"
 echo "Building static library..."
 ninja -C "$BUILD_DIR" webrtc
 
-if [ $? -eq 0 ]; then
-    echo "Build successful!"
-    echo "Static library: $BUILD_DIR/obj/libwebrtc.a"
-    echo "Headers: $BUILD_DIR/gen"
-else
+if [ $? -ne 0 ]; then
     echo "Build failed"
     exit 1
 fi
+
+# 无符号轻量版: strip -S剥DWARF调试信息(约占体积93%), 与symbol_level=0等效
+cp "$BUILD_DIR/obj/libwebrtc.a" "$BUILD_DIR/obj/libwebrtc_nosym.a"
+strip -S "$BUILD_DIR/obj/libwebrtc_nosym.a"
+
+echo "Build successful!"
+echo "Static library(带符号): $BUILD_DIR/obj/libwebrtc.a"
+echo "Static library(无符号): $BUILD_DIR/obj/libwebrtc_nosym.a"
+echo "拷贝到SDK依赖目录: cp $BUILD_DIR/obj/libwebrtc*.a <avc_library>/build/ios/release/"

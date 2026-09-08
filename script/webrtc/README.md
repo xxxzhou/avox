@@ -8,6 +8,8 @@
 
 windows下使用 .\webrtc_build_windows.ps1 release.就会编译release版本的webrtc库。bat因为生成和编译会断开,需要手动ninja -C.
 
+编译成功后脚本会额外产出无符号轻量版(`libwebrtc_nosym.a`/`webrtc_nosym.lib`, strip掉DWARF/CodeView调试信息,体积约为带符号版的1/4~1/14,发布分发用)。带符号版体积大但崩溃可直接符号化,`FindWebRTC.cmake` 默认链接带符号版。
+
 ## Android
 
 编译webrtc的android库，需要使用linux环境。使用windows编译，会出现断言错误assert(host_os == "linux", "Android builds are only supported on Linux.")。
@@ -21,6 +23,12 @@ windows与wsl2使用不同的换行，导致编译时出现错误，所以最好
 ## IOS
 
 好像只能在MAC上编译,普通过程参看上面Android,其余查看[MAC编译WebRTC](../../doc/webrtc/MAC编译WebRTC.md)
+
+## Mac
+
+macOS本机库(arm64),在Mac上使用 `webrtc_build_mac.sh release` 编译。输出目录为 `build/darwin/<type>`,目录名darwin与FindWebRTC.cmake的CMAKE_SYSTEM_NAME小写一致,编完拷贝 `obj/libwebrtc.a` 到 `<avc_library>/build/darwin/release/`。
+
+注意: depot_tools里的ninja只是壳,需要 `brew install ninja` 的真ninja(脚本已把/opt/homebrew/bin加进PATH)。
 
 ## 文档
 

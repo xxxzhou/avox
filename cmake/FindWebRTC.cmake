@@ -5,9 +5,12 @@
 # WebRTC 依赖目录结构:
 #   src/                  # 头文件 (api/, rtc_base/, modules/, media/, sdk/)
 #   build/
-#     windows/release/    # webrtc.lib
-#     android/release/    # libwebrtc.a
-#     ios/release/        # libwebrtc.a
+#     windows/release/    # webrtc_nosym.lib (无符号,入库) / webrtc.lib (带符号,不入库)
+#     windows/debug/      # webrtc.lib (需本机自编, 不入库)
+#     android/release/    # libwebrtc_nosym.a / libwebrtc.a
+#     ios/release/        # libwebrtc_nosym.a / libwebrtc.a
+#     darwin/release/     # libwebrtc_nosym.a (macOS)
+# 优先链接无符号_nosym版(avc_library入库的), 找不到时回退带符号版(本机自编)
 
 # 确定 WebRTC 根目录
 # 优先使用 AVOX_EXTERNAL_LIBRARY_DIR (在根 CMakeLists.txt 中定义)
@@ -66,20 +69,27 @@ else()
     message(STATUS "WebRTC BoringSSL 头未找到 (仅 WebRTC 自用 SSL 时可忽略)")
 endif()
 
-# 查找WEBRTC库
+# 查找WEBRTC库 (nosym无符号版优先, 回退带符号版)
 if(WIN32)
-    find_library(WEBRTC_LIBRARY
-        NAMES webrtc
-        PATHS ${WEBRTC_BUILD_DIR}
-        NO_DEFAULT_PATH)
+    if(AVOX_DEBUG)
+        find_library(WEBRTC_LIBRARY
+            NAMES webrtc webrtc_nosym
+            PATHS ${WEBRTC_BUILD_DIR}
+            NO_DEFAULT_PATH)
+    else()
+        find_library(WEBRTC_LIBRARY
+            NAMES webrtc_nosym webrtc
+            PATHS ${WEBRTC_BUILD_DIR}
+            NO_DEFAULT_PATH)
+    endif()
 elseif(APPLE)
     find_library(WEBRTC_LIBRARY
-        NAMES libwebrtc.a
+        NAMES webrtc_nosym webrtc
         PATHS ${WEBRTC_BUILD_DIR}
         NO_DEFAULT_PATH)
 elseif(ANDROID)
     find_library(WEBRTC_LIBRARY
-        NAMES libwebrtc.a
+        NAMES webrtc_nosym webrtc
         PATHS ${WEBRTC_BUILD_DIR}
         NO_DEFAULT_PATH)
 endif()

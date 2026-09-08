@@ -34,11 +34,17 @@ gn gen "$BUILD_DIR" --args="$GN_ARGS"
 echo "Building static library..."
 ninja -C "$BUILD_DIR" webrtc
 
-if [ $? -eq 0 ]; then
-    echo "Build successful!"
-    echo "Static library: $BUILD_DIR/obj/libwebrtc.a"
-    echo "Headers: $BUILD_DIR/gen"
-else
+if [ $? -ne 0 ]; then
     echo "Build failed"
     exit 1
 fi
+
+# 无符号轻量版: 必须用NDK的llvm-strip, GNU strip认不了bitcode成员(wrapper.o)
+cp "$BUILD_DIR/obj/libwebrtc.a" "$BUILD_DIR/obj/libwebrtc_nosym.a"
+"$ANDROID_NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" --strip-debug "$BUILD_DIR/obj/libwebrtc_nosym.a"
+
+echo "Build successful!"
+echo "Static library(带符号): $BUILD_DIR/obj/libwebrtc.a"
+echo "Static library(无符号): $BUILD_DIR/obj/libwebrtc_nosym.a"
+echo "Headers: $BUILD_DIR/gen"
+echo "拷贝到SDK依赖目录: cp $BUILD_DIR/obj/libwebrtc*.a <avc_library>/build/android/release/"
