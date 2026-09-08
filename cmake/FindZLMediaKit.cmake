@@ -41,7 +41,8 @@ if(APPLE AND IOS)
     endif()
     list(APPEND ZLMEDIAKIT_LIBRARIES ${ZLTOOLKIT_LIBS})
     # force_load 旗标单独存放: ZLMEDIAKIT_LIBRARIES 会被 avox_run_module_copy 逐项 file(COPY), 不能混入非路径项
-    file(GLOB ZLM_ALL_ARCHS "${Mediakit_LIB_DIR}/*.a")
+    # xcode 多配置构建 release 下会再多一层 <CONFIG>/ 目录 (darwin/ios 均如此), 递归收集
+    file(GLOB_RECURSE ZLM_ALL_ARCHS "${Mediakit_LIB_DIR}/*.a")
     foreach(ARCH_PATH ${ZLM_ALL_ARCHS})
         list(APPEND ZLMEDIAKIT_LINK_FLAGS "-Wl,-force_load,${ARCH_PATH}")
     endforeach()
