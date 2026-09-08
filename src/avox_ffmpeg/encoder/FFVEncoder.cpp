@@ -1,5 +1,7 @@
 #include "FFVEncoder.hpp"
 
+#include "avox/muxer/Muxer.hpp"
+
 namespace avox {
 
 struct HWEncoderInfo {
@@ -60,6 +62,15 @@ DecodeResult FFVEncoder::onPreEncoder() {
     }
   }
 #endif
+  // FFmpeg 无原生 h264/hevc 编码器; LGPL(商业)构建无 libx264/libx265 时,
+  // 落到渠道注入的软编名 (Windows 商业包: h264_mf/hevc_mf, 系统自带 MFT)
+  if (!codec) {
+    const char* softName =
+        (desc.codecId == VCodecId::h265) ? AVOX_FF_H265_ENCODER : AVOX_FF_H264_ENCODER;
+    if (softName && *softName) {
+      codec = avcodec_find_encoder_by_name(softName);
+    }
+  }
   if (!codec) {
     LOGFLF(LogLevel::info,
            "avcodec_find_encoder failed,codecId:", getVCodecName(desc.codecId));

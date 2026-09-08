@@ -10,6 +10,24 @@ set(KHRONOS_DIR ${AVOX_TRDPARTY}/khronos)
 include_directories(${KHRONOS_DIR})
 message(STATUS "khronos dir: ${KHRONOS_DIR}")
 
+# 发行渠道 (发行包合规):
+#   agpl       = AGPL 渠道, GPL 软编 libx264/libx265 可用, faad2(GPL) 可用
+#   commercial = 商业(LGPL)渠道, Windows 软编注入 h264_mf/hevc_mf(系统自带 MFT), faad2(GPL) 强制关闭
+#                注意: 该渠道必须链接 LGPL 配置构建的 FFmpeg (无 --enable-gpl/libx264/libx265/nonfree),
+#                打包由各发行仓 check_licenses.py 按 FFmpeg configure 串断言把关
+if(AVOX_DIST_FLAVOR STREQUAL "commercial")
+  message(STATUS "dist flavor: commercial (LGPL)")
+  if(WIN32)
+    add_compile_definitions("AVOX_FF_H264_ENCODER=\"h264_mf\"" "AVOX_FF_H265_ENCODER=\"hevc_mf\"")
+  endif()
+  if(AVOX_ENABLE_FAAD2)
+    set(AVOX_ENABLE_FAAD2 OFF)
+    message(STATUS "commercial flavor: faad2(GPL) 强制关闭")
+  endif()
+else()
+  message(STATUS "dist flavor: agpl (GPL 软编 libx264/libx265 可用)")
+endif()
+
 # QUIET不输出警告
 # Vulka选项可用性检查 (CMAKE_MODULE_PATH中找到FindVulkan.cmake,此处为CMake自带FindVulkan.cmake)
 if(AVOX_ENABLE_VULKAN)

@@ -210,6 +210,9 @@ option(AVOX_ENABLE_AGENT "build Agent client (LM Studio/OpenAI compatible VLM)" 
 option(AVOX_ENABLE_CLI "build avox_cli tool" ON)
 option(AVOX_ENABLE_GODOT "build Godot 4 GDExtension plugin (platform/godot/plugin, Windows only)" ON)
 option(AVOX_ENABLE_UNITY "build Unity native plugin (platform/unity/plugin, Windows only)" ON)
+# 发行渠道 flavor: agpl(默认, GPL 软编 libx264/libx265 可用) | commercial(LGPL, Windows 软编注入 h264_mf/hevc_mf, faad2 强制关闭)
+set(AVOX_DIST_FLAVOR "agpl" CACHE STRING "Distribution flavor: agpl|commercial")
+set_property(CACHE AVOX_DIST_FLAVOR PROPERTY STRINGS agpl commercial)
 
 # 组件 option 定义(须在 AVOXOptions / add_subdirectory(src) 之前, 保证 src 的 gate 如 inpaint 可见)
 if(AVOX_ENABLE_PLUGINS)

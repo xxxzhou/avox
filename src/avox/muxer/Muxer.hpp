@@ -5,8 +5,14 @@
 
 namespace avox {
 
+// FFmpeg 软编编码器名, 构建期可注入 (CMake AVOX_DIST_FLAVOR):
+// agpl 渠道默认 libx264/libx265 (GPL); commercial(LGPL) 渠道 Windows 传 h264_mf/hevc_mf
+#ifndef AVOX_FF_H264_ENCODER
 #define AVOX_FF_H264_ENCODER "libx264"
+#endif
+#ifndef AVOX_FF_H265_ENCODER
 #define AVOX_FF_H265_ENCODER "libx265"
+#endif
 #define AVOX_ANDROID_H264_ENCODER "android h264 decoder"
 #define AVOX_ANDROID_H265_ENCODER "android h265 decoder"
 #define AVOX_IOS_H264_ENCODER "ios h264 decoder"
