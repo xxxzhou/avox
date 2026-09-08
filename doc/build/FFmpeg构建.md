@@ -32,8 +32,8 @@ cd D:/Work/github/avplay/3rdparty/FFmpeg
 6. 配置编译选项 用来生成 Makefile
 
 > ⚠️ **发行合规**: `--enable-nonfree` 产物任何渠道都不可分发; `--enable-gpl` 产物只能进 AGPL 渠道。
-> 请用 `script/ffmpeg/build_ffmpeg.py` 按渠道出包: `--flavor gpl`(AGPL 渠道, libx264/libx265, 无 nonfree) / `--flavor lgpl`(商业渠道), 或直接用 BtbN LGPL 预编译, 交付前 `--verify` 扫一遍。
-> 商业渠道构建 avox 时配 `python build_windows.py --flavor=commercial` (CMake AVOX_DIST_FLAVOR, 软编注入 h264_mf/hevc_mf)。
+> 请用 `script/ffmpeg/build_ffmpeg.py` 按渠道出包: `--flavor gpl`(AGPL 渠道, libx264/libx265, 无 nonfree) / `--flavor lgpl`(商业渠道), 交付前 `--verify` 扫一遍; `3rdparty/library/` 各平台的 LGPL 白名单预编译包即由此产出。
+> 商业渠道构建 avox 时配 `--flavor=commercial` (CMake AVOX_DIST_FLAVOR, FF 软编兜底宏按平台注入: Windows=h264_mf/hevc_mf, Apple=h264/hevc_videotoolbox, Android 兜底直接落原生硬编)。
 
 ./configure --prefix=../../build/windows/ffmpeg --enable-shared --disable-static --enable-version3 --enable-ffmpeg --enable-hwaccels --enable-gpl --enable-nonfree --enable-vulkan --enable-dxva2 --enable-d3d12va --enable-d3d11va 
 // 带调试信息

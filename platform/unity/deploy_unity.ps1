@@ -60,7 +60,8 @@ $BinDst = Join-Path $PkgDst "Runtime\Plugins\Windows\x86_64"
 Write-Host "==> 复制原生插件 -> $BinDst"
 New-Item -ItemType Directory -Force -Path $BinDst | Out-Null
 $Dlls = @("avox_unity.dll", "avox.dll",
-          "avcodec-61.dll", "avformat-61.dll", "avutil-59.dll", "swresample-5.dll",
+          "avcodec-63.dll", "avformat-63.dll", "avutil-61.dll", "swresample-7.dll",
+          "zlib1.dll", "libwinpthread-1.dll",
           "fdk-aac.dll", "libcrypto-3-x64.dll", "libssl-3-x64.dll", "mk_api.dll")
 foreach ($dll in $Dlls) {
     $src = Join-Path $AvoxRelease $dll

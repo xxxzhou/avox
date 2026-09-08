@@ -31,9 +31,12 @@ cmake --build build/windows --config Release
         ├── avox_godot.dll       ← 复制自 avox_godot_plugin/bin/Release/avox_godot.dll
         └── (avox 运行时依赖 ↓ 全部复制自 avox/.../Release/)
             avox.dll
-            avcodec-61.dll
-            avformat-61.dll
-            avutil-59.dll
+            avcodec-63.dll
+            avformat-63.dll
+            avutil-61.dll
+            swresample-7.dll
+            zlib1.dll
+            libwinpthread-1.dll
             ...
 ```
 

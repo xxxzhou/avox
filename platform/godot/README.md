@@ -29,7 +29,7 @@
 
 - **Godot 引擎走导出发布版**（release 模板，无编辑器，脚本编进 `.pck`），不再是 171M 编辑器 + 散装源码。注：Godot 4.7 的发布模板 exe 本身就有 ~105M（4.x 引擎体积），这是引擎下限，非打包可压缩部分。
 - **AI 模型 / 第三方 AI 库（onnx/opencv/openvino/sherpa）默认不打包**，用户用产物里的 `assets/script/fetch_assets.py` 按需下载（沿用 manifest）。
-- 产物体积从 Release 的 1.7G → **~260M**（avox 运行时 ~120M，其中 ffmpeg avcodec 占 89M；发布版 exe ~105M；插件壳 + assets ~28M）。
+- 产物体积从 Release 的 1.7G → **~175M**（avox 运行时 ~40M，ffmpeg 9.0.1 白名单裁剪版 avcodec+avformat 仅 ~6M；发布版 exe ~105M；插件壳 + assets ~28M。体积为按 ffmpeg 换代前后推算的估计值, 以实际打包为准）。
 
 ```bash
 python script/package/pack_godot.py --out D:\avox_godot_pack   # 导出发布版 (首选)

@@ -41,7 +41,8 @@ class TranscodeRecorder : public IRecorder,
   std::string inputUrl;
   std::string outputFile;
   bool bHardDecode = false;
-  bool bHardEncode = false;
+  // 默认走平台原生硬编(AndVEncoder/IOSVEncoder/ff_*_dx11); 需要更小文件可显式关走 FFmpeg 软编
+  bool bHardEncode = true;
   VideoDesc outVideoDesc = {};
   AudioDesc outAudioDesc = {};
   bool bSetOutVideo = false;
@@ -51,7 +52,8 @@ class TranscodeRecorder : public IRecorder,
   RingBuffer<VideoFramePtr> videoQueue{5};
   RingBuffer<AudioFramePtr> audioQueue{5};
   ACodecId aCodecid = ACodecId::aac;
-  VCodecId vCodecId = VCodecId::h265;
+  // 默认 H.264: 硬编兼容性远好于 h265(低端安卓/老设备 hevc 编码器常缺失), 兼容性敏感的转码录不赌设备能力
+  VCodecId vCodecId = VCodecId::h264;
 
   // IRecorder
  public:
@@ -90,7 +92,7 @@ class TranscodeRecorder : public IRecorder,
 ### 3.1 构造
 
 - 创建 `VkVideoRender`（离屏，不绑定窗口），用于 GPU 帧处理
-- 默认软解 + 软编
+- 默认软解 + 平台原生硬编（H.264）；需要更小文件经 `rec.hard.encode=false` 走 FFmpeg 软编
 - 音频默认编码格式：AAC, S16, 32000Hz, 2ch
 
 ### 3.2 open
