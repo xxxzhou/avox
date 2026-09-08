@@ -1,6 +1,7 @@
 import os
 import subprocess
 import shutil
+import sys
 import build_common
 
 # 当前脚本用于在windows下交叉编译android
@@ -11,14 +12,22 @@ import build_common
 build_common.AVOX_TARGET_SYSTEM = "android"
 # 指定架构 armeabi-v7a/arm64-v8a
 build_common.AVOX_TARGET_ARCH = "arm64-v8a"
-# vscode里改C++代码，在脚本里编译，需要强制重新编译才能应用改动代码
-build_common.AVOX_FORCE_REBUILD = True
+# vscode里改C++代码，在脚本里编译，需要强制重新编译才能应用改动代码；CI 缓存场景可置 AVOX_FORCE_REBUILD=False 复用已编译模块
+build_common.AVOX_FORCE_REBUILD = os.environ.get("AVOX_FORCE_REBUILD", "True") == "True"
 # "Release" or "Debug" - 优先使用环境变量
 build_common.AVOX_BUILD_TYPE = os.environ.get("AVOX_BUILD_TYPE", "Release")
 # 是否只构建项目，不编译
 onlyMake = False
 # 安卓默认编译目录不带BuildType,因为改了BuildType这个值要设true
 force_build = False
+# 发行渠道: agpl(默认,GPL软编libx264/libx265可用) / commercial(LGPL,FF软编兜底落原生硬编)
+# 命令行 --flavor=commercial 或环境变量 AVOX_DIST_FLAVOR 指定
+DIST_FLAVOR = os.environ.get("AVOX_DIST_FLAVOR", "")
+for _arg in sys.argv[1:]:
+    if _arg.startswith("--flavor="):
+        DIST_FLAVOR = _arg.split("=", 1)[1]
+if DIST_FLAVOR not in ("agpl", "commercial"):
+    DIST_FLAVOR = "agpl"
 
 # OpenSSL for Android (HTTPS/WSS/WebRTC DTLS) - 静态链接，避免额外打包 .so
 OPENSSL_DIR = build_common.find_openssl("android")
@@ -62,10 +71,12 @@ if __name__ == "__main__":
     godot_flag = "OFF" if os.environ.get("AVOX_GODOT_ANDROID", "1") == "0" else "ON"
     unity_flag = "OFF" if os.environ.get("AVOX_UNITY_ANDROID", "1") == "0" else "ON"
     sherpa_flag = os.environ.get("AVOX_ENABLE_SHERPA", "ON")
+    flavor_args = f" -DAVOX_DIST_FLAVOR={DIST_FLAVOR}" if DIST_FLAVOR == "commercial" else ""
     extra_args = ("-DAVOX_ENABLE_AGENT=ON -DAVOX_ENABLE_CLI=OFF "
                   f"-DAVOX_ENABLE_GODOT={godot_flag} -DAVOX_ENABLE_UNITY={unity_flag} "
                   f"-DAVOX_ENABLE_SHERPA={sherpa_flag} "
-                  f"-DAVOX_ENABLE_WEBRTC=OFF -DAVOX_ENABLE_SWIG={swig_flag}")
+                  f"-DAVOX_ENABLE_WEBRTC=OFF -DAVOX_ENABLE_SWIG={swig_flag}"
+                  f"{flavor_args}")
     build_common.build_self(extra_args)
 
     # 复制 NDK 的 libc++_shared.so 到输出目录，确保打包进 APK

@@ -12,13 +12,21 @@ message(STATUS "khronos dir: ${KHRONOS_DIR}")
 
 # 发行渠道 (发行包合规):
 #   agpl       = AGPL 渠道, GPL 软编 libx264/libx265 可用
-#   commercial = 商业(LGPL)渠道, Windows 软编注入 h264_mf/hevc_mf(系统自带 MFT)
+#   commercial = 商业(LGPL)渠道, FF 软编兜底宏按渠道实际可用编码器注入:
+#                Windows = h264_mf/hevc_mf(系统自带 MFT)
+#                Apple   = h264_videotoolbox/hevc_videotoolbox(FFmpeg VT wrapper, 库白名单已带)
+#                Android = 原生硬编注册名(libx264/libx265 在 LGPL 包中不存在, 兜底必须落可用的编码器)
 #                注意: 该渠道必须链接 LGPL 配置构建的 FFmpeg (无 --enable-gpl/libx264/libx265/nonfree),
 #                打包由各发行仓 check_licenses.py 按 FFmpeg configure 串断言把关
 if(AVOX_DIST_FLAVOR STREQUAL "commercial")
   message(STATUS "dist flavor: commercial (LGPL)")
   if(WIN32)
     add_compile_definitions("AVOX_FF_H264_ENCODER=\"h264_mf\"" "AVOX_FF_H265_ENCODER=\"hevc_mf\"")
+  elseif(APPLE)
+    add_compile_definitions("AVOX_FF_H264_ENCODER=\"h264_videotoolbox\"" "AVOX_FF_H265_ENCODER=\"hevc_videotoolbox\"")
+  elseif(ANDROID)
+    # Android FFmpeg LGPL 白名单无任何视频编码器, 软编兜底直接落 AndVEncoder 原生硬编(注册名与 Muxer.hpp 保持一致)
+    add_compile_definitions("AVOX_FF_H264_ENCODER=\"android h264 decoder\"" "AVOX_FF_H265_ENCODER=\"android h265 decoder\"")
   endif()
 else()
   message(STATUS "dist flavor: agpl (GPL 软编 libx264/libx265 可用)")
