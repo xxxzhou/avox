@@ -1,8 +1,16 @@
 #include "VkContext.hpp"
 
+#include <chrono>
+#include <thread>
+
 #include "avox/module/AvoxManager.hpp"
 
 namespace avox {
+
+// 设备丢失恢复状态(进程内共享一台VkDevice, 见Shared())
+static std::atomic<VkContext::VkDevState> sVkDevState{VkContext::VkDevState::Ok};
+static std::atomic<uint32_t> sVkDevEpoch{0};
+static std::atomic<int32_t> sVkRecoverAttempts{0};
 
 struct VkReg {
   VkReg() {
@@ -87,6 +95,67 @@ VkContext* VkContext::Shared() {
   return gVkContext;
 }
 
+VkContext::VkDevState VkContext::devState() { return sVkDevState.load(); }
+
+uint32_t VkContext::devEpoch() { return sVkDevEpoch.load(); }
+
+void VkContext::markLost() {
+  VkDevState expect = VkDevState::Ok;
+  // 只有Ok态才触发一次恢复; Recovering=已在恢复, Dead=已放弃等上层降级
+  if (!sVkDevState.compare_exchange_strong(expect, VkDevState::Recovering)) {
+    return;
+  }
+  LOGFLF(LogLevel::warn, "vk device lost, start recovery, attempt:",
+         sVkRecoverAttempts.load() + 1);
+  std::thread([] {
+    while (true) {
+      int32_t attempt = sVkRecoverAttempts.fetch_add(1);
+      if (attempt >= 6) {
+        sVkDevState.store(VkDevState::Dead);
+        LOGFLF(LogLevel::error,
+               "vk device recovery failed, render degraded, restart client to "
+               "recover");
+        return;
+      }
+      // 驱动重置需要时间, 退避后重试: 1s,2s,4s,8s,16s,16s
+      int64_t waitMs = 500ll << std::min(attempt + 1, 5);
+      std::this_thread::sleep_for(std::chrono::milliseconds(waitMs));
+      bool ok = false;
+      {
+        std::lock_guard<std::mutex> lock(gVkContextMutex);
+        if (gVkContext && !gVkContext->bShardConext) {
+          // 旧设备已lost: 跳过waitIdle(会返回DEVICE_LOST), 直接销毁重建
+          gVkContext->createDevice();
+          gVkContext->createCommandPool();
+          ok = gVkContext->vkDevice != VK_NULL_HANDLE;
+        }
+      }
+      if (ok) {
+        sVkDevEpoch.fetch_add(1);
+        sVkDevState.store(VkDevState::Ok);
+        sVkRecoverAttempts.store(0);
+        LOGFLF(LogLevel::warn, "vk device recovered, epoch:",
+               sVkDevEpoch.load());
+        return;
+      }
+      LOGFLF(LogLevel::warn, "vk device recovery failed, attempt:", attempt + 1);
+    }
+  }).detach();
+}
+
+VkContext::VkRecoverGate VkContext::recoverGate(uint32_t& myEpoch) {
+  VkDevState st = sVkDevState.load();
+  if (st != VkDevState::Ok) {
+    return VkRecoverGate::Skip;
+  }
+  uint32_t cur = sVkDevEpoch.load();
+  if (myEpoch == cur) {
+    return VkRecoverGate::Ok;
+  }
+  myEpoch = cur;
+  return VkRecoverGate::Rebuild;
+}
+
 void VkContext::onDeviceComplete() {}
 
 void VkContext::createCommandPool() {
@@ -150,6 +219,7 @@ bool VkContext::createInstance(bool bDebug) {
 
 bool VkContext::createDevice() {
   devArgs = VkDeviceArgs::defArgs(phDevice);
+  // 丢失恢复不变式: 刻意不销毁旧vkDevice, 丢失期间所有旧句柄调用仍合法; 勿补destroy否则恢复门变UAF, 旧device每episode泄漏一个属取舍
   vkDevice = devArgs.crateDevice(phDevice);
   if (vkDevice != VK_NULL_HANDLE) {
     volkLoadDevice(vkDevice);

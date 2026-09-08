@@ -1,9 +1,12 @@
 #include "VkPipeGraph.hpp"
 
+#include <atomic>
+#include <cstdlib>
 #include <thread>
 
 #include "avox/module/AvoxManager.hpp"
 #include "avox/module/HighClock.hpp"
+#include "../VkContext.hpp"
 
 namespace avox {
 
@@ -14,6 +17,11 @@ VkPipeGraph::VkPipeGraph(VkContext* ctx) {
   setVkContext(ctx);
   // 单还是多
   commandCount = 1;
+  createGraphResources(ctx);
+  gpu = GpuType::vulkan;
+}
+
+void VkPipeGraph::createGraphResources(VkContext* ctx) {
   // 得到当前graph需要的VkCommandBuffer
   VkPipelineCacheCreateInfo pipelineCacheInfo = {};
   pipelineCacheInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
@@ -62,10 +70,15 @@ VkPipeGraph::VkPipeGraph(VkContext* ctx) {
 #ifdef WIN32
   createDevice11(&dxDevice, &dxCtx);
 #endif
-  gpu = GpuType::vulkan;
 }
 
 VkPipeGraph::~VkPipeGraph() {
+  if (VkContext::devState() != VkContext::VkDevState::Ok) {
+    // 设备丢失/恢复中: 旧资源随旧device一起消亡, 不能再用旧句柄调vk接口, 只清容器
+    computerCmds.clear();
+    cmdFences.clear();
+    return;
+  }
   // 等待所有 GPU 操作完成，避免资源销毁时还在被使用
   waitIdle();
   // 销毁所有命令缓冲区（必须在 fence 之前销毁）
@@ -129,12 +142,31 @@ bool VkPipeGraph::bOutLayer(int32_t node) {
 }
 
 bool VkPipeGraph::resourceReady() {
+  // 设备丢失/恢复中: 旧资源已随旧device消亡
+  if (VkContext::devState() != VkContext::VkDevState::Ok) {
+    return false;
+  }
   if (outEvent == VK_NULL_HANDLE) {
     return false;
   }
   // 资源是否已经重新生成
   auto res = vkGetEventStatus(vkDevice, outEvent);
   return res == VK_EVENT_SET;
+}
+
+void VkPipeGraph::run() {
+  // 设备丢失恢复门: 恢复中跳过本帧; 设备已重建则重拉句柄并走reset全图重建
+  auto gate = VkContext::recoverGate(vkDevEpoch);
+  if (gate == VkContext::VkRecoverGate::Skip) {
+    return;
+  }
+  if (gate == VkContext::VkRecoverGate::Rebuild) {
+    // 旧graph自有资源已随旧device消亡, 直接在新device上重建(重入createGraphResources覆盖句柄)
+    setVkContext(VkContext::Shared());
+    createGraphResources(VkContext::Shared());
+    reset();
+  }
+  VPipeGraph<VkLayer>::run();
 }
 
 void VkPipeGraph::onReset() {
@@ -187,6 +219,20 @@ void VkPipeGraph::onRun() {
     return;
   }
 #endif
+  // [TEST] 注入设备丢失, 验证恢复链路(AVC_VK_FORCE_LOST=每N帧丢一次)
+  static const int32_t kForceLostEvery = [] {
+    const char* env = std::getenv("AVC_VK_FORCE_LOST");
+    return env ? std::atoi(env) : 0;
+  }();
+  if (kForceLostEvery > 0) {
+    static std::atomic<uint32_t> injectCnt{0};
+    if ((injectCnt.fetch_add(1) + 1) % (uint32_t)kForceLostEvery == 0) {
+      LOGFLF(LogLevel::warn, "[TEST] inject vk device lost, frame:",
+             injectCnt.load());
+      VkContext::markLost();
+      return;
+    }
+  }
   // HighClock clock = {};
   // 等待上一帧完成（commandCount=1时等待当前帧）
   assert(currentCmdIndex < cmdFences.size());
@@ -210,6 +256,11 @@ void VkPipeGraph::onRun() {
       vkQueueSubmit(vkComputeQueue, 1, &submitInfo, cmdFences[currentCmdIndex]);
   AVOX_VULKAN_LOG(result, "submit compute queue failed");
   unLockCommand();
+  if (result == VK_ERROR_DEVICE_LOST) {
+    // 设备丢失: 触发共享上下文恢复, 本帧及后续帧走run()恢复门直到重建完成
+    VkContext::markLost();
+    return;
+  }
   // log(LogLevel::info, "vk pipe cost 3:", clock.recordLast());
   // [TEST] 撕裂排查: 同步等待本次 submit 完成,确认 graph 与 window
   // 之间是否缺同步

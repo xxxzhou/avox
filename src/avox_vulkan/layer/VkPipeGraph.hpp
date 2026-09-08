@@ -48,6 +48,8 @@ class VkPipeGraph : public VPipeGraph<VkLayer>, public VkContextRef {
   // 确定是否在重置生成资源与commandbuffer中
   VkEvent outEvent = VK_NULL_HANDLE;
   VkPipelineStageFlags stageFlags = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+  // 共享VkDevice的代际, 与VkContext::devEpoch()不一致时需重拉句柄并重建
+  uint32_t vkDevEpoch = 0;
   // RenderType renderType = RenderType::other;
 #ifdef WIN32
   MComPtr<ID3D11Device> dxDevice = nullptr;
@@ -65,13 +67,19 @@ class VkPipeGraph : public VPipeGraph<VkLayer>, public VkContextRef {
 
 #ifdef WIN32
   ID3D11Device* getD3D11Device();
-#endif 
+#endif
 
  protected:
+  // 创建graph自有资源(pipelineCache/cmdPool/命令缓冲/fence/event/sampler)
+  void createGraphResources(VkContext* ctx);
   // 所有layer调用initbuffer后
   virtual void onReset() override;
   virtual void onInitBuffers() override;
   virtual void onRun() override;
+
+ public:
+  // 设备丢失恢复门: 恢复中跳过本帧, 设备重建后重拉句柄+走reset全图重建
+  virtual void run() override;
 };
 
 }

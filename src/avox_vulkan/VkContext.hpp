@@ -2,6 +2,7 @@
 
 #include "avox/AvoxLayer.h"
 #include "VkHelper.hpp"
+#include <atomic>
 #include <mutex>
 
 namespace avox {
@@ -67,6 +68,20 @@ class VkContext : public VkContextRef {
   // 此非单例，只是默认给一个可以全局使用的
   static VkContext* gVkContext;
   static VkContext* Shared();
+
+ public:
+  // 设备丢失恢复: 共享VkDevice被驱动重置(TDR等)后, 重建device并让消费方
+  // 按devEpoch发现句柄过期, 重拉句柄+走既有reset路径重建管线
+  enum class VkDevState { Ok, Recovering, Dead };
+  // 恢复门判定结果: Skip=恢复中/已放弃,本帧跳过; Ok=正常; Rebuild=设备已重建
+  enum class VkRecoverGate { Skip, Ok, Rebuild };
+  static VkDevState devState();
+  static uint32_t devEpoch();
+  // 任意层submit/alloc返回VK_ERROR_DEVICE_LOST时调用(幂等, 单飞恢复+退避重试)
+  static void markLost();
+  // 消费方每帧入口调用, myEpoch存有自己的代际:
+  // 返回Rebuild时调用方需重拉句柄(如setVkContext)+重建自有资源+重建管线
+  static VkRecoverGate recoverGate(uint32_t& myEpoch);
 
  protected:
   bool bShardConext = false;
