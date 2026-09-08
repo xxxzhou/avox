@@ -15,7 +15,7 @@ build_common.AVOX_BUILD_TYPE = os.environ.get("AVOX_BUILD_TYPE", "Release")
 # 默认全部启用, CMake 各 plugin 的 find_package 找不到库会自动跳过
 # 环境变量 AVOX_CMAKE_ARGS 透传额外 cmake 参数 (如 -DAVOX_ENABLE_OPENVINO=ON -DAVOX_ENABLE_SWIG=OFF)
 AVOX_CMAKE_ARGS = os.environ.get("AVOX_CMAKE_ARGS", "")
-# 发行渠道: agpl(默认,GPL软编libx264/libx265可用) / commercial(LGPL,Windows软编走h264_mf,faad2跳过)
+# 发行渠道: agpl(默认,GPL软编libx264/libx265可用) / commercial(LGPL,Windows软编走h264_mf)
 # 命令行 --flavor=commercial 或环境变量 AVOX_DIST_FLAVOR 指定
 DIST_FLAVOR = os.environ.get("AVOX_DIST_FLAVOR", "")
 for _arg in sys.argv[1:]:
@@ -53,11 +53,8 @@ def check_module_g2o():
 if __name__ == "__main__":
     print(f"dist flavor: {DIST_FLAVOR}")
     if DIST_FLAVOR == "commercial":
-        # faad2 是 GPL, 商业(LGPL)渠道不编不链
         AVOX_CMAKE_ARGS = f"{AVOX_CMAKE_ARGS} -DAVOX_DIST_FLAVOR={DIST_FLAVOR}"
     # module可以只编译一次，有改动再编译
-    if DIST_FLAVOR != "commercial" and not build_common.check_module("faad2","faad"):
-        build_common.build_module("faad2")
     if not build_common.check_module_zlmediakit():
         build_common.build_module("zlmediakit",False,ZL_CMAKE_ARGS)
     if not build_common.check_module("fdk-aac","fdk-aac"):

@@ -228,7 +228,7 @@ avox/
 │   │   ├── layer/             # 图层合成
 │   │   ├── module/            # 动态模块管理 (IModule / ModuleMgr)
 │   │   └── neural/            # 神经网络/AI 接口
-│   ├── avox_aac/               # AAC 解码 (faad2/fdk-aac)
+│   ├── avox_aac/               # AAC 编解码 (faac/fdk-aac)
 │   ├── avox_ffmpeg/            # FFmpeg 解封装/软解/硬解
 │   ├── avox_zlmediakit/        # ZLMediaKit 直播流 (RTSP/RTMP)
 │   ├── avox_vulkan/            # Vulkan GPU 处理管线

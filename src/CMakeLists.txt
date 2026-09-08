@@ -98,11 +98,8 @@ if(AVOX_ENABLE_ZLMEDIAKIT)
     add_sub_path(avox_zlmediakit AVOX_HEADER AVOX_SOURCE)
 endif()
 
-# faad2/faac/fdk-aac可用
-if(AVOX_ENABLE_FAAD2 OR AVOX_ENABLE_FAAC OR AVOX_ENABLE_FDKAAC)
-    if(NOT AVOX_ENABLE_FAAD2)
-        message(STATUS "faad2 不可用")
-    endif()
+# faac/fdk-aac可用
+if(AVOX_ENABLE_FAAC OR AVOX_ENABLE_FDKAAC)
     if(NOT AVOX_ENABLE_FAAC)
         message(STATUS "faac 不可用")
     endif()

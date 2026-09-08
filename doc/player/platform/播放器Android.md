@@ -67,7 +67,7 @@ class AndVDecoder : public VideoDecoder, public GLESContext {
 RegFunc andVDecoderReg = {
     "android video decoder init", []() {
       VCodecDesc codecDesc = {};
-      // 初始化 faadDesc 的相关信息，例如名称、是否支持硬件加速等 ;
+      // 初始化 codecDesc 的相关信息，例如名称、是否支持硬件加速等 ;
       codecDesc.name = AVOX_ANDROID_H264_DECODER;
       codecDesc.bHardware = true;
       codecDesc.vcodecId = VCodecId::h264;
@@ -76,7 +76,7 @@ RegFunc andVDecoderReg = {
           []() -> VideoDecoder* { return new AndVDecoder(); });
 
       codecDesc = {};
-      // 初始化 faadDesc 的相关信息，例如名称、是否支持硬件加速等 ;
+      // 初始化 codecDesc 的相关信息，例如名称、是否支持硬件加速等 ;
       codecDesc.name = AVOX_ANDROID_H265_DECODER;
       codecDesc.bHardware = true;
       codecDesc.vcodecId = VCodecId::h265;

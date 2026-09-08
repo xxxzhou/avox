@@ -379,7 +379,7 @@ def get_system_lib_suffix():
     else:
         return ".a"
 
-# 获取模块路径(faad2共用)
+# 检查模块是否已构建(产物在 build/<system>/<module> 下)
 def check_module(module_name, dll_name):
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__)))
     suffix = get_system_lib_suffix()

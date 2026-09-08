@@ -9,7 +9,7 @@
 主要有几个问题需要注意。
 
 1. 视频的配置信息在codecpar->extradata中，这个数据一般来说，如果是本地媒体源，则数据以avcc保存，如果是流媒体源，则以Annexb保存，在这统一以把codecpar->extradata里的配置信息如ssp/pps/vps解析出来，并以Annexb分隔保存，后面如MediaCodec/VideoToolbox都需要单独设置。这里如果是zlmediakit就比较简单了，配置帧的数据本身就是以Annexb分隔的。
-2. 如果是音频，又是AAC格式，和上面有点类似，如果是本地媒体源，一般是ASC格式信息，如果是流媒体信息，则是adts,注意如果是adts,其codecpar->extradata可能没有信息，需要在后面的随便一个包，一般就是第一个包，提取前面七个字节的信息生成一个配置包，供后面如解码器faad使用。
+2. 如果是音频，又是AAC格式，和上面有点类似，如果是本地媒体源，一般是ASC格式信息，如果是流媒体信息，则是adts,注意如果是adts,其codecpar->extradata可能没有信息，需要在后面的随便一个包，一般就是第一个包，提取前面七个字节的信息生成一个配置包，供后面如解码器fdk-aac/ffmpeg使用。
 
 ``` C++
 class IOParseFF : public AVSource, public RunTask {

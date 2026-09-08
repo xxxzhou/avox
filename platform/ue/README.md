@@ -9,7 +9,7 @@ AvoxPlayer 插件的源码、演示工程、打包工具与文档已整体迁移
   (删 setVulkan(false)) / bAllowSoftFallback 软解回退 / AAvoxMediaPlayerActor
 - demo 工程 AvoxUEDemo (UE 5.8.2 四组合验证通过: H.264/HEVC × 软/硬解)
 - 工具: deploy_plugin.ps1 / build_demo.ps1 / stage_plugin.ps1 / run_buildplugin.cmd /
-  check_licenses.py (faad/fdk 自检) / run_verify.py (UE Python 远程执行验证)
+  check_licenses.py (fdk 自检) / run_verify.py (UE Python 远程执行验证)
 - 文档: quickstart / player / packaging (Fab 提交) / troubleshooting (踩坑实录)
 
 本目录不再维护, 改动请提交到 avox-ue 仓。

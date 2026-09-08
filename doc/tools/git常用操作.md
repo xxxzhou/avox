@@ -38,7 +38,7 @@ git submodule status
 
 ### 添加
 
-1. $ git submodule add git@github.com:knik0/faad2.git 3rdparty/faad2
+1. $ git submodule add git@github.com:xxxzhou/ZLMediaKit.git 3rdparty/ZLMediaKit
 2. $ git submodule update --init --recursive
 
 ### 移除

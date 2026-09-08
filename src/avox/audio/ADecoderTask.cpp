@@ -41,7 +41,7 @@ bool ADecoderTask::start(AudioTrack* context) {
   size_t sIndex = 0;
   if (codecId == ACodecId::aac) {
     // 优先使用fdk-aac解码器
-    // faad decoder/fdk-aac decoder/ffmpeg_aac
+    // fdk-aac decoder/ffmpeg_aac
     const char* sName = "fdk-aac decoder";
     for (size_t i = 0; i < decodes.size(); ++i) {
       if (decodes[i].desc.name == sName) {

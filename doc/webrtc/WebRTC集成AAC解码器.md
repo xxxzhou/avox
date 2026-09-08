@@ -1,5 +1,9 @@
 # WebRTC 集成 AAC 解码器
 
+> 注: faad2(GPL) 已从工程整体移除(闭源商业渠道合规), 文中 FaadDecoder 相关实现为历史方案存档。
+> 现行 AAC 解码走 fdk-aac(Fraunhofer 许可, `src/avox_aac/FdkaacDecoder`)或 FFmpeg 原生解码器兜底,
+> 下述 adts/asc 头初始化、WebRTC 强制 S16 输出等注意事项同样适用于 fdk-aac。
+
 在上篇集成 [WebRTC 各平台的视频硬解 H256](WebRTC集成解码器.md) 后，因 WebRTC 自身没有集成对音频 AAC 的解码器，本文说明如何在 WebRTC 中集成音频 AAC 解码器，和上篇一样，不改动原 WebRTC 代码与结构，在本项目封装 WebRTC 的模块对 WebRTC 扩展。
 
 因 WebRTC 自带 opus/g711 等解码器，其还集成音频数据检测，如燥音静音特殊处理等，如果像上篇集成视频解码器全改成本项目内实现，则会丢失这些功能，得益 WebRTC 自身良好的扩展性，本文是在原 WebRTC 的已经实现的解码器工厂上，把 AAC 解码器放入工厂中。

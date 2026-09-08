@@ -21,7 +21,7 @@ Godot 4.2+ 运行时自动解包加载。**bin 是 junction, 导出器不跟随*
 
 ```bash
 cd platform/godot
-cp tools/addons/avox_godot/bin/{avox.dll,AvoxWrapper.dll,avcodec-61.dll,avformat-61.dll,avutil-59.dll,swresample-5.dll,libssl-3-x64.dll,libcrypto-3-x64.dll,mk_api.dll,faad-2.dll,fdk-aac.dll,onnxruntime.dll,opencv_world4130.dll,sherpa-onnx-c-api.dll,sherpa-onnx-cxx-api.dll} avox_tools_win/
+cp tools/addons/avox_godot/bin/{avox.dll,AvoxWrapper.dll,avcodec-61.dll,avformat-61.dll,avutil-59.dll,swresample-5.dll,libssl-3-x64.dll,libcrypto-3-x64.dll,mk_api.dll,fdk-aac.dll,onnxruntime.dll,opencv_world4130.dll,sherpa-onnx-c-api.dll,sherpa-onnx-cxx-api.dll} avox_tools_win/
 cp C:/Windows/System32/D3DCOMPILER_47.dll avox_tools_win/   # 系统 DLL, 缺失时补
 cp -r tools/addons/avox_godot/bin/assets avox_tools_win/     # AssetManager 部署根 (manifest/glsl/config)
 rm -rf avox_tools_win/assets/models avox_tools_win/assets/agent   # 可选大模型, 资源面板按需下载

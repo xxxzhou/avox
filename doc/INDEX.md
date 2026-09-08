@@ -45,7 +45,7 @@ avox 是跨平台音视频播放器 SDK，支持直播流、本地媒体、硬�
 | avox_video | `src/avox/video/` | 视频解码器基类 | [播放器硬解](player/decode/播放器硬解.md) | ✅ |
 | avox_audio | `src/avox/audio/` | 音频解码器基类 | - | ✅ |
 | avox_ffmpeg | `src/avox_ffmpeg/` | FFmpeg 软解/硬解 | [播放器FFmpeg](player/decode/播放器FFmpeg.md) | ✅ |
-| avox_aac | `src/avox_aac/` | AAC 解码 (faad2/fdk-aac) | - | ✅ |
+| avox_aac | `src/avox_aac/` | AAC 编解码 (faac/fdk-aac) | - | ✅ |
 
 ### IO 模块
 
@@ -200,7 +200,6 @@ class IAudioRender {
 |-----|------|------|
 | ZLMediaKit | `3rdparty/ZLMediaKit/` | 直播流服务器和解析 |
 | fdk-aac | `3rdparty/fdk-aac/` | AAC 编解码 |
-| faad2 | `3rdparty/faad2/` | AAC 解码 |
 | freetype | `3rdparty/freetype/` | 字体渲染 |
 | sherpa-onnx | `3rdparty/sherpa-onnx/` | 语音识别 |
 

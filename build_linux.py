@@ -24,8 +24,6 @@ SHERPA_CMAKE_ARGS = "-DSHERPA_ONNX_ENABLE_C_API=ON -DBUILD_SHARED_LIBS=ON -DSHER
 
 if __name__ == "__main__":
     # module可以只编译一次，有改动再编译
-    if not build_common.check_module("faad2", "faad"):
-        build_common.build_module("faad2")
     if not build_common.check_module_zlmediakit():
         # 注意linux对大小写敏感
         build_common.build_module("ZLMediaKit", False, ZL_CMAKE_ARGS)

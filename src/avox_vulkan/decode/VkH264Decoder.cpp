@@ -5,13 +5,13 @@ namespace avox {
 // struct VkH264DecoderReg {
 //   VkH264DecoderReg() {
 //     VCodecDesc vulkanDesc = {};
-//     // 初始化 faadDesc 的相关信息，例如名称、是否支持硬件加速等 ;
+//     // 初始化 vulkanDesc 的相关信息，例如名称、是否支持硬件加速等 ;
 //     vulkanDesc.name = "vulkan h264 decoder";
 //     vulkanDesc.bHardware = true;
 //     AvoxManager::Get().vDecoders.regInitFunc(
 //         VCodecId::h264, vulkanDesc,
 //         []() -> VideoDecoder* { return new VkH264Decoder(); });
-//     // std::cout << "faad init" << std::endl;
+//     // std::cout << "vulkan h264 decoder init" << std::endl;
 //   }
 // };
 

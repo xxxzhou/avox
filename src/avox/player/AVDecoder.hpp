@@ -37,7 +37,7 @@ class IAudioDecoderOb {
   virtual ~IAudioDecoderOb() = default;
 
  public:
-  // 比如FAAD是在数据来了才初始化得到输出类型
+  // 比如fdk-aac是在数据来了才初始化得到输出类型
   // 在这拿AudioDecoder.outDesc才保证正确
   virtual void onAudioDesc() {}
   // 注意onAudioDesc/onFirstPacket没有固定先后顺序

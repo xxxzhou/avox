@@ -9,7 +9,7 @@
 [mobile-ffmpeg](https://github.com/tanersener/mobile-ffmpeg/tree/master) /
 [linux BtbN,已弃用](https://github.com/BtbN/FFmpeg-Builds/releases))
 
-- 白名单精简构建,许可 **LGPL**(无 x264/x265/faad2,可进闭源商业渠道)
+- 白名单精简构建,许可 **LGPL**(无 x264/x265,可进闭源商业渠道)
 - 构建脚本: [script/ffmpeg/build_ffmpeg.py](../../script/ffmpeg/build_ffmpeg.py)(Windows,
   `--flavor gpl|lgpl`)/ `build_ffmpeg_android.sh` / `build_ffmpeg_apple.sh`(macOS+iOS,在 Mac 上执行) /
   `build_ffmpeg_linux.sh`(Linux x64,在 WSL2/Ubuntu 上执行)

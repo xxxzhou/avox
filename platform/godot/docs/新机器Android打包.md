@@ -71,7 +71,7 @@ python build_android.py
 | `libavox.so` | avox 核心 (软解/渲染/IO/Agent 全功能编入) |
 | `Release/libavox_godot.so` | GDExtension 主库 (Godot 类注册 + Android 引导) |
 | `Release/plugins/libavox_torrent.so` | 磁力插件 (libtorrent+OpenSSL 静态封装) |
-| `libc++_shared.so` / `libmk_api.so` / `libfaad.so` / `libfdk-aac.so` | 运行依赖 |
+| `libc++_shared.so` / `libmk_api.so` / `libfdk-aac.so` | 运行依赖 |
 
 当前 Android 构建参数 (build_android.py): `AGENT=ON`(核心功能)、`GODOT=ON`、`CLI=OFF`、
 `WEBRTC=OFF`(预编译库需 Linux 编)、`SWIG=OFF`(AvoxWrapper 引用 Agent 符号, 需要时 `AVOX_ENABLE_SWIG=ON`)。

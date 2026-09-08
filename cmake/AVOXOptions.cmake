@@ -11,18 +11,14 @@ include_directories(${KHRONOS_DIR})
 message(STATUS "khronos dir: ${KHRONOS_DIR}")
 
 # 发行渠道 (发行包合规):
-#   agpl       = AGPL 渠道, GPL 软编 libx264/libx265 可用, faad2(GPL) 可用
-#   commercial = 商业(LGPL)渠道, Windows 软编注入 h264_mf/hevc_mf(系统自带 MFT), faad2(GPL) 强制关闭
+#   agpl       = AGPL 渠道, GPL 软编 libx264/libx265 可用
+#   commercial = 商业(LGPL)渠道, Windows 软编注入 h264_mf/hevc_mf(系统自带 MFT)
 #                注意: 该渠道必须链接 LGPL 配置构建的 FFmpeg (无 --enable-gpl/libx264/libx265/nonfree),
 #                打包由各发行仓 check_licenses.py 按 FFmpeg configure 串断言把关
 if(AVOX_DIST_FLAVOR STREQUAL "commercial")
   message(STATUS "dist flavor: commercial (LGPL)")
   if(WIN32)
     add_compile_definitions("AVOX_FF_H264_ENCODER=\"h264_mf\"" "AVOX_FF_H265_ENCODER=\"hevc_mf\"")
-  endif()
-  if(AVOX_ENABLE_FAAD2)
-    set(AVOX_ENABLE_FAAD2 OFF)
-    message(STATUS "commercial flavor: faad2(GPL) 强制关闭")
   endif()
 else()
   message(STATUS "dist flavor: agpl (GPL 软编 libx264/libx265 可用)")
@@ -194,23 +190,6 @@ if(AVOX_ENABLE_ZLMEDIAKIT)
     set(AVOX_ENABLE_ZLMEDIAKIT OFF)
     message(WARNING "ZLMediaKit 未找到")
     remove_definitions(-DAVOX_ENABLE_ZLMEDIAKIT)
-  endif()
-endif()
-
-# 查找 faad2 是否安装
-# find faad2 installed
-if(AVOX_ENABLE_FAAD2)
-  find_package(Faad2 QUIET)
-  if(FAAD2_FOUND)
-    message(STATUS "faad2 library: ${FAAD2_LIBRARIES}")
-    include_directories(${FAAD2_INCLUDE_DIR})
-    avox_update_cached_list(AVOX_LINK_LIBRARIES ${FAAD2_LIBRARYS})
-    add_definitions(-DAVOX_ENABLE_FAAD2)
-  else()
-    # 虽然定义了，但是找不到模块，需要关闭
-    set(AVOX_ENABLE_FAAD2 OFF)
-    message(WARNING "faad2 未找到")
-    remove_definitions(-DAVOX_ENABLE_FAAD2)
   endif()
 endif()
 

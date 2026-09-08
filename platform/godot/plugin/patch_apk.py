@@ -31,7 +31,6 @@ LIB_INJECT = [
     ("libavox.so", [INSTALL / "libavox.so"]),
     ("libc++_shared.so", [INSTALL / "libc++_shared.so"]),
     ("libmk_api.so", [INSTALL / "libmk_api.so"]),
-    ("libfaad.so", [INSTALL / "libfaad.so"]),
     ("libfdk-aac.so", [INSTALL / "libfdk-aac.so"]),
     ("libavutil.so", [INSTALL / "libavutil.so", FFMPEG_LIB / "libavutil.so"]),
     ("libavformat.so", [INSTALL / "libavformat.so", FFMPEG_LIB / "libavformat.so"]),

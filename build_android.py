@@ -48,8 +48,6 @@ SPM_CMAKE_ARGS = "-DSPM_ENABLE_SHARED=OFF -DSPM_BUILD_TEST=OFF -DCMAKE_EXE_LINKE
 
 if __name__ == "__main__":
     # module可以只编译一次，有改动再编译
-    if force_build or not build_common.check_module("faad2","faad"):
-        build_common.build_module("faad2",onlyMake)
     if force_build or not build_common.check_module_zlmediakit():
         build_common.build_module("ZLMediaKit",onlyMake,ZL_CMAKE_ARGS)
     if force_build or not build_common.check_module("fdk-aac","fdk-aac"):

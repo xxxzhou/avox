@@ -7,10 +7,6 @@ namespace avox {
 
 extern void regDeviceRawSource();
 // 静态链接可能忽略注册那种方式(因为注册的类很多没被别的CPP文件调用)
-#ifdef AVOX_ENABLE_FAAD2
-// 多平台集成FAAD的音频解码方案
-extern void regFaadDecoder();
-#endif
 #ifdef AVOX_ENABLE_FAAC
 // 多平台集成FAAC的音频编码方案
 extern void regFaacEncoder();
@@ -133,9 +129,6 @@ void AvoxManager::init() {
     return;
   }
   regDeviceRawSource();
-#ifdef AVOX_ENABLE_FAAD2
-  regFaadDecoder();
-#endif
 #ifdef AVOX_ENABLE_FDKAAC
   regFdkaacEncoder();
   regFdkaacDecoder();

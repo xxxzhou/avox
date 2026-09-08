@@ -716,7 +716,7 @@ IOS平台比较特殊，因为obj-c可以直接调用C++代码，就和普通C++
 }
 ```
 
-但是如何让别的项目调用你的模块就有些麻烦，首先尽量不要使用动态库，IOS里动态库调用要求比较严格，避免麻烦，直接把需要链接的库全改为静态库，如下是我这边zlmediakit/faad这些由gitsubmodule引用的项目，全改为静态库。
+但是如何让别的项目调用你的模块就有些麻烦，首先尽量不要使用动态库，IOS里动态库调用要求比较严格，避免麻烦，直接把需要链接的库全改为静态库，如下是我这边zlmediakit这些由gitsubmodule引用的项目，全改为静态库。
 
 ``` python
 import os
@@ -736,11 +736,9 @@ onlyMake = False
 
 # -DARCHS=arm64  -DIOS_PLATFORM=OS
 ZL_CMAKE_ARGS = "-DENABLE_TESTS=OFF -DENABLE_API=ON -DENABLE_SERVER=OFF -DENABLE_OPENSSL=OFF -DENABLE_SRT=OFF"
-FAAD_CMAKE_ARGS = "-DFAAD_BUILD_CLI=OFF -DBUILD_SHARED_LIBS=OFF"
 
 if __name__ == "__main__":
     # module可以只编译一次，有改动再编译
-    build_common.build_module("faad2",onlyMake,FAAD_CMAKE_ARGS)
     build_common.build_module("zlmediakit",onlyMake,ZL_CMAKE_ARGS)
     build_common.build_self(True)
 ```
@@ -806,6 +804,6 @@ Pod::Spec.new do |s|
 end
 ```
 
-需要注意，因为是静态链接，所以zlmediakit/faad所需要导致的frameworks/libraries,也需要在这最后封装描述里的全写入，上面的s.frameworks/s.libraries就是对应cmake里引用模块时需要引用的framework,这样后面通过POD安装就会自动引入。
+需要注意，因为是静态链接，所以zlmediakit所需要导致的frameworks/libraries,也需要在这最后封装描述里的全写入，上面的s.frameworks/s.libraries就是对应cmake里引用模块时需要引用的framework,这样后面通过POD安装就会自动引入。
 
 

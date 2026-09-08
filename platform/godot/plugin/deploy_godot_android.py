@@ -110,7 +110,6 @@ def main() -> int:
         "libavox.so": [root],
         "libc++_shared.so": [root],
         "libmk_api.so": [root],
-        "libfaad.so": [root],
         "libfdk-aac.so": [root],
         "libavutil.so": [root, ffmpeg_lib],
         "libavformat.so": [root, ffmpeg_lib],

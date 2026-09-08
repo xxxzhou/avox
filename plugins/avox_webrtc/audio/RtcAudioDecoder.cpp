@@ -24,7 +24,7 @@ void RtcAudioDecoder::findDecoder() {
   }
   // 优先使用fdk-aac解码器
   size_t sIndex = 0;
-  // faad decoder/fdk-aac decoder/ffmpeg_aac
+  // fdk-aac decoder/ffmpeg_aac
   const char* sName = "fdk-aac decoder";
   for (size_t i = 0; i < decodes.size(); ++i) {
     if (decodes[i].desc.name == sName) {

@@ -23,5 +23,5 @@ message(STATUS "FAAC_LIBRARYS: ${FAAC_LIBRARYS}")
 # FAAC_FOUND变量
 include(FindPackageHandleStandardArgs)
 
-# 需要注意FAAC和文件FindFAAD2.cmake要一致，大小写一致
+# 需要注意FAAC与find_package(FAAC)调用处大小写要一致
 find_package_handle_standard_args(FAAC DEFAULT_MSG FAAC_LIBRARYS FAAC_INCLUDE_DIRS)

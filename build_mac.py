@@ -20,8 +20,6 @@ onlyMake = False
 ZL_CMAKE_ARGS = "-DENABLE_TESTS=OFF -DENABLE_API=ON -DENABLE_SERVER=OFF -DENABLE_WEBRTC=OFF -DENABLE_OPENSSL=OFF -DENABLE_SRT=OFF -DENABLE_PLAYER=false -DENABLE_SERVER=false -DENABLE_FFMPEG=false"
 # 后缀不带d
 FREETYPE_CMAKE_ARGS = "-DDISABLE_FORCE_DEBUG_POSTFIX=ON -DFT_DISABLE_BROTLI=ON -DFT_DISABLE_HARFBUZZ=ON -DFT_DISABLE_PNG=ON -DFT_DISABLE_BZIP2=ON"
-# faad2 - 禁用 CLI 和共享库
-FAAD_CMAKE_ARGS = "-DFAAD_BUILD_CLI=OFF -DBUILD_SHARED_LIBS=OFF"
 # fdk-aac - 静态链接
 FDK_AAC_CMAKE_ARGS = "-DBUILD_SHARED_LIBS=OFF -DCMAKE_DEBUG_POSTFIX="
 
@@ -34,8 +32,6 @@ AVOX_CMAKE_ARGS = os.environ.get("AVOX_CMAKE_ARGS", "")
 
 if __name__ == "__main__":
     # module可以只编译一次，有改动再编译
-    if not build_common.check_module("faad2","faad"):
-        build_common.build_module("faad2",onlyMake,FAAD_CMAKE_ARGS)
     if not build_common.check_module_zlmediakit():
         build_common.build_module("zlmediakit",onlyMake,ZL_CMAKE_ARGS)
     if not build_common.check_module("fdk-aac","fdk-aac"):

@@ -33,7 +33,7 @@ cd D:/Work/github/avplay/3rdparty/FFmpeg
 
 > ⚠️ **发行合规**: `--enable-nonfree` 产物任何渠道都不可分发; `--enable-gpl` 产物只能进 AGPL 渠道。
 > 请用 `script/ffmpeg/build_ffmpeg.py` 按渠道出包: `--flavor gpl`(AGPL 渠道, libx264/libx265, 无 nonfree) / `--flavor lgpl`(商业渠道), 或直接用 BtbN LGPL 预编译, 交付前 `--verify` 扫一遍。
-> 商业渠道构建 avox 时配 `python build_windows.py --flavor=commercial` (CMake AVOX_DIST_FLAVOR, 软编注入 h264_mf/hevc_mf, faad2 自动关闭)。
+> 商业渠道构建 avox 时配 `python build_windows.py --flavor=commercial` (CMake AVOX_DIST_FLAVOR, 软编注入 h264_mf/hevc_mf)。
 
 ./configure --prefix=../../build/windows/ffmpeg --enable-shared --disable-static --enable-version3 --enable-ffmpeg --enable-hwaccels --enable-gpl --enable-nonfree --enable-vulkan --enable-dxva2 --enable-d3d12va --enable-d3d11va 
 // 带调试信息
