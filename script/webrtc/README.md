@@ -26,9 +26,13 @@ windows与wsl2使用不同的换行，导致编译时出现错误，所以最好
 
 ## Mac
 
-macOS本机库(arm64),在Mac上使用 `webrtc_build_mac.sh release` 编译。输出目录为 `build/darwin/<type>`,目录名darwin与FindWebRTC.cmake的CMAKE_SYSTEM_NAME小写一致,编完拷贝 `obj/libwebrtc.a` 到 `<avc_library>/build/darwin/release/`。
+macOS本机库(arm64),在Mac上使用 `webrtc_build_mac.sh release` 编译。输出目录为 `build/darwin/<type>`,目录名darwin与FindWebRTC.cmake的CMAKE_SYSTEM_NAME小写一致,编完拷贝 `obj/libwebrtc_nosym.a` 到 `<avc_library>/build/darwin/release/`。
 
 注意: depot_tools里的ninja只是壳,需要 `brew install ninja` 的真ninja(脚本已把/opt/homebrew/bin加进PATH)。
+
+## Linux
+
+Linux x64库在WSL2/Ubuntu上编译(与android同一份源码),使用 `webrtc_build_linux.sh release`。首次需装依赖 `bash src/build/install-build-deps.sh`。`rtc_use_pipewire=false` 免装libpipewire-dev。产物拷贝到 `<avc_library>/build/linux/release/`。
 
 ## 文档
 

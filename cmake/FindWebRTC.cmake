@@ -92,6 +92,11 @@ elseif(ANDROID)
         NAMES webrtc_nosym webrtc
         PATHS ${WEBRTC_BUILD_DIR}
         NO_DEFAULT_PATH)
+elseif(UNIX)
+    find_library(WEBRTC_LIBRARY
+        NAMES webrtc_nosym webrtc
+        PATHS ${WEBRTC_BUILD_DIR}
+        NO_DEFAULT_PATH)
 endif()
 
 set(WEBRTC_LIBRARIES ${WEBRTC_LIBRARY})
