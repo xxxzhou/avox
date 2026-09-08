@@ -4,7 +4,7 @@ extends Control
 ## 依赖: addons/avox_godot 已部署 (platform/godot/plugin/deploy_godot.ps1)。
 ## 播放地址: 命令行 `-- <url>` 首个参数, 否则用 DEFAULT_URL。
 
-const DEFAULT_URL := "http://127.0.0.1:8907/avox_electron.mp4"  # 真机验证临时: adb reverse tcp:8907→PC 取流 (原值为空串)
+const DEFAULT_URL := ""   # 启动自动播放地址 (调试用; 真机联调可临时设 adb reverse 端口的 http 流)
 const HARD_DECODE := false                    # true=硬解(DX11)  false=软解
 const ACCENT     := Color("#3B82F6")
 const PANEL_BG   := Color(0.03, 0.04, 0.055, 0.70)   # alpha 足够压亮画面, 否则磨砂在亮帧上泛灰
