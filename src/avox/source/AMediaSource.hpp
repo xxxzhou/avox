@@ -36,7 +36,8 @@ class AMediaSource : public RawSource,
   //
   bool bOpenVDecoder = false;
   bool bOpenADecoder = false;
-  bool bIoEnd = false;
+  // IO结束标记: IO回调线程写, 消费线程轮询读
+  std::atomic<bool> bIoEnd{false};
   // seek 状态:IO 线程检查,编码线程写
   std::atomic<bool> bFlushPending{false};
   std::atomic<bool> bDiscardPacket{false};

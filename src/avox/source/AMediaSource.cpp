@@ -126,6 +126,8 @@ void AMediaSource::onComplete() {
 }
 
 void AMediaSource::onError(AVError error, const char* msg) {
+  // 出错后IO不会再出帧, 置结束标志让消费线程的ioComplete()退出条件成立
+  bIoEnd = true;
   dispatch(&IRawSourceOb::onError, error, msg);
 }
 
