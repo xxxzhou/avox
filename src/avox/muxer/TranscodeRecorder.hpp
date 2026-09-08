@@ -59,7 +59,8 @@ class TranscodeRecorder : public IRecorder,
   std::atomic<int64_t> seekTargetMs{0};     // 绝对 PTS(已 +baseTime)
   //
   ACodecId aCodecid = ACodecId::aac;
-  VCodecId vCodecId = VCodecId::h265;
+  // 默认 H.264: 硬编兼容性远好于 h265(低端安卓/老设备 hevc 编码器常缺失), 兼容性敏感的转码录不赌设备能力
+  VCodecId vCodecId = VCodecId::h264;
 
   // IRecorder
  public:
