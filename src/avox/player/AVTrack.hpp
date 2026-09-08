@@ -12,8 +12,13 @@
 
 namespace avox {
 
-#define AVOX_FF_H264_DECODER "libx264"
-#define AVOX_FF_H265_DECODER "libx265"
+// FFmpeg 原生软解器 (LGPL, 两渠道通用); 历史误写 libx264/libx265 —— 那是编码器名, 不存在同名解码器
+#ifndef AVOX_FF_H264_DECODER
+#define AVOX_FF_H264_DECODER "h264"
+#endif
+#ifndef AVOX_FF_H265_DECODER
+#define AVOX_FF_H265_DECODER "hevc"
+#endif
 #define AVOX_ANDROID_H264_DECODER "android h264 decoder"
 #define AVOX_ANDROID_H265_DECODER "android h265 decoder"
 #define AVOX_IOS_H264_DECODER "ios h264 decoder"

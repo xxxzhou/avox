@@ -28,20 +28,24 @@ DecodeResult FFAEncoder::onPreEncoder() {
            getACodecName(enDesc.codecId));
     return DecodeResult::openFailed;
   }
-  for (const enum AVSampleFormat* p = codec->sample_fmts;
-       *p != AV_SAMPLE_FMT_NONE; p++) {
-    LOGFLF(LogLevel::info, "supported format: ", av_get_sample_fmt_name(*p));
+  // 9.0: AVCodec::sample_fmts 已删除, 改用 avcodec_get_supported_config
+  const enum AVSampleFormat* fmts = nullptr;
+  int numFmts = 0;
+  avcodec_get_supported_config(nullptr, codec, AV_CODEC_CONFIG_SAMPLE_FORMAT, 0,
+                               (const void**)&fmts, &numFmts);
+  for (int i = 0; fmts && i < numFmts; i++) {
+    LOGFLF(LogLevel::info, "supported format: ", av_get_sample_fmt_name(fmts[i]));
   }
   codecCtx = getUniquePtr(avcodec_alloc_context3(codec));
   codecCtx->codec_type = AVMEDIA_TYPE_AUDIO;
-  codecCtx->profile = FF_PROFILE_AAC_LOW;
+  codecCtx->profile = AV_PROFILE_AAC_LOW;
   codecCtx->time_base = {1, 1000};
   codecCtx->sample_rate = enDesc.desc.sampleRate;
   if (enDesc.codecId == ACodecId::aac) {
     codecCtx->frame_size = 1024;
   } else if (enDesc.codecId == ACodecId::g711a ||
              enDesc.codecId == ACodecId::g711u) {
-    codecCtx->profile = FF_PROFILE_UNKNOWN;
+    codecCtx->profile = AV_PROFILE_UNKNOWN;
     codecCtx->frame_size = 160;
   }
   av_channel_layout_default(&codecCtx->ch_layout, enDesc.desc.channels);
