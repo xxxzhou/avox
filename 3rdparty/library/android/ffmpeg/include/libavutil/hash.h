@@ -77,7 +77,7 @@
  * }
  *
  * // Now we have no more data, so it is time to finalize the hash and get the
- * // output. But we need to first allocate an output adBuffer. Note that you can
+ * // output. But we need to first allocate an output buffer. Note that you can
  * // use any memory allocation function, including malloc(), not just
  * // av_malloc().
  * output_buf = av_malloc(av_hash_get_size(ctx));
@@ -143,13 +143,13 @@ const char *av_hash_get_name(const struct AVHashContext *ctx);
  * Maximum value that av_hash_get_size() will currently return.
  *
  * You can use this if you absolutely want or need to use static allocation for
- * the output adBuffer and are fine with not supporting hashes newly added to
+ * the output buffer and are fine with not supporting hashes newly added to
  * libavutil without recompilation.
  *
  * @warning
  * Adding new hashes with larger sizes, and increasing the macro while doing
  * so, will not be considered an ABI change. To prevent your code from
- * overflowing a adBuffer, either dynamically allocate the output adBuffer with
+ * overflowing a buffer, either dynamically allocate the output buffer with
  * av_hash_get_size(), or limit your use of the Hashing API to hashes that are
  * already in FFmpeg during the time of compilation.
  */
@@ -185,7 +185,7 @@ void av_hash_update(struct AVHashContext *ctx, const uint8_t *src, size_t len);
 /**
  * Finalize a hash context and compute the actual hash value.
  *
- * The minimum size of `dst` adBuffer is given by av_hash_get_size() or
+ * The minimum size of `dst` buffer is given by av_hash_get_size() or
  * #AV_HASH_MAX_SIZE. The use of the latter macro is discouraged.
  *
  * It is not safe to update or finalize a hash context again, if it has already
@@ -199,13 +199,13 @@ void av_hash_update(struct AVHashContext *ctx, const uint8_t *src, size_t len);
 void av_hash_final(struct AVHashContext *ctx, uint8_t *dst);
 
 /**
- * Finalize a hash context and store the actual hash value in a adBuffer.
+ * Finalize a hash context and store the actual hash value in a buffer.
  *
  * It is not safe to update or finalize a hash context again, if it has already
  * been finalized.
  *
  * If `size` is smaller than the hash size (given by av_hash_get_size()), the
- * hash is truncated; if size is larger, the adBuffer is padded with 0.
+ * hash is truncated; if size is larger, the buffer is padded with 0.
  *
  * @param[in,out] ctx  Hash context
  * @param[out]    dst  Where the final hash value will be stored

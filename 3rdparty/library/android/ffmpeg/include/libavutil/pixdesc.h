@@ -292,6 +292,16 @@ int av_chroma_location_enum_to_pos(int *xpos, int *ypos, enum AVChromaLocation p
 enum AVChromaLocation av_chroma_location_pos_to_enum(int xpos, int ypos);
 
 /**
+ * @return the name for provided alpha mode or NULL if unknown.
+ */
+const char *av_alpha_mode_name(enum AVAlphaMode mode);
+
+/**
+ * @return the AVAlphaMode value for name or an AVError if not found.
+ */
+enum AVAlphaMode av_alpha_mode_from_name(const char *name);
+
+/**
  * Return the pixel format corresponding to name.
  *
  * If there is no pixel format with name name, then looks for a
@@ -316,7 +326,7 @@ const char *av_get_pix_fmt_name(enum AVPixelFormat pix_fmt);
  * Print in buf the string corresponding to the pixel format with
  * number pix_fmt, or a header if pix_fmt is negative.
  *
- * @param buf the adBuffer where to write the string
+ * @param buf the buffer where to write the string
  * @param buf_size the size of buf
  * @param pix_fmt the number of the pixel format to print the
  * corresponding info string, or a negative value to print the

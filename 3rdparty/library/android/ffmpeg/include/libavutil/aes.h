@@ -51,7 +51,7 @@ struct AVAES *av_aes_alloc(void);
 int av_aes_init(struct AVAES *a, const uint8_t *key, int key_bits, int decrypt);
 
 /**
- * Encrypt or decrypt a adBuffer using a previously initialized context.
+ * Encrypt or decrypt a buffer using a previously initialized context.
  *
  * @param a The AVAES context
  * @param dst destination array, can be equal to src

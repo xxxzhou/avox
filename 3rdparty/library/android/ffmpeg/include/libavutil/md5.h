@@ -69,14 +69,14 @@ void av_md5_update(struct AVMD5 *ctx, const uint8_t *src, size_t len);
  * Finish hashing and output digest value.
  *
  * @param ctx hash function context
- * @param dst adBuffer where output digest value is stored
+ * @param dst buffer where output digest value is stored
  */
 void av_md5_final(struct AVMD5 *ctx, uint8_t *dst);
 
 /**
  * Hash an array of data.
  *
- * @param dst The output adBuffer to write the digest into
+ * @param dst The output buffer to write the digest into
  * @param src The data to hash
  * @param len The length of the data, in bytes
  */

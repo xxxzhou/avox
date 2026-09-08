@@ -2,13 +2,18 @@
 
 ## FFmpeg
 
-[windows](https://github.com/BtbN/FFmpeg-Builds/releases)
-[windows2](https://www.gyan.dev/ffmpeg/builds/)
-[android](https://gitcode.com/open-source-toolkit/dd3c5/?utm_source=tools_gitcode&index=top&type=card&&isLogin=1)
-[ios](https://github.com/guanweidong/ffmpeg7.0/tree/main/FFmpeg-iOS)
-[ios 7.0 ffmpeg](https://sourceforge.net/projects/avbuild/)
+**当前版本: FFmpeg 9.0.1,四平台统一自编**(不再使用第三方预编译包,旧来源仅存档:
+[windows BtbN](https://github.com/BtbN/FFmpeg-Builds/releases) /
+[windows gyan](https://www.gyan.dev/ffmpeg/builds/) /
+[ios guanweidong(GPL,已弃用)](https://github.com/guanweidong/ffmpeg7.0) /
+[mobile-ffmpeg](https://github.com/tanersener/mobile-ffmpeg/tree/master))
 
-[mobile-ffmpeg](https://github.com/tanersener/mobile-ffmpeg/tree/master)
+- 白名单精简构建,许可 **LGPL**(无 x264/x265/faad2,可进闭源商业渠道)
+- 构建脚本: [script/ffmpeg/build_ffmpeg.py](../../script/ffmpeg/build_ffmpeg.py)(Windows,
+  `--flavor gpl|lgpl`)/ `build_ffmpeg_android.sh` / `build_ffmpeg_apple.sh`(macOS+iOS,在 Mac 上执行)
+- 各平台目录: `windows/`(MinGW dll + MSVC .lib + zlib1/libwinpthread 运行时 dll)、
+  `android/`(arm64-v8a .so,SONAME 无版本号)、`darwin/`(macOS arm64 .a)、`ios/`(arm64 真机 .a)
+- Apple 平台走 VideoToolbox 硬编硬解(h264_videotoolbox/hevc_videotoolbox),TLS 走 SecureTransport
 
 ```
 // 查看H264支持的解码器

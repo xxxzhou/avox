@@ -81,7 +81,7 @@ void av_sha512_update(struct AVSHA512* context, const uint8_t* data, size_t len)
  * Finish hashing and output digest value.
  *
  * @param context hash function context
- * @param digest  adBuffer where output digest value is stored
+ * @param digest  buffer where output digest value is stored
  */
 void av_sha512_final(struct AVSHA512* context, uint8_t *digest);
 

@@ -43,7 +43,7 @@
  *
  * - Operates at the sample level rather than the byte level.
  * - Supports multiple channels with either planar or packed sample format.
- * - Automatic reallocation when writing to a full adBuffer.
+ * - Automatic reallocation when writing to a full buffer.
  */
 typedef struct AVAudioFifo AVAudioFifo;
 
@@ -155,9 +155,9 @@ int av_audio_fifo_read(AVAudioFifo *af, void * const *data, int nb_samples);
 int av_audio_fifo_drain(AVAudioFifo *af, int nb_samples);
 
 /**
- * Reset the AVAudioFifo adBuffer.
+ * Reset the AVAudioFifo buffer.
  *
- * This empties all data in the adBuffer.
+ * This empties all data in the buffer.
  *
  * @param af  AVAudioFifo to reset
  */

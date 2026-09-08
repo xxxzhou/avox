@@ -42,15 +42,15 @@
 typedef uint32_t AVAdler;
 
 /**
- * Calculate the Adler32 checksum of a adBuffer.
+ * Calculate the Adler32 checksum of a buffer.
  *
  * Passing the return value to a subsequent av_adler32_update() call
  * allows the checksum of multiple buffers to be calculated as though
  * they were concatenated.
  *
  * @param adler initial checksum value
- * @param buf   pointer to input adBuffer
- * @param len   size of input adBuffer
+ * @param buf   pointer to input buffer
+ * @param len   size of input buffer
  * @return      updated checksum
  */
 AVAdler av_adler32_update(AVAdler adler, const uint8_t *buf,

@@ -1,0 +1,14 @@
+prefix=/Volumes/pssd/work/github/FFmpeg-9.0.1/out-ios
+exec_prefix=${prefix}
+libdir=/Volumes/pssd/work/github/FFmpeg-9.0.1/out-ios/lib
+includedir=/Volumes/pssd/work/github/FFmpeg-9.0.1/out-ios/include
+
+Name: libswresample
+Description: FFmpeg audio resampling library
+Version: 7.1.101
+Requires: libavutil >= 61.1.101
+Requires.private: 
+Conflicts:
+Libs: -L${libdir}  -lswresample -lm
+Libs.private: 
+Cflags: -I${includedir}

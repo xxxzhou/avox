@@ -45,7 +45,7 @@
  */
 
 enum AVChannel {
-    ///< Invalid channel index
+    /// Invalid channel index
     AV_CHAN_NONE = -1,
     AV_CHAN_FRONT_LEFT,
     AV_CHAN_FRONT_RIGHT,
@@ -79,6 +79,13 @@ enum AVChannel {
     AV_CHAN_BOTTOM_FRONT_CENTER,
     AV_CHAN_BOTTOM_FRONT_LEFT,
     AV_CHAN_BOTTOM_FRONT_RIGHT,
+    AV_CHAN_SIDE_SURROUND_LEFT,     ///<  +90 degrees, Lss, SiL
+    AV_CHAN_SIDE_SURROUND_RIGHT,    ///<  -90 degrees, Rss, SiR
+    AV_CHAN_TOP_SURROUND_LEFT,      ///< +110 degrees, Lvs, TpLS
+    AV_CHAN_TOP_SURROUND_RIGHT,     ///< -110 degrees, Rvs, TpRS
+
+    AV_CHAN_BINAURAL_LEFT = 61,
+    AV_CHAN_BINAURAL_RIGHT,
 
     /** Channel is empty can be safely skipped. */
     AV_CHAN_UNUSED = 0x200,
@@ -195,6 +202,12 @@ enum AVChannelOrder {
 #define AV_CH_BOTTOM_FRONT_CENTER    (1ULL << AV_CHAN_BOTTOM_FRONT_CENTER  )
 #define AV_CH_BOTTOM_FRONT_LEFT      (1ULL << AV_CHAN_BOTTOM_FRONT_LEFT    )
 #define AV_CH_BOTTOM_FRONT_RIGHT     (1ULL << AV_CHAN_BOTTOM_FRONT_RIGHT   )
+#define AV_CH_SIDE_SURROUND_LEFT     (1ULL << AV_CHAN_SIDE_SURROUND_LEFT   )
+#define AV_CH_SIDE_SURROUND_RIGHT    (1ULL << AV_CHAN_SIDE_SURROUND_RIGHT  )
+#define AV_CH_TOP_SURROUND_LEFT      (1ULL << AV_CHAN_TOP_SURROUND_LEFT    )
+#define AV_CH_TOP_SURROUND_RIGHT     (1ULL << AV_CHAN_TOP_SURROUND_RIGHT   )
+#define AV_CH_BINAURAL_LEFT          (1ULL << AV_CHAN_BINAURAL_LEFT        )
+#define AV_CH_BINAURAL_RIGHT         (1ULL << AV_CHAN_BINAURAL_RIGHT       )
 
 /**
  * @}
@@ -227,17 +240,20 @@ enum AVChannelOrder {
 #define AV_CH_LAYOUT_7POINT1           (AV_CH_LAYOUT_5POINT1|AV_CH_BACK_LEFT|AV_CH_BACK_RIGHT)
 #define AV_CH_LAYOUT_7POINT1_WIDE      (AV_CH_LAYOUT_5POINT1|AV_CH_FRONT_LEFT_OF_CENTER|AV_CH_FRONT_RIGHT_OF_CENTER)
 #define AV_CH_LAYOUT_7POINT1_WIDE_BACK (AV_CH_LAYOUT_5POINT1_BACK|AV_CH_FRONT_LEFT_OF_CENTER|AV_CH_FRONT_RIGHT_OF_CENTER)
+#define AV_CH_LAYOUT_5POINT1POINT2     (AV_CH_LAYOUT_5POINT1|AV_CH_TOP_FRONT_LEFT|AV_CH_TOP_FRONT_RIGHT)
 #define AV_CH_LAYOUT_5POINT1POINT2_BACK (AV_CH_LAYOUT_5POINT1_BACK|AV_CH_TOP_FRONT_LEFT|AV_CH_TOP_FRONT_RIGHT)
 #define AV_CH_LAYOUT_OCTAGONAL         (AV_CH_LAYOUT_5POINT0|AV_CH_BACK_LEFT|AV_CH_BACK_CENTER|AV_CH_BACK_RIGHT)
 #define AV_CH_LAYOUT_CUBE              (AV_CH_LAYOUT_QUAD|AV_CH_TOP_FRONT_LEFT|AV_CH_TOP_FRONT_RIGHT|AV_CH_TOP_BACK_LEFT|AV_CH_TOP_BACK_RIGHT)
-#define AV_CH_LAYOUT_5POINT1POINT4_BACK (AV_CH_LAYOUT_5POINT1POINT2_BACK|AV_CH_TOP_BACK_LEFT|AV_CH_TOP_BACK_RIGHT)
+#define AV_CH_LAYOUT_5POINT1POINT4_BACK (AV_CH_LAYOUT_5POINT1POINT2|AV_CH_TOP_BACK_LEFT|AV_CH_TOP_BACK_RIGHT)
 #define AV_CH_LAYOUT_7POINT1POINT2     (AV_CH_LAYOUT_7POINT1|AV_CH_TOP_FRONT_LEFT|AV_CH_TOP_FRONT_RIGHT)
 #define AV_CH_LAYOUT_7POINT1POINT4_BACK (AV_CH_LAYOUT_7POINT1POINT2|AV_CH_TOP_BACK_LEFT|AV_CH_TOP_BACK_RIGHT)
 #define AV_CH_LAYOUT_7POINT2POINT3     (AV_CH_LAYOUT_7POINT1POINT2|AV_CH_TOP_BACK_CENTER|AV_CH_LOW_FREQUENCY_2)
 #define AV_CH_LAYOUT_9POINT1POINT4_BACK (AV_CH_LAYOUT_7POINT1POINT4_BACK|AV_CH_FRONT_LEFT_OF_CENTER|AV_CH_FRONT_RIGHT_OF_CENTER)
+#define AV_CH_LAYOUT_9POINT1POINT6     (AV_CH_LAYOUT_9POINT1POINT4_BACK|AV_CH_TOP_SIDE_LEFT|AV_CH_TOP_SIDE_RIGHT)
 #define AV_CH_LAYOUT_HEXADECAGONAL     (AV_CH_LAYOUT_OCTAGONAL|AV_CH_WIDE_LEFT|AV_CH_WIDE_RIGHT|AV_CH_TOP_BACK_LEFT|AV_CH_TOP_BACK_RIGHT|AV_CH_TOP_BACK_CENTER|AV_CH_TOP_FRONT_CENTER|AV_CH_TOP_FRONT_LEFT|AV_CH_TOP_FRONT_RIGHT)
+#define AV_CH_LAYOUT_BINAURAL          (AV_CH_BINAURAL_LEFT|AV_CH_BINAURAL_RIGHT)
 #define AV_CH_LAYOUT_STEREO_DOWNMIX    (AV_CH_STEREO_LEFT|AV_CH_STEREO_RIGHT)
-#define AV_CH_LAYOUT_22POINT2          (AV_CH_LAYOUT_7POINT1POINT4_BACK|AV_CH_FRONT_LEFT_OF_CENTER|AV_CH_FRONT_RIGHT_OF_CENTER|AV_CH_BACK_CENTER|AV_CH_LOW_FREQUENCY_2|AV_CH_TOP_FRONT_CENTER|AV_CH_TOP_CENTER|AV_CH_TOP_SIDE_LEFT|AV_CH_TOP_SIDE_RIGHT|AV_CH_TOP_BACK_CENTER|AV_CH_BOTTOM_FRONT_CENTER|AV_CH_BOTTOM_FRONT_LEFT|AV_CH_BOTTOM_FRONT_RIGHT)
+#define AV_CH_LAYOUT_22POINT2          (AV_CH_LAYOUT_9POINT1POINT6|AV_CH_BACK_CENTER|AV_CH_LOW_FREQUENCY_2|AV_CH_TOP_FRONT_CENTER|AV_CH_TOP_CENTER|AV_CH_TOP_BACK_CENTER|AV_CH_BOTTOM_FRONT_CENTER|AV_CH_BOTTOM_FRONT_LEFT|AV_CH_BOTTOM_FRONT_RIGHT)
 
 #define AV_CH_LAYOUT_7POINT1_TOP_BACK AV_CH_LAYOUT_5POINT1POINT2_BACK
 
@@ -291,7 +307,7 @@ typedef struct AVChannelCustom {
  * - with a constructor function, such as av_channel_layout_default(),
  *   av_channel_layout_from_mask() or av_channel_layout_from_string().
  *
- * The channel layout must be unitialized with av_channel_layout_uninit()
+ * The channel layout must be uninitialized with av_channel_layout_uninit()
  *
  * Copying an AVChannelLayout via assigning is forbidden,
  * av_channel_layout_copy() must be used instead (and its return value should
@@ -349,7 +365,7 @@ typedef struct AVChannelLayout {
          *
          * map[i].name may be filled with a 0-terminated string, in which case
          * it will be used for the purpose of identifying the channel with the
-         * convenience functions below. Otherise it must be zeroed.
+         * convenience functions below. Otherwise it must be zeroed.
          */
         AVChannelCustom *map;
     } u;
@@ -401,6 +417,7 @@ typedef struct AVChannelLayout {
 #define AV_CHANNEL_LAYOUT_7POINT1           AV_CHANNEL_LAYOUT_MASK(8,  AV_CH_LAYOUT_7POINT1)
 #define AV_CHANNEL_LAYOUT_7POINT1_WIDE      AV_CHANNEL_LAYOUT_MASK(8,  AV_CH_LAYOUT_7POINT1_WIDE)
 #define AV_CHANNEL_LAYOUT_7POINT1_WIDE_BACK AV_CHANNEL_LAYOUT_MASK(8,  AV_CH_LAYOUT_7POINT1_WIDE_BACK)
+#define AV_CHANNEL_LAYOUT_5POINT1POINT2     AV_CHANNEL_LAYOUT_MASK(8,  AV_CH_LAYOUT_5POINT1POINT2)
 #define AV_CHANNEL_LAYOUT_5POINT1POINT2_BACK AV_CHANNEL_LAYOUT_MASK(8, AV_CH_LAYOUT_5POINT1POINT2_BACK)
 #define AV_CHANNEL_LAYOUT_OCTAGONAL         AV_CHANNEL_LAYOUT_MASK(8,  AV_CH_LAYOUT_OCTAGONAL)
 #define AV_CHANNEL_LAYOUT_CUBE              AV_CHANNEL_LAYOUT_MASK(8,  AV_CH_LAYOUT_CUBE)
@@ -409,7 +426,9 @@ typedef struct AVChannelLayout {
 #define AV_CHANNEL_LAYOUT_7POINT1POINT4_BACK AV_CHANNEL_LAYOUT_MASK(12, AV_CH_LAYOUT_7POINT1POINT4_BACK)
 #define AV_CHANNEL_LAYOUT_7POINT2POINT3     AV_CHANNEL_LAYOUT_MASK(12, AV_CH_LAYOUT_7POINT2POINT3)
 #define AV_CHANNEL_LAYOUT_9POINT1POINT4_BACK AV_CHANNEL_LAYOUT_MASK(14, AV_CH_LAYOUT_9POINT1POINT4_BACK)
+#define AV_CHANNEL_LAYOUT_9POINT1POINT6     AV_CHANNEL_LAYOUT_MASK(16, AV_CH_LAYOUT_9POINT1POINT6)
 #define AV_CHANNEL_LAYOUT_HEXADECAGONAL     AV_CHANNEL_LAYOUT_MASK(16, AV_CH_LAYOUT_HEXADECAGONAL)
+#define AV_CHANNEL_LAYOUT_BINAURAL          AV_CHANNEL_LAYOUT_MASK(2,  AV_CH_LAYOUT_BINAURAL)
 #define AV_CHANNEL_LAYOUT_STEREO_DOWNMIX    AV_CHANNEL_LAYOUT_MASK(2,  AV_CH_LAYOUT_STEREO_DOWNMIX)
 #define AV_CHANNEL_LAYOUT_22POINT2          AV_CHANNEL_LAYOUT_MASK(24, AV_CH_LAYOUT_22POINT2)
 
@@ -428,8 +447,8 @@ struct AVBPrint;
  * Get a human readable string in an abbreviated form describing a given channel.
  * This is the inverse function of @ref av_channel_from_string().
  *
- * @param buf pre-allocated adBuffer where to put the generated string
- * @param buf_size size in bytes of the adBuffer.
+ * @param buf pre-allocated buffer where to put the generated string
+ * @param buf_size size in bytes of the buffer.
  * @param channel the AVChannel whose name to get
  * @return amount of bytes needed to hold the output string, or a negative AVERROR
  *         on failure. If the returned value is bigger than buf_size, then the
@@ -440,15 +459,15 @@ int av_channel_name(char *buf, size_t buf_size, enum AVChannel channel);
 /**
  * bprint variant of av_channel_name().
  *
- * @note the string will be appended to the bprint adBuffer.
+ * @note the string will be appended to the bprint buffer.
  */
 void av_channel_name_bprint(struct AVBPrint *bp, enum AVChannel channel_id);
 
 /**
  * Get a human readable string describing a given channel.
  *
- * @param buf pre-allocated adBuffer where to put the generated string
- * @param buf_size size in bytes of the adBuffer.
+ * @param buf pre-allocated buffer where to put the generated string
+ * @param buf_size size in bytes of the buffer.
  * @param channel the AVChannel whose description to get
  * @return amount of bytes needed to hold the output string, or a negative AVERROR
  *         on failure. If the returned value is bigger than buf_size, then the
@@ -459,7 +478,7 @@ int av_channel_description(char *buf, size_t buf_size, enum AVChannel channel);
 /**
  * bprint variant of av_channel_description().
  *
- * @note the string will be appended to the bprint adBuffer.
+ * @note the string will be appended to the bprint buffer.
  */
 void av_channel_description_bprint(struct AVBPrint *bp, enum AVChannel channel_id);
 
@@ -570,8 +589,8 @@ int av_channel_layout_copy(AVChannelLayout *dst, const AVChannelLayout *src);
  * channel layout, except for opaque pointers.
  *
  * @param channel_layout channel layout to be described
- * @param buf pre-allocated adBuffer where to put the generated string
- * @param buf_size size in bytes of the adBuffer.
+ * @param buf pre-allocated buffer where to put the generated string
+ * @param buf_size size in bytes of the buffer.
  * @return amount of bytes needed to hold the output string, or a negative AVERROR
  *         on failure. If the returned value is bigger than buf_size, then the
  *         string was truncated.
@@ -582,7 +601,7 @@ int av_channel_layout_describe(const AVChannelLayout *channel_layout,
 /**
  * bprint variant of av_channel_layout_describe().
  *
- * @note the string will be appended to the bprint adBuffer.
+ * @note the string will be appended to the bprint buffer.
  * @return 0 on success, or a negative AVERROR value on failure.
  */
 int av_channel_layout_describe_bprint(const AVChannelLayout *channel_layout,
@@ -678,6 +697,16 @@ int av_channel_layout_check(const AVChannelLayout *channel_layout);
  *         AVERROR code if one or both are invalid.
  */
 int av_channel_layout_compare(const AVChannelLayout *chl, const AVChannelLayout *chl1);
+
+/**
+ * Return the order if the layout is n-th order standard-order ambisonic.
+ * The presence of optional extra non-diegetic channels at the end is not taken
+ * into account.
+ *
+ * @param channel_layout input channel layout
+ * @return the order of the layout, a negative error code otherwise.
+ */
+int av_channel_layout_ambisonic_order(const AVChannelLayout *channel_layout);
 
 /**
  * The conversion must be lossless.

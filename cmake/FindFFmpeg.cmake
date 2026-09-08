@@ -66,6 +66,14 @@ find_package_handle_standard_args(FFmpeg
 if(FFMPEG_FOUND)
     if(WIN32)
         message(STATUS "ffmpeg dlls: " ${FFMPEG_BINARYS})
+        # MinGW 构建的 FFmpeg 运行时依赖 (zlib/pthread) 一并随包拷贝
+        foreach(_dep zlib1.dll libwinpthread-1.dll)
+            find_file(FFMPEG_RUNTIME_DEP NAME "${_dep}" HINTS ${FFmpeg_LIB_SEARCH_PATH} NO_DEFAULT_PATH)
+            if(FFMPEG_RUNTIME_DEP)
+                list(APPEND FFMPEG_BINARYS "${FFMPEG_RUNTIME_DEP}")
+            endif()
+            unset(FFMPEG_RUNTIME_DEP CACHE)
+        endforeach()
         # 这里如何avox_run_module_copy(${FFMPEG_BINARYS})
         # 会发现只传入了第一个目录
         avox_run_module_copy("${FFMPEG_BINARYS}")

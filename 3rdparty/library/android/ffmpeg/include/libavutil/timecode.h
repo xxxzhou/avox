@@ -99,7 +99,7 @@ uint32_t av_timecode_get_smpte(AVRational rate, int drop, int hh, int mm, int ss
  * Load timecode string in buf.
  *
  * @param tc       timecode data correctly initialized
- * @param buf      destination adBuffer, must be at least AV_TIMECODE_STR_SIZE long
+ * @param buf      destination buffer, must be at least AV_TIMECODE_STR_SIZE long
  * @param framenum frame number
  * @return         the buf parameter
  *
@@ -115,7 +115,7 @@ char *av_timecode_make_string(const AVTimecode *tc, char *buf, int framenum);
  * In contrast to av_timecode_make_smpte_tc_string this function supports 50/60
  * fps timecodes by using the field bit.
  *
- * @param buf        destination adBuffer, must be at least AV_TIMECODE_STR_SIZE long
+ * @param buf        destination buffer, must be at least AV_TIMECODE_STR_SIZE long
  * @param rate       frame rate of the timecode
  * @param tcsmpte    the 32-bit SMPTE timecode
  * @param prevent_df prevent the use of a drop flag when it is known the DF bit
@@ -129,7 +129,7 @@ char *av_timecode_make_smpte_tc_string2(char *buf, AVRational rate, uint32_t tcs
 /**
  * Get the timecode string from the SMPTE timecode format.
  *
- * @param buf        destination adBuffer, must be at least AV_TIMECODE_STR_SIZE long
+ * @param buf        destination buffer, must be at least AV_TIMECODE_STR_SIZE long
  * @param tcsmpte    the 32-bit SMPTE timecode
  * @param prevent_df prevent the use of a drop flag when it is known the DF bit
  *                   is arbitrary
@@ -140,7 +140,7 @@ char *av_timecode_make_smpte_tc_string(char *buf, uint32_t tcsmpte, int prevent_
 /**
  * Get the timecode string from the 25-bit timecode format (MPEG GOP format).
  *
- * @param buf     destination adBuffer, must be at least AV_TIMECODE_STR_SIZE long
+ * @param buf     destination buffer, must be at least AV_TIMECODE_STR_SIZE long
  * @param tc25bit the 25-bits timecode
  * @return        the buf parameter
  */

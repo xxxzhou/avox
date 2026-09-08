@@ -88,14 +88,14 @@ char *av_strnstr(const char *haystack, const char *needle, size_t hay_length);
  *
  * This function is the same as BSD strlcpy().
  *
- * @param dst destination adBuffer
+ * @param dst destination buffer
  * @param src source string
- * @param size size of destination adBuffer
+ * @param size size of destination buffer
  * @return the length of src
  *
  * @warning since the return value is the length of src, src absolutely
  * _must_ be a properly 0-terminated string, otherwise this will read beyond
- * the end of the adBuffer and possibly crash.
+ * the end of the buffer and possibly crash.
  */
 size_t av_strlcpy(char *dst, const char *src, size_t size);
 
@@ -106,24 +106,24 @@ size_t av_strlcpy(char *dst, const char *src, size_t size);
  * This function is similar to BSD strlcat(), but differs when
  * size <= strlen(dst).
  *
- * @param dst destination adBuffer
+ * @param dst destination buffer
  * @param src source string
- * @param size size of destination adBuffer
+ * @param size size of destination buffer
  * @return the total length of src and dst
  *
  * @warning since the return value use the length of src and dst, these
  * absolutely _must_ be a properly 0-terminated strings, otherwise this
- * will read beyond the end of the adBuffer and possibly crash.
+ * will read beyond the end of the buffer and possibly crash.
  */
 size_t av_strlcat(char *dst, const char *src, size_t size);
 
 /**
  * Append output to a string, according to a format. Never write out of
- * the destination adBuffer, and always put a terminating 0 within
- * the adBuffer.
- * @param dst destination adBuffer (string to which the output is
+ * the destination buffer, and always put a terminating 0 within
+ * the buffer.
+ * @param dst destination buffer (string to which the output is
  *  appended)
- * @param size total size of the destination adBuffer
+ * @param size total size of the destination buffer
  * @param fmt printf-compatible format string, specifying how the
  *  following parameters are used
  * @return the length of the string that would have been generated
@@ -148,7 +148,7 @@ static inline size_t av_strnlen(const char *s, size_t len)
 
 /**
  * Print arguments following specified format into a large enough auto
- * allocated adBuffer. It is similar to GNU asprintf().
+ * allocated buffer. It is similar to GNU asprintf().
  * @param fmt printf-compatible format string, specifying how the
  *            following parameters are used.
  * @return the allocated string
@@ -164,7 +164,7 @@ char *av_asprintf(const char *fmt, ...) av_printf_format(1, 2);
  * whitespaces are removed, unless they are escaped with '\' or are
  * enclosed between ''.
  *
- * @param buf the adBuffer to parse, buf will be updated to point to the
+ * @param buf the buffer to parse, buf will be updated to point to the
  * terminating char
  * @param term a 0-terminated list of terminating chars
  * @return the malloced unescaped string, which must be av_freed by
@@ -378,7 +378,7 @@ int av_escape(char **dst, const char *src, const char *special_chars,
 
 /**
  * Read and decode a single UTF-8 code point (character) from the
- * adBuffer in *buf, and update *buf to point to the next byte to
+ * buffer in *buf, and update *buf to point to the next byte to
  * decode.
  *
  * In case of an invalid byte sequence, the pointer will be updated to
@@ -396,10 +396,10 @@ int av_escape(char **dst, const char *src, const char *special_chars,
  * @param bufp    pointer to the address the first byte of the sequence
  *                to decode, updated by the function to point to the
  *                byte next after the decoded sequence
- * @param buf_end pointer to the end of the adBuffer, points to the next
- *                byte past the last in the adBuffer. This is used to
- *                avoid adBuffer overreads (in case of an unfinished
- *                UTF-8 sequence towards the end of the adBuffer).
+ * @param buf_end pointer to the end of the buffer, points to the next
+ *                byte past the last in the buffer. This is used to
+ *                avoid buffer overreads (in case of an unfinished
+ *                UTF-8 sequence towards the end of the buffer).
  * @param flags   a collection of AV_UTF8_FLAG_* flags
  * @return >= 0 in case a sequence was successfully read, a negative
  * value in case of invalid sequence
@@ -419,7 +419,7 @@ int av_match_list(const char *name, const char *list, char separator);
  * See libc sscanf manual for more information.
  * Locale-independent sscanf implementation.
  */
-int av_sscanf(const char *string, const char *format, ...);
+int av_sscanf(const char *string, const char *format, ...) av_scanf_format(2, 3);
 
 /**
  * @}

@@ -1,14 +1,14 @@
-prefix=/Volumes/PSSD/work/github/ffmpeg-mac
+prefix=/Volumes/pssd/work/github/FFmpeg-9.0.1/out-macos-static
 exec_prefix=${prefix}
-libdir=/Volumes/PSSD/work/github/ffmpeg-mac/lib
-includedir=/Volumes/PSSD/work/github/ffmpeg-mac/include
+libdir=/Volumes/pssd/work/github/FFmpeg-9.0.1/out-macos-static/lib
+includedir=/Volumes/pssd/work/github/FFmpeg-9.0.1/out-macos-static/include
 
 Name: libavformat
 Description: FFmpeg container format library
-Version: 61.1.100
-Requires: libavcodec >= 61.3.100, libswresample >= 5.1.100, libavutil >= 59.8.100
+Version: 63.1.101
+Requires: libavcodec >= 63.1.101, libswresample >= 7.1.101, libavutil >= 61.1.101
 Requires.private: 
 Conflicts:
-Libs: -L${libdir}  -lavformat -lm -lbz2 -lz -Wl,-framework,CoreFoundation -Wl,-framework,Security
+Libs: -L${libdir}  -lavformat -lm -lz -framework CoreFoundation -framework Security
 Libs.private: 
 Cflags: -I${includedir}

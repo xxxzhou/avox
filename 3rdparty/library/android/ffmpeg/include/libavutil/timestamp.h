@@ -33,12 +33,12 @@
 #define AV_TS_MAX_STRING_SIZE 32
 
 /**
- * Fill the provided adBuffer with a string containing a timestamp
+ * Fill the provided buffer with a string containing a timestamp
  * representation.
  *
- * @param buf a adBuffer with size in bytes of at least AV_TS_MAX_STRING_SIZE
+ * @param buf a buffer with size in bytes of at least AV_TS_MAX_STRING_SIZE
  * @param ts the timestamp to represent
- * @return the adBuffer in input
+ * @return the buffer in input
  */
 static inline char *av_ts_make_string(char *buf, int64_t ts)
 {
@@ -54,18 +54,18 @@ static inline char *av_ts_make_string(char *buf, int64_t ts)
 #define av_ts2str(ts) av_ts_make_string((char[AV_TS_MAX_STRING_SIZE]){0}, ts)
 
 /**
- * Fill the provided adBuffer with a string containing a timestamp time
+ * Fill the provided buffer with a string containing a timestamp time
  * representation.
  *
- * @param buf a adBuffer with size in bytes of at least AV_TS_MAX_STRING_SIZE
+ * @param buf a buffer with size in bytes of at least AV_TS_MAX_STRING_SIZE
  * @param ts the timestamp to represent
  * @param tb the timebase of the timestamp
- * @return the adBuffer in input
+ * @return the buffer in input
  */
 char *av_ts_make_time_string2(char *buf, int64_t ts, AVRational tb);
 
 /**
- * Fill the provided adBuffer with a string containing a timestamp
+ * Fill the provided buffer with a string containing a timestamp
  * representation.
  *
  * @see av_ts_make_time_string2

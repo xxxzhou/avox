@@ -1,0 +1,14 @@
+prefix=/Volumes/pssd/work/github/FFmpeg-9.0.1/out-ios
+exec_prefix=${prefix}
+libdir=/Volumes/pssd/work/github/FFmpeg-9.0.1/out-ios/lib
+includedir=/Volumes/pssd/work/github/FFmpeg-9.0.1/out-ios/include
+
+Name: libavcodec
+Description: FFmpeg codec library
+Version: 63.1.101
+Requires: libswresample >= 7.1.101, libavutil >= 61.1.101
+Requires.private: 
+Conflicts:
+Libs: -L${libdir}  -lavcodec -lm -lz -pthread -framework VideoToolbox -framework CoreFoundation -framework CoreMedia -framework CoreVideo
+Libs.private: 
+Cflags: -I${includedir}

@@ -71,8 +71,8 @@ void av_hmac_update(AVHMAC *ctx, const uint8_t *data, unsigned int len);
 /**
  * Finish hashing and output the HMAC digest.
  * @param ctx    The HMAC context
- * @param out    The output adBuffer to write the digest into
- * @param outlen The length of the out adBuffer, in bytes
+ * @param out    The output buffer to write the digest into
+ * @param outlen The length of the out buffer, in bytes
  * @return       The number of bytes written to out, or a negative error code.
  */
 int av_hmac_final(AVHMAC *ctx, uint8_t *out, unsigned int outlen);
@@ -84,8 +84,8 @@ int av_hmac_final(AVHMAC *ctx, uint8_t *out, unsigned int outlen);
  * @param len    The length of the data, in bytes
  * @param key    The authentication key
  * @param keylen The length of the key, in bytes
- * @param out    The output adBuffer to write the digest into
- * @param outlen The length of the out adBuffer, in bytes
+ * @param out    The output buffer to write the digest into
+ * @param outlen The length of the out buffer, in bytes
  * @return       The number of bytes written to out, or a negative error code.
  */
 int av_hmac_calc(AVHMAC *ctx, const uint8_t *data, unsigned int len,

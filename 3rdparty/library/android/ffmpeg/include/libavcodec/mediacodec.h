@@ -68,32 +68,32 @@ int av_mediacodec_default_init(AVCodecContext *avctx, AVMediaCodecContext *ctx, 
 void av_mediacodec_default_free(AVCodecContext *avctx);
 
 /**
- * Opaque structure representing a MediaCodec adBuffer to render.
+ * Opaque structure representing a MediaCodec buffer to render.
  */
 typedef struct MediaCodecBuffer AVMediaCodecBuffer;
 
 /**
- * Release a MediaCodec adBuffer and render it to the surface that is associated
+ * Release a MediaCodec buffer and render it to the surface that is associated
  * with the decoder. This function should only be called once on a given
- * adBuffer, once released the underlying adBuffer returns to the codec, thus
+ * buffer, once released the underlying buffer returns to the codec, thus
  * subsequent calls to this function will have no effect.
  *
- * @param buffer the adBuffer to render
- * @param render 1 to release and render the adBuffer to the surface or 0 to
- * discard the adBuffer
+ * @param buffer the buffer to render
+ * @param render 1 to release and render the buffer to the surface or 0 to
+ * discard the buffer
  * @return 0 on success, < 0 otherwise
  */
 int av_mediacodec_release_buffer(AVMediaCodecBuffer *buffer, int render);
 
 /**
- * Release a MediaCodec adBuffer and render it at the given time to the surface
+ * Release a MediaCodec buffer and render it at the given time to the surface
  * that is associated with the decoder. The timestamp must be within one second
  * of the current `java/lang/System#nanoTime()` (which is implemented using
  * `CLOCK_MONOTONIC` on Android). See the Android MediaCodec documentation
  * of [`android/media/MediaCodec#releaseOutputBuffer(int,long)`][0] for more details.
  *
- * @param buffer the adBuffer to render
- * @param time timestamp in nanoseconds of when to render the adBuffer
+ * @param buffer the buffer to render
+ * @param time timestamp in nanoseconds of when to render the buffer
  * @return 0 on success, < 0 otherwise
  *
  * [0]: https://developer.android.com/reference/android/media/MediaCodec#releaseOutputBuffer(int,%20long)

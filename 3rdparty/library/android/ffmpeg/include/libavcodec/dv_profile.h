@@ -61,8 +61,8 @@ typedef struct AVDVProfile {
  * Get a DV profile for the provided compressed frame.
  *
  * @param sys the profile used for the previous frame, may be NULL
- * @param frame the compressed data adBuffer
- * @param buf_size size of the adBuffer in bytes
+ * @param frame the compressed data buffer
+ * @param buf_size size of the buffer in bytes
  * @return the DV profile for the supplied data or NULL on failure
  */
 const AVDVProfile *av_dv_frame_profile(const AVDVProfile *sys,

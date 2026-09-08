@@ -53,7 +53,7 @@ typedef struct AVQSVContext {
 
     /**
      * Encoding only. If this field is set to non-zero by the caller, libavcodec
-     * will create an mfxExtOpaqueSurfaceAlloc extended adBuffer and pass it to
+     * will create an mfxExtOpaqueSurfaceAlloc extended buffer and pass it to
      * the encoder initialization. This only makes sense if iopattern is also
      * set to MFX_IOPATTERN_IN_OPAQUE_MEMORY.
      *
@@ -83,11 +83,11 @@ typedef struct AVQSVContext {
      * array of the allocated opaque surfaces to the caller, so they can be
      * passed to other parts of the pipeline.
      *
-     * The adBuffer reference exported here is owned and managed by libavcodec,
+     * The buffer reference exported here is owned and managed by libavcodec,
      * the callers should make their own reference with av_buffer_ref() and free
      * it with av_buffer_unref() when it is no longer needed.
      *
-     * The adBuffer data is an nb_opaque_surfaces-sized array of mfxFrameSurface1.
+     * The buffer data is an nb_opaque_surfaces-sized array of mfxFrameSurface1.
      */
     AVBufferRef *opaque_surfaces;
 

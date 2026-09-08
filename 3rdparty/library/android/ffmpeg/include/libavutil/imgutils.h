@@ -95,10 +95,10 @@ int av_image_fill_plane_sizes(size_t size[4], enum AVPixelFormat pix_fmt,
  * @param data pointers array to be filled with the pointer for each image plane
  * @param pix_fmt the AVPixelFormat of the image
  * @param height height of the image in pixels
- * @param ptr the pointer to a adBuffer which will contain the image
+ * @param ptr the pointer to a buffer which will contain the image
  * @param linesizes the array containing the linesize for each
  * plane, should be filled by av_image_fill_linesizes()
- * @return the size in bytes required for the image adBuffer, a negative
+ * @return the size in bytes required for the image buffer, a negative
  * error code in case of failure
  */
 int av_image_fill_pointers(uint8_t *data[4], enum AVPixelFormat pix_fmt, int height,
@@ -107,7 +107,7 @@ int av_image_fill_pointers(uint8_t *data[4], enum AVPixelFormat pix_fmt, int hei
 /**
  * Allocate an image with size w and h and pixel format pix_fmt, and
  * fill pointers and linesizes accordingly.
- * The allocated image adBuffer has to be freed by using
+ * The allocated image buffer has to be freed by using
  * av_freep(&pointers[0]).
  *
  * @param pointers array to be filled with the pointer for each image plane
@@ -115,8 +115,8 @@ int av_image_fill_pointers(uint8_t *data[4], enum AVPixelFormat pix_fmt, int hei
  * @param w width of the image in pixels
  * @param h height of the image in pixels
  * @param pix_fmt the AVPixelFormat of the image
- * @param align the value to use for adBuffer size alignment
- * @return the size in bytes required for the image adBuffer, a negative
+ * @param align the value to use for buffer size alignment
+ * @return the size in bytes required for the image buffer, a negative
  * error code in case of failure
  */
 int av_image_alloc(uint8_t *pointers[4], int linesizes[4],
@@ -162,9 +162,9 @@ void av_image_copy_plane_uc_from(uint8_t       *dst, ptrdiff_t dst_linesize,
 /**
  * Copy image in src_data to dst_data.
  *
- * @param dst_data      destination image data adBuffer to copy to
+ * @param dst_data      destination image data buffer to copy to
  * @param dst_linesizes linesizes for the image in dst_data
- * @param src_data      source image data adBuffer to copy from
+ * @param src_data      source image data buffer to copy from
  * @param src_linesizes linesizes for the image in src_data
  * @param pix_fmt       the AVPixelFormat of the image
  * @param width         width of the image in pixels
@@ -213,20 +213,20 @@ void av_image_copy_uc_from(uint8_t * const dst_data[4],       const ptrdiff_t ds
  * parameters and the provided array.
  *
  * The fields of the given image are filled in by using the src
- * address which points to the image data adBuffer. Depending on the
+ * address which points to the image data buffer. Depending on the
  * specified pixel format, one or multiple image data pointers and
  * line sizes will be set.  If a planar format is specified, several
  * pointers will be set pointing to the different picture planes and
  * the line sizes of the different planes will be stored in the
  * lines_sizes array. Call with src == NULL to get the required
- * size for the src adBuffer.
+ * size for the src buffer.
  *
- * To allocate the adBuffer and fill in the dst_data and dst_linesize in
+ * To allocate the buffer and fill in the dst_data and dst_linesize in
  * one call, use av_image_alloc().
  *
  * @param dst_data      data pointers to be filled in
  * @param dst_linesize  linesizes for the image in dst_data to be filled in
- * @param src           adBuffer which will contain or contains the actual image data, can be NULL
+ * @param src           buffer which will contain or contains the actual image data, can be NULL
  * @param pix_fmt       the pixel format of the image
  * @param width         the width of the image in pixels
  * @param height        the height of the image in pixels
@@ -246,17 +246,17 @@ int av_image_fill_arrays(uint8_t *dst_data[4], int dst_linesize[4],
  * @param width    the width of the image in pixels
  * @param height   the height of the image in pixels
  * @param align    the assumed linesize alignment
- * @return the adBuffer size in bytes, a negative error code in case of failure
+ * @return the buffer size in bytes, a negative error code in case of failure
  */
 int av_image_get_buffer_size(enum AVPixelFormat pix_fmt, int width, int height, int align);
 
 /**
- * Copy image data from an image into a adBuffer.
+ * Copy image data from an image into a buffer.
  *
  * av_image_get_buffer_size() can be used to compute the required size
- * for the adBuffer to fill.
+ * for the buffer to fill.
  *
- * @param dst           a adBuffer into which picture data will be copied
+ * @param dst           a buffer into which picture data will be copied
  * @param dst_size      the size in bytes of dst
  * @param src_data      pointers containing the source image data
  * @param src_linesize  linesizes for the image in src_data

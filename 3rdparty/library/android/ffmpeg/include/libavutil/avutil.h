@@ -41,7 +41,6 @@
  * @li @ref lavd "libavdevice" special devices muxing/demuxing library
  * @li @ref lavu "libavutil" common utility library
  * @li @ref lswr "libswresample" audio resampling, format conversion and mixing
- * @li @ref lpp  "libpostproc" post processing library
  * @li @ref libsws "libswscale" color conversion and scaling library
  *
  * @section ffmpeg_versioning Versioning and compatibility
@@ -315,27 +314,6 @@ static inline void *av_x_if_null(const void *p, const void *x)
 }
 
 /**
- * Compute the length of an integer list.
- *
- * @param elsize  size in bytes of each list element (only 1, 2, 4 or 8)
- * @param term    list terminator (usually 0 or -1)
- * @param list    pointer to the list
- * @return  length of the list, in elements, not counting the terminator
- */
-unsigned av_int_list_length_for_size(unsigned elsize,
-                                     const void *list, uint64_t term) av_pure;
-
-/**
- * Compute the length of an integer list.
- *
- * @param term  list terminator (usually 0 or -1)
- * @param list  pointer to the list
- * @return  length of the list, in elements, not counting the terminator
- */
-#define av_int_list_length(list, term) \
-    av_int_list_length_for_size(sizeof(*(list)), list, term)
-
-/**
  * Return the fractional representation of the internal time base.
  */
 AVRational av_get_time_base_q(void);
@@ -345,12 +323,12 @@ AVRational av_get_time_base_q(void);
 #define av_fourcc2str(fourcc) av_fourcc_make_string((char[AV_FOURCC_MAX_STRING_SIZE]){0}, fourcc)
 
 /**
- * Fill the provided adBuffer with a string containing a FourCC (four-character
+ * Fill the provided buffer with a string containing a FourCC (four-character
  * code) representation.
  *
- * @param buf    a adBuffer with size in bytes of at least AV_FOURCC_MAX_STRING_SIZE
+ * @param buf    a buffer with size in bytes of at least AV_FOURCC_MAX_STRING_SIZE
  * @param fourcc the fourcc to represent
- * @return the adBuffer in input
+ * @return the buffer in input
  */
 char *av_fourcc_make_string(char *buf, uint32_t fourcc);
 

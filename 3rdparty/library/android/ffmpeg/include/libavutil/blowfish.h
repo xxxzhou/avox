@@ -52,7 +52,7 @@ AVBlowfish *av_blowfish_alloc(void);
 void av_blowfish_init(struct AVBlowfish *ctx, const uint8_t *key, int key_len);
 
 /**
- * Encrypt or decrypt a adBuffer using a previously initialized context.
+ * Encrypt or decrypt a buffer using a previously initialized context.
  *
  * @param ctx an AVBlowfish context
  * @param xl left four bytes halves of input to be encrypted
@@ -63,7 +63,7 @@ void av_blowfish_crypt_ecb(struct AVBlowfish *ctx, uint32_t *xl, uint32_t *xr,
                            int decrypt);
 
 /**
- * Encrypt or decrypt a adBuffer using a previously initialized context.
+ * Encrypt or decrypt a buffer using a previously initialized context.
  *
  * @param ctx an AVBlowfish context
  * @param dst destination array, can be equal to src

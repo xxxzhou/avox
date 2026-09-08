@@ -52,7 +52,7 @@ struct AVTEA *av_tea_alloc(void);
 void av_tea_init(struct AVTEA *ctx, const uint8_t key[16], int rounds);
 
 /**
- * Encrypt or decrypt a adBuffer using a previously initialized context.
+ * Encrypt or decrypt a buffer using a previously initialized context.
  *
  * @param ctx an AVTEA context
  * @param dst destination array, can be equal to src

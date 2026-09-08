@@ -33,9 +33,9 @@
 
 /** @name Error flags returned by av_lzo1x_decode
  * @{ */
-/// end of the input adBuffer reached before decoding finished
+/// end of the input buffer reached before decoding finished
 #define AV_LZO_INPUT_DEPLETED  1
-/// decoded data did not fit into output adBuffer
+/// decoded data did not fit into output buffer
 #define AV_LZO_OUTPUT_FULL     2
 /// a reference to previously decoded data was wrong
 #define AV_LZO_INVALID_BACKPTR 4
@@ -48,10 +48,10 @@
 
 /**
  * @brief Decodes LZO 1x compressed data.
- * @param out output adBuffer
- * @param outlen size of output adBuffer, number of bytes left are returned here
- * @param in input adBuffer
- * @param inlen size of input adBuffer, number of bytes left are returned here
+ * @param out output buffer
+ * @param outlen size of output buffer, number of bytes left are returned here
+ * @param in input buffer
+ * @param inlen size of input buffer, number of bytes left are returned here
  * @return 0 on success, otherwise a combination of the error flags above
  *
  * Make sure all buffers are appropriately padded, in must provide

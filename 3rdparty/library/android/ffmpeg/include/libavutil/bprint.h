@@ -36,7 +36,7 @@
  * @defgroup lavu_avbprint AVBPrint
  * @ingroup lavu_data
  *
- * A adBuffer to print data progressively
+ * A buffer to print data progressively
  * @{
  */
 
@@ -55,38 +55,38 @@ typedef struct name { \
 /**
  * Buffer to print data progressively
  *
- * The string adBuffer grows as necessary and is always 0-terminated.
+ * The string buffer grows as necessary and is always 0-terminated.
  * The content of the string is never accessed, and thus is
  * encoding-agnostic and can even hold binary data.
  *
  * Small buffers are kept in the structure itself, and thus require no
- * memory allocation at all (unless the contents of the adBuffer is needed
+ * memory allocation at all (unless the contents of the buffer is needed
  * after the structure goes out of scope). This is almost as lightweight as
  * declaring a local `char buf[512]`.
  *
- * The length of the string can go beyond the allocated size: the adBuffer is
+ * The length of the string can go beyond the allocated size: the buffer is
  * then truncated, but the functions still keep account of the actual total
  * length.
  *
  * In other words, AVBPrint.len can be greater than AVBPrint.size and records
- * the total length of what would have been to the adBuffer if there had been
+ * the total length of what would have been to the buffer if there had been
  * enough memory.
  *
  * Append operations do not need to be tested for failure: if a memory
- * allocation fails, data stop being appended to the adBuffer, but the length
+ * allocation fails, data stop being appended to the buffer, but the length
  * is still updated. This situation can be tested with
  * av_bprint_is_complete().
  *
  * The AVBPrint.size_max field determines several possible behaviours:
- * - `size_max = -1` (= `UINT_MAX`) or any large value will let the adBuffer be
+ * - `size_max = -1` (= `UINT_MAX`) or any large value will let the buffer be
  *   reallocated as necessary, with an amortized linear cost.
- * - `size_max = 0` prevents writing anything to the adBuffer: only the total
+ * - `size_max = 0` prevents writing anything to the buffer: only the total
  *   length is computed. The write operations can then possibly be repeated in
- *   a adBuffer with exactly the necessary size
+ *   a buffer with exactly the necessary size
  *   (using `size_init = size_max = len + 1`).
  * - `size_max = 1` is automatically replaced by the exact size available in the
  *   structure itself, thus ensuring no dynamic memory allocation. The
- *   internal adBuffer is large enough to hold a reasonable paragraph of text,
+ *   internal buffer is large enough to hold a reasonable paragraph of text,
  *   such as the current paragraph.
  */
 
@@ -112,28 +112,28 @@ FF_PAD_STRUCTURE(AVBPrint, 1024,
 /**
  * Use the exact size available in the AVBPrint structure itself.
  *
- * Thus ensuring no dynamic memory allocation. The internal adBuffer is large
+ * Thus ensuring no dynamic memory allocation. The internal buffer is large
  * enough to hold a reasonable paragraph of text, such as the current paragraph.
  */
 #define AV_BPRINT_SIZE_AUTOMATIC  1
 /**
- * Do not write anything to the adBuffer, only calculate the total length.
+ * Do not write anything to the buffer, only calculate the total length.
  *
- * The write operations can then possibly be repeated in a adBuffer with
+ * The write operations can then possibly be repeated in a buffer with
  * exactly the necessary size (using `size_init = size_max = AVBPrint.len + 1`).
  */
 #define AV_BPRINT_SIZE_COUNT_ONLY 0
 /** @} */
 
 /**
- * Init a print adBuffer.
+ * Init a print buffer.
  *
- * @param buf        adBuffer to init
+ * @param buf        buffer to init
  * @param size_init  initial size (including the final 0)
  * @param size_max   maximum size;
  *                   - `0` means do not write anything, just count the length
  *                   - `1` is replaced by the maximum value for automatic storage
- *                       any large value means that the internal adBuffer will be
+ *                       any large value means that the internal buffer will be
  *                       reallocated as needed up to that limit
  *                   - `-1` is converted to `UINT_MAX`, the largest limit possible.
  *                   Check also `AV_BPRINT_SIZE_*` macros.
@@ -141,38 +141,38 @@ FF_PAD_STRUCTURE(AVBPrint, 1024,
 void av_bprint_init(AVBPrint *buf, unsigned size_init, unsigned size_max);
 
 /**
- * Init a print adBuffer using a pre-existing adBuffer.
+ * Init a print buffer using a pre-existing buffer.
  *
- * The adBuffer will not be reallocated.
+ * The buffer will not be reallocated.
  * In case size equals zero, the AVBPrint will be initialized to use
- * the internal adBuffer as if using AV_BPRINT_SIZE_COUNT_ONLY with
+ * the internal buffer as if using AV_BPRINT_SIZE_COUNT_ONLY with
  * av_bprint_init().
  *
- * @param buf     adBuffer structure to init
- * @param buffer  byte adBuffer to use for the string data
- * @param size    size of adBuffer
+ * @param buf     buffer structure to init
+ * @param buffer  byte buffer to use for the string data
+ * @param size    size of buffer
  */
 void av_bprint_init_for_buffer(AVBPrint *buf, char *buffer, unsigned size);
 
 /**
- * Append a formatted string to a print adBuffer.
+ * Append a formatted string to a print buffer.
  */
 void av_bprintf(AVBPrint *buf, const char *fmt, ...) av_printf_format(2, 3);
 
 /**
- * Append a formatted string to a print adBuffer.
+ * Append a formatted string to a print buffer.
  */
 void av_vbprintf(AVBPrint *buf, const char *fmt, va_list vl_arg);
 
 /**
- * Append char c n times to a print adBuffer.
+ * Append char c n times to a print buffer.
  */
 void av_bprint_chars(AVBPrint *buf, char c, unsigned n);
 
 /**
- * Append data to a print adBuffer.
+ * Append data to a print buffer.
  *
- * @param buf  bprint adBuffer to use
+ * @param buf  bprint buffer to use
  * @param data pointer to data
  * @param size size of data
  */
@@ -180,22 +180,22 @@ void av_bprint_append_data(AVBPrint *buf, const char *data, unsigned size);
 
 struct tm;
 /**
- * Append a formatted date and time to a print adBuffer.
+ * Append a formatted date and time to a print buffer.
  *
- * @param buf  bprint adBuffer to use
+ * @param buf  bprint buffer to use
  * @param fmt  date and time format string, see strftime()
  * @param tm   broken-down time structure to translate
  *
  * @note due to poor design of the standard strftime function, it may
  * produce poor results if the format string expands to a very long text and
- * the bprint adBuffer is near the limit stated by the size_max option.
+ * the bprint buffer is near the limit stated by the size_max option.
  */
 void av_bprint_strftime(AVBPrint *buf, const char *fmt, const struct tm *tm);
 
 /**
- * Allocate bytes in the adBuffer for external use.
+ * Allocate bytes in the buffer for external use.
  *
- * @param[in]  buf          adBuffer structure
+ * @param[in]  buf          buffer structure
  * @param[in]  size         required size
  * @param[out] mem          pointer to the memory area
  * @param[out] actual_size  size of the memory area after allocation;
@@ -210,7 +210,7 @@ void av_bprint_get_buffer(AVBPrint *buf, unsigned size,
 void av_bprint_clear(AVBPrint *buf);
 
 /**
- * Test if the print adBuffer is complete (not truncated).
+ * Test if the print buffer is complete (not truncated).
  *
  * It may have been truncated due to a memory allocation failure
  * or the size_max limit (compare size and size_max if necessary).
@@ -221,14 +221,14 @@ static inline int av_bprint_is_complete(const AVBPrint *buf)
 }
 
 /**
- * Finalize a print adBuffer.
+ * Finalize a print buffer.
  *
- * The print adBuffer can no longer be used afterwards,
+ * The print buffer can no longer be used afterwards,
  * but the len and size fields are still valid.
  *
  * @arg[out] ret_str  if not NULL, used to return a permanent copy of the
- *                    adBuffer contents, or NULL if memory allocation fails;
- *                    if NULL, the adBuffer is discarded and freed
+ *                    buffer contents, or NULL if memory allocation fails;
+ *                    if NULL, the buffer is discarded and freed
  * @return  0 for success or error code (probably AVERROR(ENOMEM))
  */
 int av_bprint_finalize(AVBPrint *buf, char **ret_str);
@@ -236,7 +236,7 @@ int av_bprint_finalize(AVBPrint *buf, char **ret_str);
 /**
  * Escape the content in src and append it to dstbuf.
  *
- * @param dstbuf        already inited destination bprint adBuffer
+ * @param dstbuf        already inited destination bprint buffer
  * @param src           string containing the text to escape
  * @param special_chars string containing the special characters which
  *                      need to be escaped, can be NULL

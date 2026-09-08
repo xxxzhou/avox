@@ -1,0 +1,14 @@
+prefix=/Volumes/pssd/work/github/FFmpeg-9.0.1/out-ios
+exec_prefix=${prefix}
+libdir=/Volumes/pssd/work/github/FFmpeg-9.0.1/out-ios/lib
+includedir=/Volumes/pssd/work/github/FFmpeg-9.0.1/out-ios/include
+
+Name: libavutil
+Description: FFmpeg utility library
+Version: 61.1.101
+Requires: 
+Requires.private: 
+Conflicts:
+Libs: -L${libdir}  -lavutil -lm -lz -framework VideoToolbox -pthread -framework CoreFoundation -framework CoreMedia -framework CoreVideo
+Libs.private: 
+Cflags: -I${includedir}

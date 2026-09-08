@@ -1,0 +1,14 @@
+prefix=/Volumes/pssd/work/github/FFmpeg-9.0.1/out-ios
+exec_prefix=${prefix}
+libdir=/Volumes/pssd/work/github/FFmpeg-9.0.1/out-ios/lib
+includedir=/Volumes/pssd/work/github/FFmpeg-9.0.1/out-ios/include
+
+Name: libavformat
+Description: FFmpeg container format library
+Version: 63.1.101
+Requires: libavcodec >= 63.1.101, libswresample >= 7.1.101, libavutil >= 61.1.101
+Requires.private: 
+Conflicts:
+Libs: -L${libdir}  -lavformat -lm -lz -framework CoreFoundation -framework Security
+Libs.private: 
+Cflags: -I${includedir}

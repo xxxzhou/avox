@@ -22,7 +22,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "version.h"
 #include "attributes.h"
 
 /**
@@ -32,16 +31,16 @@
 
 /**
  * Read the file with name filename, and put its content in a newly
- * allocated adBuffer or map it with mmap() when available.
- * In case of success set *bufptr to the read or mmapped adBuffer, and
- * *size to the size in bytes of the adBuffer in *bufptr.
+ * allocated buffer or map it with mmap() when available.
+ * In case of success set *bufptr to the read or mmapped buffer, and
+ * *size to the size in bytes of the buffer in *bufptr.
  * Unlike mmap this function succeeds with zero sized files, in this
  * case *bufptr will be set to NULL and *size will be set to 0.
- * The returned adBuffer must be released with av_file_unmap().
+ * The returned buffer must be released with av_file_unmap().
  *
  * @param filename path to the file
- * @param[out] bufptr pointee is set to the mapped or allocated adBuffer
- * @param[out] size pointee is set to the size in bytes of the adBuffer
+ * @param[out] bufptr pointee is set to the mapped or allocated buffer
+ * @param[out] size pointee is set to the size in bytes of the buffer
  * @param log_offset loglevel offset used for logging
  * @param log_ctx context used for logging
  * @return a non negative number in case of success, a negative value
@@ -52,9 +51,9 @@ int av_file_map(const char *filename, uint8_t **bufptr, size_t *size,
                 int log_offset, void *log_ctx);
 
 /**
- * Unmap or free the adBuffer bufptr created by av_file_map().
+ * Unmap or free the buffer bufptr created by av_file_map().
  *
- * @param bufptr the adBuffer previously created with av_file_map()
+ * @param bufptr the buffer previously created with av_file_map()
  * @param size size in bytes of bufptr, must be the same as returned
  * by av_file_map()
  */

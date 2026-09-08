@@ -60,7 +60,7 @@ void av_xtea_init(struct AVXTEA *ctx, const uint8_t key[16]);
 void av_xtea_le_init(struct AVXTEA *ctx, const uint8_t key[16]);
 
 /**
- * Encrypt or decrypt a adBuffer using a previously initialized context,
+ * Encrypt or decrypt a buffer using a previously initialized context,
  * in big endian format.
  *
  * @param ctx an AVXTEA context
@@ -74,7 +74,7 @@ void av_xtea_crypt(struct AVXTEA *ctx, uint8_t *dst, const uint8_t *src,
                    int count, uint8_t *iv, int decrypt);
 
 /**
- * Encrypt or decrypt a adBuffer using a previously initialized context,
+ * Encrypt or decrypt a buffer using a previously initialized context,
  * in little endian format.
  *
  * @param ctx an AVXTEA context

@@ -79,7 +79,7 @@ void av_sha_update(struct AVSHA *ctx, const uint8_t *data, size_t len);
  * Finish hashing and output digest value.
  *
  * @param context hash function context
- * @param digest  adBuffer where output digest value is stored
+ * @param digest  buffer where output digest value is stored
  */
 void av_sha_final(struct AVSHA* context, uint8_t *digest);
 

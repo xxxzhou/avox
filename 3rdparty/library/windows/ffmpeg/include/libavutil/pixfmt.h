@@ -485,6 +485,20 @@ enum AVPixelFormat {
     AV_PIX_FMT_YAF16BE,  ///< IEEE-754 half precision packed YA, 16 bits gray, 16 bits alpha, 32bpp, big-endian
     AV_PIX_FMT_YAF16LE,  ///< IEEE-754 half precision packed YA, 16 bits gray, 16 bits alpha, 32bpp, little-endian
 
+    AV_PIX_FMT_GBRAP32BE,   ///< planar GBRA 4:4:4:4 128bpp, big-endian
+    AV_PIX_FMT_GBRAP32LE,   ///< planar GBRA 4:4:4:4 128bpp, little-endian
+
+    AV_PIX_FMT_YUV444P10MSBBE, ///< planar YUV 4:4:4, 30bpp, (1 Cr & Cb sample per 1x1 Y samples), lowest bits zero, big-endian
+    AV_PIX_FMT_YUV444P10MSBLE, ///< planar YUV 4:4:4, 30bpp, (1 Cr & Cb sample per 1x1 Y samples), lowest bits zero, little-endian
+    AV_PIX_FMT_YUV444P12MSBBE, ///< planar YUV 4:4:4, 30bpp, (1 Cr & Cb sample per 1x1 Y samples), lowest bits zero, big-endian
+    AV_PIX_FMT_YUV444P12MSBLE, ///< planar YUV 4:4:4, 30bpp, (1 Cr & Cb sample per 1x1 Y samples), lowest bits zero, little-endian
+    AV_PIX_FMT_GBRP10MSBBE,    ///< planar GBR 4:4:4 30bpp, lowest bits zero, big-endian
+    AV_PIX_FMT_GBRP10MSBLE,    ///< planar GBR 4:4:4 30bpp, lowest bits zero, little-endian
+    AV_PIX_FMT_GBRP12MSBBE,    ///< planar GBR 4:4:4 36bpp, lowest bits zero, big-endian
+    AV_PIX_FMT_GBRP12MSBLE,    ///< planar GBR 4:4:4 36bpp, lowest bits zero, little-endian
+
+    AV_PIX_FMT_OHCODEC, /// hardware decoding through openharmony
+
     AV_PIX_FMT_NB         ///< number of pixel formats, DO NOT USE THIS if you want to link with shared libav* because the number of formats might differ between versions
 };
 
@@ -537,6 +551,9 @@ enum AVPixelFormat {
 #define AV_PIX_FMT_YUV422P16 AV_PIX_FMT_NE(YUV422P16BE, YUV422P16LE)
 #define AV_PIX_FMT_YUV444P16 AV_PIX_FMT_NE(YUV444P16BE, YUV444P16LE)
 
+#define AV_PIX_FMT_YUV444P10MSB AV_PIX_FMT_NE(YUV444P10MSBBE, YUV444P10MSBLE)
+#define AV_PIX_FMT_YUV444P12MSB AV_PIX_FMT_NE(YUV444P12MSBBE, YUV444P12MSBLE)
+
 #define AV_PIX_FMT_GBRP9     AV_PIX_FMT_NE(GBRP9BE ,    GBRP9LE)
 #define AV_PIX_FMT_GBRP10    AV_PIX_FMT_NE(GBRP10BE,    GBRP10LE)
 #define AV_PIX_FMT_GBRP12    AV_PIX_FMT_NE(GBRP12BE,    GBRP12LE)
@@ -546,6 +563,10 @@ enum AVPixelFormat {
 #define AV_PIX_FMT_GBRAP12   AV_PIX_FMT_NE(GBRAP12BE,   GBRAP12LE)
 #define AV_PIX_FMT_GBRAP14   AV_PIX_FMT_NE(GBRAP14BE,   GBRAP14LE)
 #define AV_PIX_FMT_GBRAP16   AV_PIX_FMT_NE(GBRAP16BE,   GBRAP16LE)
+#define AV_PIX_FMT_GBRAP32   AV_PIX_FMT_NE(GBRAP32BE,   GBRAP32LE)
+
+#define AV_PIX_FMT_GBRP10MSB AV_PIX_FMT_NE(GBRP10MSBBE, GBRP10MSBLE)
+#define AV_PIX_FMT_GBRP12MSB AV_PIX_FMT_NE(GBRP12MSBBE, GBRP12MSBLE)
 
 #define AV_PIX_FMT_BAYER_BGGR16 AV_PIX_FMT_NE(BAYER_BGGR16BE,    BAYER_BGGR16LE)
 #define AV_PIX_FMT_BAYER_RGGB16 AV_PIX_FMT_NE(BAYER_RGGB16BE,    BAYER_RGGB16LE)
@@ -630,7 +651,12 @@ enum AVColorPrimaries {
     AVCOL_PRI_SMPTE432    = 12, ///< SMPTE ST 432-1 (2010) / P3 D65 / Display P3
     AVCOL_PRI_EBU3213     = 22, ///< EBU Tech. 3213-E (nothing there) / one of JEDEC P22 group phosphors
     AVCOL_PRI_JEDEC_P22   = AVCOL_PRI_EBU3213,
-    AVCOL_PRI_NB                ///< Not part of ABI
+    AVCOL_PRI_NB,               ///< Not part of ABI
+
+    /* The following entries are not part of H.273, but custom extensions */
+    AVCOL_PRI_EXT_BASE     = 256,
+    AVCOL_PRI_V_GAMUT      = AVCOL_PRI_EXT_BASE,
+    AVCOL_PRI_EXT_NB            ///< Not part of ABI
 };
 
 /**
@@ -659,7 +685,12 @@ enum AVColorTransferCharacteristic {
     AVCOL_TRC_SMPTE428     = 17, ///< SMPTE ST 428-1
     AVCOL_TRC_SMPTEST428_1 = AVCOL_TRC_SMPTE428,
     AVCOL_TRC_ARIB_STD_B67 = 18, ///< ARIB STD-B67, known as "Hybrid log-gamma"
-    AVCOL_TRC_NB                 ///< Not part of ABI
+    AVCOL_TRC_NB,                ///< Not part of ABI
+
+    /* The following entries are not part of H.273, but custom extensions */
+    AVCOL_TRC_EXT_BASE     = 256,
+    AVCOL_TRC_V_LOG        = AVCOL_TRC_EXT_BASE,
+    AVCOL_TRC_EXT_NB             ///< Not part of ABI
 };
 
 /**
@@ -771,6 +802,16 @@ enum AVChromaLocation {
     AVCHROMA_LOC_BOTTOMLEFT  = 5,
     AVCHROMA_LOC_BOTTOM      = 6,
     AVCHROMA_LOC_NB               ///< Not part of ABI
+};
+
+/**
+ * Correlation between the alpha channel and color values.
+ */
+enum AVAlphaMode {
+    AVALPHA_MODE_UNSPECIFIED   = 0, ///< Unknown alpha handling, or no alpha channel
+    AVALPHA_MODE_PREMULTIPLIED = 1, ///< Alpha channel is multiplied into color values
+    AVALPHA_MODE_STRAIGHT      = 2, ///< Alpha channel is independent of color values
+    AVALPHA_MODE_NB                 ///< Not part of ABI
 };
 
 #endif /* AVUTIL_PIXFMT_H */

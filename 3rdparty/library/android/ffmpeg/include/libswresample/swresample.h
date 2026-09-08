@@ -49,8 +49,8 @@
  * matrix). This is using the swr_alloc() function.
  * @code
  * SwrContext *swr = swr_alloc();
- * av_opt_set_channel_layout(swr, "in_channel_layout",  AV_CH_LAYOUT_5POINT1, 0);
- * av_opt_set_channel_layout(swr, "out_channel_layout", AV_CH_LAYOUT_STEREO,  0);
+ * av_opt_set_chlayout(swr, "in_chlayout", &(AVChannelLayout)AV_CHANNEL_LAYOUT_5POINT1, 0);
+ * av_opt_set_chlayout(swr, "out_chlayout", &(AVChannelLayout)AV_CHANNEL_LAYOUT_STEREO, 0);
  * av_opt_set_int(swr, "in_sample_rate",     48000,                0);
  * av_opt_set_int(swr, "out_sample_rate",    44100,                0);
  * av_opt_set_sample_fmt(swr, "in_sample_fmt",  AV_SAMPLE_FMT_FLTP, 0);
@@ -82,7 +82,7 @@
  * output space or if sample rate conversion is done, which requires "future"
  * samples. Samples that do not require future input can be retrieved at any
  * time by using swr_convert() (in_count can be set to 0).
- * At the end of conversion the resampling adBuffer can be flushed by calling
+ * At the end of conversion the resampling buffer can be flushed by calling
  * swr_convert() with NULL in and 0 in_count.
  *
  * The samples used in the conversion process can be managed with the libavutil
@@ -337,7 +337,7 @@ int64_t swr_next_pts(struct SwrContext *s, int64_t pts);
  * @}
  *
  * @name Low-level option setting functions
- * These functons provide a means to set low-level options that is not possible
+ * These functions provide a means to set low-level options that is not possible
  * with the AVOption API.
  * @{
  */
@@ -447,7 +447,7 @@ int swr_inject_silence(struct SwrContext *s, int count);
 /**
  * Gets the delay the next input sample will experience relative to the next output sample.
  *
- * Swresample can adBuffer data if more input has been provided than available
+ * Swresample can buffer data if more input has been provided than available
  * output space, also converting between sample rates needs a delay.
  * This function returns the sum of all such delays.
  * The exact delay is not necessarily an integer value in either input or
@@ -480,7 +480,7 @@ int64_t swr_get_delay(struct SwrContext *s, int64_t base);
  * @param in_samples    number of input samples.
  * @note any call to swr_inject_silence(), swr_convert(), swr_next_pts()
  *       or swr_set_compensation() invalidates this limit
- * @note it is recommended to pass the correct available adBuffer size
+ * @note it is recommended to pass the correct available buffer size
  *       to all functions like swr_convert() even if swr_get_out_samples()
  *       indicates that less would be used.
  * @returns an upper bound on the number of samples that the next swr_convert
@@ -537,11 +537,11 @@ const char *swresample_license(void);
  *
  * The output AVFrame can be NULL or have fewer allocated samples than required.
  * In this case, any remaining samples not written to the output will be added
- * to an internal FIFO adBuffer, to be returned at the next call to this function
+ * to an internal FIFO buffer, to be returned at the next call to this function
  * or to swr_convert().
  *
  * If converting sample rate, there may be data remaining in the internal
- * resampling delay adBuffer. swr_get_delay() tells the number of
+ * resampling delay buffer. swr_get_delay() tells the number of
  * remaining samples. To get this data as output, call this function or
  * swr_convert() with NULL input.
  *

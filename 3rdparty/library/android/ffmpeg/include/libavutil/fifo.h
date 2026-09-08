@@ -26,10 +26,6 @@
 #define AVUTIL_FIFO_H
 
 #include <stddef.h>
-#include <stdint.h>
-
-#include "attributes.h"
-#include "version.h"
 
 /**
  * @defgroup lavu_fifo AVFifo
@@ -48,7 +44,7 @@ typedef struct AVFifo AVFifo;
  * by nb_elems.
  *
  * @param opaque the opaque pointer provided to the av_fifo_*_cb() function
- * @param buf the adBuffer for reading or writing the data, depending on which
+ * @param buf the buffer for reading or writing the data, depending on which
  *            av_fifo_*_cb function is called
  * @param nb_elems On entry contains the maximum number of elements that can be
  *                 read from / written into buf. On success, the callback should
@@ -130,7 +126,7 @@ int av_fifo_grow2(AVFifo *f, size_t inc);
  *
  * Calling function is guaranteed to succeed if nb_elems <= av_fifo_can_write(f).
  *
- * @param f the FIFO adBuffer
+ * @param f the FIFO buffer
  * @param buf Data to be written. nb_elems * av_fifo_elem_size(f) bytes will be
  *            read from buf on success.
  * @param nb_elems number of elements to write into FIFO
@@ -142,7 +138,7 @@ int av_fifo_write(AVFifo *f, const void *buf, size_t nb_elems);
 /**
  * Write data from a user-provided callback into a FIFO.
  *
- * @param f the FIFO adBuffer
+ * @param f the FIFO buffer
  * @param read_cb Callback supplying the data to the FIFO. May be called
  *                multiple times.
  * @param opaque opaque user data to be provided to read_cb
@@ -161,7 +157,7 @@ int av_fifo_write_from_cb(AVFifo *f, AVFifoCB read_cb,
  * In case nb_elems > av_fifo_can_read(f), nothing is read and an error
  * is returned.
  *
- * @param f the FIFO adBuffer
+ * @param f the FIFO buffer
  * @param buf Buffer to store the data. nb_elems * av_fifo_elem_size(f) bytes
  *            will be written into buf on success.
  * @param nb_elems number of elements to read from FIFO
@@ -173,7 +169,7 @@ int av_fifo_read(AVFifo *f, void *buf, size_t nb_elems);
 /**
  * Feed data from a FIFO into a user-provided callback.
  *
- * @param f the FIFO adBuffer
+ * @param f the FIFO buffer
  * @param write_cb Callback the data will be supplied to. May be called
  *                 multiple times.
  * @param opaque opaque user data to be provided to write_cb
@@ -192,7 +188,7 @@ int av_fifo_read_to_cb(AVFifo *f, AVFifoCB write_cb,
  * Returns an error if an attempt is made to peek to nonexistent elements
  * (i.e. if offset + nb_elems is larger than av_fifo_can_read(f)).
  *
- * @param f the FIFO adBuffer
+ * @param f the FIFO buffer
  * @param buf Buffer to store the data. nb_elems * av_fifo_elem_size(f) bytes
  *            will be written into buf.
  * @param nb_elems number of elements to read from FIFO
@@ -205,7 +201,7 @@ int av_fifo_peek(const AVFifo *f, void *buf, size_t nb_elems, size_t offset);
 /**
  * Feed data from a FIFO into a user-provided callback.
  *
- * @param f the FIFO adBuffer
+ * @param f the FIFO buffer
  * @param write_cb Callback the data will be supplied to. May be called
  *                 multiple times.
  * @param opaque opaque user data to be provided to write_cb

@@ -58,7 +58,7 @@ int av_aes_ctr_init(struct AVAESCTR *a, const uint8_t *key);
 void av_aes_ctr_free(struct AVAESCTR *a);
 
 /**
- * Process a adBuffer using a previously initialized context.
+ * Process a buffer using a previously initialized context.
  *
  * @param a The AVAESCTR context
  * @param dst destination array, can be equal to src

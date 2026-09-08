@@ -26,7 +26,7 @@
 
 /**
  * Extract the number of samples and frames from AAC data.
- * @param[in]  buf     pointer to AAC data adBuffer
+ * @param[in]  buf     pointer to AAC data buffer
  * @param[out] samples Pointer to where number of samples is written
  * @param[out] frames  Pointer to where number of frames is written
  * @return Returns 0 on success, error code on failure.

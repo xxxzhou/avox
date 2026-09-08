@@ -79,6 +79,7 @@
 #define AVERROR_HTTP_UNAUTHORIZED  FFERRTAG(0xF8,'4','0','1')
 #define AVERROR_HTTP_FORBIDDEN     FFERRTAG(0xF8,'4','0','3')
 #define AVERROR_HTTP_NOT_FOUND     FFERRTAG(0xF8,'4','0','4')
+#define AVERROR_HTTP_TOO_MANY_REQUESTS FFERRTAG(0xF8,'4','2','9')
 #define AVERROR_HTTP_OTHER_4XX     FFERRTAG(0xF8,'4','X','X')
 #define AVERROR_HTTP_SERVER_ERROR  FFERRTAG(0xF8,'5','X','X')
 
@@ -91,7 +92,7 @@
  * error message indicating the errnum provided to errbuf.
  *
  * @param errnum      error code to describe
- * @param errbuf      adBuffer to which description is written
+ * @param errbuf      buffer to which description is written
  * @param errbuf_size the size in bytes of errbuf
  * @return 0 on success, a negative value if a description for errnum
  * cannot be found
@@ -99,13 +100,13 @@
 int av_strerror(int errnum, char *errbuf, size_t errbuf_size);
 
 /**
- * Fill the provided adBuffer with a string containing an error string
+ * Fill the provided buffer with a string containing an error string
  * corresponding to the AVERROR code errnum.
  *
- * @param errbuf         a adBuffer
+ * @param errbuf         a buffer
  * @param errbuf_size    size in bytes of errbuf
  * @param errnum         error code to describe
- * @return the adBuffer in input, filled with the error description
+ * @return the buffer in input, filled with the error description
  * @see av_strerror()
  */
 static inline char *av_make_error_string(char *errbuf, size_t errbuf_size, int errnum)

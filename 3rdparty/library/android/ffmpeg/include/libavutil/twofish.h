@@ -53,7 +53,7 @@ struct AVTWOFISH *av_twofish_alloc(void);
 int av_twofish_init(struct AVTWOFISH *ctx, const uint8_t *key, int key_bits);
 
 /**
-  * Encrypt or decrypt a adBuffer using a previously initialized context
+  * Encrypt or decrypt a buffer using a previously initialized context
   *
   * @param ctx an AVTWOFISH context
   * @param dst destination array, can be equal to src

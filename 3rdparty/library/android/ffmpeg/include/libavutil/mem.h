@@ -257,12 +257,12 @@ av_alloc_size(2, 3) void *av_realloc_array(void *ptr, size_t nmemb, size_t size)
 int av_reallocp_array(void *ptr, size_t nmemb, size_t size);
 
 /**
- * Reallocate the given adBuffer if it is not large enough, otherwise do nothing.
+ * Reallocate the given buffer if it is not large enough, otherwise do nothing.
  *
- * If the given adBuffer is `NULL`, then a new uninitialized adBuffer is allocated.
+ * If the given buffer is `NULL`, then a new uninitialized buffer is allocated.
  *
- * If the given adBuffer is not large enough, and reallocation fails, `NULL` is
- * returned and `*size` is set to 0, but the original adBuffer is not changed or
+ * If the given buffer is not large enough, and reallocation fails, `NULL` is
+ * returned and `*size` is set to 0, but the original buffer is not changed or
  * freed.
  *
  * A typical use pattern follows:
@@ -271,19 +271,19 @@ int av_reallocp_array(void *ptr, size_t nmemb, size_t size);
  * uint8_t *buf = ...;
  * uint8_t *new_buf = av_fast_realloc(buf, &current_size, size_needed);
  * if (!new_buf) {
- *     // Allocation failed; clean up original adBuffer
+ *     // Allocation failed; clean up original buffer
  *     av_freep(&buf);
  *     return AVERROR(ENOMEM);
  * }
  * @endcode
  *
- * @param[in,out] ptr      Already allocated adBuffer, or `NULL`
- * @param[in,out] size     Pointer to the size of adBuffer `ptr`. `*size` is
+ * @param[in,out] ptr      Already allocated buffer, or `NULL`
+ * @param[in,out] size     Pointer to the size of buffer `ptr`. `*size` is
  *                         updated to the new allocated size, in particular 0
  *                         in case of failure.
- * @param[in]     min_size Desired minimal size of adBuffer `ptr`
- * @return `ptr` if the adBuffer is large enough, a pointer to newly reallocated
- *         adBuffer if the adBuffer was not large enough, or `NULL` in case of
+ * @param[in]     min_size Desired minimal size of buffer `ptr`
+ * @return `ptr` if the buffer is large enough, a pointer to newly reallocated
+ *         buffer if the buffer was not large enough, or `NULL` in case of
  *         error
  * @see av_realloc()
  * @see av_fast_malloc()
@@ -291,10 +291,10 @@ int av_reallocp_array(void *ptr, size_t nmemb, size_t size);
 void *av_fast_realloc(void *ptr, unsigned int *size, size_t min_size);
 
 /**
- * Allocate a adBuffer, reusing the given one if large enough.
+ * Allocate a buffer, reusing the given one if large enough.
  *
- * Contrary to av_fast_realloc(), the current adBuffer contents might not be
- * preserved and on error the old adBuffer is freed, thus no special handling to
+ * Contrary to av_fast_realloc(), the current buffer contents might not be
+ * preserved and on error the old buffer is freed, thus no special handling to
  * avoid memleaks is necessary.
  *
  * `*ptr` is allowed to be `NULL`, in which case allocation always happens if
@@ -309,34 +309,34 @@ void *av_fast_realloc(void *ptr, unsigned int *size, size_t min_size);
  * }
  * @endcode
  *
- * @param[in,out] ptr      Pointer to pointer to an already allocated adBuffer.
+ * @param[in,out] ptr      Pointer to pointer to an already allocated buffer.
  *                         `*ptr` will be overwritten with pointer to new
- *                         adBuffer on success or `NULL` on failure
- * @param[in,out] size     Pointer to the size of adBuffer `*ptr`. `*size` is
+ *                         buffer on success or `NULL` on failure
+ * @param[in,out] size     Pointer to the size of buffer `*ptr`. `*size` is
  *                         updated to the new allocated size, in particular 0
  *                         in case of failure.
- * @param[in]     min_size Desired minimal size of adBuffer `*ptr`
+ * @param[in]     min_size Desired minimal size of buffer `*ptr`
  * @see av_realloc()
  * @see av_fast_mallocz()
  */
 void av_fast_malloc(void *ptr, unsigned int *size, size_t min_size);
 
 /**
- * Allocate and clear a adBuffer, reusing the given one if large enough.
+ * Allocate and clear a buffer, reusing the given one if large enough.
  *
  * Like av_fast_malloc(), but all newly allocated space is initially cleared.
- * Reused adBuffer is not cleared.
+ * Reused buffer is not cleared.
  *
  * `*ptr` is allowed to be `NULL`, in which case allocation always happens if
  * `size_needed` is greater than 0.
  *
- * @param[in,out] ptr      Pointer to pointer to an already allocated adBuffer.
+ * @param[in,out] ptr      Pointer to pointer to an already allocated buffer.
  *                         `*ptr` will be overwritten with pointer to new
- *                         adBuffer on success or `NULL` on failure
- * @param[in,out] size     Pointer to the size of adBuffer `*ptr`. `*size` is
+ *                         buffer on success or `NULL` on failure
+ * @param[in,out] size     Pointer to the size of buffer `*ptr`. `*size` is
  *                         updated to the new allocated size, in particular 0
  *                         in case of failure.
- * @param[in]     min_size Desired minimal size of adBuffer `*ptr`
+ * @param[in]     min_size Desired minimal size of buffer `*ptr`
  * @see av_fast_malloc()
  */
 void av_fast_mallocz(void *ptr, unsigned int *size, size_t min_size);
@@ -399,19 +399,19 @@ char *av_strdup(const char *s) av_malloc_attrib;
 char *av_strndup(const char *s, size_t len) av_malloc_attrib;
 
 /**
- * Duplicate a adBuffer with av_malloc().
+ * Duplicate a buffer with av_malloc().
  *
  * @param p    Buffer to be duplicated
- * @param size Size in bytes of the adBuffer copied
- * @return Pointer to a newly allocated adBuffer containing a
- *         copy of `p` or `NULL` if the adBuffer cannot be allocated
+ * @param size Size in bytes of the buffer copied
+ * @return Pointer to a newly allocated buffer containing a
+ *         copy of `p` or `NULL` if the buffer cannot be allocated
  */
 void *av_memdup(const void *p, size_t size);
 
 /**
  * Overlapping memcpy() implementation.
  *
- * @param dst  Destination adBuffer
+ * @param dst  Destination buffer
  * @param back Number of bytes back to start copying (i.e. the initial size of
  *             the overlapping window); must be > 0
  * @param cnt  Number of bytes to copy; must be >= 0
@@ -528,7 +528,7 @@ void av_dynarray_add(void *tab_ptr, int *nb_ptr, void *elem);
  *
  * Function has the same functionality as av_dynarray_add(),
  * but it doesn't free memory on fails. It returns error code
- * instead and leave current adBuffer untouched.
+ * instead and leave current buffer untouched.
  *
  * @return >=0 on success, negative otherwise
  * @see av_dynarray_add(), av_dynarray2_add()

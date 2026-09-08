@@ -1,12 +1,12 @@
-prefix=/Volumes/PSSD/work/github/ffmpeg-mac
+prefix=/Volumes/pssd/work/github/FFmpeg-9.0.1/out-macos-static
 exec_prefix=${prefix}
-libdir=/Volumes/PSSD/work/github/ffmpeg-mac/lib
-includedir=/Volumes/PSSD/work/github/ffmpeg-mac/include
+libdir=/Volumes/pssd/work/github/FFmpeg-9.0.1/out-macos-static/lib
+includedir=/Volumes/pssd/work/github/FFmpeg-9.0.1/out-macos-static/include
 
 Name: libswresample
 Description: FFmpeg audio resampling library
-Version: 5.1.100
-Requires: libavutil >= 59.8.100
+Version: 7.1.101
+Requires: libavutil >= 61.1.101
 Requires.private: 
 Conflicts:
 Libs: -L${libdir}  -lswresample -lm
