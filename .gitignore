@@ -1,4 +1,4 @@
-build
+/build/
 build_*.log
 build_*.txt
 __pycache__

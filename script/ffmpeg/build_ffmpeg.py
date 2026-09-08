@@ -1,159 +1,156 @@
 import os
 import subprocess
+import sys
 
-# 用来记录流程，实际不可用，类似伪代码
+# FFmpeg 9.x 双渠道 + 裁剪构建脚本 (Windows/MSYS2)
+#
+# flavor:
+#   gpl         AGPL 渠道, 全量内置编解码 + libx264/libx265 (无 nonfree; nonfree 产物任何渠道不可分发)
+#   lgpl        商业渠道兜底, 全量内置编解码, 无 GPL 组件
+#   minsize     商业渠道推荐, 白名单: 只编 avox 实际用到的协议/封装/编解码 (≈92MB -> ~15MB)
+#   minsize-gpl AGPL 渠道白名单版 (minsize + libx264/libx265)
+#
+# 环境变量:
+#   MSYS2_INSTALL_DIR  MSYS2 根目录 (默认 C:\msys64)
+#   FFMPEG_PREFIX      安装树绝对路径 (默认 ../build/windows/ffmpeg-<flavor>)
+#
+# 用法 (在 FFmpeg 源码目录里跑):
+#   python build_ffmpeg.py --flavor minsize
+#   python build_ffmpeg.py --verify <dll或目录>   # 扫描 configure 串, GPL/Nonfree 标记即报错
 
-# 假设 MSYS2 安装在 C:\msys64 目录下，根据实际情况修改
-MSYS2_INSTALL_DIR = "C:\\msys64"
-
-# 构建 pacman.exe 的完整路径
-pacman_path = os.path.join(MSYS2_INSTALL_DIR, "usr", "bin", "pacman.exe")
-# 构建 bash.exe 的完整路径
+MSYS2_INSTALL_DIR = os.environ.get("MSYS2_INSTALL_DIR", "C:\\msys64")
+# subprocess 参数列表直传 (os.system 经 cmd /c 会剥离引号, 可执行路径带正斜杠时直接炸)
 bash_path = os.path.join(MSYS2_INSTALL_DIR, "usr", "bin", "bash.exe")
-# 构建 mingw32-make.exe 的完整路径
-make_path = os.path.join(MSYS2_INSTALL_DIR, "mingw64", "bin", "mingw32-make.exe")
-# 构建 mingw64.exe 的完整路径
-mingw64_path = os.path.join(MSYS2_INSTALL_DIR, "mingw64.exe")
+
+GPL_MARKS = (
+    b"--enable-gpl", b"--enable-nonfree",
+    b"--enable-libx264", b"--enable-libx265",
+    b"--enable-libfdk-aac",
+)
+
+# ---- 公共配置 ----
+# 硬解加速全保留 (dxva/d3d11va/d3d12va/vulkan 只是调系统 API, 与 GPL 无关);
+# 裁剪项均为 avox 源码零使用 (avdevice/avfilter/swscale/postproc 无调用, exe 不随 SDK 分发)
+COMMON_OPTIONS = [
+    "--disable-static",
+    "--enable-shared",
+    "--enable-version3",
+    "--disable-programs",
+    "--disable-doc",
+    "--disable-avdevice",
+    "--disable-avfilter",
+    "--disable-swscale",
+    "--disable-iconv",
+    "--disable-lzma",
+    "--disable-bzlib",         # 9.0 选项名: bzlib (旧称 bz2 已失效)
+    "--disable-sdl2",
+    "--disable-x86asm",        # 免装 nasm; 追求极致解码性能可去掉
+    "--enable-zlib",           # http gzip + matroska 压缩轨
+    "--enable-schannel",       # https/tls/rtmps 走 Windows 自带 TLS
+]
+# 注: FFmpeg 9.0 已删除 postproc 库, 勿加 --disable-postproc
+
+# ---- 白名单 (minsize): 对齐 avox 源码实际映射面 ----
+MINIMUM_DECODERS = "h264,hevc,aac,mp3,opus,ac3,pcm_alaw,pcm_mulaw,pcm_s16le,pcm_s24le"
+MINIMUM_ENCODERS = "h264_mf,hevc_mf,aac"   # 商业渠道; h264_mf/hevc_mf 为系统自带 MFT
+MINIMUM_PARSERS = "h264,hevc,aac,mp3,opus,ac3,mpegaudio"
+MINIMUM_BSF = "h264_mp4toannexb,hevc_mp4toannexb,aac_adtstoasc,extract_extradata"
+# 直播/点播/文件: rtmp 系 + rtsp 系 + http(s) 系 + hls(crypto=AES 解密) + file
+# 后续需要 SRT: 装 libsrt + --enable-libsrt --enable-protocol=srt
+MINIMUM_PROTOCOLS = "file,http,https,tcp,udp,rtp,rtmp,rtmps,rtsp,tls,srtp,crypto,data,pipe"
+MINIMUM_DEMUXERS = "mov,matroska,flv,live_flv,mpegts,hls,avi,asf,aac,mp3,ogg,wav,rtsp,sdp,ac3"
+MINIMUM_MUXERS = "mp4,mov,flv,mpegts,matroska,adts"
+
+FLAVORS = ("gpl", "lgpl", "minsize", "minsize-gpl")
 
 
-def is_software_repository_up_to_date():
-    """
-    检查软件库是否为最新
-    """
-    check_command = f"{pacman_path} -Qu"
-    # 执行检查命令，若返回值为 0 则表示有可更新的软件包，否则表示软件库是最新的
-    return os.system(check_command)!= 0
+def build_options(flavor):
+    opts = list(COMMON_OPTIONS)
+    if flavor.startswith("minsize"):
+        encoders = MINIMUM_ENCODERS
+        if flavor == "minsize-gpl":
+            # AGPL 白名单版: libx264/libx265 编码器需随 GPL 库显式开启
+            encoders += ",libx264,libx265"
+        opts += [
+            "--disable-everything",
+            f"--enable-protocol={MINIMUM_PROTOCOLS}",
+            f"--enable-demuxer={MINIMUM_DEMUXERS}",
+            f"--enable-muxer={MINIMUM_MUXERS}",
+            f"--enable-decoder={MINIMUM_DECODERS}",
+            f"--enable-encoder={encoders}",
+            f"--enable-parser={MINIMUM_PARSERS}",
+            f"--enable-bsf={MINIMUM_BSF}",
+        ]
+    if flavor in ("gpl", "minsize-gpl"):
+        opts += ["--enable-gpl", "--enable-libx264", "--enable-libx265"]
+    return opts
 
-def update_software_repository():
-    """
-    更新软件库数据（如果不是最新的）
-    """
-    if not is_software_repository_up_to_date():
-        print("软件库已是最新，无需更新。")
-        return
-    command = f"{pacman_path} -Sy"
-    # 执行命令并记录输出和错误信息
-    execute_command(command)
 
-def is_package_installed(package_name):
-    """
-    检查指定的软件包是否已安装
-    """
-    check_command = f"{pacman_path} -Qs {package_name}"
-    return os.system(check_command) == 0
+def flavor_channel(flavor):
+    return "AGPL" if flavor in ("gpl", "minsize-gpl") else "LGPL"
 
-def install_required_packages():
-    """
-    安装开发工具包、yasm 或 nasm、pkg-config 和 zlib（如果未安装）
-    """
-    # 安装开发工具包（如果未安装）
-    if not is_package_installed("base-devel"):
-        install_command = f"{pacman_path} -S base-devel"
-        execute_command(install_command)
+
+def configure_and_build(flavor, jobs):
+    prefix = os.environ.get(
+        "FFMPEG_PREFIX", os.path.join("..", "build", "windows", f"ffmpeg-{flavor}"))
+    src_cwd = os.getcwd().replace("\\", "/")
+    options = " ".join(build_options(flavor))
+    script = (f'export PATH=/mingw64/bin:/usr/bin:$PATH; '
+              f'cd "{src_cwd}" && ./configure --prefix="{prefix}" {options} '
+              f'&& make -j{jobs} && make install -j{jobs}')
+    print(f"[{flavor}/{flavor_channel(flavor)}] configure+make, prefix={prefix}")
+    result = subprocess.run([bash_path, "-lc", script])
+    if result.returncode != 0:
+        print(f"构建失败 (exit {result.returncode})")
+        sys.exit(result.returncode)
+    print(f"ffmpeg-{flavor} 构建完成, 安装树: {prefix}")
+    print(f"渠道校验: python {os.path.basename(__file__)} --verify \"{prefix}/bin\"")
+
+
+def verify_dist(path):
+    """扫描 dll/exe 内嵌 configure 串, 出现 GPL/Nonfree 标记即失败"""
+    targets = []
+    if os.path.isfile(path):
+        targets.append(path)
     else:
-        print("base-devel 已安装，无需安装。")
-
-    # 检查并安装 yasm 或 nasm（如果未安装）
-    if not is_package_installed("yasm"):
-        install_command = f"{pacman_path} -S yasm"
-        execute_command(install_command)
-    else:
-        print("yasm 已安装，无需安装。")
-
-    if not is_package_installed("nasm"):
-        install_command = f"{pacman_path} -S nasm"
-        execute_command(install_command)
-    else:
-        print("nasm 已安装，无需安装。")
-
-    # 检查并安装 pkg-config 和 zlib（如果未安装）
-    if not is_package_installed("pkg-config"):
-        install_command = f"{pacman_path} -S pkg-config"
-        execute_command(install_command)
-    else:
-        print("pkg-config 已安装，无需安装。")
-
-    if not is_package_installed("zlib"):
-        install_command = f"{pacman_path} -S zlib"
-        execute_command(install_command)
-    else:
-        print("zlib 已安装，无需安装。")
-
-def execute_command(command):
-    """
-    在当前环境中执行命令并记录输出和错误信息到日志文件
-    """
-    try:
-        # 执行命令
-        result = os.system(command)
-        # 根据命令执行结果判断是否成功
-        if result!= 0:
-            print(f"Command '{command}' failed with exit code {result}.")
-            # 记录错误信息到日志文件（如果需要）
-            # with open(log_file, "a") as log:
-            #     log.write(f"Command '{command}' failed with exit code {result}.\n")
-            sys.exit(1)
-    except Exception as e:
-        print(f"Error running command '{command}': {e}")
-        # 记录异常信息到日志文件（如果需要）
-        # with open(log_file, "a") as log:
-        #     log.write(f"Error running command '{command}': {e}\n")
+        for name in sorted(os.listdir(path)):
+            if name.lower().endswith((".dll", ".exe")):
+                targets.append(os.path.join(path, name))
+    bad = False
+    for target in targets:
+        with open(target, "rb") as f:
+            blob = f.read()
+        hits = [mark.decode() for mark in GPL_MARKS if mark in blob]
+        if hits:
+            bad = True
+            print(f"❌ {os.path.basename(target)}: {', '.join(hits)}")
+        else:
+            print(f"✅ {os.path.basename(target)}")
+    if bad:
+        print("发现 GPL/Nonfree 标记: 该产物不可进商业(LGPL)渠道")
         sys.exit(1)
+    print("verify 通过")
 
-def configure_ffmpeg():
-    """
-    配置 FFmpeg
-    """
-    ffmpeg_build_dir = "../../build/windows/ffmpeg"
-    ffmpeg_configure_options = [
-        "--disable-static",
-        "--enable-shared",
-        "--enable-version3",
-        "--disable-ffplay",
-        "--enable-ffmpeg",
-        "--disable-x86asm"
-    ]
-    # 构建完整的 configure 命令
-    configure_command = [bash_path, "./configure", f"--prefix={ffmpeg_build_dir}"] + ffmpeg_configure_options
-    try:
-        # 使用 subprocess.run 执行命令
-        result = subprocess.run(configure_command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        # 打印输出和错误信息（如果需要）
-        print(result.stdout)
-        print(result.stderr)
-    except subprocess.CalledProcessError as cpe:
-        print(f"Command execution failed with exit code {cpe.returncode}")
-        print(cpe.stderr)
-
-def compile_ffmpeg():
-    """
-    编译 FFmpeg
-    """
-    # 构建完整的 make 命令
-    compile_command = f"{make_path} -j4"
-    # 执行命令并记录输出和错误信息
-    execute_command(compile_command)
-
-def install_ffmpeg():
-    """
-    安装 FFmpeg
-    """
-    # 构建完整的 make install 命令
-    install_command = f"{make_path} install -j4"
-    # 执行命令并记录输出和错误信息
-    execute_command(install_command)
 
 def main():
-    # 更新软件库数据（如果不是最新的）
-    update_software_repository()
-    # 安装所需的软件包（如果未安装）
-    install_required_packages()
-    # 配置 FFmpeg
-    # configure_ffmpeg()
-    # 编译 FFmpeg
-    compile_ffmpeg()
-    # 安装 FFmpeg
-    install_ffmpeg()
+    args = sys.argv[1:]
+    if args and args[0] == "--verify":
+        if len(args) < 2:
+            print("用法: python build_ffmpeg.py --verify <dll或目录>")
+            sys.exit(2)
+        verify_dist(args[1])
+        return
+    flavor = "minsize"
+    for i, a in enumerate(args):
+        if a == "--flavor" and i + 1 < len(args):
+            flavor = args[i + 1]
+        elif a.startswith("--flavor="):
+            flavor = a.split("=", 1)[1]
+    if flavor not in FLAVORS:
+        print(f"未知 flavor: {flavor} (可选: {'/'.join(FLAVORS)})")
+        sys.exit(2)
+    configure_and_build(flavor, jobs=os.cpu_count() or 4)
+
 
 if __name__ == "__main__":
     main()
