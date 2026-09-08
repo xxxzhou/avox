@@ -6,7 +6,7 @@
 #include "../../../src/avox/AvoxLog.h"
 #include "../../../src/avox/AvoxPlayer.h"
 #include "../../../src/avox_agent/AgentExport.h"
-// avox_webrtc 已迁 plugins/avox_webrtc; IRtcPlayer/ISdpAgentOb/createWebRtcPlayer/createZlTestSdpAgent
+// avox_webrtc 已迁 plugins/avox_webrtc; IRtcPlayer/IRtcEventOb/createWebRtcPlayer/createZlTestSdpAgent
 // addRtcPlayerOb/removeRtcPlayerOb 均由 avox/AvoxPlayer.h 导出(AVOX_EXPORT), 已由上方 #include 覆盖
 
 namespace avox {
@@ -14,7 +14,7 @@ namespace avox {
 extern "C" {
 // JS 侧只需传入一个 observer 对象
 IMediaPlayerOb* createJsMediaPlayerOb(Napi::Value observer);
-ISdpAgentOb* createJsSdpAgentOb(Napi::Value observer);
+IRtcEventOb* createJsRtcEventOb(Napi::Value observer);
 ILogOb* createJsLogOb(Napi::Value observer);
 ISurfaceRenderOb* createJsSurfaceRenderOb(Napi::Value observer);
 IRecorderOb* createJsRecorderOb(Napi::Value observer);

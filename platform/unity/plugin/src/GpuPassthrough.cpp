@@ -101,11 +101,16 @@ wrappedEnumerateDeviceExtensionProperties(VkPhysicalDevice phys, const char* lay
                                           uint32_t* pCount, VkExtensionProperties* props) {
   const VkResult r = s_RealEnumDevs(phys, layer, pCount, props);
   if (layer && layer[0]) return r;  // 只往实现层扩展列表追加
-  if (!props || !pCount || (r != VK_SUCCESS && r != VK_INCOMPLETE)) return r;
+  if (!pCount || (r != VK_SUCCESS && r != VK_INCOMPLETE)) return r;
+  // 计数查询: +1 预留追加位 (上层按此分配缓冲)
+  if (!props) {
+    if (r == VK_SUCCESS && *pCount < 4096u) ++(*pCount);
+    return r;
+  }
   for (uint32_t i = 0; i < *pCount; ++i) {
     if (!strcmp(props[i].extensionName, kAhbExtName)) return r;
   }
-  // 计数查询先 +1 预留, 拉取时补写 (两侧配对, 上层缓冲按 +1 分配)
+  // 拉取查询: 末尾补写追加项 (与计数查询配对)
   if (r == VK_SUCCESS && *pCount < 4096u) {
     snprintf(props[*pCount].extensionName, sizeof(props[*pCount].extensionName), "%s", kAhbExtName);
     props[*pCount].specVersion = 1;

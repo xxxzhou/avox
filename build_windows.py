@@ -8,21 +8,21 @@ import build_common
 build_common.AVOX_TARGET_SYSTEM = "windows"
 # 指定架构（x64/x86）
 build_common.AVOX_TARGET_ARCH = "x64"
-# 为true会从cmake重新构建
-build_common.AVOX_FORCE_REBUILD = False
+# 为true会从cmake重新构建; 环境变量可覆盖(与android/mac/ios一致), 默认False增量构建
+build_common.AVOX_FORCE_REBUILD = os.environ.get("AVOX_FORCE_REBUILD", "False") == "True"
 # "Release" or "Debug" "RelWithDebInfo" - 优先使用环境变量
 build_common.AVOX_BUILD_TYPE = os.environ.get("AVOX_BUILD_TYPE", "Release")
 # 默认全部启用, CMake 各 plugin 的 find_package 找不到库会自动跳过
 # 环境变量 AVOX_CMAKE_ARGS 透传额外 cmake 参数 (如 -DAVOX_ENABLE_OPENVINO=ON -DAVOX_ENABLE_SWIG=OFF)
 AVOX_CMAKE_ARGS = os.environ.get("AVOX_CMAKE_ARGS", "")
-# 发行渠道: agpl(默认,GPL软编libx264/libx265可用) / commercial(LGPL,Windows软编走h264_mf)
-# 命令行 --flavor=commercial 或环境变量 AVOX_DIST_FLAVOR 指定
-DIST_FLAVOR = os.environ.get("AVOX_DIST_FLAVOR", "")
+# 发行渠道: commercial(默认,可商用LGPL渠道,Windows软编走h264_mf) / agpl(GPL软编libx264/libx265可用)
+# 命令行 --flavor= 或环境变量 AVOX_DIST_FLAVOR 指定
+DIST_FLAVOR = os.environ.get("AVOX_DIST_FLAVOR", "commercial")
 for _arg in sys.argv[1:]:
     if _arg.startswith("--flavor="):
         DIST_FLAVOR = _arg.split("=", 1)[1]
 if DIST_FLAVOR not in ("agpl", "commercial"):
-    DIST_FLAVOR = "agpl"
+    DIST_FLAVOR = "commercial"
 # 运行时库配置
 if build_common.AVOX_BUILD_TYPE == "Debug":
     runtime_lib = "MultiThreadedDebug"
@@ -52,8 +52,7 @@ def check_module_g2o():
 
 if __name__ == "__main__":
     print(f"dist flavor: {DIST_FLAVOR}")
-    if DIST_FLAVOR == "commercial":
-        AVOX_CMAKE_ARGS = f"{AVOX_CMAKE_ARGS} -DAVOX_DIST_FLAVOR={DIST_FLAVOR}"
+    AVOX_CMAKE_ARGS = f"{AVOX_CMAKE_ARGS} -DAVOX_DIST_FLAVOR={DIST_FLAVOR}"
     # module可以只编译一次，有改动再编译
     if not build_common.check_module_zlmediakit():
         build_common.build_module("zlmediakit",False,ZL_CMAKE_ARGS)

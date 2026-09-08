@@ -45,18 +45,33 @@ namespace AvoxCommon
         }
 
         /// <summary>
-        /// 设置 SDP 代理
+        /// 挂 RTC 事件观察者 (IRtcEventOb: 本地SDP/ICE/连接状态/首帧/DataChannel)
         /// </summary>
-        public void SetSdpAgentOb(ISdpAgentOb ob)
+        public void AddRtcEventOb(IRtcEventOb ob)
         {
             try
             {
-                rtcPlayer?.setSdpAgentOb(ob);
-                AvoxWrapper.logMsg(LogLevel.info, "设置 SDP 代理成功");
+                rtcPlayer?.addOb(ob);
+                AvoxWrapper.logMsg(LogLevel.info, "挂 RTC 事件观察者成功");
             }
             catch (Exception ex)
             {
-                AvoxWrapper.logMsg(LogLevel.error, $"设置 SDP 代理失败: {ex.Message}");
+                AvoxWrapper.logMsg(LogLevel.error, $"挂 RTC 事件观察者失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 摘 RTC 事件观察者
+        /// </summary>
+        public void RemoveRtcEventOb(IRtcEventOb ob)
+        {
+            try
+            {
+                rtcPlayer?.removeOb(ob);
+            }
+            catch (Exception ex)
+            {
+                AvoxWrapper.logMsg(LogLevel.error, $"摘 RTC 事件观察者失败: {ex.Message}");
             }
         }
 
@@ -214,7 +229,7 @@ namespace AvoxCommon
         }
 
         /// <summary>
-        /// 实现 ISdpAgentOb 的 onLocalSdp
+        /// IRtcEventOb 的 onLocalSdp (本类未实现该接口, 仅供子类覆用)
         /// </summary>
         public virtual void onLocalSdp(string localSdp)
         {
@@ -222,7 +237,7 @@ namespace AvoxCommon
         }
 
         /// <summary>
-        /// 实现 ISdpAgentOb 的 onIceCandidate
+        /// IRtcEventOb 的 onIceCandidate (本类未实现该接口, 仅供子类覆用)
         /// </summary>
         public virtual void onIceCandidate(string candidate, string mid, int mlineIndex)
         {

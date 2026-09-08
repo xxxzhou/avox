@@ -31,7 +31,7 @@ void VideoStream::setVideoDesc(const VTrackDesc& desc_) {
     return;
   }
   // 根据播放器设置选择解码器
-  size_t sIndex = 0;
+  size_t sIndex = encodes.size();
   const char* sName = getDefaultEncoderName(desc.codecId, bHardEncoder);
   // 查找解码器
   for (size_t i = 0; i < encodes.size(); ++i) {
@@ -39,6 +39,12 @@ void VideoStream::setVideoDesc(const VTrackDesc& desc_) {
       sIndex = i;
       break;
     }
+  }
+  if (sIndex == encodes.size()) {
+    // 按名未命中回退首个注册编码器(如默认硬编名未注册时), 漂移必须可见
+    LOGFLF(LogLevel::warn, "not find encoder by name:", sName,
+           " fallback:", encodes[0].desc.name);
+    sIndex = 0;
   }
   auto& vEncode = encodes[sIndex];
   // 初始化解码器

@@ -20,14 +20,14 @@ build_common.AVOX_BUILD_TYPE = os.environ.get("AVOX_BUILD_TYPE", "Release")
 onlyMake = False
 # 安卓默认编译目录不带BuildType,因为改了BuildType这个值要设true
 force_build = False
-# 发行渠道: agpl(默认,GPL软编libx264/libx265可用) / commercial(LGPL,FF软编兜底落原生硬编)
-# 命令行 --flavor=commercial 或环境变量 AVOX_DIST_FLAVOR 指定
-DIST_FLAVOR = os.environ.get("AVOX_DIST_FLAVOR", "")
+# 发行渠道: commercial(默认,可商用LGPL渠道,FF软编兜底落原生硬编) / agpl(GPL软编libx264/libx265可用)
+# 命令行 --flavor= 或环境变量 AVOX_DIST_FLAVOR 指定
+DIST_FLAVOR = os.environ.get("AVOX_DIST_FLAVOR", "commercial")
 for _arg in sys.argv[1:]:
     if _arg.startswith("--flavor="):
         DIST_FLAVOR = _arg.split("=", 1)[1]
 if DIST_FLAVOR not in ("agpl", "commercial"):
-    DIST_FLAVOR = "agpl"
+    DIST_FLAVOR = "commercial"
 
 # OpenSSL for Android (HTTPS/WSS/WebRTC DTLS) - 静态链接，避免额外打包 .so
 OPENSSL_DIR = build_common.find_openssl("android")
@@ -71,7 +71,7 @@ if __name__ == "__main__":
     godot_flag = "OFF" if os.environ.get("AVOX_GODOT_ANDROID", "1") == "0" else "ON"
     unity_flag = "OFF" if os.environ.get("AVOX_UNITY_ANDROID", "1") == "0" else "ON"
     sherpa_flag = os.environ.get("AVOX_ENABLE_SHERPA", "ON")
-    flavor_args = f" -DAVOX_DIST_FLAVOR={DIST_FLAVOR}" if DIST_FLAVOR == "commercial" else ""
+    flavor_args = f" -DAVOX_DIST_FLAVOR={DIST_FLAVOR}"
     extra_args = ("-DAVOX_ENABLE_AGENT=ON -DAVOX_ENABLE_CLI=OFF "
                   f"-DAVOX_ENABLE_GODOT={godot_flag} -DAVOX_ENABLE_UNITY={unity_flag} "
                   f"-DAVOX_ENABLE_SHERPA={sherpa_flag} "

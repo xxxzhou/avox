@@ -3,7 +3,7 @@
 
 import AvoxWrapper as _pw
 from avox._core import _CallbackBridge, PlayerState, IoPlan, _sourceInfoToDict
-from avox._observer import _DefaultPlayerOb, _DefaultSdpAgentOb
+from avox._observer import _DefaultPlayerOb, _DefaultRtcEventOb
 from avox.video import ISurfaceRender
 from avox.audio import IAudioRender
 from avox.muxer import IMediaMuxer
@@ -316,14 +316,14 @@ class ISourcePlayer(BasePlayer):
 class IRtcPlayer(BasePlayer):
     """WebRTC 播放器封装。
 
-    额外 Observer: ISdpAgentOb (onLocalSdp, onIceCandidate)
+    额外 Observer: IRtcEventOb (onConnectionState/onFirstVideoFrame/onDataChannelMsg/onLocalSdp/onIceCandidate)
     快捷: onLocalSdp(cb) / onIceCandidate(cb)
     """
 
     def __init__(self):
         super().__init__()
         self._native = _pw.createWebRtcPlayer()
-        self._sdpOb = None
+        self._rtcOb = None
         self._remoteSurfaceRender = None
         self._localSurfaceRender = None
         self._remoteAudioRender = None
@@ -337,22 +337,27 @@ class IRtcPlayer(BasePlayer):
 
     # ── SDP Observer (快捷模式) ──
 
-    def _ensureSdpObserver(self):
-        if self._sdpOb is None:
-            self._sdpOb = _DefaultSdpAgentOb(self)
-            self._sdpOb.__disown__()
-            self._observers.append(self._sdpOb)
-            self._native.setSdpAgentOb(self._sdpOb)
+    def _ensureRtcEventOb(self):
+        if self._rtcOb is None:
+            self._rtcOb = _DefaultRtcEventOb(self)
+            self._rtcOb.__disown__()
+            self._observers.append(self._rtcOb)
+            self._native.addOb(self._rtcOb)
 
     def onLocalSdp(self, callback):
         """注册本地 SDP 回调: onLocalSdp(localSdp)"""
-        self._ensureSdpObserver()
+        self._ensureRtcEventOb()
         return self._on('onLocalSdp', callback)
 
     def onIceCandidate(self, callback):
         """注册 ICE 候选回调: onIceCandidate(candidate, mid, mlineIndex)"""
-        self._ensureSdpObserver()
+        self._ensureRtcEventOb()
         return self._on('onIceCandidate', callback)
+
+    def onConnectionState(self, callback):
+        """注册连接状态回调: onConnectionState(state)"""
+        self._ensureRtcEventOb()
+        return self._on('onConnectionState', callback)
 
     # ── 直接代理 ──
 
@@ -436,7 +441,7 @@ class IRtcPlayer(BasePlayer):
         if self._closed:
             return
         self._cleanupObservers()
-        self._sdpOb = None
+        self._rtcOb = None
         if self._native:
             self._native.close()
         self._native = None

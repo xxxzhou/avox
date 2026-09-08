@@ -322,6 +322,10 @@ AudioDesc RtcParse::getLocalAudioDesc() {
 }
 
 void RtcParse::close() {
+  // 清掉捕获外部this的回调(重开路径cmdOpen会重设), 防close后信令线程触达已亡对象
+  localSdpCb = nullptr;
+  iceCb = nullptr;
+  dataChannelMsgCb = nullptr;
   {
     std::lock_guard<std::mutex> lock(sdpMtx);
     localSdp = "";

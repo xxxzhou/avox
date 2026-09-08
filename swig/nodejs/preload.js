@@ -348,12 +348,21 @@ class JsSurfaceRenderOb {
   }
 }
 
-// JsSdpAgentOb 类 - 处理 WebRTC SDP 相关回调（基于 ISdpAgentOb 接口）
-class JsSdpAgentOb {
+// JsRtcEventOb 类 - 处理 WebRTC 事件回调（基于 IRtcEventOb 接口）
+class JsRtcEventOb {
   constructor(player) {
     this.player = player;
   }
-  // ISdpAgentOb 接口方法
+  // IRtcEventOb 接口方法
+  onConnectionState(state) {
+    this.player.handleConnectionState(state);
+  }
+  onFirstVideoFrame() {
+    this.player.triggerCallbacks('onFirstVideoFrame');
+  }
+  onDataChannelMsg(data, size) {
+    this.player.handleDataChannelMsg(data, size);
+  }
   onLocalSdp(sdp) {
     this.player.handleLocalSdp(sdp);
   }
@@ -642,9 +651,9 @@ class WebRtcPlayer extends BasePlayer {
     this.jsWinOb = new JsSurfaceRenderOb(this);
     this.winOb = avox.createJsSurfaceRenderOb(this.jsWinOb);
     avox.addSurfaceRenderOb(this.winRender.nativeSurfaceRender, this.winOb);
-    const jsSdpAgentOb = new JsSdpAgentOb(this);
-    this.sdpAgentOb = avox.createJsSdpAgentOb(jsSdpAgentOb);
-    this.nplayer.setSdpAgentOb(this.sdpAgentOb);
+    const jsRtcEventOb = new JsRtcEventOb(this);
+    this.rtcEventOb = avox.createJsRtcEventOb(jsRtcEventOb);
+    this.nplayer.addOb(this.rtcEventOb);
   }
   setRollType(answer) {
     let rollType = avox.RtcRollType_offer;
@@ -653,6 +662,12 @@ class WebRtcPlayer extends BasePlayer {
     }
     avox.logMsg(0, `createWebRtcPlayer: ${rollType}`);
     this.nplayer.setRollType(rollType);
+  }
+  handleConnectionState(state) {
+    this.triggerCallbacks('onConnectionState', state);
+  }
+  handleDataChannelMsg(data, size) {
+    this.triggerCallbacks('onDataChannelMsg', data, size);
   }
   handleLocalSdp(sdp) {
     avox.logMsg(0, `jsob sdp local sdp: ${sdp}`);
@@ -664,9 +679,9 @@ class WebRtcPlayer extends BasePlayer {
     this.triggerCallbacks('onIceCandidate', candidate, mid, lineIndex);
   }
   destroy() {
-    if (this.sdpAgentOb) {
-      this.nplayer.setSdpAgentOb(null);
-      this.sdpAgentOb = null;
+    if (this.rtcEventOb) {
+      this.nplayer.removeOb(this.rtcEventOb);
+      this.rtcEventOb = null;
     }
     if (this.winOb) {
       // 复用 create 时绑定的同一个 ISurfaceRender(IRtcPlayer 无 getSurfaceRender)

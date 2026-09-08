@@ -58,20 +58,37 @@ $llvmStrip = Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022\*\VC\T
 if ($llvmStrip -and $llvmAr) {
   $libIn = "$BUILD_DIR\obj\webrtc.lib"
   $libOut = "$BUILD_DIR\obj\webrtc_nosym.lib"
-  & $llvmStrip.FullName --strip-debug $libIn -o $libOut
-  $asmMembers = @(& $llvmAr.FullName t $libIn | Select-String "boringssl_asm" | ForEach-Object { $_.Line })
-  if ($asmMembers.Count -gt 0) {
-    $tmpDir = Join-Path $env:TEMP "webrtc_nosym_asm"
-    if (Test-Path $tmpDir) { Remove-Item -Recurse -Force $tmpDir }
-    New-Item -ItemType Directory -Path $tmpDir | Out-Null
-    Push-Location $tmpDir
-    foreach ($m in $asmMembers) { & $llvmAr.FullName x $libIn (Split-Path $m -Leaf) }
-    & $llvmAr.FullName d $libOut $asmMembers
-    & $llvmAr.FullName rc $libOut (Get-ChildItem *.o | ForEach-Object { $_.Name })
-    & $llvmAr.FullName s $libOut
-    Pop-Location
-    Remove-Item -Recurse -Force $tmpDir
+  $tmpDir = Join-Path $env:TEMP "webrtc_nosym_asm"
+  # 半成品防护: 任一步失败删掉libOut再退出, 防坏库被FindWebRTC的nosym优先链入
+  function Fail-Nosym([string]$msg) {
+    Write-Host "Error: $msg"
+    if (Test-Path $tmpDir) { Pop-Location -ErrorAction SilentlyContinue; Remove-Item -Recurse -Force $tmpDir }
+    if (Test-Path $libOut) { Remove-Item -Force $libOut }
+    exit 1
   }
+  & $llvmStrip.FullName --strip-debug $libIn -o $libOut
+  if ($LASTEXITCODE -ne 0) { Fail-Nosym "llvm-strip failed, error code: $LASTEXITCODE" }
+  $asmMembers = @(& $llvmAr.FullName t $libIn | Select-String "boringssl_asm" | ForEach-Object { $_.Line })
+  if ($LASTEXITCODE -ne 0) { Fail-Nosym "llvm-ar t failed, error code: $LASTEXITCODE" }
+  if ($asmMembers.Count -eq 0) {
+    # 无回插对象 = 剥坏的asm符号留在库里必然LNK2019, 宁可不产出nosym
+    Fail-Nosym "no boringssl_asm members matched, nosym lib would be broken, skip"
+  }
+  if (Test-Path $tmpDir) { Remove-Item -Recurse -Force $tmpDir }
+  New-Item -ItemType Directory -Path $tmpDir | Out-Null
+  Push-Location $tmpDir
+  foreach ($m in $asmMembers) {
+    & $llvmAr.FullName x $libIn (Split-Path $m -Leaf)
+    if ($LASTEXITCODE -ne 0) { Fail-Nosym "llvm-ar x $m failed, error code: $LASTEXITCODE" }
+  }
+  & $llvmAr.FullName d $libOut $asmMembers
+  if ($LASTEXITCODE -ne 0) { Fail-Nosym "llvm-ar d failed, error code: $LASTEXITCODE" }
+  & $llvmAr.FullName rc $libOut (Get-ChildItem *.o | ForEach-Object { $_.Name })
+  if ($LASTEXITCODE -ne 0) { Fail-Nosym "llvm-ar rc failed, error code: $LASTEXITCODE" }
+  & $llvmAr.FullName s $libOut
+  if ($LASTEXITCODE -ne 0) { Fail-Nosym "llvm-ar s failed, error code: $LASTEXITCODE" }
+  Pop-Location
+  Remove-Item -Recurse -Force $tmpDir
   Write-Host "Static library(带符号): $BUILD_DIR\obj\webrtc.lib"
   Write-Host "Static library(无符号): $BUILD_DIR\obj\webrtc_nosym.lib"
   Write-Host "拷贝到SDK依赖目录: cp obj\webrtc*.lib <avc_library>\build\windows\release\"

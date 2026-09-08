@@ -5,7 +5,7 @@ import androidx.fragment.app.FragmentActivity;
 import avox.android.library.JNIHelper;
 import avox.android.library.swig.AvoxWrapper;
 import avox.android.library.swig.IRtcPlayer;
-import avox.android.library.swig.ISdpAgentOb;
+import avox.android.library.swig.IRtcEventOb;
 import avox.android.library.swig.RtcRollType;
 import avox.android.library.wrapper.VideoRender;
 
@@ -71,10 +71,10 @@ public class RtcActivity extends FragmentActivity implements View.OnClickListene
                 String uri = pullUri + "/index/api/webrtc?app=live&stream=test&type=play";
                 Log.d(TAG, "Opening RTC connection with URI: " + uri);
 
-                // 创建并设置SDP Agent
-                ISdpAgentOb sdpAgent = AvoxWrapper.createZlTestSdpAgent(rtcPlayer, uri);
+                // 创建并挂载SDP Agent
+                IRtcEventOb sdpAgent = AvoxWrapper.createZlTestSdpAgent(rtcPlayer, uri);
                 if (sdpAgent != null) {
-                    rtcPlayer.setSdpAgentOb(sdpAgent);
+                    rtcPlayer.addOb(sdpAgent);
                     Log.d(TAG, "SDP Agent created and set");
                 } else {
                     Log.e(TAG, "Failed to create SDP Agent");

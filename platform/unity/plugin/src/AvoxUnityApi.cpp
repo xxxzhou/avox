@@ -280,7 +280,8 @@ AVOX_UNITY_API int32_t avoxSourceGetFrameInfo(avox_source_t source, int32_t* w, 
 // Android 不编译 (核心 WEBRTC=OFF); C# DllImport 惰性解析, 不调用不报错
 
 AVOX_UNITY_API avox_player_t avoxRtcCreate(void) {
-  static std::atomic<uint32_t> nextRtcId{1};
+  // id段错开(player1+/source5001+/rtc10001+): 三级查找共用id空间, 重号会抢答纹理回调
+  static std::atomic<uint32_t> nextRtcId{10001};
   return new RtcPlayerBridge(nextRtcId.fetch_add(1));
 }
 

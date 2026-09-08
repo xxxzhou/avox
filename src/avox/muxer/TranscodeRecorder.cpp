@@ -88,7 +88,7 @@ bool TranscodeRecorder::open(const char* url, const char* file) {
   inputUrl = url;
   outputFile = file ? file : "";
   bNoOutput = outputFile.empty();
-  // hard开关经onOptionChange在set时同步,未设置保持默认false
+  // hard开关经onOptionChange在set时同步, 未设置保持默认true(平台原生硬编)
   LOGFLF(LogLevel::info, "rec.hard.decode:", bHardDecode,
          " rec.hard.encode:", bHardEncode);
   // 解码源

@@ -80,16 +80,44 @@ def get_build_path(target_name):
     # print("构建目录:"+build_dir)
     return build_dir
 
+def _cached_dist_flavor(cmake_cache):
+    """读CMakeCache里生效的AVOX_DIST_FLAVOR(无条目视为agpl, flavor机制引入前的旧缓存语义)"""
+    try:
+        with open(cmake_cache, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if line.startswith("AVOX_DIST_FLAVOR:STRING="):
+                    return line.split("=", 1)[1].strip()
+    except OSError:
+        pass
+    return "agpl"
+
+def _requested_dist_flavor(build_args):
+    """从本次cmake参数解析请求的发行渠道(未传为默认commercial, 可商用渠道)"""
+    for arg in (build_args.split() if isinstance(build_args, str) else (build_args or [])):
+        if arg.startswith("-DAVOX_DIST_FLAVOR="):
+            return arg.split("=", 1)[1].strip()
+    return "commercial"
+
 def build_module(module_name, bOnlyMake=False,build_args="",bself=False):
     """
     构建一个模块，使用CMake进行配置和编译。
-    """ 
+    """
     # 获取当前要生成的平台名
-    target_system = get_current_target()    
+    target_system = get_current_target()
     # 获取构建路径
     build_dir = os.path.join(get_build_path(target_system),module_name)
     # 新增CMake缓存检测
-    cmake_cache = os.path.join(build_dir, "CMakeCache.txt")    
+    cmake_cache = os.path.join(build_dir, "CMakeCache.txt")
+    # 渠道变更强制重配置: 已有cache会跳过configure, 新-flavor参数被忽略静默按旧渠道出包
+    if not AVOX_FORCE_REBUILD and os.path.exists(cmake_cache):
+        cached_flavor = _cached_dist_flavor(cmake_cache)
+        requested_flavor = _requested_dist_flavor(build_args)
+        if cached_flavor != requested_flavor:
+            print(f"发行渠道变更: {cached_flavor} -> {requested_flavor}, 删除缓存强制重配置")
+            try:
+                os.remove(cmake_cache)
+            except Exception as e:
+                print(f"删除 CMake 缓存文件时发生错误: {e}")
     # 强制重建构建，删除 CMakeCache.txt 文件
     if AVOX_FORCE_REBUILD and os.path.exists(cmake_cache):
         print(f"强制删除 CMake 缓存文件: {cmake_cache}")
@@ -138,6 +166,8 @@ def build_module(module_name, bOnlyMake=False,build_args="",bself=False):
             return False
     else:
         print(f"检测到已有CMake配置，跳过生成步骤")
+        # 打印cache里实际生效的渠道, 避免误以为本次参数已注入
+        print(f"生效发行渠道: {_cached_dist_flavor(cmake_cache)} (来自CMakeCache)")
     if bOnlyMake:
         return True
 

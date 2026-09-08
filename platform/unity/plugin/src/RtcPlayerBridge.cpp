@@ -115,8 +115,13 @@ void RtcPlayerBridge::createPlayer() {
 
 void RtcPlayerBridge::destroyPlayer() {
   if (!player) return;
-  // 先解绑纹理桥接, 再关播放器 (解绑需要 surface render 仍有效)
+  // 先解绑纹理桥接与信令观察者, 再关播放器 (解绑需要 surface render 仍有效)
   unbindSurface();
+  if (sdpAgent) {
+    player->removeOb(sdpAgent);
+    delete sdpAgent;
+    sdpAgent = nullptr;
+  }
   player->close();
   avox::removeRtcPlayerOb(player, this);
   // createWebRtcPlayer() 是裸 new, delete 是唯一释放路径 (基类析构 virtual)

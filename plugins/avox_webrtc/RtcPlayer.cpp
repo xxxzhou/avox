@@ -21,7 +21,10 @@ RtcPlayer::RtcPlayer() {
 
 RtcPlayer::~RtcPlayer() {
   LOGFLF(LogLevel::info, "destroy rtc player");
+  // 先停线程防命令并发, 再同步关源: close只入队, 拖到成员析构会与webrtc帧回调UAF
   stopTask();
+  source->setObserver(nullptr);
+  cmdClose();
 }
 
 VTrackDesc RtcSourceInfo::getVideoDesc(int32_t index) {

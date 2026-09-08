@@ -48,13 +48,19 @@ class _DefaultRecorderOb(_pw.IRecorderOb):
     def onComplete(self):
         self._owner._emit('onComplete')
 
-# ─── _DefaultSdpAgentOb ─────────────────────────────────
-# ISdpAgentOb → onLocalSdp/onIceCandidate
+# ─── _DefaultRtcEventOb ─────────────────────────────────
+# IRtcEventOb → onConnectionState/onFirstVideoFrame/onDataChannelMsg/onLocalSdp/onIceCandidate
 
-class _DefaultSdpAgentOb(_pw.ISdpAgentOb):
+class _DefaultRtcEventOb(_pw.IRtcEventOb):
     def __init__(self, owner):
-        _pw.ISdpAgentOb.__init__(self)
+        _pw.IRtcEventOb.__init__(self)
         self._owner = owner
+    def onConnectionState(self, state):
+        self._owner._emit('onConnectionState', state)
+    def onFirstVideoFrame(self):
+        self._owner._emit('onFirstVideoFrame')
+    def onDataChannelMsg(self, data, size):
+        self._owner._emit('onDataChannelMsg', data, size)
     def onLocalSdp(self, localSdp):
         self._owner._emit('onLocalSdp', localSdp)
     def onIceCandidate(self, candidate, mid, mlineIndex):

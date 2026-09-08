@@ -7,11 +7,8 @@
 
 namespace godot {
 
-// ── avox 观察者: 只继承 IRtcPlayerOb (它本身派生自 IMediaPlayerOb, 状态回调一并携带;
-//    同时再继承 IMediaPlayerOb 会成菱形继承 → 转 IMediaPlayerOb* 二义)
-// 信令事件(onLocalSdp/onIceCandidate)也从这来, GDScript 侧监听信号自行交换
-// addRtcPlayerOb 对 IRtcPlayerOb 实例自动双注册, 一次注册状态/信令/rtc 回调都收
-// avox 线程回调 → call_deferred 转主线程发信号 (同 MediaPlayer 模式)
+// ── avox 观察者: IMediaPlayerOb + IRtcEventOb 双继承(相互独立, addRtcPlayerOb 自动双注册)
+// 信令事件(onLocalSdp/onIceCandidate)也从这来; avox 线程回调 → call_deferred 转主线程发信号
 class RtcPlayerOb : public avox::IMediaPlayerOb, public avox::IRtcEventOb {
 public:
     RtcPlayer *owner = nullptr;

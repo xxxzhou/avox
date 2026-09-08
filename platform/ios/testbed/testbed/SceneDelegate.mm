@@ -71,8 +71,8 @@ using namespace avox;
       rp->setRollType(RtcRollType::offer);
       const char* url =
           "http://192.168.68.244/index/api/webrtc?app=live&stream=test&type=play";
-    ISdpAgentOb*  sdpOb = avox::createZlTestSdpAgent(rp, url);
-      rp->setSdpAgentOb(sdpOb);
+    IRtcEventOb*  sdpOb = avox::createZlTestSdpAgent(rp, url);
+      rp->addOb(sdpOb);
     if (metalLayer) {
       void *surface = (__bridge void *)(metalLayer);
       rp->getRemoteSurfaceRender()->setSurface(surface);

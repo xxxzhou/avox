@@ -4,7 +4,7 @@
     "sources": [
       "files/commonJAVASCRIPT_wrap.cxx",
       "nativeOb/JsMediaPlayerOb.cpp",
-      "nativeOb/JsSdpAgentOb.cpp",
+      "nativeOb/JsRtcEventOb.cpp",
       "nativeOb/JsLogOb.cpp",
       "nativeOb/JsSurfaceRenderOb.cpp",
       "nativeOb/JsRecorderOb.cpp",

@@ -15,6 +15,8 @@ namespace AvoxControls.RtcPlayer
     {
         private AvoxCommon.RtcPlayer player;
         private RtcSdpAgentOb sdpAgentOb;
+        // 内置信令agent(ZLM HTTP自动交换, 拉/推流Open时创建; addOb挂载, 换agent先摘旧的)
+        private IRtcEventOb sdpAgent;
         private RtcRollType rollType = RtcRollType.offer;
         private string localSdp = "";
         private string remoteSdp = "";
@@ -42,7 +44,7 @@ namespace AvoxControls.RtcPlayer
         {
             player = new AvoxCommon.RtcPlayer();
             sdpAgentOb = new RtcSdpAgentOb(this);
-            player.SetSdpAgentOb(sdpAgentOb);
+            player.AddRtcEventOb(sdpAgentOb);
 
             // 创建 SSE 客户端
             sseClient = new SSEClient(this);
@@ -94,11 +96,11 @@ namespace AvoxControls.RtcPlayer
                         // 拉流逻辑（参考 webrtcplaytest.cpp）
                         if (!string.IsNullOrWhiteSpace(pullUri))
                         {
-                            // 创建并设置 SDP Agent
-                            var sdpAgent = AvoxWrapper.createZlTestSdpAgent(player.Player, pullUri);
-                            if (sdpAgent != null)
+                            // 创建内置信令 Agent（ZLM HTTP 自动交换）
+                            var agent = AvoxWrapper.createZlTestSdpAgent(player.Player, pullUri);
+                            if (agent != null)
                             {
-                                player.SetSdpAgentOb(sdpAgent);
+                                ReplaceSdpAgent(agent);
                                 AvoxWrapper.logMsg(LogLevel.info, $"拉流 SDP Agent 创建成功: {pullUri}");
                             }
                         }
@@ -108,11 +110,11 @@ namespace AvoxControls.RtcPlayer
                         // 推流逻辑（参考 webrtcpull.cpp）
                         if (!string.IsNullOrWhiteSpace(pushUri))
                         {
-                            // 创建并设置 SDP Agent
-                            var sdpAgent = AvoxWrapper.createZlTestSdpAgent(player.Player, pushUri);
-                            if (sdpAgent != null)
+                            // 创建内置信令 Agent（ZLM HTTP 自动交换）
+                            var agent = AvoxWrapper.createZlTestSdpAgent(player.Player, pushUri);
+                            if (agent != null)
                             {
-                                player.SetSdpAgentOb(sdpAgent);
+                                ReplaceSdpAgent(agent);
                                 AvoxWrapper.logMsg(LogLevel.info, $"推流 SDP Agent 创建成功: {pushUri}");
                             }
                         }
@@ -241,6 +243,20 @@ namespace AvoxControls.RtcPlayer
         internal void RaiseIceCandidate(string candidate, string mid, int mlineIndex)
         {
             OnIceCandidate?.Invoke(candidate, mid, mlineIndex);
+        }
+
+        /// <summary>
+        /// 替换内置信令 Agent (先摘旧 agent, 防观察者列表堆积)
+        /// </summary>
+        private void ReplaceSdpAgent(IRtcEventOb ob)
+        {
+            if (sdpAgent != null)
+            {
+                player.RemoveRtcEventOb(sdpAgent);
+                sdpAgent.Dispose();
+            }
+            sdpAgent = ob;
+            player.AddRtcEventOb(ob);
         }
 
         /// <summary>
@@ -450,6 +466,17 @@ namespace AvoxControls.RtcPlayer
             PullModel?.Dispose();
             PushModel?.Dispose();
 
+            if (sdpAgent != null)
+            {
+                player?.RemoveRtcEventOb(sdpAgent);
+                sdpAgent.Dispose();
+                sdpAgent = null;
+            }
+            if (player != null && sdpAgentOb != null)
+            {
+                player.RemoveRtcEventOb(sdpAgentOb);
+            }
+
             if (sseClient != null)
             {
                 sseClient.Dispose();
@@ -465,9 +492,9 @@ namespace AvoxControls.RtcPlayer
     }
 
     /// <summary>
-    /// SDP 代理观察者实现
+    /// RTC 事件观察者实现 (自定义SSE信令: 本地SDP/ICE经此转发信令服务器)
     /// </summary>
-    public class RtcSdpAgentOb : ISdpAgentOb
+    public class RtcSdpAgentOb : IRtcEventOb
     {
         private RtcPlayerController controller;
 

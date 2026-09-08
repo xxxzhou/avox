@@ -106,7 +106,7 @@ class RtcPlayerBridge : public avox::IMediaPlayerOb,
   bool allocCpuFrame(uint32_t w, uint32_t h, uint32_t bpp, void** texData);
 
  private:
-  // ── avox::IRtcPlayerOb (avox 线程; 只继承 IRtcPlayerOb, 状态回调一并携带) ──
+  // ── avox::IMediaPlayerOb (avox 线程, 状态回调) ──
   void onStateChange(avox::PlayerState preState, avox::PlayerState state) override;
   void onReady() override;
   void onIoError(avox::AVError error, const char* msg) override;

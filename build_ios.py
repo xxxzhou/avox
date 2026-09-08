@@ -28,14 +28,14 @@ FDK_AAC_CMAKE_ARGS = "-DBUILD_SHARED_LIBS=OFF -DCMAKE_DEBUG_POSTFIX="
 SHERPA_CMAKE_ARGS = "-DSHERPA_ONNX_ENABLE_C_API=ON -DBUILD_SHARED_LIBS=OFF -DSHERPA_ONNX_ENABLE_TESTS=OFF -DSHERPA_ONNX_ENABLE_EXAMPLES=OFF -DSHERPA_ONNX_ENABLE_PYTHON=OFF -DSHERPA_ONNX_ENABLE_BINARY=OFF"
 # sentencepiece - 分词库，静态链接
 SPM_CMAKE_ARGS = "-DBUILD_SHARED_LIBS=OFF -DBUILD_TESTING=OFF -DCMAKE_MACOSX_BUNDLE=OFF"
-# 发行渠道: agpl(默认,GPL软编libx264/libx265可用) / commercial(LGPL,FF软编兜底按平台注入)
-# 命令行 --flavor=commercial 或环境变量 AVOX_DIST_FLAVOR 指定
-DIST_FLAVOR = os.environ.get("AVOX_DIST_FLAVOR", "")
+# 发行渠道: commercial(默认,可商用LGPL渠道,FF软编兜底按平台注入) / agpl(GPL软编libx264/libx265可用)
+# 命令行 --flavor= 或环境变量 AVOX_DIST_FLAVOR 指定
+DIST_FLAVOR = os.environ.get("AVOX_DIST_FLAVOR", "commercial")
 for _arg in sys.argv[1:]:
     if _arg.startswith("--flavor="):
         DIST_FLAVOR = _arg.split("=", 1)[1]
 if DIST_FLAVOR not in ("agpl", "commercial"):
-    DIST_FLAVOR = "agpl"
+    DIST_FLAVOR = "commercial"
 
 if __name__ == "__main__":
     print(f"dist flavor: {DIST_FLAVOR}")
@@ -52,6 +52,5 @@ if __name__ == "__main__":
         build_common.build_module("sentencepiece", onlyMake, SPM_CMAKE_ARGS)
     # Agent/Tool 仅 Windows, 其他平台关闭
     extra_args = "-DAVOX_ENABLE_AGENT=OFF -DAVOX_ENABLE_CLI=OFF -DAVOX_ENABLE_SWIG=OFF"
-    if DIST_FLAVOR == "commercial":
-        extra_args = f"{extra_args} -DAVOX_DIST_FLAVOR={DIST_FLAVOR}"
+    extra_args = f"{extra_args} -DAVOX_DIST_FLAVOR={DIST_FLAVOR}"
     build_common.build_self(extra_args)

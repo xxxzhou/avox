@@ -53,6 +53,10 @@ void RawSource::checkTrackReady() {
 void RawSource::updateExpectVideo(bool bExpect) {
   {
     std::lock_guard<std::mutex> lock(avMtx);
+    // 幂等: 期望未变化不重触发trackReady
+    if (bDisableVideo == !bExpect) {
+      return;
+    }
     bDisableVideo = !bExpect;
   }
   checkTrackReady();
@@ -61,12 +65,19 @@ void RawSource::updateExpectVideo(bool bExpect) {
 void RawSource::updateExpectAudio(bool bExpect) {
   {
     std::lock_guard<std::mutex> lock(avMtx);
+    if (bDisableAudio == !bExpect) {
+      return;
+    }
     bDisableAudio = !bExpect;
   }
   checkTrackReady();
 }
 
 void RawSource::onTrackOpen() {
+  // 幂等: 已ready后重协商再触发trackReady不重复派发onReady(观察者重入会重开muxer)
+  if (bReady) {
+    return;
+  }
   bReady = true;
   dispatch(&IRawSourceOb::onReady);
 }

@@ -30,14 +30,14 @@ SHERPA_CMAKE_ARGS = "-DSHERPA_ONNX_ENABLE_C_API=ON -DBUILD_SHARED_LIBS=OFF -DSHE
 SPM_CMAKE_ARGS = "-DBUILD_SHARED_LIBS=OFF -DBUILD_TESTING=OFF -DCMAKE_MACOSX_BUNDLE=OFF"
 # 环境变量 AVOX_CMAKE_ARGS 透传额外 cmake 参数 (同 build_windows.py)
 AVOX_CMAKE_ARGS = os.environ.get("AVOX_CMAKE_ARGS", "")
-# 发行渠道: agpl(默认,GPL软编libx264/libx265可用) / commercial(LGPL,FF软编兜底按平台注入)
-# 命令行 --flavor=commercial 或环境变量 AVOX_DIST_FLAVOR 指定
-DIST_FLAVOR = os.environ.get("AVOX_DIST_FLAVOR", "")
+# 发行渠道: commercial(默认,可商用LGPL渠道,FF软编兜底按平台注入) / agpl(GPL软编libx264/libx265可用)
+# 命令行 --flavor= 或环境变量 AVOX_DIST_FLAVOR 指定
+DIST_FLAVOR = os.environ.get("AVOX_DIST_FLAVOR", "commercial")
 for _arg in sys.argv[1:]:
     if _arg.startswith("--flavor="):
         DIST_FLAVOR = _arg.split("=", 1)[1]
 if DIST_FLAVOR not in ("agpl", "commercial"):
-    DIST_FLAVOR = "agpl"
+    DIST_FLAVOR = "commercial"
 
 if __name__ == "__main__":
     print(f"dist flavor: {DIST_FLAVOR}")
@@ -56,6 +56,5 @@ if __name__ == "__main__":
     extra_args = "-DAVOX_ENABLE_AGENT=OFF -DAVOX_ENABLE_CLI=OFF -DAVOX_ENABLE_SWIG=OFF"
     if AVOX_CMAKE_ARGS:
         extra_args = f"{extra_args} {AVOX_CMAKE_ARGS}"
-    if DIST_FLAVOR == "commercial":
-        extra_args = f"{extra_args} -DAVOX_DIST_FLAVOR={DIST_FLAVOR}"
+    extra_args = f"{extra_args} -DAVOX_DIST_FLAVOR={DIST_FLAVOR}"
     build_common.build_self(extra_args)

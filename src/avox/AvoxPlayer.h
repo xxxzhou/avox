@@ -321,7 +321,7 @@ class IRtcPlayer {
   virtual void reconnect() = 0;
 
  public:
-  // ============ SDP/ICE(未用setSignalChannel时手工驱动) ============
+  // ============ SDP/ICE(自定义信令时手工驱动, 内置信令走createZlTestSdpAgent) ============
   // 得到本地SDP(返回内部缓冲, close后失效, 信令线程会覆盖)
   virtual const char* getLocalSdp() = 0;
   // 设置远端SDP
