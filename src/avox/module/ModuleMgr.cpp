@@ -129,6 +129,8 @@ void ModuleMgr::registerModule(const char* name, loadModuleHandle handle) {
   // 文件名按平台推导(逻辑名与文件名分离, 不再混用)
 #ifdef WIN32
   moduleInfo->fileName = std::string(name) + ".dll";
+#elif defined(__APPLE__)
+  moduleInfo->fileName = "lib" + std::string(name) + ".dylib";
 #else
   moduleInfo->fileName = "lib" + std::string(name) + ".so";
 #endif
@@ -338,7 +340,7 @@ void ModuleMgr::scanPluginsDir() {
     log(LogLevel::info, "discovered plugin: " + modName);
   } while (FindNextFileA(hFind, &fd));
   FindClose(hFind);
-#elif defined(__linux__) || defined(__ANDROID__)
+#elif defined(__linux__) || defined(__ANDROID__) || defined(__APPLE__)
   DIR* dir = opendir(pluginsDir.c_str());
   if (!dir) {
     return;
@@ -346,15 +348,24 @@ void ModuleMgr::scanPluginsDir() {
   struct dirent* ent;
   while ((ent = readdir(dir)) != nullptr) {
     std::string filename = ent->d_name;
-    // libavox_*.so
+    // libavox_*.so (Linux/Android) / libavox_*.dylib (macOS)
     if (filename.rfind("libavox_", 0) != 0) {
       continue;
     }
+#ifdef __APPLE__
+    if (filename.size() < 10 ||
+        filename.substr(filename.size() - 6) != ".dylib") {
+      continue;
+    }
+    // 模块名 = 去 "lib" 前缀 + ".dylib" 后缀
+    std::string modName = filename.substr(3, filename.size() - 3 - 6);
+#else
     if (filename.size() < 7 || filename.substr(filename.size() - 3) != ".so") {
       continue;
     }
     // 模块名 = 去 "lib" 前缀 + ".so" 后缀
     std::string modName = filename.substr(3, filename.size() - 3 - 3);
+#endif
     registerModule(modName.c_str());
     log(LogLevel::info, "discovered plugin: " + modName);
   }

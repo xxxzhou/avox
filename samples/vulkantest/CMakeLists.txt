@@ -32,3 +32,8 @@ endif()
 if(ONLY_LINUX)
     generatetest(linuxtest)
 endif()
+
+# Apple/Linux 无头 WebRTC 拉流测试 (无窗口, 走内置 ZLM 信令, 输出判定行)
+if(APPLE AND AVOX_ENABLE_WEBRTC)
+    generatetest(rtcplayheadless)
+endif()

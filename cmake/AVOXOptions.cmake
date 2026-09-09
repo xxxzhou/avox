@@ -447,18 +447,20 @@ if(APPLE)
     avox_list_append_unique(COMMON_FRAMEWORKS Security CoreFoundation CFNetwork)
   endif()
   if(AVOX_ENABLE_WEBRTC)
-    avox_list_append_unique(COMMON_FRAMEWORKS 
-      Security 
-      CoreFoundation 
-      CFNetwork 
-      AVFoundation 
-      CoreMedia 
-      CoreVideo 
-      AudioToolbox 
-      VideoToolbox 
-      CoreGraphics 
-      GLKit 
-      OpenGLES)
+    avox_list_append_unique(COMMON_FRAMEWORKS
+      Security
+      CoreFoundation
+      CFNetwork
+      AVFoundation
+      CoreMedia
+      CoreVideo
+      AudioToolbox
+      VideoToolbox
+      CoreGraphics)
+    # GLKit/OpenGLES 是 iOS 独有框架, macOS 上不存在(find_library 失败即 FATAL)
+    if(IOS)
+      avox_list_append_unique(COMMON_FRAMEWORKS GLKit OpenGLES)
+    endif()
   endif()
 
   # if(AVOX_ENABLE_FDKAAC)

@@ -53,6 +53,36 @@ cmake --build build/windows --config Release
 3. 首次 Godot 会提示发现新 GDExtension,启用并 **重启编辑器**。
 4. F5 运行 `main.tscn`,视频应显示在 TextureRect。
 
+## 4. WebRTC 拉流 demo (rtc_main)
+
+在 MediaPlayer demo 基础上多一个前提:`bin/plugins/avox_webrtc.dll` 要在位
+(avox 运行期从 `<avox.dll目录>/plugins/` 扫描 WebRTC 动态插件;用 deploy_godot.ps1
+junction 方式部署的,构建输出里自带 plugins/ 目录,无需额外操作)。
+
+1. 把 `demo/rtc_main.gd` 和 `demo/rtc_main.tscn` 复制到 Godot 项目根。
+2. F5 运行 `rtc_main.tscn`,默认拉本机 ZLM 的 `rtsp://…/live/avox264` 对应信令
+   `http://127.0.0.1/index/api/webrtc?app=live&stream=avox264&type=play`;
+   也可命令行传入任意信令地址:`godot --path . res://rtc_main.tscn -- <信令url>`。
+3. 底部状态行依次显示 连接状态 → 出图分辨率 / 错误码。
+
+最小代码就三步(完整见 `rtc_main.gd`):
+
+```gdscript
+var rtc := RtcPlayer.new()
+add_child(rtc)
+rtc.connect_signaling("http://127.0.0.1/index/api/webrtc?app=live&stream=avox264&type=play")
+# 远端画面: rtc.get_texture(), 首帧信号 first_video_frame, 连接状态 connection_state_changed
+```
+
+要点:
+- 纯拉流显式 `rtc.set_video_direction(1)` + `rtc.set_audio_direction(1)` (recvonly,默认 sendrecv)。
+- `connection_state_changed` 收到 `connected`(2) 才是真正连上;首帧等 `first_video_frame`。
+- 自定义信令(自有服务器)不调 `connect_signaling`,改 `open_rtc()` + 监听
+  `local_sdp`/`ice_candidate` 信号自己送出,远端消息用 `set_remote_sdp`/`add_ice_candidate` 回填。
+- 推流方向(摄像头/麦克风上麦)用 `set_roll_type(1)` + 方向设 sendonly,配合长连接信令。
+- 无头回归:`godot --headless --path <项目> -s res://test_rtc.gd -- <信令url>`
+  (脚本在 avox 仓 `platform/godot/tools/test_rtc.gd`,输出统一判定行)。
+
 ## 类名说明
 
 节点类名是 **`MediaPlayer`**(代码里 `GDCLASS(MediaPlayer, Node)`)。
