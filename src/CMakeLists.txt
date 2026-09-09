@@ -98,6 +98,15 @@ if(AVOX_ENABLE_ZLMEDIAKIT)
     add_sub_path(avox_zlmediakit AVOX_HEADER AVOX_SOURCE)
 endif()
 
+# webrtc macOS 静态编入: mac 无成熟的动态插件 dlopen 链路(静态主库+dylib 插件会双份单例),
+# 源码编进 libavox.a, 与 zlmediakit 同机制; Windows 走 plugins/avox_webrtc 动态插件
+if(APPLE AND AVOX_ENABLE_WEBRTC AND WebRTC_FOUND)
+    message(STATUS "webrtc 静态编入 avox (macOS)")
+    add_sub_path(../plugins/avox_webrtc AVOX_HEADER AVOX_SOURCE)
+    add_sub_path(../plugins/avox_webrtc/audio AVOX_HEADER AVOX_SOURCE)
+    add_sub_path(../plugins/avox_webrtc/video AVOX_HEADER AVOX_SOURCE)
+endif()
+
 # faac/fdk-aac可用
 if(AVOX_ENABLE_FAAC OR AVOX_ENABLE_FDKAAC)
     if(NOT AVOX_ENABLE_FAAC)

@@ -19,6 +19,10 @@ if(WIN32)
   # DeckLink(Blackmagic)采集卡, 仅Windows
   list(APPEND PLUGINS_DYNAMIC avox_decklink)
 endif()
+if(APPLE)
+  # avox_webrtc 在 macOS 静态编入 libavox(src/CMakeLists.txt), 不建动态插件
+  list(REMOVE_ITEM PLUGINS_DYNAMIC avox_webrtc)
+endif()
 
 # 动态插件: 各自子目录调用 register_plugin(<name> DYNAMIC ...)
 foreach(_plugin ${PLUGINS_DYNAMIC})

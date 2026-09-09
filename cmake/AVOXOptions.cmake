@@ -461,6 +461,12 @@ if(APPLE)
     if(IOS)
       avox_list_append_unique(COMMON_FRAMEWORKS GLKit OpenGLES)
     endif()
+    # macOS 静态编入: webrtc 库随主库链接。必须排在 ffmpeg 之后 ——
+    # webrtc_nosym 内嵌一整套旧版 FFmpeg(含 avformat_*), 先链会遮蔽新版,
+    # 导致 avox 实际用旧 FFmpeg(RTSP 等协议缺失, 表现为 Protocol not found)
+    if(APPLE AND WebRTC_FOUND)
+      avox_update_cached_list(AVOX_LINK_LIBRARIES ${WEBRTC_LIBRARIES})
+    endif()
   endif()
 
   # if(AVOX_ENABLE_FDKAAC)
