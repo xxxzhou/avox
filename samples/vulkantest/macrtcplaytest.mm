@@ -16,6 +16,8 @@ using namespace avox;
 // 与无头版 rtcplayheadless 的区别只在挂了 getRemoteSurfaceRender()->setSurface,
 // 用于肉眼/截图确认真的出图, 而不只是 onFirstVideoFrame 回调到了。
 // 键位: p 存一帧 PNG, q/关窗退出; 第 3 个参数给存图路径则连上后每 3 秒覆盖存一张。
+// 每 5 秒打一行 fps/loss/rtt 采样, 退出时汇总均值/极值 —— 单点瞬时值会误判
+// (首帧后 fps 还在爬, rtt 统计也没收敛), 长跑采样才能定性。
 
 // 背衬层换成 CAMetalLayer, 供 MetalRender 直接上屏
 @interface AvoxRtcView : NSView
@@ -107,11 +109,22 @@ int main(int argc, char* argv[]) {
     player->open();
     const auto start = std::chrono::steady_clock::now();
     auto lastShot = start;
+    auto lastSample = start;
     bool shotOk = false;
     bool running = true;
     double fps = 0;
     float loss = 0;
     int32_t rtt = -1;
+    // 5 秒一次采样的累计量: 只统计已连上的样本
+    int32_t sampleCount = 0;
+    double fpsSum = 0;
+    double fpsMin = 0;
+    double fpsMax = 0;
+    float lossMax = 0;
+    int64_t rttSum = 0;
+    int32_t rttCount = 0;
+    int32_t rttMin = -1;
+    int32_t rttMax = -1;
     while (running && window.isVisible) {
       @autoreleasepool {
         NSEvent* event =
@@ -138,6 +151,32 @@ int main(int argc, char* argv[]) {
         rtt = player->getRttMs();
       }
       const auto now = std::chrono::steady_clock::now();
+      // 每 5 秒采一次并打点, 供判断 fps 爬升与 rtt 收敛
+      if (ob.connected &&
+          std::chrono::duration_cast<std::chrono::seconds>(now - lastSample)
+                  .count() >= 5) {
+        lastSample = now;
+        const int64_t ts =
+            std::chrono::duration_cast<std::chrono::seconds>(now - start).count();
+        fprintf(stderr, "[rtc] t=%llds fps=%.1f loss=%.2f rtt=%d\n",
+                (long long)ts, fps, loss, rtt);
+        if (sampleCount == 0) {
+          fpsMin = fpsMax = fps;
+        } else {
+          fpsMin = fps < fpsMin ? fps : fpsMin;
+          fpsMax = fps > fpsMax ? fps : fpsMax;
+        }
+        ++sampleCount;
+        fpsSum += fps;
+        lossMax = loss > lossMax ? loss : lossMax;
+        // rtt 未连上/未统计出来是 -1, 不计入均值
+        if (rtt >= 0) {
+          rttSum += rtt;
+          ++rttCount;
+          rttMax = rtt > rttMax ? rtt : rttMax;
+          rttMin = (rttMin < 0 || rtt < rttMin) ? rtt : rttMin;
+        }
+      }
       // 出图后每 3 秒覆盖存一张, 供远程轮询看画面
       if (shotPath && ob.firstFrame && fps > 0 &&
           std::chrono::duration_cast<std::chrono::seconds>(now - lastShot)
@@ -152,10 +191,16 @@ int main(int argc, char* argv[]) {
       }
     }
     const bool pass = ob.connected && ob.firstFrame && fps > 0;
+    const double fpsAvg = sampleCount > 0 ? fpsSum / sampleCount : 0;
+    const int32_t rttAvg = rttCount > 0 ? (int32_t)(rttSum / rttCount) : -1;
     printf("[AVOX][TEST] case=mac-rtc-window result=%s conn=%d firstFrame=%d "
-           "fps=%.1f loss=%.2f rtt=%d shot=%s\n",
+           "fps=%.1f loss=%.2f rtt=%d shot=%s samples=%d fpsAvg=%.1f "
+           "fpsMin=%.1f fpsMax=%.1f lossMax=%.2f rttAvg=%d rttMin=%d "
+           "rttMax=%d\n",
            pass ? "PASS" : "FAIL", ob.connected.load(), ob.firstFrame.load(),
-           fps, loss, rtt, shotPath ? (shotOk ? "ok" : "failed") : "off");
+           fps, loss, rtt, shotPath ? (shotOk ? "ok" : "failed") : "off",
+           sampleCount, fpsAvg, fpsMin, fpsMax, lossMax, rttAvg, rttMin,
+           rttMax);
     player->removeOb(&ob);
     player->removeOb(sdpAgent);
     player->close();
