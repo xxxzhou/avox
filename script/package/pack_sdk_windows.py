@@ -18,7 +18,7 @@ import sdk_common as common
 
 PLATFORM = "windows"
 DEFAULT_SRC = os.path.join(
-    common.project_root(), "build", "windows", "avplay", "install", "AMD64", "Release")
+    common.project_root(), "build", "windows", "avox", "install", "AMD64", "Release")
 # 随 SDK 一起部署的 CLI 工具
 CLI_EXES = ("avox_cli.exe", "avox_agent.exe")
 

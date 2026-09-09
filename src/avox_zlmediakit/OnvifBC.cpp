@@ -155,7 +155,7 @@ BackchannelInfo OnvifBC::detect(const std::string& url, const std::string& user,
                 " RTSP/1.0\r\n"
                 "CSeq: 1\r\n"
                 "Require: www.onvif.org/ver20/backchannel\r\n"
-                "User-Agent: avplay\r\n"
+                "User-Agent: avox\r\n"
                 "Accept: application/sdp\r\n"
                 "\r\n";
   mk_tcp_client_events events = {0};

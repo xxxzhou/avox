@@ -3,7 +3,7 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
     <NoWarn>NU1605;NU1202</NoWarn>
-    <OutputPath>$(MSBuildProjectDirectory)\..\..\..\..\..\build\windows\avplay\install\AMD64\$(Configuration)\</OutputPath>
+    <OutputPath>$(MSBuildProjectDirectory)\..\..\..\..\..\build\windows\avox\install\AMD64\$(Configuration)\</OutputPath>
     <BaseOutputPath>$(OutputPath)</BaseOutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
   </PropertyGroup>

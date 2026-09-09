@@ -12,7 +12,7 @@
 
 - 源码：`plugin/src/`（`godot_init.cpp` 导出入口 `avox_godot_init`）
 - 构建：随 avox 一起（顶层选项 `AVOX_ENABLE_GODOT`，Windows 默认 ON）
-- 产物：`avox_godot.dll` 输出到 avox install 树（`build/windows/avplay/install/AMD64/Release/`）
+- 产物：`avox_godot.dll` 输出到 avox install 树（`build/windows/avox/install/AMD64/Release/`）
 - 部署到任意 Godot 项目：`./plugin/deploy_godot.ps1 -GodotProject <项目>`
   （`.gdextension` + `bin` junction 指向构建输出，免拷贝）
 - 详细说明：[`plugin/README.md`](plugin/README.md)

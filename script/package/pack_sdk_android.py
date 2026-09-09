@@ -21,7 +21,7 @@ PLATFORM = "android"
 def default_src(abi="arm64-v8a"):
     # 默认 install 目录按 CMAKE_SYSTEM_PROCESSOR 命名 (arm64 -> aarch64)
     proc = {"arm64-v8a": "aarch64", "armeabi-v7a": "armv7-a"}.get(abi, abi)
-    return os.path.join(common.project_root(), "build", PLATFORM, "avplay", "install", proc)
+    return os.path.join(common.project_root(), "build", PLATFORM, "avox", "install", proc)
 
 
 def pack(out="", src="", zip_path="", headers=False, abi="arm64-v8a", with_thirdparty=False):

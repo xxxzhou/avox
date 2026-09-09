@@ -27,21 +27,21 @@
 /* Begin PBXFileReference section */
 		2EBA889BCA293C336DA7067B /* Pods-avoxsdk.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-avoxsdk.debug.xcconfig"; path = "Target Support Files/Pods-avoxsdk/Pods-avoxsdk.debug.xcconfig"; sourceTree = "<group>"; };
 		4468BB00263628151C059E51 /* Pods-avoxsdk.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-avoxsdk.release.xcconfig"; path = "Target Support Files/Pods-avoxsdk/Pods-avoxsdk.release.xcconfig"; sourceTree = "<group>"; };
-		E9EA7D722DE477C800A84822 /* libavox.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavox.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libavox.a; sourceTree = "<group>"; };
-		E9EA7F2F2DE5C73200A84822 /* libzltoolkit.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libzltoolkit.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libzltoolkit.a; sourceTree = "<group>"; };
-		E9EA7F302DE5C73200A84822 /* libavutil.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavutil.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libavutil.a; sourceTree = "<group>"; };
-		E9EA7F312DE5C73200A84822 /* libvolk.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libvolk.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libvolk.a; sourceTree = "<group>"; };
-		E9EA7F322DE5C73200A84822 /* libfaad.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libfaad.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libfaad.a; sourceTree = "<group>"; };
-		E9EA7F332DE5C73200A84822 /* libzlmediakit.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libzlmediakit.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libzlmediakit.a; sourceTree = "<group>"; };
-		E9EA7F342DE5C73200A84822 /* libavformat.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavformat.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libavformat.a; sourceTree = "<group>"; };
-		E9EA7F352DE5C73200A84822 /* libSDL3.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libSDL3.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libSDL3.a; sourceTree = "<group>"; };
-		E9EA7F362DE5C73200A84822 /* libmk_api.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libmk_api.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libmk_api.a; sourceTree = "<group>"; };
-		E9EA7F372DE5C73200A84822 /* libswresample.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libswresample.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libswresample.a; sourceTree = "<group>"; };
-		E9EA7F382DE5C73200A84822 /* libmpeg.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libmpeg.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libmpeg.a; sourceTree = "<group>"; };
-		E9EA7F392DE5C73200A84822 /* libmov.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libmov.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libmov.a; sourceTree = "<group>"; };
-		E9EA7F3A2DE5C73200A84822 /* libflv.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libflv.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libflv.a; sourceTree = "<group>"; };
-		E9EA7F3B2DE5C73300A84822 /* libavcodec.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavcodec.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libavcodec.a; sourceTree = "<group>"; };
-		E9EA7F3C2DE5C73300A84822 /* libext-codec.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = "libext-codec.a"; path = "../../../build/ios/avplay/install/aarch64/Debug/libext-codec.a"; sourceTree = "<group>"; };
+		E9EA7D722DE477C800A84822 /* libavox.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavox.a; path = ../../../build/ios/avox/install/aarch64/Debug/libavox.a; sourceTree = "<group>"; };
+		E9EA7F2F2DE5C73200A84822 /* libzltoolkit.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libzltoolkit.a; path = ../../../build/ios/avox/install/aarch64/Debug/libzltoolkit.a; sourceTree = "<group>"; };
+		E9EA7F302DE5C73200A84822 /* libavutil.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavutil.a; path = ../../../build/ios/avox/install/aarch64/Debug/libavutil.a; sourceTree = "<group>"; };
+		E9EA7F312DE5C73200A84822 /* libvolk.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libvolk.a; path = ../../../build/ios/avox/install/aarch64/Debug/libvolk.a; sourceTree = "<group>"; };
+		E9EA7F322DE5C73200A84822 /* libfaad.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libfaad.a; path = ../../../build/ios/avox/install/aarch64/Debug/libfaad.a; sourceTree = "<group>"; };
+		E9EA7F332DE5C73200A84822 /* libzlmediakit.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libzlmediakit.a; path = ../../../build/ios/avox/install/aarch64/Debug/libzlmediakit.a; sourceTree = "<group>"; };
+		E9EA7F342DE5C73200A84822 /* libavformat.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavformat.a; path = ../../../build/ios/avox/install/aarch64/Debug/libavformat.a; sourceTree = "<group>"; };
+		E9EA7F352DE5C73200A84822 /* libSDL3.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libSDL3.a; path = ../../../build/ios/avox/install/aarch64/Debug/libSDL3.a; sourceTree = "<group>"; };
+		E9EA7F362DE5C73200A84822 /* libmk_api.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libmk_api.a; path = ../../../build/ios/avox/install/aarch64/Debug/libmk_api.a; sourceTree = "<group>"; };
+		E9EA7F372DE5C73200A84822 /* libswresample.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libswresample.a; path = ../../../build/ios/avox/install/aarch64/Debug/libswresample.a; sourceTree = "<group>"; };
+		E9EA7F382DE5C73200A84822 /* libmpeg.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libmpeg.a; path = ../../../build/ios/avox/install/aarch64/Debug/libmpeg.a; sourceTree = "<group>"; };
+		E9EA7F392DE5C73200A84822 /* libmov.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libmov.a; path = ../../../build/ios/avox/install/aarch64/Debug/libmov.a; sourceTree = "<group>"; };
+		E9EA7F3A2DE5C73200A84822 /* libflv.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libflv.a; path = ../../../build/ios/avox/install/aarch64/Debug/libflv.a; sourceTree = "<group>"; };
+		E9EA7F3B2DE5C73300A84822 /* libavcodec.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavcodec.a; path = ../../../build/ios/avox/install/aarch64/Debug/libavcodec.a; sourceTree = "<group>"; };
+		E9EA7F3C2DE5C73300A84822 /* libext-codec.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = "libext-codec.a"; path = "../../../build/ios/avox/install/aarch64/Debug/libext-codec.a"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */

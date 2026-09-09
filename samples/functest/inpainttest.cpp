@@ -331,7 +331,7 @@ std::string findDefaultImage() {
     searchPaths.push_back(exeDir.string());
     searchPaths.push_back(exeDir.parent_path().string());
   }
-  searchPaths.push_back("D:/Work/github/avplay");
+  searchPaths.push_back("D:/Work/github/avox");
 #else
   char exePath[1024] = {0};
   ssize_t len = readlink("/proc/self/exe", exePath, sizeof(exePath) - 1);

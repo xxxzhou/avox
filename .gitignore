@@ -104,8 +104,8 @@ yolo26m-seg.pt
 yolo26n-seg.pt
 yolo26n.pt
 dist
-avplay-android-arm64.zip
-avplay-windows-x64.zip
+avox-android-arm64.zip
+avox-windows-x64.zip
 AvaPlayer-windows-x64.zip
 
 script/realesrgan/weights/realesr-general-x4v3.pth

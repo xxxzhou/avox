@@ -34,8 +34,8 @@ TOOLS_PROJECT = SCRIPT_DIR / "tools"          # Godot 项目根 (含 project.god
 
 # avox Release (dll home): Windows 构建输出; bin junction 指向这里
 RELEASE_CANDIDATES = [
-    REPO_ROOT / "build" / "windows" / "avplay" / "install" / "AMD64" / "Release",
-    REPO_ROOT / "build" / "windows" / "avplay" / "install" / "x86_64" / "Release",
+    REPO_ROOT / "build" / "windows" / "avox" / "install" / "AMD64" / "Release",
+    REPO_ROOT / "build" / "windows" / "avox" / "install" / "x86_64" / "Release",
 ]
 
 # 引擎固定候选 (开发机); 另会查 Release 内 pack 过的副本 + PATH
@@ -48,7 +48,6 @@ ENGINE_FIXED_CANDIDATES = [
 TARGETS: dict[str, dict] = {
     "hub":    {"title": "主界面  (hub)", "scene": None},
     "player": {"title": "播放器",        "scene": "res://src/mediaplayer/main.tscn"},
-    "voice":  {"title": "语音输入",      "scene": "res://src/voiceinput/voice_input.tscn"},
 }
 
 
@@ -136,7 +135,7 @@ def preflight(project: Path, release: Path | None) -> list[str]:
     if release is None or not (release / "avox_godot.dll").is_file():
         probs.append(
             "找不到 avox_godot.dll —— 先构建 avox (AVOX_ENABLE_GODOT),\n"
-            "      产物应在 build/windows/avplay/install/AMD64/Release/"
+            "      产物应在 build/windows/avox/install/AMD64/Release/"
         )
     return probs
 

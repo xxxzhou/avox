@@ -8,7 +8,7 @@
 
 .PARAMETER AvoxRelease
   avox 运行时目录 (含 avox.dll + avox_godot.dll + avox_godot.gdextension)。
-  默认 ..\..\..\build\windows\avplay\install\AMD64\Release (avox 根下构建输出)。
+  默认 ..\..\..\build\windows\avox\install\AMD64\Release (avox 根下构建输出)。
 
 .EXAMPLE
   .\deploy_godot.ps1 -GodotProject D:\Work\MyGodotGame
@@ -22,7 +22,7 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 if (-not $AvoxRelease) {
-    $AvoxRelease = Join-Path $ScriptDir "..\..\..\build\windows\avplay\install\AMD64\Release"
+    $AvoxRelease = Join-Path $ScriptDir "..\..\..\build\windows\avox\install\AMD64\Release"
 }
 
 if (-not (Test-Path "$GodotProject\project.godot")) {

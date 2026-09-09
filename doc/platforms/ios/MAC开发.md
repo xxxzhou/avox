@@ -31,7 +31,7 @@ B添加Podfile文件,添加对A模块的路径。
 ## 清理重新安装POD
 
 1. 进入 testbed 目录
-cd /Volumes/PSSD/work/github/avplay/platform/ios/testbed
+cd /Volumes/PSSD/work/github/avox/platform/ios/testbed
 2. 删除 Pods 目录和 Podfile.lock 文件
 rm -rf Pods
 rm Podfile.lock

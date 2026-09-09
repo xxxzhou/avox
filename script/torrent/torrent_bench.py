@@ -26,7 +26,7 @@ import urllib.request
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
-EXE = REPO / "build/windows/avplay/install/AMD64/Release/torrentbench.exe"
+EXE = REPO / "build/windows/avox/install/AMD64/Release/torrentbench.exe"
 OUT_DIR = REPO / "results/torrent_bench"
 LOG_DIR = OUT_DIR / "logs"
 

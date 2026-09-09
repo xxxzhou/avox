@@ -21,9 +21,9 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent.parent.parent
 RELEASE_CANDIDATES = [
-    REPO_ROOT / "build" / "android" / "avplay" / "install" / "aarch64" / "Release",
-    REPO_ROOT / "build" / "android" / "avplay" / "install" / "arm64" / "Release",
-    REPO_ROOT / "build" / "android" / "avplay" / "install" / "aarch64",  # libavox.so 无 CONFIG 层
+    REPO_ROOT / "build" / "android" / "avox" / "install" / "aarch64" / "Release",
+    REPO_ROOT / "build" / "android" / "avox" / "install" / "arm64" / "Release",
+    REPO_ROOT / "build" / "android" / "avox" / "install" / "aarch64",  # libavox.so 无 CONFIG 层
 ]
 
 

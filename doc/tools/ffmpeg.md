@@ -78,7 +78,7 @@ ffmpeg -re -i D:/young-woman.flv -vcodec libx264 -acodec aac -f flv rtmp://127.0
 
 ## 查看当前ffmpeg支持的硬件解码
 
-cd D:\Work\github\avplay\build\windows\ffmpeg\bin
+cd D:\Work\github\avox\build\windows\ffmpeg\bin
 
 ffmpeg -hwaccels
 

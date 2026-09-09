@@ -85,7 +85,7 @@ if(Libtorrent_DIR)
 endif()
 
 # 配套 Boost 头文件(libtorrent 安装头文件里 #include boost/*, 消费者编译需要):
-# 独立放 github 工作区根: <avplay>/../boost (即 D:\Work\github\boost),
+# 独立放 github 工作区根: <avox>/../boost (即 D:\Work\github\boost),
 # 或用环境变量 BOOST_ROOT 指定
 if(Libtorrent_DIR)
     foreach(_lt_boost_cand

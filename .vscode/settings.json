@@ -80,7 +80,7 @@
     "cmake.configureSettings": {
         "CMAKE_BUILD_TYPE": "${buildType}"
     },
-    "cmake.buildDirectory": "${workspaceFolder}/build/windows/avplay",
+    "cmake.buildDirectory": "${workspaceFolder}/build/windows/avox",
     // 调试 avox_cli 必须用集成终端: 默认 Debug Console(internalConsole) 是只读输出, 无法接收
     // 键盘输入; 且其 stdin 是管道(FILE_TYPE_PIPE), 导致 Shell::run() 里 cmdIsInteractive()
     // 返回 false 直接退出、无法进入交互循环。集成终端integratedTerminal提供真实

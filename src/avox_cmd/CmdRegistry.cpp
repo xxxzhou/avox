@@ -47,7 +47,7 @@ static std::string minUniquePrefix(const std::vector<Command>& cmds, size_t idx)
 
 std::string CmdRegistry::helpText() const {
   std::string text;
-  text += "avox_cli - avplay command line tool (v" +
+  text += "avox_cli - avox command line tool (v" +
           std::string(AVOX_COMMIT_VERSION) + ")\n\n";
   text += "Usage: avox_cli <command> [options]\n\n";
   if (!commands.empty()) {

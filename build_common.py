@@ -259,7 +259,7 @@ def build_module(module_name, bOnlyMake=False,build_args="",bself=False):
     return True
  
 def build_self(build_args="",bOnlyMake=False):
-    if not build_module("avplay",bOnlyMake,build_args,True):
+    if not build_module("avox",bOnlyMake,build_args,True):
         sys.exit(1)       
     
 def build_android(cmake_args): 
@@ -524,7 +524,7 @@ def copy_glsl_files():
     # 目标目录路径
     dest_dir = os.path.join(
         script_dir,
-        f"build/windows/avplay/install/AMD64/{AVOX_BUILD_TYPE}/glsl"
+        f"build/windows/avox/install/AMD64/{AVOX_BUILD_TYPE}/glsl"
     )    
     if not os.path.exists(src_dir):
         print(f"⚠️ GLSL源目录不存在: {src_dir}")

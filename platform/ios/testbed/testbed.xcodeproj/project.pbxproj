@@ -56,14 +56,14 @@
 /* Begin PBXContainerItemProxy section */
 		E9DD79752EFE5182006548EA /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = E9EA7ED52DE5A0D300A84822 /* avplay.xcodeproj */;
+			containerPortal = E9EA7ED52DE5A0D300A84822 /* avox.xcodeproj */;
 			proxyType = 2;
 			remoteGlobalIDString = 5EE84A3DB323429395428EEF;
 			remoteInfo = avox;
 		};
 		E9EA7FEA2DE6B54400A84822 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = E9EA7ED52DE5A0D300A84822 /* avplay.xcodeproj */;
+			containerPortal = E9EA7ED52DE5A0D300A84822 /* avox.xcodeproj */;
 			proxyType = 1;
 			remoteGlobalIDString = 9333762AFFD24DC7489249B6;
 			remoteInfo = avox;
@@ -88,24 +88,24 @@
 		E9C6978E2EC1C77300FD9FA4 /* libfdk-aac.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = "libfdk-aac.a"; path = "../../../build/ios/fdk-aac/Debug-iphoneos/libfdk-aac.a"; sourceTree = "<group>"; };
 		E9D930222E38703C006D143A /* IOSurface.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = IOSurface.framework; path = System/Library/Frameworks/IOSurface.framework; sourceTree = SDKROOT; };
 		E9DD79B32EFE51AF006548EA /* libwebrtc.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libwebrtc.a; path = ../../../../../webrtc/build/ios/debug/obj/libwebrtc.a; sourceTree = "<group>"; };
-		E9DD79B82EFE5BF2006548EA /* libSDL3.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libSDL3.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libSDL3.a; sourceTree = "<group>"; };
-		E9DD79B92EFE5BF2006548EA /* libavutil.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavutil.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libavutil.a; sourceTree = "<group>"; };
-		E9DD79BA2EFE5BF2006548EA /* libavformat.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavformat.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libavformat.a; sourceTree = "<group>"; };
-		E9DD79BB2EFE5BF2006548EA /* libmov.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libmov.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libmov.a; sourceTree = "<group>"; };
-		E9DD79BC2EFE5BF2006548EA /* libzlmediakit.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libzlmediakit.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libzlmediakit.a; sourceTree = "<group>"; };
-		E9DD79BD2EFE5BF2006548EA /* libfaad.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libfaad.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libfaad.a; sourceTree = "<group>"; };
-		E9DD79BE2EFE5BF2006548EA /* libfdk-aac.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = "libfdk-aac.a"; path = "../../../build/ios/avplay/install/aarch64/Debug/libfdk-aac.a"; sourceTree = "<group>"; };
-		E9DD79BF2EFE5BF2006548EA /* libmpeg.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libmpeg.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libmpeg.a; sourceTree = "<group>"; };
-		E9DD79C02EFE5BF2006548EA /* libfreetyped.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libfreetyped.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libfreetyped.a; sourceTree = "<group>"; };
-		E9DD79C12EFE5BF2006548EA /* libflv.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libflv.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libflv.a; sourceTree = "<group>"; };
-		E9DD79C22EFE5BF2006548EA /* libext-codec.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = "libext-codec.a"; path = "../../../build/ios/avplay/install/aarch64/Debug/libext-codec.a"; sourceTree = "<group>"; };
-		E9DD79C32EFE5BF2006548EA /* libswresample.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libswresample.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libswresample.a; sourceTree = "<group>"; };
-		E9DD79C42EFE5BF2006548EA /* libzltoolkit.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libzltoolkit.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libzltoolkit.a; sourceTree = "<group>"; };
-		E9DD79C52EFE5BF3006548EA /* libavcodec.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavcodec.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libavcodec.a; sourceTree = "<group>"; };
-		E9DD79C62EFE5BF3006548EA /* libmk_api.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libmk_api.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libmk_api.a; sourceTree = "<group>"; };
-		E9EA7ED52DE5A0D300A84822 /* avplay.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; name = avplay.xcodeproj; path = /Volumes/PSSD/work/github/avplay/build/ios/avplay/avplay.xcodeproj; sourceTree = "<absolute>"; };
-		E9EA7FEC2DE6B5A800A84822 /* libavox.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavox.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libavox.a; sourceTree = "<group>"; };
-		E9EA7FF32DE707DE00A84822 /* libvolk.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libvolk.a; path = ../../../build/ios/avplay/install/aarch64/Debug/libvolk.a; sourceTree = "<group>"; };
+		E9DD79B82EFE5BF2006548EA /* libSDL3.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libSDL3.a; path = ../../../build/ios/avox/install/aarch64/Debug/libSDL3.a; sourceTree = "<group>"; };
+		E9DD79B92EFE5BF2006548EA /* libavutil.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavutil.a; path = ../../../build/ios/avox/install/aarch64/Debug/libavutil.a; sourceTree = "<group>"; };
+		E9DD79BA2EFE5BF2006548EA /* libavformat.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavformat.a; path = ../../../build/ios/avox/install/aarch64/Debug/libavformat.a; sourceTree = "<group>"; };
+		E9DD79BB2EFE5BF2006548EA /* libmov.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libmov.a; path = ../../../build/ios/avox/install/aarch64/Debug/libmov.a; sourceTree = "<group>"; };
+		E9DD79BC2EFE5BF2006548EA /* libzlmediakit.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libzlmediakit.a; path = ../../../build/ios/avox/install/aarch64/Debug/libzlmediakit.a; sourceTree = "<group>"; };
+		E9DD79BD2EFE5BF2006548EA /* libfaad.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libfaad.a; path = ../../../build/ios/avox/install/aarch64/Debug/libfaad.a; sourceTree = "<group>"; };
+		E9DD79BE2EFE5BF2006548EA /* libfdk-aac.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = "libfdk-aac.a"; path = "../../../build/ios/avox/install/aarch64/Debug/libfdk-aac.a"; sourceTree = "<group>"; };
+		E9DD79BF2EFE5BF2006548EA /* libmpeg.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libmpeg.a; path = ../../../build/ios/avox/install/aarch64/Debug/libmpeg.a; sourceTree = "<group>"; };
+		E9DD79C02EFE5BF2006548EA /* libfreetyped.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libfreetyped.a; path = ../../../build/ios/avox/install/aarch64/Debug/libfreetyped.a; sourceTree = "<group>"; };
+		E9DD79C12EFE5BF2006548EA /* libflv.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libflv.a; path = ../../../build/ios/avox/install/aarch64/Debug/libflv.a; sourceTree = "<group>"; };
+		E9DD79C22EFE5BF2006548EA /* libext-codec.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = "libext-codec.a"; path = "../../../build/ios/avox/install/aarch64/Debug/libext-codec.a"; sourceTree = "<group>"; };
+		E9DD79C32EFE5BF2006548EA /* libswresample.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libswresample.a; path = ../../../build/ios/avox/install/aarch64/Debug/libswresample.a; sourceTree = "<group>"; };
+		E9DD79C42EFE5BF2006548EA /* libzltoolkit.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libzltoolkit.a; path = ../../../build/ios/avox/install/aarch64/Debug/libzltoolkit.a; sourceTree = "<group>"; };
+		E9DD79C52EFE5BF3006548EA /* libavcodec.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavcodec.a; path = ../../../build/ios/avox/install/aarch64/Debug/libavcodec.a; sourceTree = "<group>"; };
+		E9DD79C62EFE5BF3006548EA /* libmk_api.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libmk_api.a; path = ../../../build/ios/avox/install/aarch64/Debug/libmk_api.a; sourceTree = "<group>"; };
+		E9EA7ED52DE5A0D300A84822 /* avox.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; name = avox.xcodeproj; path = /Volumes/PSSD/work/github/avox/build/ios/avox/avox.xcodeproj; sourceTree = "<absolute>"; };
+		E9EA7FEC2DE6B5A800A84822 /* libavox.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavox.a; path = ../../../build/ios/avox/install/aarch64/Debug/libavox.a; sourceTree = "<group>"; };
+		E9EA7FF32DE707DE00A84822 /* libvolk.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libvolk.a; path = ../../../build/ios/avox/install/aarch64/Debug/libvolk.a; sourceTree = "<group>"; };
 		E9EA805B2DE70EC500A84822 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
 		E9EA805D2DE70EE400A84822 /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = System/Library/Frameworks/CoreFoundation.framework; sourceTree = SDKROOT; };
 		E9EA805F2DE70EEC00A84822 /* CFNetwork.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CFNetwork.framework; path = System/Library/Frameworks/CFNetwork.framework; sourceTree = SDKROOT; };
@@ -128,7 +128,7 @@
 		E9EA80812DE70F9300A84822 /* libiconv.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libiconv.tbd; path = usr/lib/libiconv.tbd; sourceTree = SDKROOT; };
 		E9EA80832DE70FBE00A84822 /* libz.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libz.tbd; path = usr/lib/libz.tbd; sourceTree = SDKROOT; };
 		E9EA80852DE712DF00A84822 /* testbed.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = testbed.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		E9EA81842DE835AA00A84822 /* MoltenVK.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MoltenVK.framework; path = ../../../build/ios/avplay/install/aarch64/MoltenVK.framework; sourceTree = "<group>"; };
+		E9EA81842DE835AA00A84822 /* MoltenVK.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MoltenVK.framework; path = ../../../build/ios/avox/install/aarch64/MoltenVK.framework; sourceTree = "<group>"; };
 		E9EA81952DEFDC6300A84822 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -212,7 +212,7 @@
 			children = (
 				E9D651BE2DDC689800B57B12 /* testbed */,
 				E9D651BD2DDC689800B57B12 /* Products */,
-				E9EA7ED52DE5A0D300A84822 /* avplay.xcodeproj */,
+				E9EA7ED52DE5A0D300A84822 /* avox.xcodeproj */,
 				E9EA7FE32DE6B1F600A84822 /* Frameworks */,
 			);
 			sourceTree = "<group>";
@@ -337,7 +337,7 @@
 			projectReferences = (
 				{
 					ProductGroup = E9EA7ED82DE5A0D300A84822 /* Products */;
-					ProjectRef = E9EA7ED52DE5A0D300A84822 /* avplay.xcodeproj */;
+					ProjectRef = E9EA7ED52DE5A0D300A84822 /* avox.xcodeproj */;
 				},
 			);
 			projectRoot = "";
@@ -398,8 +398,8 @@
 				DEVELOPMENT_TEAM = Y96Y9F6CFS;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
-					"Volumes/PSSD/work/github/avplay/build/ios/avplay/install/aarch64/**",
-					/Volumes/PSSD/work/github/avplay/build/ios/avplay/install/include,
+					"Volumes/PSSD/work/github/avox/build/ios/avox/install/aarch64/**",
+					/Volumes/PSSD/work/github/avox/build/ios/avox/install/include,
 				);
 				GCC_C_LANGUAGE_STANDARD = c17;
 				GCC_INPUT_FILETYPE = automatic;
@@ -407,7 +407,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = (
 					"$(inherited)",
-					/Volumes/PSSD/work/github/avplay/build/ios/avplay/install/include,
+					/Volumes/PSSD/work/github/avox/build/ios/avox/install/include,
 				);
 				INFOPLIST_FILE = testbed/Info.plist;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -418,12 +418,12 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				LIBRARY_SEARCH_PATHS = (
-					/Volumes/PSSD/work/github/avplay/build/ios/avplay/install/aarch64/Debug,
+					/Volumes/PSSD/work/github/avox/build/ios/avox/install/aarch64/Debug,
 					"$(PROJECT_DIR)/Frameworks",
 					"$(PROJECT_DIR)/lib",
 					"$(PROJECT_DIR)",
 					/Volumes/PSSD/work/webrtc/build/ios/debug/obj,
-					/Volumes/PSSD/work/github/avplay/3rdparty/library/ios/ffmpeg/lib,
+					/Volumes/PSSD/work/github/avox/3rdparty/library/ios/ffmpeg/lib,
 				);
 				MARKETING_VERSION = 1.0;
 				OTHER_LDFLAGS = "-ObjC";
@@ -447,8 +447,8 @@
 				DEVELOPMENT_TEAM = Y96Y9F6CFS;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
-					"Volumes/PSSD/work/github/avplay/build/ios/avplay/install/aarch64/**",
-					/Volumes/PSSD/work/github/avplay/build/ios/avplay/install/include,
+					"Volumes/PSSD/work/github/avox/build/ios/avox/install/aarch64/**",
+					/Volumes/PSSD/work/github/avox/build/ios/avox/install/include,
 				);
 				GCC_C_LANGUAGE_STANDARD = c17;
 				GCC_INPUT_FILETYPE = automatic;
@@ -456,7 +456,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = (
 					"$(inherited)",
-					/Volumes/PSSD/work/github/avplay/build/ios/avplay/install/include,
+					/Volumes/PSSD/work/github/avox/build/ios/avox/install/include,
 				);
 				INFOPLIST_FILE = testbed/Info.plist;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -467,12 +467,12 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				LIBRARY_SEARCH_PATHS = (
-					/Volumes/PSSD/work/github/avplay/build/ios/avplay/install/aarch64/Release,
+					/Volumes/PSSD/work/github/avox/build/ios/avox/install/aarch64/Release,
 					"$(PROJECT_DIR)/Frameworks",
 					"$(PROJECT_DIR)/lib",
 					"$(PROJECT_DIR)",
 					/Volumes/PSSD/work/webrtc/build/ios/release/obj,
-					/Volumes/PSSD/work/github/avplay/3rdparty/library/ios/ffmpeg/lib,
+					/Volumes/PSSD/work/github/avox/3rdparty/library/ios/ffmpeg/lib,
 				);
 				MARKETING_VERSION = 1.0;
 				OTHER_LDFLAGS = "-ObjC";
@@ -523,7 +523,7 @@
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				FRAMEWORK_SEARCH_PATHS = "/Volumes/PSSD/work/github/avplay/build/ios/avplay/install/aarch64/**";
+				FRAMEWORK_SEARCH_PATHS = "/Volumes/PSSD/work/github/avox/build/ios/avox/install/aarch64/**";
 				GCC_C_LANGUAGE_STANDARD = c17;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_INPUT_FILETYPE = automatic;
@@ -583,7 +583,7 @@
 				ENABLE_NS_ASSERTIONS = YES;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				FRAMEWORK_SEARCH_PATHS = "/Volumes/PSSD/work/github/avplay/build/ios/avplay/install/aarch64/**";
+				FRAMEWORK_SEARCH_PATHS = "/Volumes/PSSD/work/github/avox/build/ios/avox/install/aarch64/**";
 				GCC_C_LANGUAGE_STANDARD = c17;
 				GCC_INPUT_FILETYPE = automatic;
 				GCC_NO_COMMON_BLOCKS = YES;

@@ -94,7 +94,7 @@ readelf -Ws build/android/release/libjingle_peerconnection_so.so | grep -E "(FUN
 2. use_custom_libunwind也用false,就会提示ld.lld: error: unable to find library -l:libunwind.a,测试在src/build/config/compiler/BUILD.gn下,添加如下代码可以跑通.
 
 ``` txt
-zhouxin@DESKTOP-1QLM5EA:~/work/github/avplay$ find /opt/android-sdk/ndk -name "libunwind*"
+zhouxin@DESKTOP-1QLM5EA:~/work/github/avox$ find /opt/android-sdk/ndk -name "libunwind*"
 /opt/android-sdk/ndk/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/17/lib/linux/i386/libunwind.a
 /opt/android-sdk/ndk/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/17/lib/linux/riscv64/libunwind.a
 /opt/android-sdk/ndk/android-ndk-r26d/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/17/lib/linux/x86_64/libunwind.a

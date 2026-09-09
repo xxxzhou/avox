@@ -1,6 +1,6 @@
 # AVOX Code Wiki
 
-> 本 Wiki 是本项目（avplay / AVOX）的代码百科，面向希望快速理解源码结构、模块职责、关键类与运行方式的开发者。
+> 本 Wiki 是本项目（avox / AVOX）的代码百科，面向希望快速理解源码结构、模块职责、关键类与运行方式的开发者。
 > 所有内容基于当前仓库源码整理，随代码演进请同步维护。
 
 ## 文档索引
@@ -15,7 +15,7 @@
 
 ## 快速速查
 
-- **项目名**：`avplay`（SDK 库名 `avox`，产物 `avox.dll` / `libavox.so` / `libavox.a`）
+- **项目名**：`avox`（SDK 库名 `avox`，产物 `avox.dll` / `libavox.so` / `libavox.a`）
 - **语言/标准**：C++17/20，RAII，智能指针；`.h`(C 接口) / `.hpp`(C++) / `*Export.h`(公共 API)
 - **命名空间**：`avox`（`namespace avox {` / `}`）
 - **导出宏**：`AVOX_EXPORT`（见 `src/avox/AvoxDef.h`），插件用 `AVOX_PLUGIN_API`

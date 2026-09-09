@@ -4,7 +4,7 @@ const path = require('path');
 const os = require('os');
 
 // 加载 C++ 模块
-const avox = require('../../build/windows/avplay/install/AMD64/Release/avox_js.node');
+const avox = require('../../build/windows/avox/install/AMD64/Release/avox_js.node');
 const { YuvWebGPURender, YuvGLRender, kMaxWebglContexts } = require('./yuvglrender.js');
 
 // ============================================================================
@@ -25,7 +25,7 @@ function userConfigPath(name) {
 function addonDir() {
   try {
     return path.dirname(require.resolve(
-      '../../build/windows/avplay/install/AMD64/Release/avox_js.node'));
+      '../../build/windows/avox/install/AMD64/Release/avox_js.node'));
   } catch (_) { return ''; }
 }
 

@@ -139,7 +139,7 @@ settings_pack baseSessionPack(const TorrentEngine::Config& cfg) {
 }
 
 // 会话状态持久化(DHT路由表): 进程重启免DHT冷bootstrap(实测2~5s)。
-// 存系统temp/avplay_torrent(不随业务cacheDir被清理), 只存dht state——
+// 存系统temp/avox_torrent(不随业务cacheDir被清理), 只存dht state——
 // settings不存(防旧存档覆盖新调优参数, 干扰A/B对比)
 std::string sessionStatePath() {
   std::error_code fec;
@@ -147,7 +147,7 @@ std::string sessionStatePath() {
   if (fec) {
     base = std::filesystem::path(".");
   }
-  base /= "avplay_torrent";
+  base /= "avox_torrent";
   std::error_code cec;
   std::filesystem::create_directories(base, cec);
   return (base / "session.state").generic_string();
@@ -707,7 +707,7 @@ std::string TorrentEngine::cacheBaseDir() const {
     if (fec) {
       base = std::filesystem::path(".");
     }
-    base /= "avplay_torrent";
+    base /= "avox_torrent";
   }
   return base.generic_string();
 }

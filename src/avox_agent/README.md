@@ -207,7 +207,7 @@ assets/agent/skills/<name>/SKILL.md (+ 可选 <name>.py)   # skill 资产
 | `agenttest` | 端到端: 经 C 导出层跑一轮真实模型往返 | 是 |
 
 ```sh
-cd build/windows/avplay/install/AMD64/Release
+cd build/windows/avox/install/AMD64/Release
 ./sessiontest.exe        # 纯不变式, 秒级
 ./agenttest.exe "问题"   # 走 agent.json 的 now 配置
 ```

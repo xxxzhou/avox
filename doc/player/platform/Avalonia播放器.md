@@ -203,7 +203,7 @@ AvoxControls是播放器的具体控制实现,其中渲染窗口需要用到各�
   </ItemGroup>
   <!-- 添加对原生库文件的引用 -->
   <ItemGroup>
-  <AndroidNativeLibrary Include="$(SolutionDir)..\..\..\build\android\avplay\install\aarch64\*.so">
+  <AndroidNativeLibrary Include="$(SolutionDir)..\..\..\build\android\avox\install\aarch64\*.so">
     <Link>lib\arm64-v8a\%(Filename)%(Extension)</Link>
   </AndroidNativeLibrary>
   </ItemGroup>
@@ -297,7 +297,7 @@ public class MainActivity : AvaloniaMainActivity<App>
     <ProvisioningType>manual</ProvisioningType>
 	  <CodeSignKey>Apple Development: (自己的key)</CodeSignKey>   
     <MtouchUseLlvm>false</MtouchUseLlvm> 
-    <CppBuildRoot>/Volumes/PSSD/work/github/avplay/build/ios/avplay/install/aarch64</CppBuildRoot>
+    <CppBuildRoot>/Volumes/PSSD/work/github/avox/build/ios/avox/install/aarch64</CppBuildRoot>
     <WebRTC>/Volumes/PSSD/work/webrtc/build/ios/debug/obj</WebRTC>
     <MtouchNoSymbolStrip>true</MtouchNoSymbolStrip>
     <MtouchExtraArgs>$(MtouchExtraArgs) --registrar:static -gcc_flags "-framework VideoToolbox -framework AVFoundation -framework AudioToolbox -framework CoreMedia -framework CoreVideo -framework CoreGraphics -framework UIKit -framework QuartzCore -framework CoreAudio -framework CoreMotion -framework CoreBluetooth -framework GameController -framework Metal -framework IOSurface -lz -lbz2 -liconv"</MtouchExtraArgs> 

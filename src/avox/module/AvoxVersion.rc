@@ -24,13 +24,13 @@ BEGIN
     BEGIN
         BLOCK "000004b0"
         BEGIN
-            VALUE "CompanyName",      "avplay"
-            VALUE "FileDescription",  "avplay audio/video SDK"
+            VALUE "CompanyName",      "avox"
+            VALUE "FileDescription",  "avox audio/video SDK"
             VALUE "FileVersion",      AVOX_COMMIT_VERSION
             VALUE "InternalName",     "avox"
-            VALUE "LegalCopyright",   "Copyright (C) avplay"
+            VALUE "LegalCopyright",   "Copyright (C) avox"
             VALUE "OriginalFilename", "avox.dll"
-            VALUE "ProductName",      "avplay"
+            VALUE "ProductName",      "avox"
             VALUE "ProductVersion",   AVOX_COMMIT_VERSION
             VALUE "CommitHash",       AVOX_COMMIT_HASH
             VALUE "Branch",           AVOX_BRANCH_NAME

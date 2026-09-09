@@ -38,9 +38,9 @@ C:/Users/admin/AppData/Local/Android/Sdk/ndk/25.0.8775105/toolchains/llvm/prebui
 llvm-readelf --dyn-syms your_library.so
 
 // android avox so 路径
-D:\Work\github\avplay\platform\android\AvoxJava\avox\build\intermediates\library_jni\debug\jni\arm64-v8a
+D:\Work\github\avox\platform\android\AvoxJava\avox\build\intermediates\library_jni\debug\jni\arm64-v8a
 
-D:\Work\github\avplay\platform\android\AvoxJava\avox\build\intermediates\library_jni\debug\jni\arm64-v8a>C:/Users/admin/AppData/Local/Android/Sdk/ndk/25.0.8775105/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-readelf.exe -d libavox.so
+D:\Work\github\avox\platform\android\AvoxJava\avox\build\intermediates\library_jni\debug\jni\arm64-v8a>C:/Users/admin/AppData/Local/Android/Sdk/ndk/25.0.8775105/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-readelf.exe -d libavox.so
 
 ## 查看android手机正在运行的进程
 

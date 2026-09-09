@@ -198,13 +198,13 @@ jobs:
         shell: pwsh
         run: |
           # 单元测试随 build_windows.py 一同构建 (AVOX_BUILD_TESTS=ON), 此处只负责运行
-          ctest --test-dir build/windows/avplay --output-on-failure -C Release
+          ctest --test-dir build/windows/avox --output-on-failure -C Release
 
       - name: Verify C++ SDK (Windows)
         shell: pwsh
         run: |
-          $avoxDll = "build/windows/avplay/install/AMD64/Release/avox.dll"
-          $wrapperDll = "build/windows/avplay/install/AMD64/Release/AvoxWrapper.dll"
+          $avoxDll = "build/windows/avox/install/AMD64/Release/avox.dll"
+          $wrapperDll = "build/windows/avox/install/AMD64/Release/AvoxWrapper.dll"
           if (-not (Test-Path $avoxDll)) {
             Write-Error "avox.dll not found at $avoxDll - C++ build failed"
             exit 1
@@ -255,9 +255,9 @@ jobs:
       - name: Create ZIP
         shell: pwsh
         run: |
-          $src = "build/windows/avplay/install/AMD64/Release"
+          $src = "build/windows/avox/install/AMD64/Release"
           if (Test-Path "$src/avox.dll") {
-            Compress-Archive -Path "$src/*" -DestinationPath "avplay-windows-x64.zip" -Force
+            Compress-Archive -Path "$src/*" -DestinationPath "avox-windows-x64.zip" -Force
           } else {
             Write-Error "Build output not found at $src"
             exit 1
@@ -267,15 +267,15 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.event.release.tag_name }}
-          files: avplay-windows-x64.zip
+          files: avox-windows-x64.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: avplay-windows-x64
-          path: avplay-windows-x64.zip
+          name: avox-windows-x64
+          path: avox-windows-x64.zip
 
   build-android:
     runs-on: ubuntu-22.04
@@ -492,8 +492,8 @@ jobs:
 
       - name: Verify C++ SDK (Android)
         run: |
-          if [ ! -f "build/android/avplay/install/aarch64/libavox.so" ]; then
-            echo "libavox.so not found at build/android/avplay/install/aarch64/libavox.so - C++ build failed"
+          if [ ! -f "build/android/avox/install/aarch64/libavox.so" ]; then
+            echo "libavox.so not found at build/android/avox/install/aarch64/libavox.so - C++ build failed"
             exit 1
           fi
           echo "C++ SDK verified: libavox.so exists"
@@ -544,12 +544,12 @@ jobs:
 
       - name: Create SDK ZIP
         run: |
-          if [ -d "build/android/avplay/install/aarch64" ]; then
-            cd build/android/avplay/install/aarch64
-            zip -r ../../../../../avplay-android-arm64.zip .
+          if [ -d "build/android/avox/install/aarch64" ]; then
+            cd build/android/avox/install/aarch64
+            zip -r ../../../../../avox-android-arm64.zip .
             cd - > /dev/null
           else
-            echo "Build output not found at build/android/avplay/install/aarch64"
+            echo "Build output not found at build/android/avox/install/aarch64"
             exit 1
           fi
 
@@ -557,15 +557,15 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.event.release.tag_name }}
-          files: avplay-android-arm64.zip
+          files: avox-android-arm64.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: avplay-android-arm64
-          path: avplay-android-arm64.zip
+          name: avox-android-arm64
+          path: avox-android-arm64.zip
 
   # 删除Release中自动生成的源码包
   cleanup-release-assets:

@@ -18,7 +18,7 @@
     "node-addon-api": "^8.9.2"
   },
   "build": {
-    "appId": "com.avplay.avox-player",
+    "appId": "com.avox.avox-player",
     "productName": "AVOX Player",
     "directories": {
       "output": "dist"
@@ -33,9 +33,9 @@
       "rtc_test.html",
       "rtc_test.js",
       "rtc_test.css",
-      "../build/windows/avplay/install/AMD64/Release/avox_js.node",
-      "../build/windows/avplay/install/AMD64/Release/*.dll",
-      "../build/windows/avplay/install/AMD64/Release/glsl/**/*"
+      "../build/windows/avox/install/AMD64/Release/avox_js.node",
+      "../build/windows/avox/install/AMD64/Release/*.dll",
+      "../build/windows/avox/install/AMD64/Release/glsl/**/*"
     ],
     "win": {
       "target": [

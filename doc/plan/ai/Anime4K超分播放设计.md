@@ -6,11 +6,11 @@
 
 Anime4K (https://github.com/bloc97/Anime4K) 是一个开源的高性能动漫超分辨率算法，基于纯 GPU Shader (GLSL) 实现，无需神经网络推理，能够在消费级 GPU 上实现 1080p → 4K 的实时超分播放。
 
-avplay 已具备完整的 Vulkan 计算着色器管线 (`VkPipeGraph` → `VkLayer`)，天然支持以新增 Layer 节点的方式插入 Anime4K 后处理，无需改动核心架构。
+avox 已具备完整的 Vulkan 计算着色器管线 (`VkPipeGraph` → `VkLayer`)，天然支持以新增 Layer 节点的方式插入 Anime4K 后处理，无需改动核心架构。
 
 ### 1.2 目标
 
-在 avplay 中集成 Anime4K v4.0 算法，实现动漫/动画类内容的实时超分辨率播放（1080p → 4K，最高支持 4x 放大）。
+在 avox 中集成 Anime4K v4.0 算法，实现动漫/动画类内容的实时超分辨率播放（1080p → 4K，最高支持 4x 放大）。
 
 ### 1.3 核心收益
 
@@ -81,7 +81,7 @@ Anime4K v4.0 的管线由可组合的 Shader 模块构成：
 
 ### 3.1 整体架构
 
-Anime4K 作为 avplay Vulkan 渲染管线中的一个可选后处理阶段，插入在 Resize 之后、Watermark/Lut/Font 之前：
+Anime4K 作为 avox Vulkan 渲染管线中的一个可选后处理阶段，插入在 Resize 之后、Watermark/Lut/Font 之前：
 
 ```
                     现有管线                            新增 (Anime4K)
@@ -95,7 +95,7 @@ Anime4K 作为 avplay Vulkan 渲染管线中的一个可选后处理阶段，插
 
 ### 3.2 VkAnime4KLayer 设计
 
-`VkAnime4KLayer` 继承 `VkGroupLayer`，利用 avplay 的复合 Layer 机制管理内部多个子 Layer。对外暴露 1 in + 1 out (rgba8)，内部管理 Restore CNN、Upscale CNN、Clamp Highlights 等子 Layer 的连接和中间纹理。
+`VkAnime4KLayer` 继承 `VkGroupLayer`，利用 avox 的复合 Layer 机制管理内部多个子 Layer。对外暴露 1 in + 1 out (rgba8)，内部管理 Restore CNN、Upscale CNN、Clamp Highlights 等子 Layer 的连接和中间纹理。
 
 **关键实现要点：**
 
@@ -406,11 +406,11 @@ render->disableAnime4K();
 
 ## 9. 可行性结论
 
-**Anime4K 集成到 avplay 已完成，Phase 1-5 核心实现已验证。**
+**Anime4K 集成到 avox 已完成，Phase 1-5 核心实现已验证。**
 
 核心判断依据：
 
-1. **架构兼容性** — avplay 的 `VkPipeGraph` + `VkLayer` DAG 管线天然支持插入新的后处理节点。`VkGroupLayer` 复合 Layer 机制使得 Anime4K 的多 pass 管线可以封装为单个节点，对外 1 in + 1 out。
+1. **架构兼容性** — avox 的 `VkPipeGraph` + `VkLayer` DAG 管线天然支持插入新的后处理节点。`VkGroupLayer` 复合 Layer 机制使得 Anime4K 的多 pass 管线可以封装为单个节点，对外 1 in + 1 out。
 
 2. **Shader 移植可行** — Anime4K 的 mpv GLSL 片段着色器到 Vulkan Compute Shader 的转换是机械的映射工作，核心算法数学逻辑不变。
 

@@ -242,7 +242,7 @@ std::string SkillRegistry::systemPrompt() const {
   }
   // 回退: 骨架文件不存在时用最小骨架 (保证不崩)。
   if (skeleton.empty()) {
-    skeleton = "你是 avplay 多媒体智能体。\n\n{{能力目录}}\n";
+    skeleton = "你是 avox 多媒体智能体。\n\n{{能力目录}}\n";
   }
 
   // 动态拼能力目录 (替换 {{能力目录}} 占位符)。

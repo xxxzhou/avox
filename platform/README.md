@@ -20,5 +20,5 @@
 
 ## iOS平台
 
-请先用build_ios.py生成build/ios/avplay.xcodeproj,然后用Xcode打开相应platform下的各项目.
+请先用build_ios.py生成build/ios/avox.xcodeproj,然后用Xcode打开相应platform下的各项目.
 

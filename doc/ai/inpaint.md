@@ -117,7 +117,7 @@ pip install ultralytics opencv-python
 
 ```bash
 # 进入项目目录
-cd /mnt/d/Work/github/avplay
+cd /mnt/d/Work/github/avox
 
 # 从头训练
 bash script/inpaint/train_yolo_seg.sh base

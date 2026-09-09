@@ -55,7 +55,7 @@ def copyDir(dict):
 
 if bSucess:
     print("SUCCESS: All %i shaders compiled to SPIR-V" % len(files))
-    installPath = "../build/windows/avplay/install/AMD64/"
+    installPath = "../build/windows/avox/install/AMD64/"
     debugDict = os.path.join(path,installPath, "Debug/assets/glsl/")
     releaseDict = os.path.join(path,installPath, "Release/assets/glsl/")
     releaseDebugDict = os.path.join(path,installPath, "RelWithDebInfo/assets/glsl/")

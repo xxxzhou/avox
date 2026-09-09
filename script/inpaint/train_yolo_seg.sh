@@ -69,19 +69,19 @@ case $PLATFORM in
         ;;
     linux-nvidia)
         # Linux + NVIDIA GPU (WSL2)
-        PROJECT_DIR="/mnt/d/Work/github/avplay"
+        PROJECT_DIR="/mnt/d/Work/github/avox"
         DATA_DIR="/mnt/d/Work/data/inpaint_data"
         DEVICE="0"
         ;;
     linux-amd)
         # Linux + AMD GPU (ROCm)
-        PROJECT_DIR="/mnt/d/Work/github/avplay"
+        PROJECT_DIR="/mnt/d/Work/github/avox"
         DATA_DIR="/mnt/d/Work/data/inpaint_data"
         DEVICE="0"
         ;;
     *)
         # 默认/CPU
-        PROJECT_DIR="/mnt/d/Work/github/avplay"
+        PROJECT_DIR="/mnt/d/Work/github/avox"
         DATA_DIR="/mnt/d/Work/data/inpaint_data"
         DEVICE="cpu"
         ;;

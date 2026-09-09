@@ -16,7 +16,7 @@
   - 方法内局部参数：可以以 `_` 结尾 (如 `int inputSize_` 在方法参数中允许)
 - **类定义顺序:** 构造函数/析构函数 → private 成员 → protected 成员 → public 方法
 - **格式:** 函数体内不要空行，逻辑分段用注释而非空行
-- **注释:** 不要太多，写精简点；类最多三行，方法及变量一般一行就够了
+- **注释:** 不要太多，写精简点；类最多二行，方法及变量一般一行就够了
 - **导出:** `AVOX_EXPORT` 定义于 `src/avox/AvoxDef.h`，`AVOX_EXPORT_DEFINE` 用于构建 SDK
 - **文件:** `.h`(C接口), `.hpp`(C++), `.cpp`(实现), `*Export.h`(公共API)
 
@@ -50,7 +50,7 @@ python build_mac.py       # macOS arm64/x64/universal (需 macOS + Xcode)
 python build_linux.py     # Linux x64
 
 # 单元测试 (随构建自动编译, 手动运行:)
-ctest --test-dir build/windows/avplay --output-on-failure -C Release
+ctest --test-dir build/windows/avox --output-on-failure -C Release
 ```
 
 ## 平台支持
@@ -99,11 +99,11 @@ SWIG 绑定: `swig/csharp/`, `swig/nodejs/`, `swig/python/` (Java 绑定构建�
 
 ## 外部依赖库路径
 
-大型依赖库（WebRTC、ONNX Runtime、OpenCV 等）存放在 `../avc_library` 目录，与 avplay 同级：
+大型依赖库（WebRTC、ONNX Runtime、OpenCV 等）存放在 `../avc_library` 目录，与 avox 同级：
 
 ```
 work/
-├── avplay/           # 本项目
+├── avox/           # 本项目
 └── avc_library/      # 大型依赖库 (git clone xxxzhou/avc_library)
     ├── 3rdparty/
     │   └── library/  # 预编译库 (android/ios/windows)

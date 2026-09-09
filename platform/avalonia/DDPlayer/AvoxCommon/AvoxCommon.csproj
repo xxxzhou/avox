@@ -13,13 +13,13 @@
   </PropertyGroup>
   <!-- Windows 平台配置 -->
   <PropertyGroup Condition="$(TargetFramework.Contains('windows'))">
-    <OutputPath>$(MSBuildProjectDirectory)\..\..\..\..\build\windows\avplay\install\AMD64\$(Configuration)\</OutputPath>
+    <OutputPath>$(MSBuildProjectDirectory)\..\..\..\..\build\windows\avox\install\AMD64\$(Configuration)\</OutputPath>
     <IntermediateOutputPath>$(MSBuildProjectDirectory)\..\obj\windows\$(Configuration)\</IntermediateOutputPath>
     <PlatformTarget>AnyCPU</PlatformTarget>
   </PropertyGroup>
   <!-- Android 平台配置 -->
   <PropertyGroup Condition="$(TargetFramework.Contains('android'))">
-    <OutputPath>$(MSBuildProjectDirectory)\..\..\..\..\build\android\avplay\install\aarch64\</OutputPath>
+    <OutputPath>$(MSBuildProjectDirectory)\..\..\..\..\build\android\avox\install\aarch64\</OutputPath>
     <IntermediateOutputPath>$(MSBuildProjectDirectory)\..\obj\android\$(Configuration)\</IntermediateOutputPath>
     <PlatformTarget>AnyCPU</PlatformTarget>
   </PropertyGroup>

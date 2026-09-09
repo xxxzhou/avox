@@ -22,7 +22,7 @@ git submodule update --init --recursive
 python build_windows.py
 ```
 
-产物输出到 avox install 树 `build/windows/avplay/install/AMD64/Release/`：
+产物输出到 avox install 树 `build/windows/avox/install/AMD64/Release/`：
 
 - `avox_godot.dll`（`.gdextension` 是仓库内静态文件 `plugin/avox_godot.gdextension`，不入 Release，避免 junction 部署时被 Godot 重复扫描）
 

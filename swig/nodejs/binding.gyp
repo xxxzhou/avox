@@ -32,12 +32,12 @@
       ['OS == "win"', { "platform": "AMD64" }],
       ['OS == "linux"', { "platform": "linux" }]
     ],
-    "product_dir": "../../../build/windows/avplay/install/AMD64/$(configuration)/",
+    "product_dir": "../../../build/windows/avox/install/AMD64/$(configuration)/",
     "configurations": {
       "Debug": {
         "defines": ["DEBUG"],
         "cflags": ["-g"],
-        "library_dirs": ["../../build/windows/avplay/install/AMD64/Debug"],
+        "library_dirs": ["../../build/windows/avox/install/AMD64/Debug"],
         # node-gyp 10.2在VS2022上默认选ClangCL工具集, 机器未装该组件, 钉回v143
         "msbuild_toolset": "v143",
         "msvs_settings": {
@@ -49,7 +49,7 @@
       "Release": {
         "defines": ["NDEBUG"],
         "cflags": ["-O2"],
-        "library_dirs": ["../../build/windows/avplay/install/AMD64/Release"],
+        "library_dirs": ["../../build/windows/avox/install/AMD64/Release"],
         "msbuild_toolset": "v143",
         "msvs_settings": {
           "VCCLCompilerTool": {

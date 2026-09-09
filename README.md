@@ -208,7 +208,7 @@ python build_mac.py       # macOS arm64/x64/universal (需 macOS + Xcode)
 python build_linux.py     # Linux x64
 
 # 单元测试 (随构建自动编译, 手动运行:)
-ctest --test-dir build/windows/avplay --output-on-failure -C Release
+ctest --test-dir build/windows/avox --output-on-failure -C Release
 ```
 
 编译脚本支持自定义构建类型（Debug/Release）和目标架构，详见 [doc/build/构建.md](doc/build/构建.md) 及各脚本内的配置项。

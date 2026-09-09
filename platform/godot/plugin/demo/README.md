@@ -4,7 +4,7 @@
 
 ## 0. 前置
 
-- 已构建 avox SDK(`avox/build/windows/avplay/install/AMD64/Release/avox.lib`)
+- 已构建 avox SDK(`avox/build/windows/avox/install/AMD64/Release/avox.lib`)
 - Godot 4.3+,运行在 Vulkan 后端(Forward+ 或 Mobile)
 - Visual Studio 2022 + CMake
 
@@ -13,7 +13,7 @@
 ```powershell
 # avox 库默认路径与实际布局不一致, 用 AVOX_LIBRARY 指定:
 cmake -S . -B build/windows -G "Visual Studio 17 2022" -A x64 `
-  -DAVOX_LIBRARY="D:/path/to/avox/build/windows/avplay/install/AMD64/Release/avox.lib"
+  -DAVOX_LIBRARY="D:/path/to/avox/build/windows/avox/install/AMD64/Release/avox.lib"
 cmake --build build/windows --config Release
 ```
 

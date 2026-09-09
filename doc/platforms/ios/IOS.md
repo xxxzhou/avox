@@ -63,15 +63,15 @@ lipo -info molten-vk/lib/libMoltenVK.dylib
 
 5. 查看dylib依赖
 
-otool -L /Volumes/PSSD/work/github/avplay/build/ios/avplay/install/aarch64/Debug/libavox.dylib
+otool -L /Volumes/PSSD/work/github/avox/build/ios/avox/install/aarch64/Debug/libavox.dylib
 
 6. 查看.a文件的导出的函数
 
-nm -gU /Volumes/PSSD/work/github/avplay/build/ios/avplay/install/aarch64/Debug/libavox.a
+nm -gU /Volumes/PSSD/work/github/avox/build/ios/avox/install/aarch64/Debug/libavox.a
 // 若要查看原始的函数名
-nm -gU /Volumes/PSSD/work/github/avplay/build/ios/avplay/install/aarch64/Debug/libavox.a | c++filt
+nm -gU /Volumes/PSSD/work/github/avox/build/ios/avox/install/aarch64/Debug/libavox.a | c++filt
 // 查询是否包含avox::timeTickMS方法
-nm -gU /Volumes/PSSD/work/github/avplay/build/ios/avplay/install/aarch64/Debug/libavox.a | c++filt | grep "avox::timeTickMS"
+nm -gU /Volumes/PSSD/work/github/avox/build/ios/avox/install/aarch64/Debug/libavox.a | c++filt | grep "avox::timeTickMS"
 
 6. 引用的MoltenVK库,found architecture 'x86_64', required architecture 'arm64'
 

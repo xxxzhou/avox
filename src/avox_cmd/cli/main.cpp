@@ -1,6 +1,6 @@
 #include "avox_cmd/CmdExecute.h"
 
-// avox_cli — avplay 命令行工具 (独立可执行, 仅一行壳)。
+// avox_cli — avox 命令行工具 (独立可执行, 仅一行壳)。
 // 命令逻辑折进 avox.dll (avox_cmd 经 add_sub_path), 经 C 导出入口 cmdExecute
 // 调用。
 int main(int argc, char** argv) {

@@ -36,7 +36,7 @@ else:
 IMAGES_VAL = os.path.join(BASE_DIR, "images", "test")
 MASKS_VAL = os.path.join(BASE_DIR, "masks", "test")
 RESULT_DIR = os.path.join(BASE_DIR, "result_lama_vs_aotgan")  # 单独的对比结果目录
-INPAINT_TEST = r"D:\Work\github\avplay\build\windows\avplay\install\AMD64\Release\inpainttest.exe"
+INPAINT_TEST = r"D:\Work\github\avox\build\windows\avox\install\AMD64\Release\inpainttest.exe"
 NUM_IMAGES = 10
 
 # 模型类型: 0=lama, 1=aotgan (全局)

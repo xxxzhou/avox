@@ -29,7 +29,7 @@ player->open("magnet:?xt=urn:btih:...");     // 或 "D:/xx.torrent"
 | 键 | 默认 | 说明 |
 |----|------|------|
 | `torrent.fileIndex` | -1 | 手动指定种子内文件索引; -1 自动选最大媒体文件 |
-| `torrent.cacheDir` | 系统 temp/avplay_torrent/<infohash> | 缓存目录(按 infohash 落盘, 同种子复用续传) |
+| `torrent.cacheDir` | 系统 temp/avox_torrent/<infohash> | 缓存目录(按 infohash 落盘, 同种子复用续传) |
 | `torrent.lookaheadMB` | 32 | 播放位置前向预取缓冲(MB) |
 | `torrent.metaTimeoutMs` | 45000 | 元数据获取超时(两阶段: 超时后强刷announce再等一轮) |
 | `torrent.pieceTimeoutMs` | 20000 | 单片等待超时(超时走 netTimeout 错误路径) |
@@ -94,7 +94,7 @@ steady_ms=消费12s内容的实际耗时(speed_ratio<1=追不上), seekNN_ms=see
 
 open→ready 耗时构成(阶段细分日志 `[torrent] stage *`): 元数据 ~10ms(缓存命中) →
 **head_ready 占绝大部分(等swarm出块, 客户端不可压)** → 尾片等待与头片并行。
-健康swarm场景引擎侧已无更多可挤空间; DHT状态持久化(`%TEMP%/avplay_torrent/session.state`,
+健康swarm场景引擎侧已无更多可挤空间; DHT状态持久化(`%TEMP%/avox_torrent/session.state`,
 运行45s后节流落盘, 进程启动~85ms恢复)的收益在冷swarm/冷门种子场景。
 
 已知边界: AV1/Opus 等 SDK 未覆盖编码会快速报 `no playable codec track`(IOParseTorrent

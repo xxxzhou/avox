@@ -19,7 +19,7 @@ import zipfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-INSTALL = REPO_ROOT / "build" / "android" / "avplay" / "install" / "aarch64"
+INSTALL = REPO_ROOT / "build" / "android" / "avox" / "install" / "aarch64"
 FFMPEG_LIB = REPO_ROOT / "3rdparty" / "library" / "android" / "ffmpeg" / "lib"
 SDK = Path(os.environ.get("LOCALAPPDATA", "")) / "Android" / "Sdk"
 BUILD_TOOLS = SDK / "build-tools" / "36.0.0"

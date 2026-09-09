@@ -10,7 +10,7 @@
 	  <CodeSignKey>Apple Development: mfjt55@163.com (F55URGYB7K)</CodeSignKey>   
     <MtouchUseLlvm>false</MtouchUseLlvm> 
     <!-- windows编译IOS使用$(SolutionDir)../../../../会出错 -->
-    <CppBuildRoot>/Volumes/PSSD/work/github/avplay/build/ios/avplay/install/aarch64</CppBuildRoot>
+    <CppBuildRoot>/Volumes/PSSD/work/github/avox/build/ios/avox/install/aarch64</CppBuildRoot>
     <WebRTC>/Volumes/PSSD/work/webrtc/build/ios/debug/obj</WebRTC>
     <MtouchNoSymbolStrip>true</MtouchNoSymbolStrip>
     <MtouchExtraArgs>$(MtouchExtraArgs) --registrar:static -gcc_flags "-ObjC -framework VideoToolbox -framework AVFoundation -framework AudioToolbox -framework CoreMedia -framework CoreVideo -framework CoreGraphics -framework UIKit -framework QuartzCore -framework CoreAudio -framework CoreMotion -framework CoreBluetooth -framework GameController -framework Metal -framework IOSurface -lz -lbz2 -liconv"</MtouchExtraArgs> 

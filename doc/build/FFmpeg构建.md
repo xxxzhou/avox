@@ -28,7 +28,7 @@ pacman -S mingw-w64-x86_64-intel-media-sdk
 4. cmd启动mingw64，把 C:\msys64\mingw64\bin 加入环境变量
 mingw64
 5. 切换到ffmpeg 目录
-cd D:/Work/github/avplay/3rdparty/FFmpeg
+cd D:/Work/github/avox/3rdparty/FFmpeg
 6. 配置编译选项 用来生成 Makefile
 
 > ⚠️ **发行合规**: `--enable-nonfree` 产物任何渠道都不可分发; `--enable-gpl` 产物只能进 AGPL 渠道。
@@ -45,11 +45,11 @@ make install -j4
 9. 清理
 make clean
 
-注意：可能没有安装到D:/Work/github/avplay/build/windows/ffmpeg目录下，需要手动到C:\msys64\usr\local\bin拷贝。
+注意：可能没有安装到D:/Work/github/avox/build/windows/ffmpeg目录下，需要手动到C:\msys64\usr\local\bin拷贝。
 
 ## 查看当前ffmpeg支持的硬件解码
 
-cd D:\Work\github\avplay\build\windows\ffmpeg\bin
+cd D:\Work\github\avox\build\windows\ffmpeg\bin
 
 ffmpeg -hwaccels
 

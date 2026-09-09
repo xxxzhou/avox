@@ -240,7 +240,7 @@ IOSAudioSourceMgr::~IOSAudioSourceMgr() { onDeInitDevices(); }
 void IOSAudioSourceMgr::onInitDevices() {
   devices.clear();
   sharedSession = [[AVCaptureSession alloc] init];
-  sharedQueue = dispatch_queue_create("com.avplay.ios.audio.shared",
+  sharedQueue = dispatch_queue_create("com.avox.ios.audio.shared",
                                        DISPATCH_QUEUE_SERIAL);
 
   // 请求麦克风权限

@@ -167,7 +167,7 @@ python script/inpaint/mask_to_yolo_label.py D:/Work/data/inpaint_data/images/tes
 source ~/rocm_env/bin/activate
 
 # 使用训练脚本 (推荐)
-cd /mnt/d/Work/github/avplay
+cd /mnt/d/Work/github/avox
 bash script/inpaint/train_yolo_seg.sh base          # 从头训练
 bash script/inpaint/train_yolo_seg.sh base resume   # 断点续训
 
@@ -224,7 +224,7 @@ model.export(format='onnx', opset=12, simplify=True, imgsz=640)
 
 复制到项目目录：
 ```bash
-cp D:\best.onnx D:\Work\github\avplay\assets\models\inpaint\yolo26m-seg_watermark.onnx
+cp D:\best.onnx D:\Work\github\avox\assets\models\inpaint\yolo26m-seg_watermark.onnx
 ```
 
 ### 3. 对比测试 (真实 mask vs YOLO mask)

@@ -247,7 +247,7 @@ IOSCameraSourceMgr::~IOSCameraSourceMgr() { onDeInitDevices(); }
 void IOSCameraSourceMgr::onInitDevices() {
   devices.clear();
   sharedSession = [[AVCaptureSession alloc] init];
-  sharedQueue = dispatch_queue_create("com.avplay.ios.camera.shared", DISPATCH_QUEUE_SERIAL);
+  sharedQueue = dispatch_queue_create("com.avox.ios.camera.shared", DISPATCH_QUEUE_SERIAL);
   // 请求相机权限
   bool cameraPermission = requestMediaPermission(AVMediaTypeVideo);
   if (!cameraPermission) {

@@ -9,7 +9,7 @@
 using namespace avox;
 
 int main() {
-    ILinuxSurface *surface = createLinuxSurface(1280, 720, "avplay");
+    ILinuxSurface *surface = createLinuxSurface(1280, 720, "avox");
     if (!surface) {
         return -1;
     }

@@ -1,6 +1,6 @@
-# avox_cli — avplay 命令行工具
+# avox_cli — avox 命令行工具
 
-类似 ffmpeg 的统一命令行工具，通过参数组合调用 avplay SDK 的各种能力。
+类似 ffmpeg 的统一命令行工具，通过参数组合调用 avox SDK 的各种能力。
 
 可执行文件名: `avox_cli` (Windows: `avox_cli.exe`)
 

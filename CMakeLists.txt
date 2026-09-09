@@ -12,7 +12,7 @@ if(WIN32)
 endif()
 
 # 项目名称
-project(avplay)
+project(avox)
 
 if(APPLE)
     enable_language(OBJCXX)
@@ -48,7 +48,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake")
 # 外部依赖库根目录 (webrtc, onnxruntime, opencv 等大型库)
 # 优先级: 1. CMake 命令行参数 (-DAVOX_EXTERNAL_LIBRARY_DIR=xxx)
 #        2. 环境变量 AVOX_EXTERNAL_LIBRARY_DIR
-#        3. 默认 ../avc_library (与 avplay 同级目录)
+#        3. 默认 ../avc_library (与 avox 同级目录)
 if(DEFINED AVOX_EXTERNAL_LIBRARY_DIR)
     # 使用命令行传入的值
     get_filename_component(AVOX_EXTERNAL_LIBRARY_DIR "${AVOX_EXTERNAL_LIBRARY_DIR}" REALPATH)
@@ -56,7 +56,7 @@ elseif(DEFINED ENV{AVOX_EXTERNAL_LIBRARY_DIR})
     # 使用环境变量
     get_filename_component(AVOX_EXTERNAL_LIBRARY_DIR "$ENV{AVOX_EXTERNAL_LIBRARY_DIR}" REALPATH)
 else()
-    # 默认: 与 avplay 同级的 avc_library 目录
+    # 默认: 与 avox 同级的 avc_library 目录
     get_filename_component(AVOX_EXTERNAL_LIBRARY_DIR "${CMAKE_SOURCE_DIR}/.." REALPATH)
     set(AVOX_EXTERNAL_LIBRARY_DIR "${AVOX_EXTERNAL_LIBRARY_DIR}/avc_library")
 endif()

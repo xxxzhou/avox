@@ -783,22 +783,22 @@ Pod::Spec.new do |s|
   s.platform     = :ios, "12.0"   
   s.source           = { :git => "", :tag => s.version.to_s } 
   # 源文件路径
-  s.source_files = 'build/ios/avplay/install/**/*.{h,m,cpp}' 
+  s.source_files = 'build/ios/avox/install/**/*.{h,m,cpp}' 
   # 头文件路径
-  s.public_header_files = 'build/ios/avplay/install/include/**/*.h'
+  s.public_header_files = 'build/ios/avox/install/include/**/*.h'
   # 指定头文件映射目录，保持原有目录结构
-  s.header_mappings_dir = 'build/ios/avplay/install/include'
+  s.header_mappings_dir = 'build/ios/avox/install/include'
   # 库文件路径
-  s.vendored_libraries = 'build/ios/avplay/install/aarch64/Debug/*.{a,dylib}'
+  s.vendored_libraries = 'build/ios/avox/install/aarch64/Debug/*.{a,dylib}'
   # moltenvk 框架路径
-  s.vendored_frameworks = 'build/ios/avplay/install/aarch64/MoltenVK.framework'
+  s.vendored_frameworks = 'build/ios/avox/install/aarch64/MoltenVK.framework'
   # 系统框架依赖
   s.frameworks = 'Security', 'CoreFoundation', 'CFNetwork', 'GLKit', 'OpenGLES', 'CoreMedia', 'CoreVideo', 'CoreAudio', 'AVFoundation', 'CoreGraphics', 'VideoToolbox', 'AudioToolbox','Foundation', 'CoreMotion', 'UIKit', 'QuartzCore','CoreBluetooth','GameController'
   s.libraries='z','bz2','iconv'
   # 编译选项
   s.requires_arc = true
   # 添加资源文件
-  s.resources = 'build/ios/avplay/install/aarch64/avox.bundle'
+  s.resources = 'build/ios/avox/install/aarch64/avox.bundle'
   # 添加其他依赖项，根据实际情况修改
   # s.dependency 'avox'
 end

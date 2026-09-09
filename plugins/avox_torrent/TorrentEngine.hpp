@@ -34,7 +34,7 @@ class TorrentEngine : public RunTask {
  public:
   // 运行配置(open时快照)
   struct Config {
-    // 种子缓存目录(save_path), 为空则用系统临时目录/avplay_torrent/<infohash>
+    // 种子缓存目录(save_path), 为空则用系统临时目录/avox_torrent/<infohash>
     std::string cacheDir = "";
     // 元数据获取超时(ms, 两阶段: 超时后强刷announce再等一轮同预算), 首2片预取也复用此预算
     int32_t metaTimeoutMs = 45000;
@@ -134,7 +134,7 @@ class TorrentEngine : public RunTask {
   void collectFileList();
   // ti 落盘 <save_path>/metadata.torrent (probe 顺带缓存; start 快路径读)
   void saveMetadata();
-  // 缓存基础目录(<cacheDir|tmp>/avplay_torrent)
+  // 缓存基础目录(<cacheDir|tmp>/avox_torrent)
   std::string cacheBaseDir() const;
   // <cacheBaseDir>/<infohash>/metadata.torrent
   std::string metadataCachePath() const;

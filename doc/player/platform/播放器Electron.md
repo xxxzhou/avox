@@ -56,9 +56,9 @@ endif()
       "../../src"
     ],    
     "libraries": [      
-      "../../../build/windows/avplay/install/AMD64/Debug/avox",
+      "../../../build/windows/avox/install/AMD64/Debug/avox",
     ],
-    "product_dir": "../../../build/windows/avplay/install/AMD64/Debug", 
+    "product_dir": "../../../build/windows/avox/install/AMD64/Debug", 
   }]
 }
 ```
@@ -70,7 +70,7 @@ endif()
 使用JS调用生成的avox_js.node文件，测试是否正常调用。
 
 ``` javascript
-const avox = require('../../build/windows/avplay/install/AMD64/Debug/avox_js.node')
+const avox = require('../../build/windows/avox/install/AMD64/Debug/avox_js.node')
 
 var wind = avox.createVkWindow();
 let params = new avox.WindowParamet();
@@ -101,7 +101,7 @@ avox.logMsg(1,"hello world");
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 // 加载原生模块
-const avox = require('../../build/windows/avplay/install/AMD64/Debug/avox_js.node')
+const avox = require('../../build/windows/avox/install/AMD64/Debug/avox_js.node')
 
 let mainWindow;
 let mediaWindow;

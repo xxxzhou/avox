@@ -8,7 +8,7 @@
 
 .PARAMETER AvoxRelease
   avox 运行时目录 (含 avox.dll/avox_unity.dll 及依赖 dll)。
-  默认 <avox仓库>/build/windows/avplay/install/AMD64/Release。
+  默认 <avox仓库>/build/windows/avox/install/AMD64/Release。
 
 .PARAMETER Force
   已存在 Packages/com.avox.player 时删除重建 (默认保留用户改动, 只覆盖包自带文件)。
@@ -27,7 +27,7 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot  = Resolve-Path (Join-Path $ScriptDir "..\..")
 
 if (-not $AvoxRelease) {
-    $AvoxRelease = Join-Path $RepoRoot "build\windows\avplay\install\AMD64\Release"
+    $AvoxRelease = Join-Path $RepoRoot "build\windows\avox\install\AMD64\Release"
 }
 
 # ── 前置检查 ──

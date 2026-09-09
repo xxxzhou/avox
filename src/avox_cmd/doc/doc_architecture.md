@@ -123,7 +123,7 @@ int main(int argc, char** argv) {
 
 ```
 $ avox_cli -help
-avox_cli - avplay command line tool
+avox_cli - avox command line tool
 
 Usage: avox_cli <command> [options]
 

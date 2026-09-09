@@ -16,7 +16,7 @@ import sdk_common as common
 
 PLATFORM = "ios"
 DEFAULT_SRC = os.path.join(
-    common.project_root(), "build", PLATFORM, "avplay", "install", "arm64")
+    common.project_root(), "build", PLATFORM, "avox", "install", "arm64")
 
 
 def pack(out="", src="", zip_path="", headers=False, abi=None, with_thirdparty=False):

@@ -34,7 +34,7 @@ import sdk_common as common
 
 PLATFORM = "windows"
 DEFAULT_SRC = os.path.join(
-    common.project_root(), "build", "windows", "avplay", "install", "AMD64", "Release")
+    common.project_root(), "build", "windows", "avox", "install", "AMD64", "Release")
 DEFAULT_TOOLS = os.path.join(common.project_root(), "platform", "godot", "tools")
 DEFAULT_PLUGIN = os.path.join(common.project_root(), "platform", "godot", "plugin")
 # Godot 编辑器 exe: 优先环境变量, 否则常见安装位置

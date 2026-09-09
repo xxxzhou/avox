@@ -41,7 +41,7 @@ platform/unity/
 
 ## 依赖
 
-- **avox SDK** — 本仓库, `python build_windows.py` (顶层 `AVOX_ENABLE_UNITY` 默认 ON) 产出 `avox_unity.dll` 到 `build/windows/avplay/install/AMD64/Release/`
+- **avox SDK** — 本仓库, `python build_windows.py` (顶层 `AVOX_ENABLE_UNITY` 默认 ON) 产出 `avox_unity.dll` 到 `build/windows/avox/install/AMD64/Release/`
 - **Unity 2021.3+** — 用户自行安装
 - 当前仅 **Windows x64**; CPU 回退全图形后端可用, GPU 直通需 **Unity Vulkan 后端**
 
