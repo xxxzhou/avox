@@ -6,6 +6,12 @@
 #include "avox/module/AvoxManager.hpp"
 #include "avox/module/TaskTrack.hpp"
 
+#ifdef __APPLE__
+#include <memory>
+
+#include "Util/logger.h"
+#endif
+
 namespace avox {
 
 // ZLMediaKit 日志级别 -> avox LogLevel
@@ -36,6 +42,17 @@ static void API_CALL onZmLog(int level, const char* file, int line,
 }
 
 static void initZmEnv() {
+#ifdef __APPLE__
+  // Apple 是静态链, 没有 DllMain(DETACH) 这个时机去触发 AvoxManager::clean()
+  // 里的 mk_env_release, ZLToolKit 的 Logger 单例会一路撑到静态析构期; 而
+  // ~Logger 里还会写日志, LogContextCapture 析构时锁的 mutex 已析构 ->
+  // 抛 std::system_error(recursive_mutex lock failed) 无人接 -> abort(EXIT=134),
+  // 判定行虽已打完但退出码骗自动化。故意泄漏一份引用让 ~Logger 永不执行
+  // (同 RtcEngine 泄漏 PeerConnectionFactory 的策略)。
+  static auto* leakedZlLogger =
+      new std::shared_ptr<toolkit::Logger>(toolkit::Logger::Instance().shared_from_this());
+  (void)leakedZlLogger;
+#endif
   // log_mask: 只用 LOG_CALLBACK，不用 LOG_CONSOLE/LOG_FILE
   // log_level: 2 = LInfo，过滤掉 0Trace/1Debug
   mk_env_init2(1, 0, LOG_CALLBACK, nullptr, 0, 0, nullptr, 0, nullptr, nullptr);
