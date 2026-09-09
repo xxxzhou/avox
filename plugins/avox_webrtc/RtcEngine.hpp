@@ -23,8 +23,8 @@ class RtcEngine {
 
  private:
   RtcEngine() = default;
-  ~RtcEngine();
-
+  // 无析构: 单例故意泄漏, 静态析构阶段销毁工厂会因 webrtc 线程已死而永挂
+  // (uninit() 保留给运行期显式关闭场景调用)
   RtcEngine(const RtcEngine&) = delete;
   RtcEngine& operator=(const RtcEngine&) = delete;
 

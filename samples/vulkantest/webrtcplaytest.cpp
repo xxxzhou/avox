@@ -1,3 +1,4 @@
+#include <cstdio>
 #include <thread>
 
 #include "avox/Avox.hpp"
@@ -29,8 +30,9 @@ IRtcEventOb* sdpOb = nullptr;
 int main(int argc, char* argv[]) {
   sp = createWebRtcPlayer();
   sp->setRollType(RtcRollType::offer);
-  const char* url =
-      "http://127.0.0.1/index/api/webrtc?app=live&stream=test&type=play";
+  const char* url = argc > 1
+      ? argv[1]
+      : "http://127.0.0.1/index/api/webrtc?app=live&stream=test&type=play";
   sdpOb = createZlTestSdpAgent(sp, url);
   sp->addOb(sdpOb);   // 信令观察者统一走 addOb 挂载
   sp->getRemoteSurfaceRender()->setSurface(nullptr);

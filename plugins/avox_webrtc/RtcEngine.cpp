@@ -20,11 +20,12 @@ namespace avox {
 using namespace webrtc;
 
 RtcEngine& RtcEngine::Get() {
-  static RtcEngine instance;
-  return instance;
+  // 故意泄漏, 不做静态析构: PCF 析构会同步等 webrtc 线程停止(Event::Wait),
+  // 进程退出阶段线程已被 ExitProcess 强杀 → ZwWaitForSingleObject 永挂
+  // (窗口模式 Godot 实测复现); 与 Chrome 同策略, 退出时交由 OS 回收。
+  static RtcEngine* instance = new RtcEngine();
+  return *instance;
 }
-
-RtcEngine::~RtcEngine() { uninit(); }
 
 bool RtcEngine::ensureInitialized() {
   std::lock_guard<std::mutex> lock(mutex);
