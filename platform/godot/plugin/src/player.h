@@ -80,7 +80,7 @@ public:
     // ── 纹理输出 ──
     Ref<Texture2D> getTexture() const;
 
-    // IRenderSource: 暴露底层 surface render 供外层做 enableImage tap。
+    // IRenderSource: 暴露底层 surface render 供 VideoFaceNode 等做 enableImage tap。
     // player 每次 play 重建, 故每次现取(可能为 null: 未 play)。
     avox::ISurfaceRender* getSurfaceRenderRaw() override { return player ? player->getSurfaceRender() : nullptr; }
 

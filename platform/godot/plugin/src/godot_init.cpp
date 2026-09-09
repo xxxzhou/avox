@@ -3,7 +3,18 @@
 #include "source_player.h"
 #include "source_probe.h"
 #include "recorder.h"
-#include "voice.h"  // 全局热键/麦克风采集/文本注入 Win32 专属 (纯采集, 无模型依赖)
+#ifdef _WIN32
+#include "voice.h"  // 全局热键/文本注入 Win32 专属 (Android 暂无对应概念)
+#endif
+#ifdef AVOX_ENABLE_AGENT
+#include "agent.h"
+#endif
+#include "voice.h"
+#include "face.h"
+#include "video_face.h"
+#include "body.h"
+#include "agent.h"
+#include "image.h"
 #include "option.h"
 #include "gpu_passthrough.h"
 
@@ -555,13 +566,22 @@ void avoxGodotInit(ModuleInitializationLevel p_level) {
         ClassDB::register_class<SourcePlayer>();
         ClassDB::register_class<DeviceManager>();
         ClassDB::register_class<MediaRecorder>();
-        // 插件层只保留播放级能力 (播放/WebRTC/采集/录制); 模型类
-        // (Stt/Tts/Face/VideoFace/Body/Agent) 不进插件, 数字人栈走独立交付
 #ifdef _WIN32
         ClassDB::register_class<GlobalHotkey>();
         ClassDB::register_class<MicCapture>();
+        ClassDB::register_class<SttNode>();
+        ClassDB::register_class<TtsNode>();
+#endif
+        ClassDB::register_class<FaceNode>();
+        ClassDB::register_class<VideoFaceNode>();
+        ClassDB::register_class<BodyNode>();
+#ifdef AVOX_ENABLE_AGENT
+        ClassDB::register_class<AgentNode>();
+#endif
+#ifdef _WIN32
         ClassDB::register_class<TextInjector>();
 #endif
+        ClassDB::register_class<AvoxImage>();
         ClassDB::register_class<AvoxOption>();
         ClassDB::register_class<SourceProbe>();
         ClassDB::register_class<AppLinks>();

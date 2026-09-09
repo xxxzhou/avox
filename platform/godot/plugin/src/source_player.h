@@ -63,7 +63,7 @@ public:
     Ref<Texture2D> get_texture() const;
     bool is_open() const;
 
-    // IRenderSource: 暴露底层 surface render 供外层 tap(未 open 时为 null)。
+    // IRenderSource: 暴露底层 surface render 供 VideoFaceNode 等 tap(未 open 时为 null)。
     avox::ISurfaceRender* getSurfaceRenderRaw() override { return player ? player->getSurfaceRender() : nullptr; }
 
 protected:

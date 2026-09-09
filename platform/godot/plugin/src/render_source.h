@@ -2,7 +2,7 @@
 
 // IRenderSource: 统一"渲染数据源"mixin。
 // 任何持有 avox::ISurfaceRender 的 Godot 节点(MediaPlayer/SourcePlayer/MediaRecorder)
-// 实现此接口, 供消费者经 dynamic_cast<IRenderSource*> 取 surface
+// 实现此接口, 供 VideoFaceNode 等消费者经 dynamic_cast<IRenderSource*> 取 surface
 // 做零拷贝回读 tap (enableImage), 与具体数据源类型解耦 —— 切换数据源只需换节点。
 // 纯抽象: 无数据成员, 不继承 Object, 多继承安全。
 
