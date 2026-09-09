@@ -17,6 +17,9 @@ public:
   id<MTLSamplerState> samplerState = nil;
   CAMetalLayer *metalLayer = nullptr;  
   id<MTLTexture> outputTexture = nil;
+  // 上一帧真正画过的目标纹理(有 layer 时是那次 present 的 drawable 纹理),
+  // 供 fetchFrame 抓帧读取; checkShot 紧跟渲染在同一线程调, 内容即最新一帧
+  id<MTLTexture> lastTargetTexture = nil;
   IOSurfaceRef ioSurface = nullptr;
 
 protected:

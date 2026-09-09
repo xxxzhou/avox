@@ -87,7 +87,14 @@ MetalRender::MetalRender() { renderType = RenderType::Metal; }
 
 MetalRender::~MetalRender() { releaseGraph(); }
 
-void MetalRender::onSetSurface() { metalLayer = surface; }
+void MetalRender::onSetSurface() {
+  metalLayer = surface;
+  // CAMetalLayer 默认 framebufferOnly=YES, drawable 纹理不能当 blit 源,
+  // 抓帧(screenShot)必须关掉; 代价是放弃部分合成器优化
+  if (metalLayer) {
+    metalLayer.framebufferOnly = NO;
+  }
+}
 
 bool MetalRender::vaildAndInitGraph() {
   // 如果没有窗口，但是大小变化了，需要重置
@@ -106,6 +113,8 @@ bool MetalRender::vaildAndInitGraph() {
 void MetalRender::releaseGraph() {
   closePipelineState();
   closeTextureCache();
+  // 抓帧引用的是 drawable 纹理, 关闭时立刻放开, 不跨窗口生命周期持有
+  lastTargetTexture = nil;
   unInit();
 }
 
@@ -124,14 +133,9 @@ void MetalRender::renderGpuFrame(const GpuFrame &frame) {
 }
 
 bool MetalRender::fetchFrame(ImageBuffer *imageBuffer) {
-  id<MTLTexture> targetTexture = nil;
-  // 修改：根据metalLayer存在情况选择渲染目标
-  if (metalLayer) {
-    id<CAMetalDrawable> drawable = [metalLayer nextDrawable];
-    targetTexture = drawable.texture;
-  } else {
-    targetTexture = outputTexture;
-  }
+  // 有 layer 时读上一帧画过的 drawable 纹理: 这里再 nextDrawable 拿到的是一张
+  // 全新未绘制的 drawable(抓出来是清屏色), 而且取了不 present 会占空池子
+  id<MTLTexture> targetTexture = metalLayer ? lastTargetTexture : outputTexture;
   // 检查目标纹理是否有效
   if (!targetTexture) {
     LOGFLF(LogLevel::warn, "targetTexture is invalid");
@@ -198,9 +202,13 @@ bool MetalRender::fetchFrame(ImageBuffer *imageBuffer) {
   [commandBuffer commit];
   [commandBuffer waitUntilCompleted];
   // 从纹理读取数据到imageBuffer
+  // rowPitch 约定 0 = 紧凑(宽*像素), 但 getBytes 的 bytesPerRow 传 0 是无效参数,
+  // Metal 只会写进第一行, 抓出来整张几乎全 0(看图器显示成白/透明), 必须显式算
+  const int32_t bytesPerRow =
+      format.rowPitch > 0 ? format.rowPitch : format.width * 4;
   MTLRegion region = MTLRegionMake2D(0, 0, format.width, format.height);
   [readTexture getBytes:imageBuffer->getPointer()
-            bytesPerRow:format.rowPitch
+            bytesPerRow:bytesPerRow
              fromRegion:region
             mipmapLevel:0];
   return true;
@@ -387,6 +395,8 @@ void MetalRender::updateNV12ToMetalLayer(CVImageBufferRef imageBuffer) {
       [commandBuffer presentDrawable:drawable];
     }
     [commandBuffer commit];
+    // 记下这一帧的目标纹理供 checkShot->fetchFrame 抓帧(同队列, 顺序有保证)
+    lastTargetTexture = targetTexture;
   }
   // logIOSurface();
 }

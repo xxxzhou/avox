@@ -15,7 +15,8 @@ using namespace avox;
 // macOS 有窗口播放样例: 自建 NSWindow + CAMetalLayer 上屏。
 // Windows 下 setSurface(nullptr) 由 SDK 自建窗口, Apple 下没有这条路 —— 平台原生
 // 窗口一律由宿主提供 (Window.hpp 里 AvoxSurfaceType 就是 CAMetalLayer*), 故样例自建。
-// 键位: p 存一帧 PNG 到 /tmp/avox_shot.png, q/关窗退出。
+// 键位: p 存一帧 PNG, q/关窗退出。第 4 个参数给存图路径时每 3 秒自动覆盖存一张,
+// 远程无 VNC 也能靠轮询这张图看画面 (SSH 里按不了键)。
 
 // 背衬层换成 CAMetalLayer, 供 MetalRender 直接上屏
 @interface AvoxMetalView : NSView
@@ -41,17 +42,20 @@ class MacPlayOb : public IMediaPlayerOb {
   }
 };
 
-// 抓当前渲染帧存 PNG
-static void saveShot(ISurfaceRender* render) {
+// 抓当前渲染帧存 PNG (非 Vulkan 时 screenShot 走 pVideoRender, 见 SurfaceRenderNative)
+static bool saveShot(ISurfaceRender* render, const char* path) {
   IImageBuffer* buf = createImageBuffer();
+  bool ok = false;
   if (buf && render->screenShot(buf)) {
-    const char* path = "/tmp/avox_shot.png";
-    fprintf(stderr, "[mac] screenshot %s: %s\n", path,
-            saveImagePath(path, buf) ? "ok" : "failed");
+    const ImageFormat fmt = buf->getImageFormat();
+    ok = saveImagePath(path, buf);
+    fprintf(stderr, "[mac] screenshot %s %dx%d: %s\n", path, fmt.width,
+            fmt.height, ok ? "ok" : "save failed");
   } else {
-    fprintf(stderr, "[mac] screenshot failed\n");
+    fprintf(stderr, "[mac] screenshot failed: screenShot returned false\n");
   }
   delete buf;
+  return ok;
 }
 
 int main(int argc, char* argv[]) {
@@ -59,8 +63,12 @@ int main(int argc, char* argv[]) {
   // 0 = 播到关窗为止; >0 = 到点自动退出 (无人值守回归用)
   const int timeoutSec = argc > 2 ? atoi(argv[2]) : 0;
   const char* ioPlanArg = argc > 3 ? argv[3] : nullptr;
-  fprintf(stderr, "[mac] url: %s, timeout: %ds, io: %s\n", url, timeoutSec,
-          ioPlanArg ? ioPlanArg : "auto");
+  // 给了路径就每 3 秒自动存一张; 没给也能按 p 手动存到这个默认路径
+  const char* shotPath = argc > 4 ? argv[4] : nullptr;
+  const char* keyShotPath = shotPath ? shotPath : "/tmp/avox_shot.png";
+  fprintf(stderr, "[mac] url: %s, timeout: %ds, io: %s, shot: %s\n", url,
+          timeoutSec, ioPlanArg ? ioPlanArg : "auto",
+          shotPath ? shotPath : "off");
   @autoreleasepool {
     [NSApplication sharedApplication];
     [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
@@ -99,7 +107,9 @@ int main(int argc, char* argv[]) {
     mp->open(url);
     // 事件循环: 关窗/按 q/超时退出, 期间判定是否真的推进了播放
     const auto start = std::chrono::steady_clock::now();
+    auto lastShot = start;
     bool played = false;
+    bool shotOk = false;
     bool running = true;
     while (running && window.isVisible) {
       @autoreleasepool {
@@ -113,7 +123,7 @@ int main(int argc, char* argv[]) {
             const NSString* keys = event.charactersIgnoringModifiers;
             const unichar key = keys.length > 0 ? [keys characterAtIndex:0] : 0;
             if (key == 'p') {
-              saveShot(render);
+              shotOk = saveShot(render, keyShotPath) || shotOk;
             } else if (key == 'q') {
               running = false;
             }
@@ -124,17 +134,25 @@ int main(int argc, char* argv[]) {
       if (mp->getState() == PlayerState::playing && mp->getPosition() > 0) {
         played = true;
       }
-      const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-                               std::chrono::steady_clock::now() - start)
-                               .count();
+      const auto now = std::chrono::steady_clock::now();
+      // 起播后每 3 秒覆盖存一张, 供远程轮询看画面
+      if (shotPath && played &&
+          std::chrono::duration_cast<std::chrono::seconds>(now - lastShot)
+                  .count() >= 3) {
+        lastShot = now;
+        shotOk = saveShot(render, shotPath) || shotOk;
+      }
+      const auto elapsed =
+          std::chrono::duration_cast<std::chrono::seconds>(now - start).count();
       if (timeoutSec > 0 && elapsed >= timeoutSec) {
         running = false;
       }
     }
     printf("[AVOX][TEST] case=mac-window-play result=%s state=%s pos=%lldms "
-           "fps=%.1f\n",
+           "fps=%.1f shot=%s\n",
            played ? "PASS" : "FAIL", getPlayerStateStr(mp->getState()),
-           (long long)mp->getPosition(), mp->getFps());
+           (long long)mp->getPosition(), mp->getFps(),
+           shotPath ? (shotOk ? "ok" : "failed") : "off");
     removeMediaPlayerOb(mp, &ob);
     mp->close();
     delete mp;
