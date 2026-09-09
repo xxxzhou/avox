@@ -21,7 +21,8 @@ namespace Avox
 
     [Serializable] public class AvoxStateEvent : UnityEvent<AvoxPlayerState> { }
     [Serializable] public class AvoxErrorEvent : UnityEvent<int, string> { }
-    [Serializable] public class AvoxTextureEvent : UnityEvent<Texture2D> { }
+    // Texture 而非 Texture2D: CPU 回退输出的是 shader 转换后的 RenderTexture
+    [Serializable] public class AvoxTextureEvent : UnityEvent<Texture> { }
 
     /// <summary>
     /// avox 媒体播放器 (对应 godot 插件 MediaPlayer / UE 插件 AvoxMediaPlayerComponent)
@@ -43,6 +44,8 @@ namespace Avox
         public AvoxIoPlan ioPlan = AvoxIoPlan.None;
         [Tooltip("视频纹理自动绑到该 Renderer 的 _MainTex/_BaseMap (空则取自身 Renderer)")]
         public Renderer targetRenderer;
+        [Tooltip("CPU 回退画面上下颠倒时勾上 (仅影响 CPU 回退, GPU 直通不受此项影响)")]
+        public bool cpuFlipY = false;
 
         public AvoxStateEvent onStateChanged;
         public UnityEvent onReady;
@@ -51,7 +54,8 @@ namespace Avox
         [Tooltip("视频纹理创建/重建时触发 (首帧到达或分辨率变化)")]
         public AvoxTextureEvent onTextureCreated;
 
-        public Texture2D VideoTexture => _texture;
+        // GPU 直通时是包裹原生资源的 Texture2D; CPU 回退时是 YUV shader 转换后的 RenderTexture
+        public Texture VideoTexture => _outTexture;
         public AvoxPlayerState State => (AvoxPlayerState)AvoxNative.avoxPlayerGetState(_player);
         public bool IsPlaying => State == AvoxPlayerState.Playing;
         public long DurationMs => AvoxNative.avoxPlayerGetDuration(_player);
@@ -79,7 +83,9 @@ namespace Avox
         }
 
         IntPtr _player = IntPtr.Zero;
-        Texture2D _texture;
+        Texture2D _texture;                   // GPU 直通/D3D12 拷贝的纹理 (CPU 回退下为 null)
+        Texture _outTexture;                  // 对外输出 (GPU=_texture, CPU=_yuv.Output)
+        readonly AvoxYuvBlitter _yuv = new AvoxYuvBlitter();  // CPU 回退: YUV 上传 + shader 转换
         IntPtr _wrappedNative = IntPtr.Zero;  // 外部纹理包裹的原生指针 (重绑检测)
         CommandBuffer _command;
         MaterialPropertyBlock _mpb;
@@ -112,13 +118,15 @@ namespace Avox
             // GPU 直通: 主线程处理 enableVkOutput + NT句柄导入 (非Vulkan后端快速返回)
             AvoxNative.avoxPlayerUpdateGpu(_player);
             EnsureTexture();
-            if (!GpuPassthrough && _texture != null)
+            if (!GpuPassthrough && _yuv.IsReady)
             {
-                // CPU 回退: 渲染线程经回调取帧, GPU 上传由 Unity 完成
+                // CPU 回退: 渲染线程经回调把整帧 NV12 上传到 R8 纹理 (Unity 完成上传),
+                // 再用 shader Blit 成 RGB —— 逐像素色转全在 GPU
                 _command.IssuePluginCustomTextureUpdateV2(
-                    AvoxNative.avoxGetTextureUpdateCallback(), _texture, AvoxNative.avoxPlayerGetId(_player));
+                    AvoxNative.avoxGetTextureUpdateCallback(), _yuv.YuvTexture, AvoxNative.avoxPlayerGetId(_player));
                 Graphics.ExecuteCommandBuffer(_command);
                 _command.Clear();
+                _yuv.Blit();
             }
             else if (GpuPassthrough && GpuFlavor >= 2)
             {
@@ -140,6 +148,8 @@ namespace Avox
         {
             // 先销毁引用 GPU 导入资源的纹理, 再释放原生播放器
             DestroyTexture();
+            _yuv.DisposeAll();
+            _outTexture = null;
             if (_command != null)
             {
                 _command.Dispose();
@@ -308,10 +318,25 @@ namespace Avox
         void EnsureTexture()
         {
             if (AvoxNative.avoxPlayerGetFrameInfo(_player, out int w, out int h) == 0) return;
+            if (!GpuPassthrough)
+            {
+                // CPU 回退: R8 纹理装整帧 NV12 + shader Blit → RenderTexture 对外
+                _yuv.FlipY = cpuFlipY;
+                _yuv.SetColorSpace(AvoxNative.avoxPlayerGetColorSpace(_player));
+                if (!_yuv.Ensure(w, h)) return;
+                DestroyTexture();
+                _outTexture = _yuv.Output;
+                _texW = _yuv.Width;
+                _texH = _yuv.Height;
+                BindToRenderer();
+                onTextureCreated?.Invoke(_outTexture);
+                Debug.Log($"[AvoxPlayer] 视频纹理就绪 {_texW}x{_texH} (CPU回退, YUV shader)", this);
+                return;
+            }
             // D3D12 拷贝模式: C# 普通纹理作拷贝目的 (插件每帧 CopyResource 进来)
-            bool dx12Mode = GpuPassthrough && GpuFlavor == 3;
+            bool dx12Mode = GpuFlavor == 3;
             IntPtr nativeTex = IntPtr.Zero;
-            if (GpuPassthrough && !dx12Mode)
+            if (!dx12Mode)
             {
                 nativeTex = (IntPtr)AvoxNative.avoxPlayerGetExternalTexture(_player);
                 if (nativeTex == IntPtr.Zero) return;
@@ -319,7 +344,7 @@ namespace Avox
             // 首帧/分辨率变化/原生纹理重建(重绑) 时重建包裹
             if (_texture != null && w == _texW && h == _texH && nativeTex == _wrappedNative) return;
             DestroyTexture();
-            if (GpuPassthrough && !dx12Mode)
+            if (!dx12Mode)
             {
                 // GPU 模式统一走外部纹理: VK=导入的 VkImage / D3D11=插件自建目标纹理
                 // D3D11 共享纹理是 R8G8B8A8_UNORM, 必须用 RGBA32 包裹
@@ -334,27 +359,26 @@ namespace Avox
                 // sRGB 编码, Linear 项目按 linear 采样会发灰发淡)
                 _texture = new Texture2D(w, h, TextureFormat.RGBA32, false, false);
                 _texture.wrapMode = TextureWrapMode.Clamp;
-                if (dx12Mode)
-                {
-                    AvoxNative.avoxPlayerSetDx12Target(_player, _texture.GetNativeTexturePtr());
-                }
+                AvoxNative.avoxPlayerSetDx12Target(_player, _texture.GetNativeTexturePtr());
             }
+            _outTexture = _texture;
             _texW = w;
             _texH = h;
             BindToRenderer();
-            onTextureCreated?.Invoke(_texture);
-            Debug.Log($"[AvoxPlayer] 视频纹理就绪 {w}x{h} ({(GpuPassthrough ? (dx12Mode ? "GPU直通(D3D12拷贝)" : "GPU直通") : "CPU回退")})", this);
+            onTextureCreated?.Invoke(_outTexture);
+            Debug.Log($"[AvoxPlayer] 视频纹理就绪 {w}x{h} (GPU直通{(dx12Mode ? "(D3D12拷贝)" : "")})", this);
         }
 
         void BindToRenderer()
         {
-            if (targetRenderer == null || _texture == null) return;
+            if (targetRenderer == null || _outTexture == null) return;
             _mpb.Clear();
-            _mpb.SetTexture("_MainTex", _texture);
-            _mpb.SetTexture("_BaseMap", _texture);
-            // D3D 后端: 原生 CopyResource 填充的纹理是 top-down 行序, Unity 采样约定
-            // 是 bottom-up, 标准 Quad 上会上下颠倒 —— 用 ST 翻转 V 轴 (v' = 1 - v)
-            if (GpuFlavor >= 2)
+            _mpb.SetTexture("_MainTex", _outTexture);
+            _mpb.SetTexture("_BaseMap", _outTexture);
+            // D3D 拷贝模式: 原生 CopyResource 填充的纹理是 top-down 行序, Unity 采样约定
+            // 是 bottom-up, 标准 Quad 上会上下颠倒 —— 用 ST 翻转 V 轴 (v' = 1 - v)。
+            // CPU 回退不走 CopyResource, 行序由 shader 的 cpuFlipY 控制, 不在此翻。
+            if (GpuPassthrough && GpuFlavor >= 2)
             {
                 _mpb.SetVector("_MainTex_ST", new Vector4(1, -1, 0, 1));
                 _mpb.SetVector("_BaseMap_ST", new Vector4(1, -1, 0, 1));
@@ -362,10 +386,12 @@ namespace Avox
             targetRenderer.SetPropertyBlock(_mpb);
         }
 
+        // 只销毁 GPU 模式的包裹纹理; CPU 回退资源由 _yuv 自己管 (Ensure 重建/DisposeAll)
         void DestroyTexture()
         {
             if (_texture != null)
             {
+                if (ReferenceEquals(_outTexture, _texture)) _outTexture = null;
                 Destroy(_texture);
                 _texture = null;
             }

@@ -11,7 +11,8 @@ namespace Avox
     /// <summary>
     /// 设备源采集 (摄像头/采集卡) —— 对应 AvoxPlayer 的设备版:
     /// 枚举 win_mf 摄像头 → ISourcePlayer 打开 → CPU 帧槽经
-    /// IssuePluginCustomTextureUpdateV2 上传到 VideoTexture (BGRA32)。
+    /// IssuePluginCustomTextureUpdateV2 上传整帧 NV12 到 R8 纹理,
+    /// 再由 shader Blit 成 RGB (VideoTexture 是转换后的 RenderTexture)。
     /// 音频由 avox 内置 WASAPI 直出麦克风。
     /// </summary>
     [AddComponentMenu("Avox/Avox Camera Capture")]
@@ -24,15 +25,18 @@ namespace Avox
         public bool autoOpen = true;
         [Tooltip("视频纹理自动绑到该 Renderer 的 _MainTex/_BaseMap (空则取自身 Renderer)")]
         public Renderer targetRenderer;
+        [Tooltip("画面上下颠倒时勾上")]
+        public bool flipY = false;
 
         public AvoxSourceStateEvent onStateChanged;
 
-        public Texture2D VideoTexture => _texture;
+        // YUV shader 转换后的 RenderTexture
+        public Texture VideoTexture => _yuv.Output;
         public AvoxPlayerState State => (AvoxPlayerState)AvoxNative.avoxSourceGetState(_source);
         public bool IsPlaying => State == AvoxPlayerState.Playing;
 
         IntPtr _source = IntPtr.Zero;
-        Texture2D _texture;
+        readonly AvoxYuvBlitter _yuv = new AvoxYuvBlitter();
         CommandBuffer _command;
         MaterialPropertyBlock _mpb;
         AvoxPlayerState _lastState = AvoxPlayerState.None;
@@ -71,25 +75,27 @@ namespace Avox
                 onStateChanged?.Invoke(st);
             }
             if (AvoxNative.avoxSourceGetFrameInfo(_source, out int w, out int h) == 0) return;
-            if (_texture == null || w != _texW || h != _texH)
+            _yuv.FlipY = flipY;
+            _yuv.SetColorSpace(AvoxNative.avoxSourceGetColorSpace(_source));
+            if (_yuv.Ensure(w, h))
             {
-                DestroyTexture();
-                _texture = new Texture2D(w, h, TextureFormat.BGRA32, false, false);
-                _texture.wrapMode = TextureWrapMode.Clamp;
-                _texW = w;
-                _texH = h;
+                _texW = _yuv.Width;
+                _texH = _yuv.Height;
                 BindToRenderer();
             }
-            // CPU 帧槽 → 渲染线程回调上传 (userData = source id, 与 AvoxPlayer 共用回调)
+            if (!_yuv.IsReady) return;
+            // CPU 帧槽 → 渲染线程回调上传整帧 NV12 到 R8 纹理
+            // (userData = source id, 与 AvoxPlayer 共用回调), 再 shader 转 RGB
             _command.IssuePluginCustomTextureUpdateV2(
-                AvoxNative.avoxGetTextureUpdateCallback(), _texture, AvoxNative.avoxSourceGetId(_source));
+                AvoxNative.avoxGetTextureUpdateCallback(), _yuv.YuvTexture, AvoxNative.avoxSourceGetId(_source));
             Graphics.ExecuteCommandBuffer(_command);
             _command.Clear();
+            _yuv.Blit();
         }
 
         void OnDestroy()
         {
-            DestroyTexture();
+            _yuv.DisposeAll();
             if (_command != null)
             {
                 _command.Dispose();
@@ -122,20 +128,16 @@ namespace Avox
 
         void BindToRenderer()
         {
-            if (targetRenderer == null || _texture == null) return;
+            if (targetRenderer == null || _yuv.Output == null) return;
             _mpb.Clear();
-            _mpb.SetTexture("_MainTex", _texture);
-            _mpb.SetTexture("_BaseMap", _texture);
+            _mpb.SetTexture("_MainTex", _yuv.Output);
+            _mpb.SetTexture("_BaseMap", _yuv.Output);
             targetRenderer.SetPropertyBlock(_mpb);
         }
 
         void DestroyTexture()
         {
-            if (_texture != null)
-            {
-                Destroy(_texture);
-                _texture = null;
-            }
+            _yuv.Dispose();
             _texW = 0;
             _texH = 0;
         }

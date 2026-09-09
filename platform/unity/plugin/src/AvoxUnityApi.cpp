@@ -123,6 +123,12 @@ AVOX_UNITY_API int32_t avoxPlayerGetFrameInfo(avox_player_t player, int32_t* w, 
   return ((PlayerBridge*)player)->frameInfo(w, h) ? 1 : 0;
 }
 
+// 源色彩空间: standard(0 bt601 1 bt709 2 bt2020) | range(0 full 1 limited)<<8,
+// 未就绪返回 -1。CPU 回退路径的 YUV shader 用它构解码矩阵
+AVOX_UNITY_API int32_t avoxPlayerGetColorSpace(avox_player_t player) {
+  return player ? ((PlayerBridge*)player)->colorSpaceCode() : -1;
+}
+
 AVOX_UNITY_API int32_t avoxPlayerIsGpuMode(avox_player_t player) {
   return player ? (((PlayerBridge*)player)->gpuMode() ? 1 : 0) : 0;
 }
@@ -270,6 +276,10 @@ AVOX_UNITY_API int32_t avoxSourceGetState(avox_source_t source) {
   return source ? ((SourceBridge*)source)->state() : 0;
 }
 
+AVOX_UNITY_API int32_t avoxSourceGetColorSpace(avox_source_t source) {
+  return source ? ((SourceBridge*)source)->colorSpaceCode() : -1;
+}
+
 AVOX_UNITY_API int32_t avoxSourceGetFrameInfo(avox_source_t source, int32_t* w, int32_t* h) {
   if (!source) return 0;
   return ((SourceBridge*)source)->frameInfo(w, h) ? 1 : 0;
@@ -411,6 +421,10 @@ AVOX_UNITY_API int32_t avoxRtcPollEvent(avox_player_t player, void* out) {
 // 本地 SDP (localSdp 事件后拉取, 返回长度; -1=无)
 AVOX_UNITY_API int32_t avoxRtcGetLocalSdp(avox_player_t player, char* buf, int32_t bufSize) {
   return player ? ((RtcPlayerBridge*)player)->localSdp(buf, bufSize) : -1;
+}
+
+AVOX_UNITY_API int32_t avoxRtcGetColorSpace(avox_player_t player) {
+  return player ? ((RtcPlayerBridge*)player)->colorSpaceCode() : -1;
 }
 
 AVOX_UNITY_API int32_t avoxRtcGetFrameInfo(avox_player_t player, int32_t* w, int32_t* h) {

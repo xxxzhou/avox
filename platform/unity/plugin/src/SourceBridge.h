@@ -25,8 +25,10 @@ class SourceBridge : public avox::IMediaPlayerOb, public avox::ISurfaceRenderOb 
   int32_t state() const { return stateCache_.load(); }
   // 帧尺寸 (CPU 槽), 无帧返回 false
   bool frameInfo(int32_t* w, int32_t* h);
-  // 纹理更新回调取帧 (同 PlayerBridge), 无帧/尺寸不符补黑
+  // 纹理更新回调取帧 (同 PlayerBridge): R8 的 w × h*3/2 整帧 NV12, 无帧补中性黑
   bool allocCpuFrame(uint32_t w, uint32_t h, uint32_t bpp, void** texData);
+  // 源色彩空间编码 (standard | range<<8), 供 C# 构 shader 矩阵; 未就绪返回 -1
+  int32_t colorSpaceCode() const;
 
  protected:
   // ── avox::IMediaPlayerOb ──
@@ -43,11 +45,12 @@ class SourceBridge : public avox::IMediaPlayerOb, public avox::ISurfaceRenderOb 
   avox::ISourcePlayer* player_ = nullptr;
   avox::ISurfaceRender* surface_ = nullptr;
   avox::ColorSpaceDesc colorSpace_;
+  bool colorSpaceSet_ = false;  // 未就绪时 colorSpaceCode() 返回 -1
 
   std::atomic<int32_t> stateCache_{0};
   std::atomic<int32_t> deviceIndex_{-1};
   std::mutex frameMutex_;
-  std::vector<uint8_t> frameBgra_;
+  std::vector<uint8_t> frameNv12_;  // 紧凑 NV12, 尺寸 frameW_ × frameH_*3/2
   int32_t frameW_ = 0;
   int32_t frameH_ = 0;
 };

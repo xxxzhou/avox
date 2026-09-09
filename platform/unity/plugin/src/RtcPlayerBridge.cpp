@@ -268,10 +268,11 @@ void RtcPlayerBridge::onReady() {
   avox::ISourceInfo* info = player ? player->getRemoteSourceInfo() : nullptr;
   if (info && info->videoSize() > 0) {
     const avox::VTrackDesc vd = info->getVideoDesc(0);
-    if (surface && (vd.desc.colorSpace.standard != colorSpace.standard ||
-                    vd.desc.colorSpace.range != colorSpace.range)) {
+    if (!colorSpaceSet || vd.desc.colorSpace.standard != colorSpace.standard ||
+        vd.desc.colorSpace.range != colorSpace.range) {
       colorSpace = vd.desc.colorSpace;
-      surface->setColorSpace(colorSpace);
+      colorSpaceSet = true;
+      if (surface) surface->setColorSpace(colorSpace);
     }
   }
   AvoxRtcEvent e;
@@ -332,28 +333,25 @@ void RtcPlayerBridge::onIceCandidate(const char* candidate, const char* mid,
 
 // ── avox::ISurfaceRenderOb (avox 渲染线程) ──
 
+// 只重排成紧凑 NV12, 色转交给 Unity 侧 shader (打包器复用 PlayerBridge 静态实现)
 void RtcPlayerBridge::onFrame(const avox::YUVFrame& frame) {
   const int32_t w = frame.format.width;
   const int32_t h = frame.format.height;
-  if (!frame.data[0] || w <= 0 || h <= 0) return;
-  if (frame.format.type != avox::YuvType::nv12 &&
-      frame.format.type != avox::YuvType::yuv420P) {
-    return;
-  }
-  std::vector<uint8_t> bgra;
-  bgra.resize((size_t)w * h * 4);
-  // 转换器复用 PlayerBridge 静态实现 (NV12/yuv420P → BGRA)
-  if (frame.format.type == avox::YuvType::nv12) {
-    PlayerBridge::ConvertNv12(frame, bgra.data(), colorSpace);
-  } else {
-    PlayerBridge::ConvertYuv420P(frame, bgra.data(), colorSpace);
-  }
+  if (w <= 0 || h <= 0 || (w & 1) || (h & 1)) return;
+  std::vector<uint8_t> nv12;
+  nv12.resize((size_t)w * h * 3 / 2);
+  if (!PlayerBridge::PackNv12(frame, nv12.data())) return;
   {
     std::lock_guard<std::mutex> lock(frameMutex);
-    frameBgra = std::move(bgra);
+    frameNv12 = std::move(nv12);
     frameW = w;
     frameH = h;
   }
+}
+
+int32_t RtcPlayerBridge::colorSpaceCode() const {
+  if (!colorSpaceSet) return -1;
+  return (int32_t)colorSpace.standard | ((int32_t)colorSpace.range << 8);
 }
 
 void RtcPlayerBridge::onWinSizeChange(int32_t width, int32_t height) {
@@ -363,21 +361,27 @@ void RtcPlayerBridge::onWinSizeChange(int32_t width, int32_t height) {
 
 // ── 内部 ──
 
+// R8 的 w × h*3/2 (整帧 NV12); 无帧填中性黑 Y=16/UV=128 (同 PlayerBridge)
 bool RtcPlayerBridge::allocCpuFrame(uint32_t w, uint32_t h, uint32_t bpp,
                                     void** texData) {
-  if (!texData || w == 0 || h == 0 || bpp == 0) return false;
-  const size_t bytes = (size_t)w * h * bpp;
+  if (!texData || w == 0 || h == 0 || bpp != 1) return false;
+  const size_t bytes = (size_t)w * h;
   uint8_t* buf = (uint8_t*)malloc(bytes);
   if (!buf) return false;
   bool hasFrame = false;
   {
     std::lock_guard<std::mutex> lock(frameMutex);
-    if (!frameBgra.empty() && frameW == (int32_t)w && frameH == (int32_t)h) {
-      memcpy(buf, frameBgra.data(), bytes);
+    if (!frameNv12.empty() && frameW == (int32_t)w &&
+        (int32_t)h == frameH * 3 / 2 && frameNv12.size() == bytes) {
+      memcpy(buf, frameNv12.data(), bytes);
       hasFrame = true;
     }
   }
-  if (!hasFrame) memset(buf, 0, bytes);
+  if (!hasFrame) {
+    const size_t ySize = (size_t)w * (h * 2 / 3);
+    memset(buf, 16, ySize < bytes ? ySize : bytes);
+    if (ySize < bytes) memset(buf + ySize, 128, bytes - ySize);
+  }
   *texData = buf;
   return true;
 }

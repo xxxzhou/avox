@@ -104,13 +104,14 @@ class PlayerBridge : public avox::IMediaPlayerOb, public avox::ISurfaceRenderOb 
   uint64_t dx11HandleSnapshot() const { return dx11Handle.load(); }
 
   // CPU 路径回调取帧 (IssuePluginCustomTextureUpdateV2 UpdateTextureBegin):
-  // 按 Unity 纹理尺寸分配 BGRA 数据, 无帧/尺寸不符时补黑边, 失败返回 false
+  // Unity 纹理是 R8 的 w × h*3/2 (整帧 NV12), 无帧/尺寸不符时补黑边, 失败返回 false
   bool allocCpuFrame(uint32_t w, uint32_t h, uint32_t bpp, void** texData);
-  // 色彩转换 (SourceBridge CPU 路径复用)
-  static void ConvertNv12(const avox::YUVFrame& frame, uint8_t* dst,
-                          const avox::ColorSpaceDesc& cs);
-  static void ConvertYuv420P(const avox::YUVFrame& frame, uint8_t* dst,
-                             const avox::ColorSpaceDesc& cs);
+  // 源色彩空间编码 (standard | range<<8), 供 C# 构 shader 矩阵; 未就绪返回 -1
+  int32_t colorSpaceCode() const;
+  // 帧 → 紧凑 NV12 (SourceBridge/RtcPlayerBridge CPU 路径复用)。
+  // dst 需 w*h*3/2 字节; yuv420P 会交织成 NV12, 使下游 shader 只认一种布局。
+  // 返回 false 表示格式/尺寸不支持 (未写 dst)
+  static bool PackNv12(const avox::YUVFrame& frame, uint8_t* dst);
 
   // ── Option (键值参数, 透传 IMediaPlayer::getOption) ──
   bool setOptionBool(const char* key, bool value);
@@ -159,7 +160,8 @@ class PlayerBridge : public avox::IMediaPlayerOb, public avox::ISurfaceRenderOb 
   uint32_t playerId;
   avox::IMediaPlayer* player = nullptr;
   avox::ISurfaceRender* surface = nullptr;
-  avox::ColorSpaceDesc colorSpace;  // onReady 时取自源 VideoDesc, 转换/渲染共用
+  avox::ColorSpaceDesc colorSpace;  // onReady 时取自源 VideoDesc, shader/渲染共用
+  bool colorSpaceSet = false;       // 未就绪时 colorSpaceCode() 返回 -1
   avox::IMediaMuxer* muxer = nullptr;
 
   // ── 配置缓存 (open 前设置) ──
@@ -199,9 +201,9 @@ class PlayerBridge : public avox::IMediaPlayerOb, public avox::ISurfaceRenderOb 
   UnityDx11CopyState dx11;
   UnityDx12CopyState dx12;
 
-  // ── CPU 帧槽 (mutex, 新帧覆盖旧帧) ──
+  // ── CPU 帧槽 (mutex, 新帧覆盖旧帧); 紧凑 NV12, 尺寸 frameW × frameH*3/2 ──
   std::mutex frameMutex;
-  std::vector<uint8_t> frameBgra;
+  std::vector<uint8_t> frameNv12;
   int32_t frameW = 0;
   int32_t frameH = 0;
 

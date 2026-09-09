@@ -80,7 +80,7 @@ void SourceBridge::destroyPlayer() {
   stateCache_.store((int32_t)avox::PlayerState::none);
   {
     std::lock_guard<std::mutex> lock(frameMutex_);
-    frameBgra_.clear();
+    frameNv12_.clear();
     frameW_ = 0;
     frameH_ = 0;
   }
@@ -96,28 +96,30 @@ void SourceBridge::onReady() {
   if (info && info->videoSize() > 0) {
     avox::VTrackDesc vd = info->getVideoDesc(0);
     colorSpace_ = vd.desc.colorSpace;
+    colorSpaceSet_ = true;
     if (surface_) surface_->setColorSpace(colorSpace_);
   }
 }
 
+// 只重排成紧凑 NV12, 色转交给 Unity 侧 shader (同 PlayerBridge)
 void SourceBridge::onFrame(const avox::YUVFrame& frame) {
   const int32_t w = frame.format.width;
   const int32_t h = frame.format.height;
-  if (!frame.data[0] || w <= 0 || h <= 0) return;
-  if (frame.format.type != avox::YuvType::nv12 && frame.format.type != avox::YuvType::yuv420P) return;
-  std::vector<uint8_t> bgra;
-  bgra.resize((size_t)w * h * 4);
-  if (frame.format.type == avox::YuvType::nv12) {
-    PlayerBridge::ConvertNv12(frame, bgra.data(), colorSpace_);
-  } else {
-    PlayerBridge::ConvertYuv420P(frame, bgra.data(), colorSpace_);
-  }
+  if (w <= 0 || h <= 0 || (w & 1) || (h & 1)) return;
+  std::vector<uint8_t> nv12;
+  nv12.resize((size_t)w * h * 3 / 2);
+  if (!PlayerBridge::PackNv12(frame, nv12.data())) return;
   {
     std::lock_guard<std::mutex> lock(frameMutex_);
-    frameBgra_ = std::move(bgra);
+    frameNv12_ = std::move(nv12);
     frameW_ = w;
     frameH_ = h;
   }
+}
+
+int32_t SourceBridge::colorSpaceCode() const {
+  if (!colorSpaceSet_) return -1;
+  return (int32_t)colorSpace_.standard | ((int32_t)colorSpace_.range << 8);
 }
 
 bool SourceBridge::frameInfo(int32_t* w, int32_t* h) {
@@ -128,20 +130,26 @@ bool SourceBridge::frameInfo(int32_t* w, int32_t* h) {
   return true;
 }
 
+// R8 的 w × h*3/2 (整帧 NV12); 无帧填中性黑 Y=16/UV=128 (同 PlayerBridge)
 bool SourceBridge::allocCpuFrame(uint32_t w, uint32_t h, uint32_t bpp, void** texData) {
-  if (!texData || w == 0 || h == 0 || bpp == 0) return false;
-  const size_t bytes = (size_t)w * h * bpp;
+  if (!texData || w == 0 || h == 0 || bpp != 1) return false;
+  const size_t bytes = (size_t)w * h;
   uint8_t* buf = (uint8_t*)malloc(bytes);
   if (!buf) return false;
   bool hasFrame = false;
   {
     std::lock_guard<std::mutex> lock(frameMutex_);
-    if (!frameBgra_.empty() && frameW_ == (int32_t)w && frameH_ == (int32_t)h) {
-      memcpy(buf, frameBgra_.data(), bytes);
+    if (!frameNv12_.empty() && frameW_ == (int32_t)w &&
+        (int32_t)h == frameH_ * 3 / 2 && frameNv12_.size() == bytes) {
+      memcpy(buf, frameNv12_.data(), bytes);
       hasFrame = true;
     }
   }
-  if (!hasFrame) memset(buf, 0, bytes);
+  if (!hasFrame) {
+    const size_t ySize = (size_t)w * (h * 2 / 3);
+    memset(buf, 16, ySize < bytes ? ySize : bytes);
+    if (ySize < bytes) memset(buf + ySize, 128, bytes - ySize);
+  }
   *texData = buf;
   return true;
 }

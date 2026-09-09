@@ -102,8 +102,11 @@ class RtcPlayerBridge : public avox::IMediaPlayerOb,
   // 是否 GPU 直通 (当前恒 false, 二期接 GPU 后打开)
   bool gpuMode() const { return false; }
 
-  // 纹理更新回调 (渲染线程): 从帧槽供 BGRA (avoxTextureUpdateCallback 第三级查找)
+  // 纹理更新回调 (渲染线程): 从帧槽供 R8 的 w × h*3/2 整帧 NV12
+  // (avoxTextureUpdateCallback 第三级查找)
   bool allocCpuFrame(uint32_t w, uint32_t h, uint32_t bpp, void** texData);
+  // 源色彩空间编码 (standard | range<<8), 供 C# 构 shader 矩阵; 未就绪返回 -1
+  int32_t colorSpaceCode() const;
 
  private:
   // ── avox::IMediaPlayerOb (avox 线程, 状态回调) ──
@@ -137,6 +140,7 @@ class RtcPlayerBridge : public avox::IMediaPlayerOb,
   avox::IRtcEventOb* sdpAgent = nullptr;
   avox::ISurfaceRender* surface = nullptr;
   avox::ColorSpaceDesc colorSpace;
+  bool colorSpaceSet = false;  // 未就绪时 colorSpaceCode() 返回 -1
 
   // ── 配置缓存 (open 前设置) ──
   int32_t rollType = 0;
@@ -162,9 +166,9 @@ class RtcPlayerBridge : public avox::IMediaPlayerOb,
   // DataChannel 收包队列 (信令线程入队, 主线程 poll)
   std::mutex dcMutex;
   std::deque<std::vector<uint8_t>> dcQueue;
-  // CPU 帧槽 (渲染线程写, 回调线程读)
+  // CPU 帧槽 (渲染线程写, 回调线程读); 紧凑 NV12, 尺寸 frameW × frameH*3/2
   std::mutex frameMutex;
-  std::vector<uint8_t> frameBgra;
+  std::vector<uint8_t> frameNv12;
   int32_t frameW = 0;
   int32_t frameH = 0;
 };

@@ -139,7 +139,7 @@ void PlayerBridge::destroyPlayer() {
   stateCache.store((int32_t)avox::PlayerState::none);
   {
     std::lock_guard<std::mutex> lock(frameMutex);
-    frameBgra.clear();
+    frameNv12.clear();
     frameW = 0;
     frameH = 0;
   }
@@ -363,20 +363,27 @@ uint64_t PlayerBridge::dx11NativeTex() {
   return dx11.targetTex;
 }
 
+// Unity 纹理是 R8 的 w × h*3/2 (整帧 NV12), 故 bpp 必须是 1、h 是视频高的 3/2。
+// 无帧/尺寸不符时填中性黑 (Y=16, UV=128), 否则 shader 会把 0 当色度算出品红。
 bool PlayerBridge::allocCpuFrame(uint32_t w, uint32_t h, uint32_t bpp, void** texData) {
-  if (!texData || w == 0 || h == 0 || bpp == 0) return false;
-  const size_t bytes = (size_t)w * h * bpp;
+  if (!texData || w == 0 || h == 0 || bpp != 1) return false;
+  const size_t bytes = (size_t)w * h;
   uint8_t* buf = (uint8_t*)malloc(bytes);
   if (!buf) return false;
   bool hasFrame = false;
   {
     std::lock_guard<std::mutex> lock(frameMutex);
-    if (!frameBgra.empty() && frameW == (int32_t)w && frameH == (int32_t)h) {
-      memcpy(buf, frameBgra.data(), bytes);
+    if (!frameNv12.empty() && frameW == (int32_t)w &&
+        (int32_t)h == frameH * 3 / 2 && frameNv12.size() == bytes) {
+      memcpy(buf, frameNv12.data(), bytes);
       hasFrame = true;
     }
   }
-  if (!hasFrame) memset(buf, 0, bytes);
+  if (!hasFrame) {
+    const size_t ySize = (size_t)w * (h * 2 / 3);
+    memset(buf, 16, ySize < bytes ? ySize : bytes);
+    if (ySize < bytes) memset(buf + ySize, 128, bytes - ySize);
+  }
   *texData = buf;
   return true;
 }
@@ -476,10 +483,11 @@ void PlayerBridge::onReady() {
     avox::VTrackDesc vd = info->getVideoDesc(0);
     videoW.store(vd.desc.width);
     videoH.store(vd.desc.height);
-    // 色彩空间就绪: 下发渲染管线 (shader 矩阵热更新) + CPU 回退转换共用
-    if (vd.desc.colorSpace.standard != colorSpace.standard ||
+    // 色彩空间就绪: 下发渲染管线 (shader 矩阵热更新) + C# 侧 YUV shader 共用
+    if (!colorSpaceSet || vd.desc.colorSpace.standard != colorSpace.standard ||
         vd.desc.colorSpace.range != colorSpace.range) {
       colorSpace = vd.desc.colorSpace;
+      colorSpaceSet = true;
       if (surface) surface->setColorSpace(colorSpace);
     }
     if (bGpuMode && !gpuOutputOn) pendingGpuInit.store(true);
@@ -508,24 +516,20 @@ void PlayerBridge::onDecodeError(avox::TrackType trackType, avox::DecodeResult e
 
 // ── avox::ISurfaceRenderOb (avox 渲染线程) ──
 
+// frame.data 指向 VkVideoRender 的回读 buffer, 下一帧会被覆盖 —— 必须同步拷走。
+// 只做紧凑重打包不做色转: YUV→RGB 交给 Unity 侧 shader (Blit), 上传量 1.5 而非 4 字节/像素
 void PlayerBridge::onFrame(const avox::YUVFrame& frame) {
-  static std::atomic<uint32_t> frameCount{0};
   if (bGpuMode) return;
   const int32_t w = frame.format.width;
   const int32_t h = frame.format.height;
-  if (frameCount.fetch_add(1) == 0)
-  if (!frame.data[0] || w <= 0 || h <= 0) return;
-  if (frame.format.type != avox::YuvType::nv12 && frame.format.type != avox::YuvType::yuv420P) return;
-  std::vector<uint8_t> bgra;
-  bgra.resize((size_t)w * h * 4);
-  if (frame.format.type == avox::YuvType::nv12) {
-    ConvertNv12(frame, bgra.data(), colorSpace);
-  } else {
-    ConvertYuv420P(frame, bgra.data(), colorSpace);
-  }
+  // NV12 打包要求偶数宽高 (avox 输出恒为偶数)
+  if (w <= 0 || h <= 0 || (w & 1) || (h & 1)) return;
+  std::vector<uint8_t> nv12;
+  nv12.resize((size_t)w * h * 3 / 2);
+  if (!PackNv12(frame, nv12.data())) return;
   {
     std::lock_guard<std::mutex> lock(frameMutex);
-    frameBgra = std::move(bgra);
+    frameNv12 = std::move(nv12);
     frameW = w;
     frameH = h;
   }
@@ -569,104 +573,63 @@ void PlayerBridge::pushEvent(const AvoxUnityEvent& e) {
   events.push_back(e);
 }
 
-// ── YUV → BGRA (矩阵标准/量程取自源 colorSpace, 与渲染管线 shader 同参) ──
-
-namespace {
-// BT.601/709/2020 full-range 转换系数 (<<10 定点)
-void pickMatrix(avox::YuvStandard standard, int& rCof, int& guCof, int& gvCof, int& bCof) {
-  switch (standard) {
-    case avox::YuvStandard::bt709:
-      rCof = 1613;
-      guCof = 192;
-      gvCof = 479;
-      bCof = 1900;
-      break;
-    case avox::YuvStandard::bt2020:
-      rCof = 1510;
-      guCof = 168;
-      gvCof = 585;
-      bCof = 1926;
-      break;
-    default:
-      rCof = 1436;
-      guCof = 352;
-      gvCof = 731;
-      bCof = 1815;
-      break;
-  }
-}
-// limited(MPEG 16~235/240) → full(0~255) 展开
-inline int expandY(int y, bool limited) { return limited ? ((1192 * y - 19072) >> 10) : y; }
-inline int expandC(int c, bool limited) { return limited ? ((1166 * (c - 128)) >> 10) : c - 128; }
-}  // namespace
-
-void PlayerBridge::ConvertNv12(const avox::YUVFrame& frame, uint8_t* dst,
-                               const avox::ColorSpaceDesc& cs) {
+// ── 帧 → 紧凑 NV12 (只重排, 不做色转; 色转在 Unity 侧 shader) ──
+// 目标布局: [Y: h 行 × w] + [UV: h/2 行 × w (U/V 交错)],
+// C# 侧当成一张 R8 的 w × h*3/2 纹理上传, shader 按行区寻址。
+bool PlayerBridge::PackNv12(const avox::YUVFrame& frame, uint8_t* dst) {
   const int32_t w = frame.format.width;
   const int32_t h = frame.format.height;
-  const uint8_t* yPlane = frame.data[0];
-  const uint8_t* uvPlane = frame.data[1];
-  const int32_t yStride = frame.stride[0];
-  const int32_t uvStride = frame.stride[1];
-  int rCof;
-  int guCof;
-  int gvCof;
-  int bCof;
-  pickMatrix(cs.standard, rCof, guCof, gvCof, bCof);
-  const bool limited = cs.range == avox::YuvRange::limited;
-  auto toByte = [](int v) { return (uint8_t)(v < 0 ? 0 : (v > 255 ? 255 : v)); };
+  if (!dst || !frame.data[0] || w <= 0 || h <= 0 || (w & 1) || (h & 1)) return false;
+  const avox::YuvType type = frame.format.type;
+  if (type != avox::YuvType::nv12 && type != avox::YuvType::yuv420P) return false;
+  if (!frame.data[1]) return false;
+  const size_t ySize = (size_t)w * h;
+  const int32_t uvW = w / 2;
+  const int32_t uvH = h / 2;
+  // Y: 逐行去 stride padding
   for (int32_t j = 0; j < h; ++j) {
-    const uint8_t* yRow = yPlane + (size_t)j * yStride;
-    const uint8_t* uvRow = uvPlane + (size_t)(j / 2) * uvStride;
-    uint8_t* dstRow = dst + (size_t)j * w * 4;
-    for (int32_t i = 0; i < w; ++i) {
-      const int y = expandY(yRow[i], limited);
-      const int uvIdx = (i & ~1);
-      const int u = expandC(uvRow[uvIdx], limited);
-      const int v = expandC(uvRow[uvIdx + 1], limited);
-      const int r = y + ((v * rCof) >> 10);
-      const int g = y - ((u * guCof + v * gvCof) >> 10);
-      const int b = y + ((u * bCof) >> 10);
-      dstRow[i * 4] = toByte(b);
-      dstRow[i * 4 + 1] = toByte(g);
-      dstRow[i * 4 + 2] = toByte(r);
-      dstRow[i * 4 + 3] = 255;
+    memcpy(dst + (size_t)j * w, frame.data[0] + (size_t)j * frame.stride[0], w);
+  }
+  uint8_t* uvDst = dst + ySize;
+  if (type == avox::YuvType::nv12) {
+    // UV 已交错, 一行正好 w 字节 (w/2 组 UV)
+    for (int32_t j = 0; j < uvH; ++j) {
+      memcpy(uvDst + (size_t)j * w, frame.data[1] + (size_t)j * frame.stride[1], w);
+    }
+    return true;
+  }
+  if (!frame.data[2]) return false;
+  // yuv420P → NV12 交织。stride 缺省时退化为 w/2
+  const int32_t uStride = frame.stride[1] > 0 ? frame.stride[1] : uvW;
+  const int32_t vStride = frame.stride[2] > 0 ? frame.stride[2] : uvW;
+  // avox 的 SwVideoBuffer::to() 在 rowPitch != width 时报的 stride 与实际布局不一致:
+  // 数据是 copyPlaneYUV2TightlyBuffer 产出的 GPU 打包布局 (每物理行 stride[0] 字节装
+  // [逻辑行2p: uvW][逻辑行2p+1: uvW][pad]), 而 stride[1] 报的是 unpack 后的等距值
+  // rowPitch/2。按等距读会让奇数行左移 (rowPitch/2 - uvW) 个样本 → 竖条纹。
+  // (Godot 插件实测: 448x320 出条纹, 640x480 因无 padding 正常)
+  const bool gpuPacked = (uStride != uvW) && (frame.stride[0] > w);
+  const int32_t physPitch = frame.stride[0];
+  for (int32_t j = 0; j < uvH; ++j) {
+    const uint8_t* uRow;
+    const uint8_t* vRow;
+    if (gpuPacked) {
+      const size_t off = (size_t)(j / 2) * physPitch + (size_t)(j & 1) * uvW;
+      uRow = frame.data[1] + off;
+      vRow = frame.data[2] + off;
+    } else {
+      uRow = frame.data[1] + (size_t)j * uStride;
+      vRow = frame.data[2] + (size_t)j * vStride;
+    }
+    uint8_t* o = uvDst + (size_t)j * w;
+    for (int32_t i = 0; i < uvW; ++i) {
+      o[i * 2] = uRow[i];
+      o[i * 2 + 1] = vRow[i];
     }
   }
+  return true;
 }
 
-void PlayerBridge::ConvertYuv420P(const avox::YUVFrame& frame, uint8_t* dst,
-                                  const avox::ColorSpaceDesc& cs) {
-  const int32_t w = frame.format.width;
-  const int32_t h = frame.format.height;
-  const uint8_t* yPlane = frame.data[0];
-  const uint8_t* uPlane = frame.data[1];
-  const uint8_t* vPlane = frame.data[2];
-  const int32_t yStride = frame.stride[0];
-  const int32_t uvStride = frame.stride[1] > 0 ? frame.stride[1] : w / 2;
-  int rCof;
-  int guCof;
-  int gvCof;
-  int bCof;
-  pickMatrix(cs.standard, rCof, guCof, gvCof, bCof);
-  const bool limited = cs.range == avox::YuvRange::limited;
-  auto toByte = [](int v) { return (uint8_t)(v < 0 ? 0 : (v > 255 ? 255 : v)); };
-  for (int32_t j = 0; j < h; ++j) {
-    const uint8_t* yRow = yPlane + (size_t)j * yStride;
-    const uint8_t* uRow = uPlane + (size_t)(j / 2) * uvStride;
-    const uint8_t* vRow = vPlane + (size_t)(j / 2) * uvStride;
-    uint8_t* dstRow = dst + (size_t)j * w * 4;
-    for (int32_t i = 0; i < w; ++i) {
-      const int y = expandY(yRow[i], limited);
-      const int u = expandC(uRow[i / 2], limited);
-      const int v = expandC(vRow[i / 2], limited);
-      const int r = y + ((v * rCof) >> 10);
-      const int g = y - ((u * guCof + v * gvCof) >> 10);
-      const int b = y + ((u * bCof) >> 10);
-      dstRow[i * 4] = toByte(b);
-      dstRow[i * 4 + 1] = toByte(g);
-      dstRow[i * 4 + 2] = toByte(r);
-      dstRow[i * 4 + 3] = 255;
-    }
-  }
+int32_t PlayerBridge::colorSpaceCode() const {
+  if (!colorSpaceSet) return -1;
+  return (int32_t)colorSpace.standard | ((int32_t)colorSpace.range << 8);
 }
