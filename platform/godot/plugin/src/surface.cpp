@@ -3,7 +3,14 @@
 
 #include <godot_cpp/classes/rendering_device.hpp>
 #include <godot_cpp/classes/rendering_server.hpp>
+#include <godot_cpp/classes/viewport.hpp>
+#include <godot_cpp/classes/viewport_texture.hpp>
+#include <godot_cpp/core/memory.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
+#include <godot_cpp/variant/vector2.hpp>
+#include <godot_cpp/variant/vector2i.hpp>
+#include <godot_cpp/variant/vector3.hpp>
+#include <godot_cpp/variant/vector4.hpp>
 
 #include <cstring>
 #include <thread>
@@ -21,6 +28,15 @@ SurfaceTextureBridge::SurfaceTextureBridge() = default;
 
 SurfaceTextureBridge::~SurfaceTextureBridge() {
     unbindSurface();
+    // SubViewport 是 ownerNode 的子节点, 由宿主 Node 析构时统一回收。
+    // 本类析构总是发生在宿主析构体内, 此时不能再调宿主的 remove_child,
+    // 也不能 memdelete 一个仍在树内的节点 —— 只松开引用即可。
+    cpuTexture.unref();
+    subViewport = nullptr;
+    yuvRect = nullptr;
+    yuvTexture.unref();
+    yuvMaterial.unref();
+    yuvShader.unref();
 }
 
 void SurfaceTextureBridge::bindSurface(avox::ISurfaceRender *surface) {
@@ -37,12 +53,19 @@ void SurfaceTextureBridge::bindSurface(avox::ISurfaceRender *surface) {
         surfaceRender->setOffSurface(avox::YuvType::nv12);
         surfaceRender->enableYuvOut(avox::YuvType::nv12);
     }
+    // 重绑后把已知色彩空间重新下发 (play() 重建播放器时 surface 是新的)
+    if (colorSpaceSet) surfaceRender->setColorSpace(colorSpace);
     avox::addSurfaceRenderOb(surfaceRender, this);
 }
 
 void SurfaceTextureBridge::unbindSurface() {
     if (!surfaceRender) return;
     avox::removeSurfaceRenderOb(surfaceRender, this);
+    // 丢弃残帧, 避免下个 session 先显示上一路的画面
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        std::queue<PendingFrame>().swap(queue);
+    }
 
     if (gpuMode) {
         if (gpuOutputEnabled) {
@@ -57,46 +80,64 @@ void SurfaceTextureBridge::unbindSurface() {
 
 // ── ISurfaceRenderOb (CPU 回退模式,avox 线程调用) ──
 
+// frame.data 指向 VkVideoRender 的回读 buffer, 下一帧会被覆盖 —— 必须同步拷走。
+// 统一打包成紧凑 NV12 (下游 shader 只认这一种布局): yuv420P 顺手交织成 NV12,
+// 代价是 w*h/2 字节的字节级写, 远低于原先整帧 w*h*4 的 RGBA 转换。
 void SurfaceTextureBridge::onFrame(const avox::YUVFrame &frame) {
     if (gpuMode) return;
     int w = frame.format.width;
     int h = frame.format.height;
     if (!frame.data[0] || w <= 0 || h <= 0) return;
-    int type = static_cast<int>(frame.format.type);
-
-    // avox 可能交付 yuv420P(3平面) 或 nv12(交错UV), 必须按实际格式打包,
-    // 否则把 yuv420P 当 nv12 读会把 U 平面误当 UV 交错、V 平面丢失 → 颜色错乱。
+    // NV12 打包要求偶数宽高 (avox 输出恒为偶数, 奇数直接丢弃避免越界)
+    if ((w & 1) || (h & 1)) return;
+    const avox::YuvType type = frame.format.type;
+    if (type != avox::YuvType::nv12 && type != avox::YuvType::yuv420P) return;
+    const int ySize = w * h;
+    const int uvW = w / 2;
+    const int uvH = h / 2;
     PendingFrame pf;
     pf.width = w;
     pf.height = h;
-    pf.type = type;
-    int ySize = w * h;
-    if (type == static_cast<int>(avox::YuvType::nv12)) {
-        pf.data.resize(ySize + ySize / 2);
-        uint8_t *dst = pf.data.ptrw();
-        for (int i = 0; i < h; ++i) {
-            memcpy(dst + i * w, frame.data[0] + i * frame.stride[0], w);
-        }
-        for (int i = 0; i < h / 2; ++i) {
-            memcpy(dst + ySize + i * w, frame.data[1] + i * frame.stride[1], w);
-        }
-    } else if (type == static_cast<int>(avox::YuvType::yuv420P)) {
-        int uvW = w / 2;
-        int uvH = h / 2;
-        int uSize = uvW * uvH;
-        pf.data.resize(ySize + uSize * 2);
-        uint8_t *dst = pf.data.ptrw();
-        for (int i = 0; i < h; ++i) {
-            memcpy(dst + i * w, frame.data[0] + i * frame.stride[0], w);
-        }
+    pf.data.resize(ySize + ySize / 2);
+    uint8_t *dst = pf.data.ptrw();
+    // Y: 逐行去 stride padding
+    for (int i = 0; i < h; ++i) {
+        memcpy(dst + (size_t)i * w, frame.data[0] + (size_t)i * frame.stride[0], w);
+    }
+    uint8_t *uvDst = dst + ySize;
+    if (type == avox::YuvType::nv12) {
+        // UV 已交错, 一行正好 w 字节 (w/2 组 UV)
         for (int i = 0; i < uvH; ++i) {
-            memcpy(dst + ySize + i * uvW, frame.data[1] + i * frame.stride[1], uvW);
-        }
-        for (int i = 0; i < uvH; ++i) {
-            memcpy(dst + ySize + uSize + i * uvW, frame.data[2] + i * frame.stride[2], uvW);
+            memcpy(uvDst + (size_t)i * w, frame.data[1] + (size_t)i * frame.stride[1], w);
         }
     } else {
-        return;  // 未知格式, 丢弃
+        // yuv420P → NV12 交织。stride 缺省时退化为 w/2 (同原 CPU 路径的兜底)
+        const int uStride = frame.stride[1] > 0 ? frame.stride[1] : uvW;
+        const int vStride = frame.stride[2] > 0 ? frame.stride[2] : uvW;
+        // avox 的 SwVideoBuffer::to() 在 rowPitch != width 时报的 stride 与实际布局
+        // 不一致: 数据是 copyPlaneYUV2TightlyBuffer 产出的 GPU 打包布局
+        // (每物理行 stride[0] 字节装 [逻辑行2p: uvW][逻辑行2p+1: uvW][pad]),
+        // 而 stride[1] 报的是 unpack 后的等距值 rowPitch/2。按等距读会让奇数行
+        // 左移 (rowPitch/2 - uvW) 个样本 → 竖条纹。这里按真实布局寻址。
+        const bool gpuPacked = (uStride != uvW) && (frame.stride[0] > w);
+        const int physPitch = frame.stride[0];
+        for (int i = 0; i < uvH; ++i) {
+            const uint8_t *uRow;
+            const uint8_t *vRow;
+            if (gpuPacked) {
+                const size_t off = (size_t)(i / 2) * physPitch + (size_t)(i & 1) * uvW;
+                uRow = frame.data[1] + off;
+                vRow = frame.data[2] + off;
+            } else {
+                uRow = frame.data[1] + (size_t)i * uStride;
+                vRow = frame.data[2] + (size_t)i * vStride;
+            }
+            uint8_t *o = uvDst + (size_t)i * w;
+            for (int x = 0; x < uvW; ++x) {
+                o[x * 2] = uRow[x];
+                o[x * 2 + 1] = vRow[x];
+            }
+        }
     }
     {
         std::lock_guard<std::mutex> lock(mutex);
@@ -172,7 +213,7 @@ bool SurfaceTextureBridge::importSharedImage() {
 #ifdef __ANDROID__
     // volk 设备扩展指针缺失 (未被加载) 时直接调用会 PC=0 崩溃, 先行防护并走降级
     if (!vkGetAndroidHardwareBufferPropertiesANDROID || !vkBindImageMemory2) {
-        UtilityFunctions::print("[avox_gpu] volk 指针缺失 ahbProps=",
+        UtilityFunctions::print("[avox_gpu] volk fn missing ahbProps=",
                                 (int64_t)(void*)vkGetAndroidHardwareBufferPropertiesANDROID,
                                 " bind2=", (int64_t)(void*)vkBindImageMemory2);
         AHardwareBuffer_release(ahb);
@@ -296,7 +337,7 @@ bool SurfaceTextureBridge::importSharedImage() {
     // 严格交集: AHB 导入不得回退 image 自身 bits (非法内存类型部分驱动直接崩)
     uint32_t inter = memReqs.memoryTypeBits & handleBits;
     if (inter == 0) {
-        UtilityFunctions::print("[avox_gpu] 内存类型无交集 (image=0x", (int64_t)memReqs.memoryTypeBits,
+        UtilityFunctions::print("[avox_gpu] no common memory type (image=0x", (int64_t)memReqs.memoryTypeBits,
                                 " handle=0x", (int64_t)handleBits, ")");
         vkDestroyImage(device, importedImage, nullptr);
         importedImage = VK_NULL_HANDLE;
@@ -313,7 +354,7 @@ bool SurfaceTextureBridge::importSharedImage() {
         }
     }
     if (memoryTypeIndex == UINT32_MAX) {
-        UtilityFunctions::print("[avox_gpu] 无可用内存类型 (inter=0x", (int64_t)inter, ")");
+        UtilityFunctions::print("[avox_gpu] no usable memory type (inter=0x", (int64_t)inter, ")");
         vkDestroyImage(device, importedImage, nullptr);
         importedImage = VK_NULL_HANDLE;
 #ifndef _WIN32
@@ -398,8 +439,8 @@ bool SurfaceTextureBridge::importSharedImage() {
     texRd.instantiate();
     texRd->set_texture_rd_rid(importedRid);
 
-    UtilityFunctions::print("[avox_gpu] importSharedImage 完成: ", w, "x", h,
-                            " (zero-copy: 直接采样 importedImage)");
+    UtilityFunctions::print("[avox_gpu] importSharedImage done: ", w, "x", h,
+                            " (zero-copy: sampling importedImage directly)");
     return true;
 }
 
@@ -466,7 +507,8 @@ void SurfaceTextureBridge::update() {
                 // 首次建立或重建后重新建立: 新共享内存, 释放旧导入(保留维度), 下方重导
                 releaseImport();
                 gpuOutputEnabled = true;
-                UtilityFunctions::print("[avox_gpu] enableVkOutput 成功 ", gpuW, "x", gpuH);
+                // 日志一律 ASCII: 插件编译无 /utf-8, 窄字面量中文在 Windows 必乱码
+                UtilityFunctions::print("[avox_gpu] enableVkOutput ok ", gpuW, "x", gpuH);
             }
             gpuOutputEnabled = ok;
         }
@@ -477,7 +519,7 @@ void SurfaceTextureBridge::update() {
                 // 连续导入失败 (驱动不支持/扩展缺失等): 一次性降级 CPU, 不再每帧重试。
                 // 不调 setVulkan(false) — SurfaceRenderVk 运行中不支持切换,
                 // 保留 Vulkan 管线, 改走 YUV 回调出 CPU 帧 (enableYuvOut → onFrame)。
-                UtilityFunctions::print("[avox_gpu] 连续导入失败, 降级 CPU 回退");
+                UtilityFunctions::print("[avox_gpu] import failed 3x, fallback to CPU path");
                 avox::disableVkOutput(surfaceRender);
                 gpuOutputEnabled = false;
                 surfaceRender->setOffSurface(avox::YuvType::nv12);
@@ -491,7 +533,7 @@ void SurfaceTextureBridge::update() {
         return;
     }
 
-    // ── CPU 回退模式 ──
+    // ── CPU 回退模式: 上传 NV12 到 R8 纹理, SubViewport 内 shader 转 RGB ──
     PendingFrame pf;
     bool hasFrame = false;
     {
@@ -503,91 +545,155 @@ void SurfaceTextureBridge::update() {
         }
     }
     if (!hasFrame) return;
-
-    PackedByteArray rgba;
-    if (pf.type == static_cast<int>(avox::YuvType::yuv420P)) {
-        rgba = yuv420pToRgba(pf.data.ptr(), pf.width, pf.height);
-    } else {
-        rgba = nv12ToRgba(pf.data.ptr(), pf.width, pf.height);
-    }
-    if (pf.width != lastWidth || pf.height != lastHeight || texture.is_null()) {
-        Ref<Image> img = Image::create_from_data(pf.width, pf.height, false,
-                                                  Image::FORMAT_RGBA8, rgba);
-        texture = ImageTexture::create_from_image(img);
-        lastWidth = pf.width;
-        lastHeight = pf.height;
-    } else {
-        Ref<Image> img = Image::create_from_data(pf.width, pf.height, false,
-                                                  Image::FORMAT_RGBA8, rgba);
-        texture->update(img);
-    }
+    if (!ensureCpuShaderPath(pf.width, pf.height)) return;
+    // 整块 NV12 当成 w × h*3/2 的 R8 图: Y 在上 h 行, 交错 UV 在下 h/2 行
+    Ref<Image> img = Image::create_from_data(pf.width, pf.height * 3 / 2, false,
+                                            Image::FORMAT_R8, pf.data);
+    if (img.is_null()) return;
+    yuvTexture->update(img);
+    // 只在有新帧时渲一次 (UPDATE_ONCE 渲完自动回到 DISABLED)
+    subViewport->set_update_mode(SubViewport::UPDATE_ONCE);
 }
 
 Ref<Texture2D> SurfaceTextureBridge::getTexture() const {
     if (gpuMode) {
         return texRd;
     }
-    return texture;
+    return cpuTexture;
 }
 
-PackedByteArray SurfaceTextureBridge::nv12ToRgba(const uint8_t *nv12, int width, int height) {
-    PackedByteArray rgba;
-    rgba.resize(width * height * 4);
-    uint8_t *out = rgba.ptrw();
-    const uint8_t *yPlane = nv12;
-    const uint8_t *uvPlane = nv12 + width * height;
-    for (int j = 0; j < height; ++j) {
-        for (int i = 0; i < width; ++i) {
-            int yIdx = j * width + i;
-            int uvIdx = (j / 2) * width + (i & ~1);
-            int y = yPlane[yIdx];
-            int u = uvPlane[uvIdx] - 128;
-            int v = uvPlane[uvIdx + 1] - 128;
-            int r = y + ((v * 1436) >> 10);
-            int g = y - ((u * 352 + v * 731) >> 10);
-            int b = y + ((u * 1815) >> 10);
-            r = r < 0 ? 0 : (r > 255 ? 255 : r);
-            g = g < 0 ? 0 : (g > 255 ? 255 : g);
-            b = b < 0 ? 0 : (b > 255 ? 255 : b);
-            int outIdx = yIdx * 4;
-            out[outIdx] = r;
-            out[outIdx + 1] = g;
-            out[outIdx + 2] = b;
-            out[outIdx + 3] = 255;
-        }
-    }
-    return rgba;
+// ── CPU 回退模式: YUV→RGB 的 shader 转换趟 ──
+// 一张 R8 纹理装整帧 NV12, ColorRect + canvas_item shader 在 SubViewport 里转成 RGB,
+// 对外暴露 ViewportTexture, 所以 GDScript 侧仍是普通 Texture2D (无需 ShaderMaterial)。
+// 用高层 Shader 而非 RD compute: CPU 回退的触发条件之一就是 RenderingDevice 为 null
+// (Compatibility/OpenGL 后端), 那时 Texture2DRD 路线不存在。
+static const char *kYuvToRgbShader = R"(shader_type canvas_item;
+render_mode unshaded;
+
+// 单张 R8: 上 yRows 行 Y, 下 yRows/2 行交错 UV (紧凑 NV12)
+uniform sampler2D yuvTex : filter_nearest, repeat_disable;
+uniform vec2 texSize;   // (w, h*1.5)
+uniform float yRows;    // h
+uniform vec4 coef;      // (rV, gU, gV, bU) 矩阵系数
+uniform vec3 rangeAdj;  // (yBias, yScale, cScale) 量程展开
+
+void fragment() {
+    vec2 px = floor(UV * vec2(texSize.x, yRows));
+    float y = (texture(yuvTex, (px + vec2(0.5)) / texSize).r - rangeAdj.x) * rangeAdj.y;
+    // 色度行在 Y 之后, 每两条 Y 行共用一条; U/V 相邻两字节, 必须精确落在 texel 中心,
+    // 否则线性过滤会把 U 和 V 混在一起
+    float cy = yRows + floor(px.y * 0.5) + 0.5;
+    float cx = floor(px.x * 0.5) * 2.0;
+    float u = (texture(yuvTex, vec2(cx + 0.5, cy) / texSize).r - 0.5019608) * rangeAdj.z;
+    float v = (texture(yuvTex, vec2(cx + 1.5, cy) / texSize).r - 0.5019608) * rangeAdj.z;
+    COLOR = vec4(y + coef.x * v,
+                 y - coef.y * u - coef.z * v,
+                 y + coef.w * u,
+                 1.0);
+}
+)";
+
+bool SurfaceTextureBridge::ensureCpuShaderPath(int w, int h) {
+    // SubViewport 要挂在宿主 Node 下才会渲染
+    if (!ownerNode || !ownerNode->is_inside_tree()) return false;
+    if (subViewport && w == lastWidth && h == lastHeight) return true;
+    destroyCpuShaderPath();
+    const int texH = h * 3 / 2;
+    yuvShader.instantiate();
+    yuvShader->set_code(String(kYuvToRgbShader));
+    yuvMaterial.instantiate();
+    yuvMaterial->set_shader(yuvShader);
+    // 首帧前先填黑 (Y=16, U=V=128), 避免 update() 之前采到未初始化内存
+    PackedByteArray init;
+    init.resize((int64_t)w * texH);
+    memset(init.ptrw(), 16, (size_t)w * h);
+    memset(init.ptrw() + (size_t)w * h, 128, (size_t)w * h / 2);
+    Ref<Image> img = Image::create_from_data(w, texH, false, Image::FORMAT_R8, init);
+    if (img.is_null()) return false;
+    yuvTexture = ImageTexture::create_from_image(img);
+    if (yuvTexture.is_null()) return false;
+    yuvMaterial->set_shader_parameter("yuvTex", yuvTexture);
+    yuvMaterial->set_shader_parameter("texSize", Vector2((float)w, (float)texH));
+    yuvMaterial->set_shader_parameter("yRows", (float)h);
+    applyColorSpaceUniform();
+    subViewport = memnew(SubViewport);
+    subViewport->set_name("AvoxYuvConvert");
+    subViewport->set_size(Vector2i(w, h));
+    // 无新帧不重渲 (每帧 update() 有帧时才置 UPDATE_ONCE)
+    subViewport->set_update_mode(SubViewport::UPDATE_DISABLED);
+    subViewport->set_disable_3d(true);
+    subViewport->set_transparent_background(false);
+    subViewport->set_handle_input_locally(false);
+    subViewport->set_default_canvas_item_texture_filter(
+        Viewport::DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST);
+    ownerNode->add_child(subViewport);
+    yuvRect = memnew(ColorRect);
+    yuvRect->set_position(Vector2(0, 0));
+    yuvRect->set_size(Vector2((float)w, (float)h));
+    yuvRect->set_material(yuvMaterial);
+    subViewport->add_child(yuvRect);
+    cpuTexture = subViewport->get_texture();
+    lastWidth = w;
+    lastHeight = h;
+    // 日志一律 ASCII: 插件编译无 /utf-8, 窄字面量中文在 Windows 必乱码
+    UtilityFunctions::print("[avox_cpu] yuv shader path ready ", w, "x", h,
+                            " (R8 ", w, "x", texH, " -> viewport RGB)");
+    return true;
 }
 
-PackedByteArray SurfaceTextureBridge::yuv420pToRgba(const uint8_t *yuv420p, int width, int height) {
-    PackedByteArray rgba;
-    rgba.resize(width * height * 4);
-    uint8_t *out = rgba.ptrw();
-    const uint8_t *yPlane = yuv420p;
-    const uint8_t *uPlane = yuv420p + width * height;
-    const uint8_t *vPlane = uPlane + (width / 2) * (height / 2);
-    int uvW = width / 2;
-    for (int j = 0; j < height; ++j) {
-        for (int i = 0; i < width; ++i) {
-            int yIdx = j * width + i;
-            int uvIdx = (j / 2) * uvW + i / 2;
-            int y = yPlane[yIdx];
-            int u = uPlane[uvIdx] - 128;
-            int v = vPlane[uvIdx] - 128;
-            int r = y + ((v * 1436) >> 10);
-            int g = y - ((u * 352 + v * 731) >> 10);
-            int b = y + ((u * 1815) >> 10);
-            r = r < 0 ? 0 : (r > 255 ? 255 : r);
-            g = g < 0 ? 0 : (g > 255 ? 255 : g);
-            b = b < 0 ? 0 : (b > 255 ? 255 : b);
-            int outIdx = yIdx * 4;
-            out[outIdx] = r;
-            out[outIdx + 1] = g;
-            out[outIdx + 2] = b;
-            out[outIdx + 3] = 255;
+// 仅用于分辨率变化时重建 (宿主仍存活)。宿主析构路径见 ~SurfaceTextureBridge。
+void SurfaceTextureBridge::destroyCpuShaderPath() {
+    cpuTexture.unref();
+    // yuvRect 是 subViewport 的子节点, memdelete(subViewport) 会一并释放
+    if (subViewport) {
+        if (ownerNode && subViewport->get_parent() == ownerNode) {
+            ownerNode->remove_child(subViewport);
         }
+        memdelete(subViewport);
+        subViewport = nullptr;
     }
-    return rgba;
+    yuvRect = nullptr;
+    yuvTexture.unref();
+    yuvMaterial.unref();
+    yuvShader.unref();
+    lastWidth = 0;
+    lastHeight = 0;
+}
+
+// 矩阵系数与 CPU 版 (Unity PlayerBridge::pickMatrix) 同参, Q10 定点转浮点
+void SurfaceTextureBridge::applyColorSpaceUniform() {
+    if (yuvMaterial.is_null()) return;
+    Vector4 coef;
+    switch (colorSpace.standard) {
+        case avox::YuvStandard::bt709:
+            coef = Vector4(1613.0f, 192.0f, 479.0f, 1900.0f);
+            break;
+        case avox::YuvStandard::bt2020:
+            coef = Vector4(1510.0f, 168.0f, 585.0f, 1926.0f);
+            break;
+        default:
+            coef = Vector4(1436.0f, 352.0f, 731.0f, 1815.0f);
+            break;
+    }
+    coef /= 1024.0f;
+    const bool limited = colorSpace.range == avox::YuvRange::limited;
+    // limited(MPEG 16~235/240) → full: y=(y-16/255)*1.164062, c=(c-128/255)*1.138672
+    Vector3 rangeAdj = limited ? Vector3(16.0f / 255.0f, 1.164062f, 1.138672f)
+                               : Vector3(0.0f, 1.0f, 1.0f);
+    yuvMaterial->set_shader_parameter("coef", coef);
+    yuvMaterial->set_shader_parameter("rangeAdj", rangeAdj);
+}
+
+void SurfaceTextureBridge::setColorSpace(const avox::ColorSpaceDesc &cs) {
+    if (colorSpaceSet && cs.standard == colorSpace.standard && cs.range == colorSpace.range) {
+        return;
+    }
+    colorSpace = cs;
+    colorSpaceSet = true;
+    // 同源驱动 avox 的 yuv2RGBA/rgba2YUV 矩阵 (同 Unity PlayerBridge::onReady)。
+    // 两个方向共用一个 colorSpace, 回读出的 YUV 与源同空间, 故 shader 用源矩阵解码。
+    if (surfaceRender) surfaceRender->setColorSpace(cs);
+    applyColorSpaceUniform();
 }
 
 } // namespace godot

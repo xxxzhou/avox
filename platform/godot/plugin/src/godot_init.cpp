@@ -89,7 +89,8 @@ void avox_gpu_passthrough_init() {
     static std::once_flag flag;
     std::call_once(flag, [] {
         RenderingDevice *rd = RenderingServer::get_singleton()->get_rendering_device();
-        if (!rd) { UtilityFunctions::print("[avox_gpu] RenderingDevice 为 null"); return; }
+        // 日志一律 ASCII: 插件编译无 /utf-8, 窄字面量中文在 Windows 必乱码
+        if (!rd) { UtilityFunctions::print("[avox_gpu] RenderingDevice is null"); return; }
 
         uint64_t vkInstance = rd->get_driver_resource(RenderingDevice::DRIVER_RESOURCE_TOPMOST_OBJECT, RID(), 0);
         uint64_t vkDevice   = rd->get_driver_resource(RenderingDevice::DRIVER_RESOURCE_LOGICAL_DEVICE, RID(), 0);
@@ -102,7 +103,7 @@ void avox_gpu_passthrough_init() {
         volkLoadInstance(reinterpret_cast<VkInstance>(vkInstance));
         volkLoadDevice(reinterpret_cast<VkDevice>(vkDevice));
         if (!vkCreateImage) {
-            UtilityFunctions::print("[avox_gpu] volk 加载后 vkCreateImage 仍为 null");
+            UtilityFunctions::print("[avox_gpu] vkCreateImage still null after volk load");
             return;
         }
 
@@ -125,17 +126,17 @@ void avox_gpu_passthrough_init() {
         uint64_t vkPhysDevU = rd->get_driver_resource(RenderingDevice::DRIVER_RESOURCE_PHYSICAL_DEVICE, RID(), 0);
         VkPhysicalDevice physDev = reinterpret_cast<VkPhysicalDevice>(vkPhysDevU);
         if (!physDev) {
-            UtilityFunctions::print("[avox_gpu] android: physical device 为 null, CPU 回退");
+            UtilityFunctions::print("[avox_gpu] android: physical device is null, CPU fallback");
             return;
         }
         uint32_t extCount = 0;
         if (vkEnumerateDeviceExtensionProperties(physDev, nullptr, &extCount, nullptr) != VK_SUCCESS || extCount == 0) {
-            UtilityFunctions::print("[avox_gpu] android: 枚举设备扩展失败, CPU 回退");
+            UtilityFunctions::print("[avox_gpu] android: enumerate device extensions failed, CPU fallback");
             return;
         }
         std::vector<VkExtensionProperties> exts(extCount);
         if (vkEnumerateDeviceExtensionProperties(physDev, nullptr, &extCount, exts.data()) != VK_SUCCESS) {
-            UtilityFunctions::print("[avox_gpu] android: 枚举设备扩展失败, CPU 回退");
+            UtilityFunctions::print("[avox_gpu] android: enumerate device extensions failed, CPU fallback");
             return;
         }
         bool ahbExt = false;
@@ -146,7 +147,7 @@ void avox_gpu_passthrough_init() {
             }
         }
         if (!ahbExt) {
-            UtilityFunctions::print("[avox_gpu] android: 无 AHB 外部内存扩展, CPU 回退");
+            UtilityFunctions::print("[avox_gpu] android: AHB external memory ext missing, CPU fallback");
             return;
         }
         // Godot 建设备未启用 AHB 扩展时 GetDeviceProcAddr 对扩展函数返回 NULL;
@@ -160,7 +161,7 @@ void avox_gpu_passthrough_init() {
             }
         }
         if (!vkGetAndroidHardwareBufferPropertiesANDROID || !vkBindImageMemory2) {
-            UtilityFunctions::print("[avox_gpu] android: AHB 扩展函数不可用, CPU 回退");
+            UtilityFunctions::print("[avox_gpu] android: AHB ext functions unavailable, CPU fallback");
             return;
         }
         UtilityFunctions::print("[avox_gpu] init OK (android, AHB GPU passthrough) ahbProps=",
@@ -365,7 +366,7 @@ static void avoxAndroidBootstrap() {
     JavaVM *vm = nullptr;
     jsize count = 0;
     if (getVMs == nullptr || getVMs(&vm, 1, &count) != JNI_OK || count < 1 || vm == nullptr) {
-        UtilityFunctions::print("[avox_android] JNI_GetCreatedJavaVMs resolve/call failed, AndroidEnv 未接线");
+        UtilityFunctions::print("[avox_android] JNI_GetCreatedJavaVMs resolve/call failed, AndroidEnv not wired");
         return;
     }
     JNIEnv *env = nullptr;

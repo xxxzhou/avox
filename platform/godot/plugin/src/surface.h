@@ -5,6 +5,11 @@
 #include <godot_cpp/classes/texture2drd.hpp>
 #include <godot_cpp/classes/rendering_device.hpp>
 #include <godot_cpp/classes/rendering_server.hpp>
+#include <godot_cpp/classes/node.hpp>
+#include <godot_cpp/classes/sub_viewport.hpp>
+#include <godot_cpp/classes/color_rect.hpp>
+#include <godot_cpp/classes/shader.hpp>
+#include <godot_cpp/classes/shader_material.hpp>
 
 #include <avox/AvoxLayer.h>
 
@@ -17,6 +22,18 @@
 
 namespace godot {
 
+// ColorSpaceDesc ↔ int: onReady(avox 线程)只存整数, 主线程再解回来喂纹理桥,
+// 避免跨线程碰 Godot 对象。-1 表示未知(用桥的默认 BT.601 full)。
+inline int encodeColorSpace(const avox::ColorSpaceDesc &cs) {
+    return static_cast<int>(cs.standard) | (static_cast<int>(cs.range) << 8);
+}
+inline avox::ColorSpaceDesc decodeColorSpace(int code) {
+    avox::ColorSpaceDesc cs;
+    cs.standard = static_cast<avox::YuvStandard>(code & 0xFF);
+    cs.range = static_cast<avox::YuvRange>((code >> 8) & 0xFF);
+    return cs;
+}
+
 /// avox 视频帧 → Godot 纹理桥接
 ///
 /// GPU 直通模式(Vulkan 后端, zero-copy):
@@ -28,9 +45,16 @@ namespace godot {
 ///   注意: 跨 VkDevice 外部内存直采在部分驱动 (Intel iGPU) 会崩,
 ///   若崩则回退 copy-based (sampledImage + 每帧 texture_copy, 见 git 历史)。
 ///
-/// CPU 回退模式(非 Vulkan 后端 / 初始化失败):
-///   avox 渲染线程: ISurfaceRenderOb::onFrame 推 YUV 帧进队列 (yuv420P 或 nv12)
-///   Godot 主线程: update() 消费帧, YUV → RGBA, 更新 ImageTexture
+/// CPU 回退模式(非 Vulkan 后端 / 初始化失败) — YUV 上传, shader 转 RGB:
+///   avox 渲染线程: onFrame 把帧重打包成紧凑 NV12 入队 (yuv420P 顺手交织成 NV12,
+///                  使下游只有一种布局)
+///   Godot 主线程: update() 把 NV12 整块塞进一张 R8 纹理 (w × h*3/2, Y 在上 2/3,
+///                  交错 UV 在下 1/3, 同 swig/nodejs/yuvglrender.js 的单图方案),
+///                  内置 SubViewport + ColorRect + canvas_item shader 做 YUV→RGB,
+///                  getTexture() 返回 SubViewport 的 ViewportTexture。
+///   相比逐像素 CPU 转换: 上传量 w*h*1.5 而非 w*h*4, 无 per-pixel 乘加,
+///   且矩阵/量程按源 ColorSpaceDesc 走 uniform (CPU 版是硬编码 BT.601 full)。
+///   对外仍是一张普通 Texture2D, GDScript 侧无需挂 ShaderMaterial。
 class SurfaceTextureBridge : public avox::ISurfaceRenderOb {
 public:
     SurfaceTextureBridge();
@@ -40,10 +64,14 @@ public:
     void bindSurface(avox::ISurfaceRender *surface);
     void unbindSurface();
 
-    // GPU 直通开关 (默认开)。置 false 强制走 CPU 回退 (NV12 回读 + nv12ToRgba)。
+    // GPU 直通开关 (默认开)。置 false 强制走 CPU 回退 (NV12 回读 + shader 转换)。
     // 必须在 bindSurface 之前设置才生效。
     void setGpuPassthroughEnabled(bool enable) { gpuPassthroughEnabled = enable; }
     bool getGpuPassthroughEnabled() const { return gpuPassthroughEnabled; }
+
+    // 宿主 Node (MediaPlayer/SourcePlayer/RtcPlayer)。CPU 路径的 SubViewport 挂在其下,
+    // 随宿主进出场景树。构造后立即设置; 未设置则 CPU 路径无法建立 (getTexture 返回空)。
+    void setOwnerNode(Node *node) { ownerNode = node; }
 
     // ── ISurfaceRenderOb (avox 线程调用) ──
     void onFrame(const avox::YUVFrame &frame) override;
@@ -52,6 +80,9 @@ public:
 
     // ── Godot 主线程调用 ──
     void setVideoSize(int32_t w, int32_t h);  // onReady 后喂入真实尺寸, 触发 enableVkOutput
+    // 源色彩空间 (onReady 后喂入)。同源驱动 avox 的 yuv2RGBA/rgba2YUV 矩阵与本类
+    // shader 的解码矩阵; 幂等, 未变化直接返回。不喂则用默认 BT.601 full。
+    void setColorSpace(const avox::ColorSpaceDesc &cs);
     void update();
     Ref<Texture2D> getTexture() const;
 
@@ -83,22 +114,34 @@ private:
     void releaseSharedImage();  // 释放所有 GPU 资源 (并清 gpuW/H, 等待 setVideoSize 重新喂入)
     void releaseImport();       // 仅释放导入资源, 保留 gpuW/H (图重建后同尺寸重导用)
 
-    // ── CPU 回退模式 ──
+    // ── CPU 回退模式 (YUV 上传 + shader 转换) ──
+    // 布局统一为紧凑 NV12: [Y: h 行 × w] + [UV: h/2 行 × w (U/V 交错)],
+    // 直接当成 w × h*3/2 的 R8 纹理上传, 由 shader 按行区寻址。
     struct PendingFrame {
-        PackedByteArray data;   // 紧凑打包: Y + UV(nv12) 或 Y + U + V(yuv420P)
+        PackedByteArray data;
         int width = 0;
         int height = 0;
-        int type = 0;           // avox::YuvType, 决定 data 布局
     };
 
     std::mutex mutex;
     std::queue<PendingFrame> queue;
-    Ref<ImageTexture> texture;
     int lastWidth = 0;
     int lastHeight = 0;
 
-    static PackedByteArray nv12ToRgba(const uint8_t *nv12, int width, int height);
-    static PackedByteArray yuv420pToRgba(const uint8_t *yuv420p, int width, int height);
+    Node *ownerNode = nullptr;
+    SubViewport *subViewport = nullptr;   // ownerNode 的子节点, 承载 YUV→RGB 这一趟
+    ColorRect *yuvRect = nullptr;         // subViewport 内的全屏 rect, 挂 yuvMaterial
+    Ref<Shader> yuvShader;
+    Ref<ShaderMaterial> yuvMaterial;
+    Ref<ImageTexture> yuvTexture;         // R8, w × h*3/2, 承载紧凑 NV12
+    Ref<Texture2D> cpuTexture;            // subViewport 的 ViewportTexture (对外)
+
+    avox::ColorSpaceDesc colorSpace = {};  // 默认 bt601/full, 与 avox 渲染管线默认一致
+    bool colorSpaceSet = false;
+
+    bool ensureCpuShaderPath(int w, int h);  // 建/重建 SubViewport + 纹理 (尺寸变化时重建)
+    void destroyCpuShaderPath();
+    void applyColorSpaceUniform();
 };
 
 } // namespace godot

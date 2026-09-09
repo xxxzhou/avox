@@ -34,6 +34,7 @@ public:
                 avox::VTrackDesc vd = info->getVideoDesc(0);
                 owner->videoW.store(vd.desc.width);
                 owner->videoH.store(vd.desc.height);
+                owner->colorSpaceCode.store(encodeColorSpace(vd.desc.colorSpace));
             }
             owner->sourceReady.store(true);
             owner->call_deferred("emit_signal", "ready");
@@ -68,6 +69,8 @@ public:
 
 MediaPlayer::MediaPlayer() {
     surfaceBridge = new SurfaceTextureBridge();
+    // CPU 回退路径的 YUV→RGB SubViewport 挂在本节点下
+    surfaceBridge->setOwnerNode(this);
 }
 
 MediaPlayer::~MediaPlayer() {
@@ -146,6 +149,7 @@ void MediaPlayer::destroyPlayer() {
     fpsCache.store(0);
     //复位源信息, 新 session 等 onReady 重新喂尺寸
     sourceReady.store(false);
+    colorSpaceCode.store(-1);
     videoW.store(0);
     videoH.store(0);
 }
@@ -380,6 +384,11 @@ void MediaPlayer::applySourceInfo() {
     int h = videoH.load();
     if (w > 0 && h > 0) {
         surfaceBridge->setVideoSize(w, h);
+    }
+    // 色彩空间: 幂等, 桥内部只在变化时下发
+    int cs = colorSpaceCode.load();
+    if (cs >= 0) {
+        surfaceBridge->setColorSpace(decodeColorSpace(cs));
     }
 }
 

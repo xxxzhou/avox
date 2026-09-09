@@ -56,6 +56,7 @@ public:
                 avox::VTrackDesc vd = info->getVideoDesc(0);
                 owner->videoW.store(vd.desc.width);
                 owner->videoH.store(vd.desc.height);
+                owner->colorSpaceCode.store(encodeColorSpace(vd.desc.colorSpace));
             }
             owner->sourceReady.store(true);
             owner->call_deferred("emit_signal", "ready");  // Node 内置信号
@@ -114,7 +115,11 @@ void SourcePlayer::createPlayer() {
     playerOb.reset(new SourcePlayerOb());
     static_cast<SourcePlayerOb *>(playerOb.get())->owner = this;
     avox::addSourcePlayerOb(player.get(), playerOb.get());
-    surfaceBridge = new SurfaceTextureBridge();
+    // 桥只建一次并复用: 每次 open 新建会漏掉旧桥 (及其 SubViewport 子节点)
+    if (!surfaceBridge) {
+        surfaceBridge = new SurfaceTextureBridge();
+        surfaceBridge->setOwnerNode(this);
+    }
     surfaceBridge->bindSurface(player->getSurfaceRender());
 }
 
@@ -126,6 +131,7 @@ void SourcePlayer::destroyPlayer() {
     player.reset();  // DevicePlayerDeleter: close + delete
     stateCache.store(0);
     sourceReady.store(false);
+    colorSpaceCode.store(-1);
     videoW.store(0);
     videoH.store(0);
 }
@@ -225,6 +231,9 @@ void SourcePlayer::applySourceInfo() {
     int w = videoW.load();
     int h = videoH.load();
     if (w > 0 && h > 0) surfaceBridge->setVideoSize(w, h);
+    // 色彩空间: 幂等, 桥内部只在变化时下发
+    int cs = colorSpaceCode.load();
+    if (cs >= 0) surfaceBridge->setColorSpace(decodeColorSpace(cs));
 }
 
 void SourcePlayer::_bind_methods() {

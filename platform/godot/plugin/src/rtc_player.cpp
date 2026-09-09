@@ -28,6 +28,7 @@ public:
                 avox::VTrackDesc vd = info->getVideoDesc(0);
                 owner->videoW.store(vd.desc.width);
                 owner->videoH.store(vd.desc.height);
+                owner->colorSpaceCode.store(encodeColorSpace(vd.desc.colorSpace));
             }
             owner->sourceReady.store(true);
             owner->call_deferred("emit_signal", "rtc_ready");
@@ -83,6 +84,8 @@ public:
 
 RtcPlayer::RtcPlayer() {
     surfaceBridge = new SurfaceTextureBridge();
+    // CPU 回退路径的 YUV→RGB SubViewport 挂在本节点下
+    surfaceBridge->setOwnerNode(this);
 }
 
 RtcPlayer::~RtcPlayer() {
@@ -155,6 +158,7 @@ void RtcPlayer::destroyPlayer() {
     player = nullptr;
     stateCache.store(0);
     sourceReady.store(false);
+    colorSpaceCode.store(-1);
     videoW.store(0);
     videoH.store(0);
 }
@@ -342,6 +346,11 @@ void RtcPlayer::processFrame() {
         int h = videoH.load();
         if (w > 0 && h > 0) {
             surfaceBridge->setVideoSize(w, h);
+        }
+        // 色彩空间: 幂等, 桥内部只在变化时下发
+        int cs = colorSpaceCode.load();
+        if (cs >= 0) {
+            surfaceBridge->setColorSpace(decodeColorSpace(cs));
         }
     }
     if (surfaceBridge) {

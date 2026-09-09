@@ -105,6 +105,8 @@ private:
     std::atomic<bool> sourceReady{false};
     std::atomic<int> videoW{0};
     std::atomic<int> videoH{0};
+    // 源色彩空间编码 (encodeColorSpace, -1=未知)。CPU 回退路径 shader 的解码矩阵
+    std::atomic<int> colorSpaceCode{-1};
 
     void createPlayer();
     void destroyPlayer();
