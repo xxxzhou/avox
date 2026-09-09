@@ -14,6 +14,7 @@ const UiKit := preload("res://src/common/ui_kit.gd")
 
 const _tools := [
 	{"id": "player", "icon": IconButton.Icon.PLAY, "title": "播放器",   "desc": "沉浸式视频 / 直播", "scene": "res://src/mediaplayer/main.tscn"},
+	{"id": "rtc",    "icon": IconButton.Icon.LINK, "title": "WebRTC 测试", "desc": "ZLM 信令拉流验连",  "scene": "res://src/webrtc/main.tscn"},
 	{"id": "agent",  "icon": IconButton.Icon.BOT,  "title": "Agent",    "desc": "LLM 对话助手",       "scene": "res://src/agent/main.tscn"},
 	{"id": "face",   "icon": IconButton.Icon.FACE, "title": "视频驱动 Avatar", "desc": "视频→ARKit52 驱动 3D 模型", "scene": "res://src/avatar/main.tscn"},
 	{"id": "voice",  "icon": IconButton.Icon.MIC,  "title": "语音输入", "desc": "STT 模型依赖",       "scene": "res://src/voiceinput/voice_input.tscn", "asset": "sherpa_zh_en"},
@@ -97,7 +98,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 # ── launcher 小窗口 ──
 func _launcher_height() -> int:
-	return 660 if _res_expanded else 480   # 资源面板折叠时窗口收矮
+	# 双列 5 卡 3 行: 折叠态需容下三行卡; 展开态再加资源明细
+	return 760 if _res_expanded else 640
 
 func _set_launcher_window() -> void:
 	# 参照 voiceinput: 无边框 (无系统标题栏) + 小窗口; 节点属性不作用于 OS 窗口, 必须走 DisplayServer
@@ -109,7 +111,7 @@ func _set_launcher_window() -> void:
 		return
 	var wid := get_window().get_window_id()
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, true, wid)
-	# 双列 2x2 卡 + 折叠资源面板: 一屏收完, launcher 主任务 (点工具) 不受资源明细挤占
+	# 双列卡 (5 工具 3 行) + 折叠资源面板: 一屏收完, launcher 主任务 (点工具) 不受资源明细挤占
 	var sc := UiKit.desktop_scale(DisplayServer.window_get_current_screen())
 	var win_size := Vector2i(int(510 * sc), int(_launcher_height() * sc))
 	DisplayServer.window_set_min_size(Vector2i(int(440 * sc), int(380 * sc)), wid)
@@ -428,7 +430,7 @@ func _build_ui() -> void:
 	sub.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	center.add_child(sub)
 
-	# 双列 2x2 网格: 上次使用的工具排最前 (高频路径)
+	# 双列网格: 上次使用的工具排最前 (高频路径)
 	var cards := GridContainer.new()
 	cards.columns = 2
 	cards.add_theme_constant_override("h_separation", 10)

@@ -4,7 +4,7 @@ extends Button
 ## 图标在 _draw 里矢量绘制, 叠加在 Button 样式之上 (text 保持空), 颜色跟随 font_color/hover。
 ## 绘制逻辑收敛在 draw_icon 静态函数, IconView (非交互图标) 复用同一份。
 
-enum Icon { PLAY, PAUSE, REW, FFWD, VOL, MUTE, FULLSCREEN, MORE, ELLIPSIS, CLOSE, MIC, BOT, FACE, SEND, STOP }
+enum Icon { PLAY, PAUSE, REW, FFWD, VOL, MUTE, FULLSCREEN, MORE, ELLIPSIS, CLOSE, MIC, BOT, FACE, SEND, STOP, LINK }
 
 ## 图标外接直径 / 按钮短边
 var icon_ratio := 0.5:
@@ -94,6 +94,13 @@ static func draw_icon(item: CanvasItem, kind: int, c: Vector2, r: float, col: Co
 			item.draw_circle(c + Vector2(-0.3, -0.2) * r, r * 0.12, col)
 			item.draw_circle(c + Vector2(0.3, -0.2) * r, r * 0.12, col)
 			item.draw_arc(c + Vector2(0.0, 0.1) * r, r * 0.45, 0.35, PI - 0.35, 24, col, lw, true)
+		Icon.LINK:
+			# 链路/实时信号: 中心圆点 + 左右对称双弧
+			item.draw_circle(c, r * 0.26, col)
+			item.draw_arc(c, r * 0.58, -0.62, 0.62, 20, col, lw, true)
+			item.draw_arc(c, r * 0.58, PI - 0.62, PI + 0.62, 20, col, lw, true)
+			item.draw_arc(c, r * 0.95, -0.72, 0.72, 20, col, lw, true)
+			item.draw_arc(c, r * 0.95, PI - 0.72, PI + 0.72, 20, col, lw, true)
 
 static func _draw_speaker(item: CanvasItem, c: Vector2, r: float, col: Color) -> void:
 	var p := PackedVector2Array([
