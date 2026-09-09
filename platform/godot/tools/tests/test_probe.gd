@@ -1,7 +1,7 @@
 extends SceneTree
 ## SourceProbe + 播放 无头链路测试: 探测磁力元数据 → 文件列表 → 选择 →
 ## 写播放选项 → MediaPlayer 起播 → PLAYING 且进度前进。
-## 运行: godot --headless --path tools -s res://test_probe.gd
+## 运行: godot --headless --path tools -s res://tests/test_probe.gd
 ## 退出码: 0=通过, 1=失败/超时。
 
 const MAGNET := "magnet:?xt=urn:btih:dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c&dn=Big+Buck+Bunny&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F"

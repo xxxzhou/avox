@@ -1,6 +1,6 @@
 extends SceneTree
 ## URL 播放无头链路测试: MediaPlayer 起 URL → PLAYING 且进度推进。
-## 运行: godot --headless --path tools -s res://test_url.gd -- <url> [--timeout-ms=30000] [--case=<id>]
+## 运行: godot --headless --path tools -s res://tests/test_url.gd -- <url> [--timeout-ms=30000] [--case=<id>]
 ## 退出码: 0=通过, 1=失败/超时。判定行 [AVOX][TEST] case=url-<url清洗> 供 collect_verdicts.py 汇总。
 
 const ST_PLAYING := 3
@@ -22,6 +22,7 @@ func _initialize() -> void:
 			_url = a
 	if _url.is_empty():
 		print("[AVOX][TEST] case=url-missing-arg result=FAIL detail=missing_url_arg")
+		_done = true   # quit() 后 _process 仍会跑一帧, 置位避免空 _player 解引用
 		quit(1)
 		return
 	if _case.is_empty():

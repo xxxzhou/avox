@@ -80,8 +80,8 @@ rtc.connect_signaling("http://127.0.0.1/index/api/webrtc?app=live&stream=avox264
 - 自定义信令(自有服务器)不调 `connect_signaling`,改 `open_rtc()` + 监听
   `local_sdp`/`ice_candidate` 信号自己送出,远端消息用 `set_remote_sdp`/`add_ice_candidate` 回填。
 - 推流方向(摄像头/麦克风上麦)用 `set_roll_type(1)` + 方向设 sendonly,配合长连接信令。
-- 无头回归:`godot --headless --path <项目> -s res://test_rtc.gd -- <信令url>`
-  (脚本在 avox 仓 `platform/godot/tools/test_rtc.gd`,输出统一判定行)。
+- 无头回归:`godot --headless --path <项目> -s res://tests/test_rtc.gd -- <信令url>`
+  (脚本在 avox 仓 `platform/godot/tools/tests/test_rtc.gd`,输出统一判定行)。
 
 ## 类名说明
 

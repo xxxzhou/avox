@@ -1,9 +1,9 @@
 extends SceneTree
 ## headless 回归测试: retarget.gd "双脚向上" bug (Godot 4 pose 语义)
-## 用法:  godot --headless --path tools --script res://test_retarget_check.gd
+## 用法:  godot --headless --path tools --script res://tests/test_retarget_check.gd
 ## 对照修复前版本:
 ##   git show HEAD:platform/godot/tools/src/avatar/retarget.gd > platform/godot/tools/src/avatar/retarget_old.gd
-##   RETARGET_SCRIPT=res://src/avatar/retarget_old.gd godot --headless --path tools --script res://test_retarget_check.gd
+##   RETARGET_SCRIPT=res://src/avatar/retarget_old.gd godot --headless --path tools --script res://tests/test_retarget_check.gd
 ##
 ## 不需要视频/GUI: 直接合成 MediaPipe 33 点 landmark (raw 坐标系同 body.cpp: [0,1], y 向下,
 ## conf 同热图峰值语义), 调 retarget.drive() 收敛后断言脚骨全局 Y < 髋骨全局 Y。

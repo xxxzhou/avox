@@ -49,11 +49,12 @@ python script/testenv/collect_verdicts.py logs/*.log --out m.md     # 文件
 ### Windows / 桌面 Godot（headless，已验证）
 
 ```bash
-D:/Work/godot/godot.exe --headless --path platform/godot/tools -s res://test_url.gd -- \
+D:/Work/godot/godot.exe --headless --path platform/godot/tools -s res://tests/test_url.gd -- \
   rtsp://127.0.0.1:554/live/avox264 --timeout-ms=25000 | python script/testenv/collect_verdicts.py -
 ```
 
-`test_url.gd`: 任意 URL 起播 → PLAYING 且进度推进 → PASS，退出码 0/1。
+`tests/test_url.gd`: 任意 URL 起播 → PLAYING 且进度推进 → PASS，退出码 0/1。
+全部 headless 用例见 [platform/godot/tools/tests/README.md](../../platform/godot/tools/tests/README.md)。
 工具箱 UI 亦支持 CLI 直开: `godot --path tools -- <url|avox://url|magnet:...>`，`-- --ui=live` 截图走查。
 
 ### Android 真机（本机 adb）
@@ -70,7 +71,7 @@ adb logcat -d | python script/testenv/collect_verdicts.py -      # 工具箱 mai
 
 ### torrent
 
-headless 全链路已有 `platform/godot/tools/test_probe.gd`（探测→选文件→起播）；
+headless 全链路已有 `platform/godot/tools/tests/test_probe.gd`（探测→选文件→起播）；
 分步基准 `script/torrent/torrent_bench.py`。
 
 ## 判定行发出点（现状）
@@ -78,5 +79,6 @@ headless 全链路已有 `platform/godot/tools/test_probe.gd`（探测→选文�
 | 发出点 | case | 触发 |
 |--------|------|------|
 | `push_streams.py` | `push-<流>-<协议>` / `push-stop` | 推流就绪/停流 |
-| `test_url.gd` | `url-<url清洗>` | headless 起播 |
+| `tests/test_url.gd` | `url-<url清洗>` | headless 起播 |
+| `tests/test_rtc.gd` | `rtc-<url清洗>` | headless WebRTC 首帧 |
 | 工具箱 `main.gd` | `url-play` | 任意播放首次 PLAYING / IO·解码错误（logcat 可抓） |

@@ -5,7 +5,7 @@
 用法:
   python script/testenv/collect_verdicts.py log1.txt log2.txt   # 扫描文件
   adb logcat -d | python script/testenv/collect_verdicts.py -   # '-' 读 stdin
-  godot --headless --path platform/godot/tools -s res://test_url.gd -- <url> 2>&1 \\
+  godot --headless --path platform/godot/tools -s res://tests/test_url.gd -- <url> 2>&1 \\
     | python script/testenv/collect_verdicts.py -
 
 输出: 每个 case 的最新结果 + PASS/FAIL 计数; --out matrix.md 落盘。

@@ -20,7 +20,8 @@
 | `translation/` | 下载并量化翻译模型（需 WSL） |
 | `inpaint/` | 水印去除模型训练 / 数据集脚本 |
 | `package/` | 打包 SDK、上传 release（含 `pack_godot.py`） |
-| `verify/` | 线上问题排查/验证脚本集（seek 卡顿、ZLM 泄漏、崩溃定位等） |
+| `verify/` | 线上问题排查/验证脚本集（`parse_dump.py` minidump 解析、seek 卡顿、ZLM 泄漏等） |
+| `testenv/` | 功能测试本地流源 + 统一判定行汇总（`push_streams.py`、`collect_verdicts.py`；配套 headless 用例见 `../platform/godot/tools/tests/`） |
 | `dsh/` | dsh 互通性验证（`verify_dsh_interop.mjs`、`zstd_token_sum.py`） |
 
 ## 旧分散下载脚本（向后兼容，部分过时）
