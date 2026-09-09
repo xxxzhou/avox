@@ -218,7 +218,16 @@ void IOParseFF::onRunTask() {
   // http/tcp 读超时(微秒): OSS 半开连接(对端静默丢弃不发 RST)时, 不加此项
   // av_read_frame 会无限阻塞, IO 线程卡死; 加了之后超时返回错误走重连路径.
   // stimeout 只对 RTSP 生效, http 不认, 故额外加 timeout
-  av_dict_set(&dict, "timeout", timeoutStr.c_str(), 0);
+  // RTMP 系列必须跳过: rtmpproto 的 "timeout" 语义是"等待入连接的秒数"且 implies
+  // listen —— 传微秒值会把拉流变成监听端, 且 timeout*1000 溢出 int
+  // (8000ms -> listen_timeout=-589934592), 表现为 avformat_open_input 直接失败
+  const bool bRtmpUrl = url.rfind("rtmp", 0) == 0;
+  if (bRtmpUrl) {
+    // rtmp 改用 avio 层通用读写超时(微秒), 拿到同样的防卡死保护且无 listen 副作用
+    av_dict_set(&dict, "rw_timeout", timeoutStr.c_str(), 0);
+  } else {
+    av_dict_set(&dict, "timeout", timeoutStr.c_str(), 0);
+  }
   // RTSP 相关: 使用 TCP 传输(本地文件/HTTP 会忽略)
   av_dict_set(&dict, "rtsp_transport", rtspTransport.c_str(), 0);
   // 重排队列大小

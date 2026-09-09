@@ -223,11 +223,17 @@ option(AVOX_ENABLE_SWIG_PYTHON "build swig python" ON)
 # ON=链 python3.lib + Py_LIMITED_API; OFF=回退旧的 python314.lib 版本锁死构建。
 option(AVOX_PYTHON_STABLE_ABI "build _AvoxWrapper.pyd as stable-ABI (abi3): one .pyd for all Python>=floor" ON)
 
-# AVOX_ENABLE_SAMPLES在windows平台默认打开
+# AVOX_ENABLE_SAMPLES: Windows/Linux 默认打开; macOS 可显式 -DAVOX_ENABLE_SAMPLES=ON
+# (只出 samples/vulkantest 里的 APPLE 无头样例, 见 samples/CMakeLists.txt)
+if(CMAKE_SYSTEM_NAME STREQUAL Windows OR CMAKE_SYSTEM_NAME STREQUAL Linux)
+    set(avoxSamplesDefault ON)
+else()
+    set(avoxSamplesDefault OFF)
+endif()
 cmake_dependent_option(AVOX_ENABLE_SAMPLES
-    "build samples (Windows only)"
-    ON # 当条件满足时的默认值
-    "CMAKE_SYSTEM_NAME STREQUAL Windows OR CMAKE_SYSTEM_NAME STREQUAL Linux" # 依赖条件表达式
+    "build samples (Win/Linux 默认开, macOS 需显式开)"
+    ${avoxSamplesDefault} # 当条件满足时的默认值
+    "CMAKE_SYSTEM_NAME STREQUAL Windows OR CMAKE_SYSTEM_NAME STREQUAL Linux OR CMAKE_SYSTEM_NAME STREQUAL Darwin" # 依赖条件表达式
     # 当条件不满足时的默认值
     OFF)
 
