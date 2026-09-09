@@ -5,6 +5,10 @@ include_directories("../src/")
 # 单个文件测试
 function(generatetest target)
     set(source ${CMAKE_CURRENT_SOURCE_DIR}/${target}.cpp)
+    # Apple 窗口样例要 ObjC++ (NSWindow/CAMetalLayer), 同名 .mm 优先
+    if(APPLE AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${target}.mm)
+        set(source ${CMAKE_CURRENT_SOURCE_DIR}/${target}.mm)
+    endif()
     message(STATUS "generate test: ${source}")
     add_executable(${target} ${source})
     # generate传入后续参数全为相应需要链接的库

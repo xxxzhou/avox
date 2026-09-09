@@ -37,3 +37,8 @@ endif()
 if(APPLE AND AVOX_ENABLE_WEBRTC)
     generatetest(rtcplayheadless)
 endif()
+
+# macOS 有窗口播放 (自建 NSWindow + CAMetalLayer, 肉眼看画面/存 PNG)
+if(APPLE AND NOT IOS)
+    generatetest(macplaytest)
+endif()
