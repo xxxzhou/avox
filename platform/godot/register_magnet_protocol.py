@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""注册/注销 Windows magnet: 协议到本播放器 (HKCU, 无需管理员)。
+"""注册/注销 Windows deep-link 协议到本播放器 (HKCU, 无需管理员)。
 
-注册后浏览器点击磁力链接会拉起 godot 播放器并直接进解析流程。
-main.gd 已支持: 命令行 user args 里 magnet:? 开头自动 _open_probe_for。
+注册后浏览器/命令行点击 magnet: 或 avox:// 链接会拉起 godot 播放器。
+main.gd 已支持: magnet:? 走解析流程; avox://<url> 剥壳后按内容路由
+(avox://rtsp://... 直接播放, avox://magnet:?... 走解析)。
 
 用法:
-  python register_magnet_protocol.py            # 注册 (自动定位 godot.exe 与 tools 工程)
-  python register_magnet_protocol.py --remove   # 注销
+  python register_magnet_protocol.py            # 注册 magnet + avox
+  python register_magnet_protocol.py magnet     # 只注册指定 scheme
+  python register_magnet_protocol.py --remove   # 注销全部
 可选环境变量: GODOT_BIN, GODOT_PROJECT (默认本仓库 tools 工程)
 """
 import os
@@ -16,7 +18,7 @@ import winreg
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-KEY = r"Software\Classes\magnet"
+SCHEMES = ("magnet", "avox")
 
 
 def godot_bin() -> str:
@@ -29,27 +31,43 @@ def godot_bin() -> str:
     raise SystemExit("未找到 godot.exe, 设 GODOT_BIN 环境变量后重试")
 
 
+def register_one(exe: str, project: str, scheme: str) -> None:
+    key = rf"Software\Classes\{scheme}"
+    cmd = f'"{exe}" --path "{project}" -- "%1"'
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key) as k:
+        winreg.SetValueEx(k, None, 0, winreg.REG_SZ, f"URL:{scheme} Protocol")
+        winreg.SetValueEx(k, "URL Protocol", 0, winreg.REG_SZ, "")
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key + r"\DefaultIcon") as k:
+        winreg.SetValueEx(k, None, 0, winreg.REG_SZ, exe)
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key + r"\shell\open\command") as k:
+        winreg.SetValueEx(k, None, 0, winreg.REG_SZ, cmd)
+    print(f"已注册 {scheme}: 协议 -> {cmd}")
+
+
+def remove_one(scheme: str) -> None:
+    key = rf"Software\Classes\{scheme}"
+    winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key + r"\shell\open\command")
+    winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key + r"\shell\open")
+    winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key + r"\shell")
+    winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key + r"\DefaultIcon")
+    winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key)
+    print(f"已注销 {scheme}: 协议")
+
+
 def main() -> int:
     remove = "--remove" in sys.argv
+    schemes = tuple(a for a in sys.argv[1:] if a in SCHEMES) or SCHEMES
     if remove:
-        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, KEY + r"\shell\open\command")
-        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, KEY + r"\shell\open")
-        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, KEY + r"\shell")
-        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, KEY + r"\DefaultIcon")
-        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, KEY)
-        print("已注销 magnet 协议")
+        for scheme in schemes:
+            try:
+                remove_one(scheme)
+            except FileNotFoundError:
+                print(f"{scheme}: 协议未注册, 跳过")
         return 0
     exe = godot_bin()
     project = os.environ.get("GODOT_PROJECT", str(REPO_ROOT / "platform" / "godot" / "tools"))
-    cmd = f'"{exe}" --path "{project}" -- "%1"'
-    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, KEY) as k:
-        winreg.SetValueEx(k, None, 0, winreg.REG_SZ, "URL:magnet Protocol")
-        winreg.SetValueEx(k, "URL Protocol", 0, winreg.REG_SZ, "")
-    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, KEY + r"\DefaultIcon") as k:
-        winreg.SetValueEx(k, None, 0, winreg.REG_SZ, exe)
-    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, KEY + r"\shell\open\command") as k:
-        winreg.SetValueEx(k, None, 0, winreg.REG_SZ, cmd)
-    print(f"已注册 magnet 协议 -> {cmd}")
+    for scheme in schemes:
+        register_one(exe, project, scheme)
     return 0
 
 

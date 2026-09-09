@@ -21,8 +21,6 @@ run/max_fps=30
 
 [autoload]
 
-AssetManager="*res://src/common/asset_manager.gd"
-
 [display]
 
 window/size/viewport_width=1920

@@ -133,19 +133,25 @@ void RtcPlayer::createPlayer() {
 
 void RtcPlayer::destroyPlayer() {
     if (!player) return;
+    fprintf(stderr, "[bisect] destroyPlayer: begin\n");
     // 先解绑纹理桥接与信令观察者, 再关播放器 (解绑需要 surface render 仍有效)
     surfaceBridge->unbindSurface();
+    fprintf(stderr, "[bisect] destroyPlayer: unbind done\n");
     if (sdpAgent) {
         player->removeOb(sdpAgent);
         delete sdpAgent;
         sdpAgent = nullptr;
     }
+    fprintf(stderr, "[bisect] destroyPlayer: sdpAgent deleted\n");
     player->close();
+    fprintf(stderr, "[bisect] destroyPlayer: close enqueued\n");
     avox::removeRtcPlayerOb(player, playerOb);
     delete playerOb;
     playerOb = nullptr;
+    fprintf(stderr, "[bisect] destroyPlayer: delete player (dtor: stopTask join + cmdClose)\n");
     // createWebRtcPlayer() 是裸 new 且无 destroy API, delete 是唯一释放路径 (基类析构 virtual)
     delete player;
+    fprintf(stderr, "[bisect] destroyPlayer: done\n");
     player = nullptr;
     stateCache.store(0);
     sourceReady.store(false);

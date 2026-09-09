@@ -19,18 +19,15 @@ if(MSVC AND TARGET godot-cpp)
 endif()
 
 # ── 插件目标 ─────────────────────────────────────────
-# 平台源: volk 平台胶水两版; voice.cpp(全局热键/文本注入) Win32 专属, Android 暂缺
+# 插件层只保留播放级能力 (播放/WebRTC/采集/录制); 模型类 (Stt/Tts/Face/
+# VideoFace/Body/Agent) 不进插件, 数字人栈走独立交付。
+# 平台源: volk 平台胶水两版; voice.cpp(热键/麦克风采集/文本注入, 纯采集无模型) Win32 专属
 if(WIN32)
     set(_PLATFORM_SRCS src/volk_win32.c src/voice.cpp)
     set(_PLATFORM_DEFS VK_USE_PLATFORM_WIN32_KHR)
 else()
     set(_PLATFORM_SRCS src/volk_android.c)
     set(_PLATFORM_DEFS VK_USE_PLATFORM_ANDROID_KHR)
-endif()
-# Agent 跟随 avox 核心的 AVOX_ENABLE_AGENT (Android 默认 OFF: avox.so 无 createAgentHost 导出)
-set(_AGENT_SRC "")
-if(AVOX_ENABLE_AGENT)
-    list(APPEND _AGENT_SRC src/agent.cpp)
 endif()
 
 add_library(avox_godot SHARED
@@ -41,14 +38,9 @@ add_library(avox_godot SHARED
     src/recorder.cpp
     src/surface.cpp
     src/audio.cpp
-    src/face.cpp
-    src/video_face.cpp
-    src/body.cpp
-    src/image.cpp
     src/option.cpp
     src/rtc_player.cpp
     ${_PLATFORM_SRCS}
-    ${_AGENT_SRC}
 )
 
 target_include_directories(avox_godot PRIVATE
@@ -72,9 +64,6 @@ target_compile_definitions(avox_godot PRIVATE
     VK_NO_PROTOTYPES
     ${_PLATFORM_DEFS}
 )
-if(AVOX_ENABLE_AGENT)
-    target_compile_definitions(avox_godot PRIVATE AVOX_ENABLE_AGENT)
-endif()
 
 # 继承 avox 内部类触发 C4251/C4275, 无害; MSVC 专属告警抑制与 PDB 配置
 if(MSVC)

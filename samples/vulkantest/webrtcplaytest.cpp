@@ -30,13 +30,14 @@ int main(int argc, char* argv[]) {
   sp = createWebRtcPlayer();
   sp->setRollType(RtcRollType::offer);
   const char* url =
-      "http://127.0.0.1/index/api/webrtc?app=live&stream=test&type=play";  
+      "http://127.0.0.1/index/api/webrtc?app=live&stream=test&type=play";
   sdpOb = createZlTestSdpAgent(sp, url);
   sp->addOb(sdpOb);   // 信令观察者统一走 addOb 挂载
-  sp->getRemoteSurfaceRender()->setSurface(nullptr);  
-  sp->open();  
-  // win32 消息循环
+  sp->getRemoteSurfaceRender()->setSurface(nullptr);
+  sp->open();
+  // win32 消息循环; 8 秒后自动退出 (退出挂起排查)
   bool m_running = true;
+  int autoQuitMs = 8000;
   MSG msg;
   while (m_running) {
     // 处理所有待处理的消息
@@ -48,9 +49,21 @@ int main(int argc, char* argv[]) {
       TranslateMessage(&msg);
       DispatchMessage(&msg);
     }
+    if (autoQuitMs > 0) {
+      autoQuitMs -= 1;
+      if (autoQuitMs == 0) {
+        m_running = false;
+        break;
+      }
+    }
     // std::this_thread::yield();
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
+  fprintf(stderr, "[bisect] main: player->close begin\n");
   sp->close();
+  fprintf(stderr, "[bisect] main: close enqueued, deleting player\n");
+  delete sp;
+  sp = nullptr;
+  fprintf(stderr, "[bisect] main: player deleted, exiting main (atexit next)\n");
   return 0;
 }

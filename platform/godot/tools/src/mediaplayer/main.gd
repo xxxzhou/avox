@@ -85,6 +85,8 @@ var _popup_dragging := {}   # popup -> bool: 左键/手指按住拖动中(软键
 var _probe: SourceProbe
 var _probe_files: Array = []   # get_files() 结果(视频在前), index 为种子内原始索引
 var _probe_url := ""
+var _autotest_url := ""   # 非空时起播/出错输出 [AVOX][TEST] 判定行, 供 logcat/stdout 自动化回归抓取
+var _autotest_t0 := 0
 const TORRENT_META_TIMEOUT := 45000
 # 历史记录(持久化于 user://mediaplayer.cfg)
 var _last_dir := ""
@@ -203,19 +205,26 @@ func _ready() -> void:
 	get_window().files_dropped.connect(_on_files_dropped)
 	_show_hud()
 	# 命令行直开磁力/torrent (godot ... -- "magnet:?..." / xx.torrent), 便于自动化与回归
+	# avox://<url> 壳在此剥掉, 与 Android 深链同语义
 	for arg in OS.get_cmdline_user_args():
 		var u := arg.strip_edges()
+		if u.begins_with("avox://"):
+			u = u.substr(7)
 		if u.begins_with("magnet:") or u.ends_with(".torrent"):
 			_open_probe_for(u)
 			break
 		if arg.begins_with("--ui="):
 			_open_ui_demo.call_deferred(arg.substr(5))   # UI 走查/截图回归: -- --ui=live|magnet|settings|info|codec
-	# Android 深链: 浏览器点 magnet: 链接唤起 (manifest intent-filter 由 patch_apk 注入)
+	# Android 深链: magnet: 走解析流程, avox://<url> 剥壳直开 (manifest intent-filter 由 patch_apk 注入)
 	if OS.has_feature("android"):
 		var links := AppLinks.new()
 		var deep := links.take_pending_url()
-		if deep.begins_with("magnet:"):
+		if deep.begins_with("avox://"):
+			deep = deep.substr(7)
+		if deep.begins_with("magnet:") or deep.ends_with(".torrent"):
 			_open_probe_for(deep)
+		elif not deep.is_empty():
+			_load_url(deep)
 
 func _open_probe_for(url: String) -> void:
 	_probe_url = url
@@ -280,6 +289,8 @@ func _build_player() -> void:
 		if not a.begins_with("--"):
 			url = a
 			break
+	if url.begins_with("avox://"):
+		url = url.substr(7)   # 深链壳剥掉再路由, magnet 由下方 probe 流程接管
 	if url.is_empty():
 		url = DEFAULT_URL  # 真机验证临时: 命令行未给 URL 时用默认地址 (原逻辑不回退, 直接空态)
 	if url.is_empty():
@@ -293,6 +304,7 @@ func _build_player() -> void:
 	var io_plan := _resolve_io_plan(url)
 	if io_plan != _IO_PLAN_AUTO:
 		player.set_io_plan(io_plan)
+	_autotest_start(url)
 	player.url = url
 	_title.text = _display_title(url)
 	player.play()
@@ -332,6 +344,7 @@ func _on_state(s: int) -> void:
 				_title.text = _display_title(player.url)   # 磁力选文件后标题由 _pick_torrent_file 定
 			_update_live_ui()
 		ST_PLAYING:
+			_autotest_report(true)
 			pass
 		ST_PAUSE, ST_SEEK, ST_OPENING, ST_BUFFERING:
 			pass
@@ -918,6 +931,7 @@ func _load_url(url: String) -> void:
 	# IO 方案 per-URL 重判 (与 live 流程同语义): C++ 侧 ioPlan 跨 play 存活 (createPlayer 重放),
 	# 不重设的话上一个网络流的 zlmediakit 会残留, ZL 拒绝 file schema 导致本地文件卡 opening
 	player.set_io_plan(_resolve_io_plan(url))
+	_autotest_start(url)
 	player.url = url
 	player.stop()
 	player.play()
@@ -1013,10 +1027,26 @@ func _update_live_ui() -> void:
 		_time.text = ""
 
 func _on_io_error(code: int) -> void:
+	_autotest_report(false, "io_error=%d" % code)
 	_toast_msg("IO 错误: %d" % code)
 
 func _on_decode_error(code: int) -> void:
+	_autotest_report(false, "decode_error=%d" % code)
 	_toast_msg("解码错误: %d" % code)
+
+# ── 自动化判定行: 首次起播打 PASS, IO/解码错误打 FAIL, 一次播放只报一条 ──
+func _autotest_start(url: String) -> void:
+	_autotest_url = url
+	_autotest_t0 = Time.get_ticks_msec()
+
+func _autotest_report(passed: bool, detail := "") -> void:
+	if _autotest_url.is_empty():
+		return
+	var tail := "" if detail.is_empty() else " " + detail
+	print("[AVOX][TEST] case=url-play result=%s url=%s t=%dms%s" % [
+		"PASS" if passed else "FAIL", _autotest_url,
+		Time.get_ticks_msec() - _autotest_t0, tail])
+	_autotest_url = ""
 
 func _toast_msg(msg: String) -> void:
 	_toast_label.text = msg

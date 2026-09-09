@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""二进制 AndroidManifest.xml (AXML) 注入 magnet deep-link intent-filter。
+"""二进制 AndroidManifest.xml (AXML) 注入 deep-link intent-filter (magnet + avox)。
 
 策略 (append-only, 原节点字节零改动):
   - 新字符串追加到 string pool 尾部 (不改动既有索引, 所有原节点引用保持有效)
   - resmap 以 0 填充扩展到新属性名索引, 并补 android:scheme 的资源 id
-  - 在 launcher activity-alias 的 </activity-alias> 前插入:
+  - 在 launcher activity-alias 的 </activity-alias> 前插入, 每个 scheme 一个:
       <intent-filter>
         <action android:name="android.intent.action.VIEW"/>
         <category android:name="android.intent.category.DEFAULT"/>
         <category android:name="android.intent.category.BROWSABLE"/>
-        <data android:scheme="magnet"/>
+        <data android:scheme="magnet"/>   <!-- 或 avox -->
       </intent-filter>
-幂等: pool 里已有 "magnet" 时原样返回。
+幂等: 逐 scheme 判断, pool 里已存在的 scheme 跳过; 全部已注入时原样返回。
+avox://<url> 是通用媒体深链壳 (avox://rtsp://... / avox://magnet:?...),
+main.gd 剥壳后按内容路由 (magnet→解析流程, 其余→直接播放)。
 
 节点布局 (ResXMLTree_node):
   [type u16][headerSize u16=16][size u32][line u32][comment u32]
@@ -87,10 +89,11 @@ def _parse_attrs(data: bytes, pos: int, attr_count: int):
     return attrs
 
 
-def add_magnet_filter(manifest: bytes) -> bytes:
+def add_url_filters(manifest: bytes, schemes=("magnet", "avox")) -> bytes:
     strings, utf8, pool_size = _parse_string_pool(manifest, 8)
-    if "magnet" in strings:
-        return manifest  # 已注入, 幂等
+    missing = [s for s in schemes if s not in strings]
+    if not missing:
+        return manifest  # 已全部注入, 幂等
 
     off = 8 + pool_size
     map_typ, _hs, map_size = struct.unpack_from("<HHI", manifest, off)
@@ -145,7 +148,7 @@ def add_magnet_filter(manifest: bytes) -> bytes:
     s_view = pool_idx("android.intent.action.VIEW")
     s_defcat = pool_idx("android.intent.category.DEFAULT")
     s_brow = pool_idx("android.intent.category.BROWSABLE")
-    s_magnet = pool_idx("magnet")
+    s_scheme_vals = [pool_idx(s) for s in missing]
     s_if = pool_idx("intent-filter")
     s_action = pool_idx("action")
     s_category = pool_idx("category")
@@ -179,16 +182,17 @@ def add_magnet_filter(manifest: bytes) -> bytes:
 
     line = 900
     nodes = b""
-    nodes += start_el(s_if, [], line); line += 1
-    nodes += start_el(s_action, [sattr(s_name, s_view)], line)
-    nodes += end_el(s_action, line); line += 1
-    nodes += start_el(s_category, [sattr(s_name, s_defcat)], line)
-    nodes += end_el(s_category, line); line += 1
-    nodes += start_el(s_category, [sattr(s_name, s_brow)], line)
-    nodes += end_el(s_category, line); line += 1
-    nodes += start_el(s_data, [sattr(s_scheme, s_magnet)], line)
-    nodes += end_el(s_data, line); line += 1
-    nodes += end_el(s_if, line)
+    for s_scheme_val in s_scheme_vals:
+        nodes += start_el(s_if, [], line); line += 1
+        nodes += start_el(s_action, [sattr(s_name, s_view)], line)
+        nodes += end_el(s_action, line); line += 1
+        nodes += start_el(s_category, [sattr(s_name, s_defcat)], line)
+        nodes += end_el(s_category, line); line += 1
+        nodes += start_el(s_category, [sattr(s_name, s_brow)], line)
+        nodes += end_el(s_category, line); line += 1
+        nodes += start_el(s_data, [sattr(s_scheme, s_scheme_val)], line)
+        nodes += end_el(s_data, line); line += 1
+        nodes += end_el(s_if, line)
 
     # ── 重组 ──
     pool_chunk = _build_string_pool(strings, utf8)
@@ -212,11 +216,11 @@ def patch_apk_manifest(apk_path: str) -> bool:
         for item in zin.infolist():
             data = zin.read(item.filename)
             if item.filename == "AndroidManifest.xml":
-                new = add_magnet_filter(data)
+                new = add_url_filters(data)
                 if new != data:
                     changed = True
                     data = new
-                    print("OK manifest 注入 magnet intent-filter")
+                    print("OK manifest 注入 deep-link intent-filter (magnet/avox)")
             zout.writestr(item, data)
     shutil.move(tmp, apk_path)
     return changed

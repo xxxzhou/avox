@@ -58,7 +58,7 @@ private:
 
 // 麦克风采集 (createDevicePlayer + IAudioRender::openTap) → audio_desc/audio_frame 信号
 // 音频帧在 tap 线程复制进 PackedByteArray 后经 call_deferred 投递到主线程。
-// forward_to: 直接在 tap 线程喂给 SttNode (绕过主线程延迟), audio_desc 同步设置不丢帧。
+// 纯采集无模型依赖; STT 等模型能力不进插件层。
 class MicCapture : public Node {
     GDCLASS(MicCapture, Node)
 
@@ -73,7 +73,6 @@ public:
     int getDeviceIndex() const;
     void setFrameMs(int p_ms);     // 切片时长, 默认 100
     int getFrameMs() const;
-    void forwardTo(Node *p_stt);   // 直喂 SttNode (tap 线程内 setAudioDesc + recognize, 无主线程延迟)
     float getAudioLevel() const;   // 最近一帧 RMS 电平 (0~1, 供 UI 显示)
 
 protected:
@@ -84,85 +83,11 @@ private:
     friend class MicTapOb;
     std::unique_ptr<avox::ISourcePlayer, SourcePlayerDeleter> player;  // close+delete
     std::unique_ptr<avox::IAudioTapOb> tapOb;
-    Node *sttTarget = nullptr;     // forward_to 目标 (弱引用, 不拥有)
     std::atomic<float> audioLevel{0.0f};  // 最近帧 RMS (0~1, tap 线程写, 主线程读)
     int deviceIndex = 0;
     int frameMs = 100;
     bool started = false;
     void destroySession();       // closeTap(排干) → 删 tapOb → close+删 player
-};
-
-// sherpa 流式识别 (IAudioStt) → partial_result/final_result/stt_ready/error 信号
-// 模型加载在后台线程, 不阻塞 Godot 主线程; recognize 由 GDScript 转发 audio_frame。
-// recognizeRaw: tap 线程直调 (avox::AvoxData 引用, 不复制), forward_to 模式下使用。
-class SttNode : public Node {
-    GDCLASS(SttNode, Node)
-
-public:
-    SttNode();
-    ~SttNode();
-
-    void start();
-    void stop();
-    bool loading();                       // 模型/任务是否已就绪 (avox loading 语义)
-    void recognize(PackedByteArray p_data);
-    void setAudioDesc(int p_sample_rate, int p_channels);  // 告知 STT 输入音频格式 (必须, 否则无法识别)
-    void setModelLevel(int p_level);       // ModelLevel: 0=none 1=mini 2=base 3=high
-    int getModelLevel() const;
-    void setRecognizerType(int p_type);    // RecognizerType: 0=none 1=streaming 2=offline
-    int getRecognizerType() const;
-    avox::IAudioStt *getSttRaw() const;     // 暴露底层指针 (MicCapture forward_to 用, tap 线程直调)
-
-protected:
-    static void _bind_methods();
-    void _notification(int p_what);
-
-private:
-    friend class SttOb;
-    std::unique_ptr<avox::IAudioStt> stt;      // 默认 deleter: ~AudioStt 内 stop+releaseEngine
-    std::unique_ptr<avox::IAudioSttOb> sttOb;
-    int modelLevel = 2;            // ModelLevel::base
-    int recognizerType = 1;        // RecognizerType::streaming
-    std::atomic<bool> loadStop{false};
-    std::thread loadThread;
-};
-
-// sherpa 语音合成 (IAudioTts) → tts_audio/tts_ready/tts_desc/error 信号
-// 模型加载在后台线程, 不阻塞 Godot 主线程; synthesize 由 GDScript 转发文本。
-// 模型对象级常驻: 首轮 start 加载 Kokoro, 后续轮复用 (stop 只停任务不销毁引擎)。
-// tts_audio: s16 mono PCM 切片 (PackedByteArray) + pts(ms) + final(本句末片);
-// GDScript 用 AudioStream 播放并据 final 分句。
-class TtsNode : public Node {
-    GDCLASS(TtsNode, Node)
-
-public:
-    TtsNode();
-    ~TtsNode();
-
-    void start();
-    void stop();
-    bool loading();                       // 模型/任务是否已就绪 (avox loading 语义 = running)
-    void synthesize(const String &p_text);
-    void setSpeed(float p_speed);          // 语速倍率 (1.0=正常)
-    float getSpeed() const;
-    void setSpeaker(int p_sid);            // 多说话人模型选嗓音 (0 起)
-    int getSpeaker() const;
-    void setModelLevel(int p_level);       // ModelLevel: 0=none 1=mini 2=base 3=high
-    int getModelLevel() const;
-
-protected:
-    static void _bind_methods();
-    void _notification(int p_what);
-
-private:
-    friend class TtsOb;
-    std::unique_ptr<avox::IAudioTts> tts;       // 默认 deleter: ~AudioTts 内 stop+releaseEngine
-    std::unique_ptr<avox::IAudioTtsOb> ttsOb;
-    int modelLevel = 2;            // ModelLevel::base
-    float speed = 1.0f;
-    int sid = 0;
-    std::atomic<bool> loadStop{false};
-    std::thread loadThread;
 };
 
 // 文字注入原语 (SendInput KEYEVENTF_UNICODE): inject_unicode 逐字符打, send_backspace 删
