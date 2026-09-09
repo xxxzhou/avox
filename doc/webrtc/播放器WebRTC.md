@@ -98,7 +98,7 @@ include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(WebRTC DEFAULT_MSG WEBRTC_LIBRARIES WEBRTC_INCLUDE_DIRS)
 ```
 
-接管WebRTC代码到原播放器中。这里有个问题，说是M138已经支持H265，但是实际只是在协议方面的支持，而相关平台的硬解是没有的，后续可参考[Android平台WebRTC开启H265编解码](https://hanniballol.github.io/2022/09/29/Android%E5%B9%B3%E5%8F%B0WebRTC%E5%BC%80%E5%90%AFH265%E7%BC%96%E8%A7%A3%E7%A0%81/)/[h265_ios](https://github.com/shiguredo-webrtc-build/webrtc-build/blob/master/patches/h265_ios.patch)把各平台的硬解集成进去,也想过把本项目的各平台硬解方案封装成WebRTC接口，主要是上面的有大佬已实现，下面需要自己慢慢来，到时再看吧。
+接管WebRTC代码到原播放器中。M138 对 H265 只是协议层支持（webrtc 本体没有 H265 解码器），avox 的做法是 H265 解码不依赖 webrtc 自带实现：`RtcVideoDecoder::Configure` 按 codec 从 avox 解码器注册表（`AvoxManager::vDecoders`）取内置解码器——平台硬解优先（`getDefaultDecoderName(codecId, true)`），FFmpeg 软解兜底，webrtc 侧只做 RTP 解包与码流解析（`H265BitstreamParser`）。即 H265 over WebRTC 的解码能力与普通播放器共用同一条内置解码链，与 webrtc 是否内置 H265 无关。
 
 ``` C++
 void RtcParse::OnFrame(const webrtc::VideoFrame &frame) {

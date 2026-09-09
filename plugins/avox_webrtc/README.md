@@ -5,6 +5,7 @@ avox_webrtc 从 `src/avox_webrtc/` 迁为 `plugins/avox_webrtc/` 动态插件，
 ## 动机
 
 webrtc.lib ~1GB+ 静态链入 avox.dll → 不需要 WebRTC 时体积浪费。插件化后按需加载。
+发布分发用无符号版 `webrtc_nosym.lib`/`libwebrtc_nosym.a`（llvm-strip 剥调试信息, Windows 带符号 313MB → 无符号 84MB），带符号版不进版本管理，仅本机留存用于崩溃符号化。
 
 ## 插件边界
 
@@ -18,7 +19,7 @@ webrtc.lib ~1GB+ 静态链入 avox.dll → 不需要 WebRTC 时体积浪费。�
 | addRtcPlayerOb / removeRtcPlayerOb | 核心 AVOX_EXPORT | dynamic_cast<BasePlayer*> cross-cast |
 | RtcPlayer / RtcParse / RtcHelper | 插件 | PeerConnection 实现 |
 | RtcAudioProcess (3A) | 插件 | 依赖 webrtc::AudioProcessing |
-| webrtc.lib | 插件链接 | 体积巨大，按需加载 |
+| webrtc_nosym.lib(.a) | 插件链接 | 无符号版, FindWebRTC release 默认优先链接 |
 
 ## 数据流
 
@@ -91,7 +92,8 @@ player->open();   // 内部 connect, onLocalSdp 时 sendLocalSdp, 远端消息�
 1. 新建目录如 `D:/Work/webrtc`，clone depot_tools
 2. 用 `script/webrtc/gclient_webrtc.bat` 同步源码
 3. 切到目标分支（如 m138 → branch-heads/7204），gclient sync -D
-4. 用 `script/webrtc/webrtc_win_gen.bat` 生成工程，`webrtc_win_build.bat` 编译 webrtc.lib
+4. 各平台用 `script/webrtc/` 下对应脚本：Windows `.\webrtc_build_windows.ps1 release`，mac/ios/android/linux 用同名 `.sh`
+5. Windows 脚本剥符号产 webrtc_nosym.lib 时，llvm-strip 会把 `boringssl_asm` 成员（GNU as 产出 COFF）的**整个符号表**剥掉（非仅调试信息），导致链接报 `ChaCha20_ctr32_*`/`vpaes_*` 等 73 个 LNK2019——脚本已内置"剥后删除 asm 坏成员、回插原始成员重建索引"的修复；编完拷 `obj/webrtc*.lib` 到 avc_library `build/windows/release/`
 
 ## 平台注意
 
