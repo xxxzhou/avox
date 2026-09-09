@@ -12,7 +12,7 @@ avox SDK 的 Unity 原生插件, 让 Unity 项目直接使用 avox 的音视频�
 |---|---|---|---|
 | 封装对象 | MediaPlayer (Node) | UAvoxMediaPlayerComponent | AvoxPlayer (MonoBehaviour) |
 | GPU 直通 | enableVkOutput → Godot VkDevice 导入 | (未做, 预留) | enableVkOutput → Unity VkDevice 导入 → CreateExternalTexture |
-| CPU 回退 | ISurfaceRenderOb::onFrame → ImageTexture | 同左 → UpdateTextureRegions | onFrame → BGRA 槽 → IssuePluginCustomTextureUpdateV2 (Unity 自上传) |
+| CPU 回退 | onFrame → NV12 槽 → R8 纹理 + shader (SubViewport) | 同左 → UpdateTextureRegions | onFrame → NV12 槽 → R8 纹理 (IssuePluginCustomTextureUpdateV2) + shader Blit |
 | 帧来源 | setOffSurface + enableYuvOut(nv12) | 同左 | 同左 |
 | 音频 | avox 内置渲染直出 | 同左 | 同左 (WASAPI, 不经 AudioMixer) |
 
@@ -102,25 +102,36 @@ onReady 尺寸就绪 → pendingGpuInit
 ```
 
 - **后端要求**: 仅 Unity **Vulkan** 图形 API (Player Settings 图形 API 列表把 Vulkan 排最前, 或 `-force-vulkan` 启动)。与 godot 插件同样的约束 —— avox 导出的是 Vulkan 外部内存 (`OPAQUE_WIN32`), Unity 默认的 **D3D11 无法打开** 该内存级句柄 (非 D3D11 资源句柄)
-- **D3D11 (默认) / OpenGL**: 自动走 CPU 回退, 行为一致仅多一次 BGRA 转换; 运行期可随时 `GpuPassthrough` 属性查当前模式
+- **D3D11 (默认) / OpenGL**: 自动走 CPU 回退, 行为一致仅多一次 NV12 回读 + shader 转换; 运行期可随时 `GpuPassthrough` 属性查当前模式
 - 与 godot 一致的已知风险: 跨 VkDevice 外部内存直采在部分驱动 (Intel iGPU) 可能异常; 中途分辨率重导时旧纹理有一帧竞态
 - 后续方向: avox 侧补 D3D11 导出 (`avox_windows/dx11` 已有 Dx11SharedTex 基础设施) 后, D3D11 后端可走 `OpenSharedResource1` 直通
 
-## CPU 回退帧通路
+## CPU 回退帧通路 (YUV 上传, shader 转 RGB)
 
 ```
-avox 渲染线程                          Unity 渲染线程 (IssuePluginCustomTextureUpdateV2)
+avox 渲染线程                          Unity 主线程 / 渲染线程
 ──────────────────────────────        ─────────────────────────────────────────────────
-onFrame(YUVFrame) ↓                    UpdateTextureBegin: 按 Unity 纹理尺寸 malloc,
-  NV12/yuv420P → BGRA (BT.601)           从帧槽 memcpy (无帧补黑), UpdateTextureEnd free
-  存单帧槽位 (新帧覆盖旧帧)              上传/采样由 Unity 完成 (跨 URP/HDRP/内置管线)
+onFrame(YUVFrame) ↓                    IssuePluginCustomTextureUpdateV2 → R8 纹理
+  只重排成紧凑 NV12                      (w × h*3/2, UpdateTextureBegin 从帧槽 memcpy,
+  (yuv420P 顺手交织成 NV12)               无帧补中性黑 Y=16/UV=128, End free)
+  存单帧槽位 (新帧覆盖旧帧)            Graphics.Blit(R8, RenderTexture, YUV shader)
+                                        → VideoTexture 对外是转换后的 RenderTexture
 ```
+
+一张 R8 纹理装整帧 NV12 (Y 在上 2/3, 交错 UV 在下 1/3), 与
+`swig/nodejs/yuvglrender.js` 的单图方案同构。相比原先的逐像素 CPU 转换:
+上传量 1.5 字节/像素而非 4, 色转全在 GPU, 色度还免费获得双线性上采样。
+矩阵/量程由源 `colorSpace` 经 `avoxPlayerGetColorSpace` 传给 shader uniform。
+
+shader 在 `Runtime/Resources/AvoxYuvToRgb.shader` (放 Resources 下才保证进包)。
+画面上下颠倒时勾组件的 `cpuFlipY`。
 
 ## 已知限制 / 后续
 
 - 仅 Win64; Android 需 AHardwareBuffer 导入 + Gradle 接入 (godot 侧已有 AHB 流程可参照), iOS 需 Metal 路径
 - GPU 直通要求 Vulkan 后端 (见上); D3D11 直通待 avox DX11 导出
-- YUV 转换矩阵/量程由源 colorSpace 元数据驱动 (容器/VUI 标记优先, 未标记按 ≥720p=BT.709、H264/H265/MPEG=limited 惯例推断, 见 `FFHelper::ffColorSpace`); godot/UE 插件尚未接入该元数据, 仍固定 BT.601 full-range
+- YUV 转换矩阵/量程由源 colorSpace 元数据驱动 (容器/VUI 标记优先, 未标记按 ≥720p=BT.709、H264/H265/MPEG=limited 惯例推断, 见 `FFHelper::ffColorSpace`); godot 插件已接入, UE 插件尚未
+- `VideoTexture` / `onTextureCreated` 的类型是 `Texture` (不再是 `Texture2D`) —— CPU 回退输出的是 shader 转换后的 `RenderTexture`; 旧代码若显式声明 `Texture2D` 参数需改签名
 - GPU 直通勿在 batchmode/headless 验证: 无 Game View 渲染循环时 `enableVkOutput` 因 outputLayer 未建失败, 且该场景下 Unity 进程可能段错误 (2026-09-05 实测); 交互式编辑器不受影响
 - IL2CPP 正常工作 (纯 blittable P/Invoke); Unity 6 可选升级 `[LibraryImport]` 源生成
 - `getPingback`/埋点未封装; ASR/翻译字幕依赖 avox_sherpa/translation 可选模块, 未集成时 `LoadSrt` 仅文件字幕可用

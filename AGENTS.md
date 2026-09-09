@@ -96,7 +96,8 @@ SWIG 绑定: `swig/csharp/`, `swig/nodejs/`, `swig/python/` (Java 绑定构建�
 - **VSCode 卡顿:** 项目用久了"所有操作卡"是 VSCode 工作区缓存按路径累积所致,解法见 [doc/tools/VSCode卡顿排查.md](doc/tools/VSCode卡顿排查.md)(删 Cache/CachedData/workspaceStorage),别重拉 clone 或改名
 - **子模块重置:** `git -C 3rdparty/sherpa-onnx reset --hard HEAD`
 - **GLSL Shader:** `glsl/` 编译为 `.spv`，自动复制到 `build/.../glsl/`
-- git提交消息控制到100字内，一般50字说清楚。
+- git提交消息控制到100字内，一般50字说清楚
+- 所有日志输出都只用英文
 
 ## 外部依赖库路径
 

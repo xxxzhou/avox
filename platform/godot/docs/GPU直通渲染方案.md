@@ -78,11 +78,11 @@ addons/avox_godot/bin/
 ## 5. 已知限制
 
 - 每视频帧一次 GPU copy(RGBA 全帧带宽),零 CPU 回读/软转。
-- **Intel iGPU 上 copy 有 ~12% 3D 引擎固定开销**,与频率(6fps≈24fps)、提交路径(裸 submit = texture_copy)、是否显示均无关——Intel 无 dedicated transfer 队列,copy 跑在 graphics 队列,3D 引擎因此维持高功耗态。已排除软件优化(节流、换提交方式均无效),唯一消除办法是直接采样(Intel 驱动崩溃)。实测:GPU 直通 ~17% 3D;CPU 回退 ~13% 3D(含 NV12→RGBA 软转);空场景 30fps 渲染 ~4.5% + 解码 ~5.5% 是地板。
+- **Intel iGPU 上 copy 有 ~12% 3D 引擎固定开销**,与频率(6fps≈24fps)、提交路径(裸 submit = texture_copy)、是否显示均无关——Intel 无 dedicated transfer 队列,copy 跑在 graphics 队列,3D 引擎因此维持高功耗态。已排除软件优化(节流、换提交方式均无效),唯一消除办法是直接采样(Intel 驱动崩溃)。实测:GPU 直通 ~17% 3D;CPU 回退 ~13% 3D(该数据来自旧的 NV12→RGBA 逐像素软转版本,现已改为 shader 转换,CPU 占用应更低、GPU 略高,未重测)。空场景 30fps 渲染 ~4.5% + 解码 ~5.5% 是地板。
 - 仅单 GPU(avox 与 Godot 同一物理 GPU)成立。
 - 单缓冲,画面内容可能滞后 1 帧。
 - 尺寸变化:avox 线程 `onWinSizeChange` → `needReimport` → 主线程重导。
-- CPU 回退路径保留(非 Vulkan 后端 / 直通未开启时 NV12→RGBA 软转)。注意:直通开启后若运行时 import 失败,**暂无中途降级**到 CPU。
+- CPU 回退路径保留(非 Vulkan 后端 / 直通未开启)。已改为 **NV12 回读 → 一张 R8 纹理(w × h*3/2) → 内置 SubViewport + canvas_item shader 转 RGB**,不再逐像素 CPU 软转;`get_texture()` 返回该 SubViewport 的 ViewportTexture,对 GDScript 仍是普通 `Texture2D`。矩阵/量程由源 `colorSpace` 走 uniform。
 - GPU 直通开关 `AVOX_ENABLE_GPU_PASSTHROUGH=1`;未设时走 CPU 回退。
 
 ---

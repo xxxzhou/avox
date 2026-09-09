@@ -172,7 +172,7 @@ adb install -r "D:/绝对路径/avox_tools_debug.apk"
   force_soft_decode 还开着 —— AndroidEnv 接线已修好 (libart ELF 手解), 待真机验证后移除
 - **音频**: 管线已通 (AvoxAudioTrack 经 classes dex 注入; 音频工厂经引导 init() 注册);
   mp3/ac3 解码映射已补。mp3/ac3 出声的最终验证在真机上还没跑完 (安装被 MIUI 拦), 明日先验
-- **渲染**: Android 走 CPU 回退 (YUV→ImageTexture)。GPU 直通代码已就位
+- **渲染**: Android 走 CPU 回退 (NV12 回读 → R8 纹理 → SubViewport shader 转 RGB)。GPU 直通代码已就位
   (avox 导出 AHardwareBuffer + Godot 侧 AHB 导入), 但 Adreno 驱动对 exportable image
   的 vkBindImageMemory 直接 SIGSEGV, 已在 godot_init 里禁用, 待专修
 - **深链**: Windows 协议已注册可测; Android 的 manifest 注入已就位并通过 aapt 校验,
