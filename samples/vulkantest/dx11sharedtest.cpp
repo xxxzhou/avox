@@ -57,7 +57,7 @@ static void dumpPpm(ID3D11DeviceContext* ctx, ID3D11Texture2D* staging,
 }
 
 int main(int argc, char** argv) {
-  const char* video = argc > 1 ? argv[1] : "D:/Work/github/avox/assets/video/avox_electron.mp4";
+  const char* video = argc > 1 ? argv[1] : "D://Back//美好.mp4";
   int durationSec = argc > 2 ? atoi(argv[2]) : 10;
   printf("video: %s, duration: %ds\n", video, durationSec);
   // ── 播放器: VK 离屏管线 + D3D11 共享输出 ──
