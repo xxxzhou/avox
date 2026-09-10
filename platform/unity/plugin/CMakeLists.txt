@@ -46,6 +46,7 @@ endif()
 
 # 输出到 avox install 树, 与 avox 库同级; Windows 去前缀 (Unity DllImport("avox_unity")),
 # Android 保留 lib 前缀 (DllImport("avox_unity") 自动映射 libavox_unity.so)
+set(OUTPUT_DIR "${CMAKE_INSTALL_PREFIX}/$<CONFIG>")
 if(WIN32)
     set_target_properties(avox_unity PROPERTIES PREFIX "")
 endif()
