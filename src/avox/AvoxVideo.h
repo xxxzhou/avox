@@ -101,6 +101,8 @@ AVOX_EXPORT bool yuvframe2Rgba(const YUVFrame& frame, IImageBuffer* buffer);
 // 加padding后每物理行布局: [前半width/2 | 后半width/2 | padding]
 // 重排为: [前半width/2 | pad/2 | 后半width/2 | pad/2]
 // 这样stride=rowPitch/2,FFmpeg按等距读取即可
+// @deprecated 原地把packed UV重排为split, 会破坏"IImageBuffer恒packed"契约, 新代码勿用;
+// 取split帧用 image2SplitYUVFrame(不修改buffer)
 AVOX_EXPORT void unpackGpuYUV(IImageBuffer* buffer, YuvType yuvType);
 }
 

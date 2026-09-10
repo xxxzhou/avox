@@ -323,8 +323,7 @@ def yuvframe2Rgba(frame, buf):
 
 
 def unpackGpuYUV(buf, yuvType):
-    """GPU 渲染输出 YUV 的 UV padding 重排 (原地, 不可逆)。
-    buf 为含 YUV 平面数据的 IImageBuffer (rowPitch != width 时生效);
-    yuvType 为 YuvType (yuv420P/yuv422P)。重排后 stride=rowPitch/2, FFmpeg 等距读取。"""
+    """@deprecated 原地把 packed UV 重排为 split, 调用后 buffer 不再是合法 packed, 勿用。
+    取 split 帧请用 image2SplitYUVFrame (不修改 buffer)。"""
     native = buf._native if isinstance(buf, IImageBuffer) else buf
     _pw.unpackGpuYUV(native, yuvType)
