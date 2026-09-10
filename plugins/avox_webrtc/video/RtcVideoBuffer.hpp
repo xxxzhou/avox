@@ -16,8 +16,7 @@ public:
 protected:
   VideoBufferPtr buffer = nullptr;
   YUVFormat format = {};
-  YuvType yuvType = YuvType::other;
-  // toFrame重排副本(仅420P/422P带padding时实际拷贝)
+  // toFrame重排副本(仅420P/422P带padding时实际拷贝); 类型由buffer自身携带(getYuvType)
   std::shared_ptr<ImageBuffer> splitTmp;
 
 public:

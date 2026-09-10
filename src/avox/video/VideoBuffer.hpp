@@ -57,6 +57,8 @@ public:
 
 public:
   YuvType getYuvType() { return yuvType; }
+  // copyFrom 等旁路入数据时补记类型, 使 to() 可用
+  void setYuvType(YuvType type) { yuvType = type; }
 
 public:
   // 检查原始数据是否是YUVFrame

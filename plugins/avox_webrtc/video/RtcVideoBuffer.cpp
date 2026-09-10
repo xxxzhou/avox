@@ -16,7 +16,6 @@ RtcVideoBuffer::~RtcVideoBuffer() { release(); }
 void RtcVideoBuffer::form(const YUVFrame& yuvFrame) {
   release();
   format = yuvFrame.format;
-  yuvType = yuvFrame.format.type;
   auto temp = std::make_shared<SwVideoBuffer>();
   temp->form(yuvFrame, true);
   buffer = temp;
@@ -27,19 +26,19 @@ void RtcVideoBuffer::form(IImageBuffer* imgBuffer, YuvType type) {
   if (!imgBuffer) {
     return;
   }
-  yuvType = type;
   image2YUVFormat(imgBuffer->getImageFormat(), type, format);
-  // packed块整块持有(源buffer下帧被覆盖), split只在消费边缘物化
+  // packed块整块持有(源buffer下帧被覆盖), split只在消费边缘物化;
+  // 类型记在buffer自身, toFrame直接用buffer体系
   auto temp = std::make_shared<SwVideoBuffer>();
   temp->setImageFormat(imgBuffer->getImageFormat());
   temp->copyFrom(imgBuffer, true);
+  temp->setYuvType(type);
   buffer = temp;
 }
 
 void RtcVideoBuffer::form(const GpuFrame& gpuFrame) {
   release();
   format = gpuFrame.format;
-  yuvType = gpuFrame.format.type;
   auto temp = std::make_shared<HwVideoBuffer>();
   temp->setGPUFrame(gpuFrame);
   buffer = temp;
@@ -56,7 +55,7 @@ bool RtcVideoBuffer::toFrame(YUVFrame& frame) {
     splitTmp = std::make_shared<ImageBuffer>();
   }
   SwVideoBuffer* swBuffer = (SwVideoBuffer*)buffer.get();
-  return image2SplitYUVFrame(swBuffer, yuvType, frame, splitTmp.get());
+  return swBuffer->to(frame, splitTmp.get());
 }
 
 bool RtcVideoBuffer::toFrame(GpuFrame& frame) {
