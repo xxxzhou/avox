@@ -25,6 +25,7 @@ avox 是跨平台音视频播放器 SDK，支持直播流、本地媒体、硬�
 | [build](build/) | 构建: 脚本/CMake、Android、FFmpeg、SWIG、wasm |
 | [tools](tools/) | 开发工具: VSCode/Wireshark/ffmpeg/git/trae |
 | [plan](plan/) | 设计与规划方案 |
+| [test](test/环境与插件总览.md) | 测试: 环境与插件关系地图 / 测试与修复工作流 / 发布检查清单 / 功能测试矩阵 |
 
 ---
 
