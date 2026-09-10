@@ -79,6 +79,28 @@ void FFDx11Decoder::onAttachContext() {
   device = dx11Ctx->device;
   setDevice(device);
   codecCtx->hw_device_ctx = av_buffer_ref(hwBuffer);
+  // 临时诊断: 打印 get_format 候选, 确认 d3d11va 是否被提供
+  codecCtx->get_format = [](AVCodecContext* ctx,
+                            const enum AVPixelFormat* fmt) -> enum AVPixelFormat {
+    for (const enum AVPixelFormat* p = fmt; *p != AV_PIX_FMT_NONE; ++p) {
+      LOGFLF(LogLevel::warn, "[hwfmt] offered pix_fmt:", (int32_t)*p);
+    }
+    LOGFLF(LogLevel::warn, "[hwfmt] hw_device_ctx:",
+           (ctx->hw_device_ctx != nullptr));
+    for (int i = 0;; ++i) {
+      const AVCodecHWConfig* c = avcodec_get_hw_config(ctx->codec, i);
+      if (!c) {
+        LOGFLF(LogLevel::warn, "[hwfmt] hw_configs total:", i);
+        break;
+      }
+      LOGFLF(LogLevel::warn, "[hwfmt] cfg", i, " pix_fmt:",
+             (int32_t)c->pix_fmt, " methods:", (int32_t)c->methods,
+             " dev_type:", (int32_t)c->device_type);
+    }
+    enum AVPixelFormat picked = avcodec_default_get_format(ctx, fmt);
+    LOGFLF(LogLevel::warn, "[hwfmt] default picked:", (int32_t)picked);
+    return picked;
+  };
   LOGFLF(LogLevel::info, "dx11 onAttachContext hwBuffer:", hwBuffer,
          " codecCtx->hw_device_ctx:", codecCtx->hw_device_ctx);
   copyTexture.Reset();

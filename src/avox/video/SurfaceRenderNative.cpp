@@ -1,5 +1,7 @@
 #include "SurfaceRenderNative.hpp"
 
+#include "../muxer/RawMuxer.hpp"
+
 #include "avox/module/AvoxManager.hpp"
 
 #ifdef AVOX_ENABLE_VULKAN
@@ -54,6 +56,62 @@ void SurfaceRenderNative::setVulkan(bool bVulkan_) {
   if (bVulkan != bVulkan_) {
     bVulkan = bVulkan_;
     LOGFLF(LogLevel::info, "change use vulkan:", bVulkan);
+  }
+}
+
+void SurfaceRenderNative::enableYuvOut(YuvType ytype) {
+  // vulkan在场: 走vk管线输出处理后的帧(现状不变)
+  if (bVulkan) {
+    SurfaceRenderVk::enableYuvOut(ytype);
+    return;
+  }
+  // 无vulkan: 平台渲染器原生回读,交付解码直出NV12
+  outCpuYuv = ytype;
+  if (!pVideoRender) {
+    LOGFLF(LogLevel::warn, "no native render for yuv out");
+    return;
+  }
+  if (ytype != YuvType::other) {
+    pVideoRender->enableYuvOut(ytype);
+  } else {
+    pVideoRender->disableYuvOut();
+  }
+}
+
+void SurfaceRenderNative::disableYuvOut() {
+  if (bVulkan) {
+    SurfaceRenderVk::disableYuvOut();
+    return;
+  }
+  outCpuYuv = YuvType::other;
+  if (pVideoRender) {
+    pVideoRender->disableYuvOut();
+  }
+}
+
+YuvType SurfaceRenderNative::getOutYuv() {
+  if (bVulkan) {
+    return SurfaceRenderVk::getOutYuv();
+  }
+  if (pVideoRender && pVideoRender->bCpuOut()) {
+    // 硬解: 原生回读交付解码直出nv12; 软解: CPU输入帧是解码格式(通常420P)
+    return pVideoRender->bCpuInput() ? pVideoRender->cpuFrameYuvType()
+                                     : YuvType::nv12;
+  }
+  return YuvType::other;
+}
+
+void SurfaceRenderNative::pushFrame(RawMuxer* muxer) {
+  if (bVulkan) {
+    SurfaceRenderVk::pushFrame(muxer);
+    return;
+  }
+  if (!pVideoRender) {
+    return;
+  }
+  YUVFrame yframe = {};
+  if (pVideoRender->getCpuFrame(yframe)) {
+    muxer->pushFrame(yframe);
   }
 }
 
@@ -186,6 +244,17 @@ bool SurfaceRenderNative::getCpuFrame(YUVFrame& frame) {
     return false;
   }
   return true;
+}
+
+bool SurfaceRenderNative::getCpuFrameBuffer(IImageBuffer** buffer,
+                                            YuvType& yuvType) {
+  if (bVulkan) {
+    return SurfaceRenderVk::getCpuFrameBuffer(buffer, yuvType);
+  }
+  if (pVideoRender) {
+    return pVideoRender->getCpuFrameBuffer(buffer, yuvType);
+  }
+  return false;
 }
 
 }

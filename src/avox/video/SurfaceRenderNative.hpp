@@ -30,6 +30,13 @@ class AVOX_EXPORT SurfaceRenderNative : public SurfaceRenderVk {
 
  public:
   virtual void onSurfaceChange() override;
+  // 启用/禁用YUV输出 - 按bVulkan分流: vulkan走vk管线(处理后帧),
+  // 非vulkan走平台渲染器原生回读(解码直出NV12)
+  virtual void enableYuvOut(YuvType ytype) override;
+  virtual void disableYuvOut() override;
+  virtual YuvType getOutYuv() override;
+  // 录制取帧: 按bVulkan分流
+  virtual void pushFrame(RawMuxer* muxer) override;
   // 渲染接口 - 双路对接
   // NV12→RGBA → Vulkan开启时Vk接手，关闭时给surface
   virtual void render(const VideoFrame& frame) override;
@@ -41,6 +48,8 @@ class AVOX_EXPORT SurfaceRenderNative : public SurfaceRenderVk {
   virtual void setAutoAspect(bool bEnable) override;
   virtual vec2i getOutSize() override;
   virtual bool getCpuFrame(YUVFrame& frame) override;
+  // 按bVulkan分流: vulkan走vk管线, 非vulkan走平台渲染器原生回读
+  virtual bool getCpuFrameBuffer(IImageBuffer** buffer, YuvType& yuvType) override;
 };
 
 }

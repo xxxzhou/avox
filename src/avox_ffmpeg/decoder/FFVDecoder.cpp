@@ -81,6 +81,10 @@ DecodeResult FFVDecoder::onPreDecoder() {
   }
   int32_t ret = avcodec_open2(codecCtx.get(), codec, nullptr);
   AVOX_FFMEPG_LOG(ret, "avcodec_open2 failed");
+  if (ret == 0 && codecCtx->hw_device_ctx) {
+    LOGFLF(LogLevel::warn, "[hwfmt] negotiated pix_fmt:",
+           (int32_t)codecCtx->pix_fmt);
+  }
   if (ret < 0) {
     return DecodeResult::openFailed;
   }

@@ -21,14 +21,23 @@ public:
   // 供 fetchFrame 抓帧读取; checkShot 紧跟渲染在同一线程调, 内容即最新一帧
   id<MTLTexture> lastTargetTexture = nil;
   IOSurfaceRef ioSurface = nullptr;
+  // CPU NV12直取(bOutCpuYuv时): 持有锁定中的CVPixelBuffer零拷发布
+  // releaseGpuFrame会CVBufferRelease,故在renderGpuFrame内buffer存活时锁定
+  CVPixelBufferRef cpuPb = nullptr;
+  ImageBuffer cpuBuffer;
+  bool bCpuPublished = false;
+  uint32_t publishedTick = 0;
 
-protected:
+ protected:
   virtual void onSetSurface() override;
   // 初始化图形管线
   virtual bool vaildAndInitGraph() override;
   virtual void releaseGraph() override;
-  virtual void renderGpuFrame(const GpuFrame& frame) override;
+  virtual void renderGpuFrame(const GpuFrame &frame) override;
   virtual bool fetchFrame(ImageBuffer *imageBuffer) override;
+  // 交付本帧已发布的CPU NV12,渲染线程内调用
+  virtual bool getCpuFrameBuffer(IImageBuffer **buffer, YuvType &yuvType,
+                                 int64_t *pts) override;
 
 public:
   virtual IRenderContext *getGpuContext() override;
@@ -43,6 +52,8 @@ private:
 
 public:
   void updateNV12ToMetalLayer(CVImageBufferRef imageBuffer);
+  // 锁定并零拷发布当前NV12 CVPixelBuffer到cpuBuffer(每帧最多一次)
+  void publishCpuFrame(CVImageBufferRef imageBuffer);
 
 private:
   void logIOSurface();

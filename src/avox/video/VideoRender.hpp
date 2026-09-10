@@ -59,6 +59,10 @@ class AVOX_EXPORT VideoRender : public OptionLink {
   GpuFrame gpuFrame = {};
   // yuvFrame指向的split重排副本(仅420P/422P带padding时实际拷贝),vbuffer保持packed
   std::unique_ptr<ImageBuffer> splitBuffer;
+  // cpuIn时yuvFrame的packed零拷视图(getCpuFrameBuffer交付用)
+  ImageBuffer cpuViewBuffer;
+  // 渲染帧计数,每帧递增;平台getCpuFrameBuffer用它做"本帧已回读"缓存判定
+  uint32_t renderTick = 0;
 
   // 调用截图，需要同步调用
   std::mutex mtxShot;
@@ -84,6 +88,10 @@ class AVOX_EXPORT VideoRender : public OptionLink {
   bool bImageOut() { return bEnableImage; }
   // 是否支持CPU输出
   bool bCpuOut() { return bOutCpuYuv; }
+  // 当前输入是否为CPU帧(软解/软编透传),供外层判交付格式
+  bool bCpuInput() { return cpuIn; }
+  // CPU输入帧的解码格式(cpuIn时有效)
+  YuvType cpuFrameYuvType() { return yuvFrame.format.type; }
   // 改变窗口，会重置bResetFlag,这样会在运行时重置
   void setSurface(AvoxSurfaceType surface);
   // 得到窗口
@@ -134,10 +142,9 @@ class AVOX_EXPORT VideoRender : public OptionLink {
   // 当bOutCpuYuv为true,返回处理后的YUV资源
   virtual bool getCpuFrame(YUVFrame& frame);
   // 直接取packed CPU帧(不做split重排),pts可选带回; 供透传型消费方(如RTC)使用
+  // cpuIn时零拷包装yuvFrame(bTightlyPacked才交付); 硬解由平台渲染器回读实现
   virtual bool getCpuFrameBuffer(IImageBuffer** buffer, YuvType& yuvType,
-                                 int64_t* pts = nullptr) {
-    return false;
-  }
+                                 int64_t* pts = nullptr);
   virtual bool getGpuFrame(GpuFrame& frame);
   // 把Vk处理后的GPU资源映射到Dx11/OpenGL/Metal的GPU资源
   virtual bool outputGpuFrame(IRenderContext* ctx) { return false; }

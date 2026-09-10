@@ -227,6 +227,7 @@ void VideoRender::renderFrame(IImageBuffer* buffer) {
 }
 
 void VideoRender::renderFrame() {
+  renderTick++;
   YUVFormat yuvFormat = {};
   if (cpuIn) {
     yuvFormat = yuvFrame.format;
@@ -264,12 +265,48 @@ void VideoRender::renderFrame() {
   checkShot();
 }
 
+bool VideoRender::getCpuFrameBuffer(IImageBuffer** buffer, YuvType& yuvType,
+                                    int64_t* pts) {
+  // CPU输入(软解/透传): 布局与packed一致时零拷包装yuvFrame交付,
+  // 布局不一致(带padding的420P/422P)走getCpuFrame的split路径
+  if (!bOutCpuYuv || !cpuIn) {
+    return false;
+  }
+  if (!bTightlyPacked(yuvFrame)) {
+    return false;
+  }
+  ImageFormat fmt = {};
+  yuv2ImageFormat(yuvFrame, fmt);
+  cpuViewBuffer.setData(yuvFrame.data[0], fmt, false);
+  *buffer = &cpuViewBuffer;
+  yuvType = yuvFrame.format.type;
+  if (pts) {
+    *pts = yuvFrame.pts;
+  }
+  return true;
+}
+
 bool VideoRender::getCpuFrame(YUVFrame& frame) {
   if (cpuIn) {
     frame = yuvFrame;
     return true;
   }
-  return false;
+  // 非CPU输入(硬解): 平台getCpuFrameBuffer回读交付packed帧,再做split重排
+  IImageBuffer* buffer = nullptr;
+  YuvType yuvType = YuvType::other;
+  if (!getCpuFrameBuffer(&buffer, yuvType)) {
+    return false;
+  }
+  if (!splitBuffer) {
+    splitBuffer = std::make_unique<ImageBuffer>();
+  }
+  if (!image2SplitYUVFrame(buffer, yuvType, frame, splitBuffer.get())) {
+    return false;
+  }
+  frame.pts = gpuFrame.pts;
+  frame.dts = gpuFrame.dts;
+  frame.keyFrame = gpuFrame.keyFrame;
+  return true;
 }
 
 bool VideoRender::getGpuFrame(GpuFrame& frame) {

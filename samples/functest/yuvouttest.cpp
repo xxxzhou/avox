@@ -6,10 +6,13 @@
 //   3. screenShot 非对齐宽度截图存 PNG
 // 建议输入: yuv420P 且宽度非 16/32 对齐 (如 622x482, 解码 linesize 对齐到 640),
 //          此时 packed 420P 的 UV 物理行是 [偶|奇|pad], 与 split 布局有分歧
-// 用法: yuvouttest <url> [seconds] [outprefix]
+// 用法: yuvouttest <url> [seconds] [outprefix] [-novulkan] [-hard]
+//   -novulkan: 关闭vulkan管线, 走平台渲染器NV12原生直取(无vulkan路径)
+//   -hard: 硬解(默认软解); 原生路径硬解交付解码直出nv12
 // 判定: 末尾打印 case=yuvout PASS/FAIL
 #include <chrono>
 #include <cstdio>
+#include <map>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -58,6 +61,7 @@ class YuvOutOb : public ISurfaceRenderOb {
     YUVFormat yfmt = {};
     image2YUVFormat(fmt, yuvType, yfmt);
     std::lock_guard<std::mutex> lock(mtx);
+    typeCount[getYuvTypeStr(yuvType)]++;
     if (frames == 0) {
       std::printf("onFrame first: %dx%d (rowPitch %d) type %s bufSize %d\n",
                   yfmt.width, yfmt.height, fmt.rowPitch, getYuvTypeStr(yuvType),
@@ -100,6 +104,8 @@ class YuvOutOb : public ISurfaceRenderOb {
   int64_t frames = 0;
   bool infoOk = false;
   std::string prefix = "yuvout_";
+  // 各类型帧计数, 结束时打印 (观察软解/硬解回退分布)
+  std::map<std::string, int64_t> typeCount;
 };
 
 int main(int argc, char* argv[]) {
@@ -117,6 +123,21 @@ int main(int argc, char* argv[]) {
     return 1;
   }
   ISurfaceRender* sr = player->getSurfaceRender();
+  for (int i = 1; i < argc; i++) {
+    std::string arg = argv[i];
+    if (arg == "-novulkan") {
+      // 无vulkan原生路径: 平台渲染器NV12直取,不开vk管线
+      sr->setVulkan(false);
+      std::printf("mode: native (no vulkan)\n");
+    } else if (arg == "-hard") {
+      player->setHardDecode(true);
+      std::printf("mode: hard decode\n");
+    } else if (arg == "-soft") {
+      // 默认策略优先硬解, 显式关掉用于隔离变量
+      player->setHardDecode(false);
+      std::printf("mode: soft decode\n");
+    }
+  }
   // yuv420P 输出: rowPitch != width 时 packed 与 split 有分歧, 正是契约要守的场景
   sr->setOffSurface(YuvType::yuv420P);
   addSurfaceRenderOb(sr, &ob);
@@ -160,8 +181,12 @@ int main(int argc, char* argv[]) {
   bool ok = !g_failed && ob.infoOk && ob.frames >= 10 &&
             fileExists(recFile) && fileExists(prefix + "frame0.png") &&
             fileExists(prefix + "shot.png");
-  std::printf("frames=%lld rec=%d case=yuvout %s%s\n", (long long)ob.frames,
-              (int)fileExists(recFile), ok ? "PASS" : "FAIL",
-              g_failed ? (" reason: " + g_reason).c_str() : "");
+  std::string typeDist;
+  for (const auto& [t, c] : ob.typeCount) {
+    typeDist += t + ":" + std::to_string(c) + " ";
+  }
+  std::printf("frames=%lld rec=%d case=yuvout %s%s types[%s]\n",
+              (long long)ob.frames, (int)fileExists(recFile), ok ? "PASS" : "FAIL",
+              g_failed ? (" reason: " + g_reason).c_str() : "", typeDist.c_str());
   return ok ? 0 : 1;
 }

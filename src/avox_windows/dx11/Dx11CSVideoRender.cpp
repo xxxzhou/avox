@@ -90,6 +90,14 @@ void Dx11CSVideoRender::releaseGraph() {
   if (computeShader) {
     computeShader.Reset();
   }
+  // 释放回读资源,映射指针一并失效
+  if (bStagingMapped && d3dcontext) {
+    d3dcontext->Unmap(stagingTexture.Get(), 0);
+    bStagingMapped = false;
+  }
+  stagingTexture.Reset();
+  stagingWidth = 0;
+  stagingHeight = 0;
 }
 
 void Dx11CSVideoRender::renderGpuFrame(const GpuFrame& frame) {
@@ -214,6 +222,85 @@ bool Dx11CSVideoRender::fetchFrame(ImageBuffer* imageBuffer) {
   context.setDevice(device);
   context.setTexture(outTexture->texture.Get());
   return fetchTexture(&context, imageBuffer);
+}
+
+bool Dx11CSVideoRender::getCpuFrameBuffer(IImageBuffer** buffer,
+                                          YuvType& yuvType, int64_t* pts) {
+  // CPU输入(软解)不经过GPU,交基类packed视图
+  if (cpuIn) {
+    return VideoRender::getCpuFrameBuffer(buffer, yuvType, pts);
+  }
+  if (!bOutCpuYuv || !device || !d3dcontext || !gpuFrame.buffer) {
+    return false;
+  }
+  // 本帧未回读过才做staging拷贝+Map,一帧最多一次
+  if (publishedTick != renderTick && !mapStagingFrame()) {
+    return false;
+  }
+  publishedTick = renderTick;
+  *buffer = &stagingBuffer;
+  yuvType = YuvType::nv12;
+  if (pts) {
+    *pts = gpuFrame.pts;
+  }
+  return true;
+}
+
+bool Dx11CSVideoRender::mapStagingFrame() {
+  ID3D11Texture2D* src = (ID3D11Texture2D*)gpuFrame.buffer;
+  D3D11_TEXTURE2D_DESC desc = {};
+  src->GetDesc(&desc);
+  if (desc.Format != DXGI_FORMAT_NV12) {
+    LOGFLF(LogLevel::warn, "cpu yuv out not support dxgi format:",
+           (int32_t)desc.Format);
+    return false;
+  }
+  // 解上一帧映射(发布指针随Unmap失效,消费者须在当帧窗口内使用)
+  if (bStagingMapped) {
+    d3dcontext->Unmap(stagingTexture.Get(), 0);
+    bStagingMapped = false;
+  }
+  if (!stagingTexture || stagingWidth != (int32_t)desc.Width ||
+      stagingHeight != (int32_t)desc.Height) {
+    stagingTexture.Reset();
+    D3D11_TEXTURE2D_DESC sdesc = desc;
+    sdesc.MipLevels = 1;
+    sdesc.ArraySize = 1;
+    sdesc.Usage = D3D11_USAGE_STAGING;
+    sdesc.BindFlags = 0;
+    sdesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    sdesc.MiscFlags = 0;
+    if (FAILED(device->CreateTexture2D(&sdesc, nullptr,
+                                       stagingTexture.GetAddressOf()))) {
+      LOGFLF(LogLevel::warn, "create nv12 staging texture failed");
+      return false;
+    }
+    stagingWidth = (int32_t)desc.Width;
+    stagingHeight = (int32_t)desc.Height;
+  }
+  if (desc.ArraySize > 1) {
+    d3dcontext->CopySubresourceRegion(
+        stagingTexture.Get(), 0, 0, 0, 0, src,
+        D3D11CalcSubresource(0, (UINT)gpuFrame.queueIndex, desc.MipLevels),
+        nullptr);
+  } else {
+    d3dcontext->CopyResource(stagingTexture.Get(), src);
+  }
+  D3D11_MAPPED_SUBRESOURCE mapped = {};
+  if (FAILED(d3dcontext->Map(stagingTexture.Get(), 0, D3D11_MAP_READ, 0,
+                             &mapped))) {
+    LOGFLF(LogLevel::warn, "map nv12 staging texture failed");
+    return false;
+  }
+  bStagingMapped = true;
+  // nv12 packed布局约定: r8 + height*3/2 + rowPitch(字节), UV起始=rowPitch*height
+  ImageFormat fmt = {};
+  fmt.width = (int32_t)desc.Width;
+  fmt.height = (int32_t)desc.Height * 3 / 2;
+  fmt.imageType = ImageType::r8;
+  fmt.rowPitch = (int32_t)mapped.RowPitch;
+  stagingBuffer.setData((uint8_t*)mapped.pData, fmt, false);
+  return true;
 }
 
 }

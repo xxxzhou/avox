@@ -99,9 +99,9 @@ class AVOX_EXPORT SurfaceRenderVk : public ISurfaceRender,
   // 拿到处理过后的GPU资源
   virtual bool getGpuFrame(GpuFrame& frame);
   // 如果有输出CPU资源,得到CPU的帧的YUV类型
-  YuvType getOutYuv();
+  virtual YuvType getOutYuv();
   // 帧输出（供 RawMuxer 录制，纯 Vulkan 操作）
-  void pushFrame(RawMuxer* muxer);
+  virtual void pushFrame(RawMuxer* muxer);
 
  protected:
   // 如果设置输出YUV CPU数据,输出到electron
