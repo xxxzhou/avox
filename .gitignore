@@ -138,6 +138,7 @@ build_log.txt
 samples/pythontest/
 swig/nodejs/screenshots/
 swig/nodejs/logs/
+swig/nodejs/build/
 build_log_torrent.txt
 
 results/torrent_bench/
