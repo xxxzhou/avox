@@ -185,8 +185,8 @@ int main(int argc, char* argv[]) {
   for (const auto& [t, c] : ob.typeCount) {
     typeDist += t + ":" + std::to_string(c) + " ";
   }
-  std::printf("frames=%lld rec=%d case=yuvout %s%s types[%s]\n",
-              (long long)ob.frames, (int)fileExists(recFile), ok ? "PASS" : "FAIL",
-              g_failed ? (" reason: " + g_reason).c_str() : "", typeDist.c_str());
+  std::printf("[AVOX][TEST] case=yuvout result=%s frames=%lld rec=%d types[%s]%s\n",
+              ok ? "PASS" : "FAIL", (long long)ob.frames, (int)fileExists(recFile),
+              typeDist.c_str(), g_failed ? (" reason: " + g_reason).c_str() : "");
   return ok ? 0 : 1;
 }

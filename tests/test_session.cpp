@@ -1,3 +1,5 @@
+// 从 samples/functest/sessiontest.cpp 迁来: core 会话日志的不变式自测
+// 自带断言宏已重命名 (SELF_CHECK_*), 避免与 doctest 的 CHECK 冲突。
 // 会话事件日志的不变式自测。
 //
 // 覆盖 avox_agent/core 的关键契约。编译通过不等于行为正确 —— 尤其是 surface 投影与 replace
@@ -7,6 +9,8 @@
 // dsh 互通部分 (布局/头行/分片/打包行/墓碑/附件/真实日志装载) 与 dsh 仓的
 // format.ts / chunk-rows.ts / 真实 snapshot 逐字对照: 这里的每条断言都是
 // 「avox 产的日志 dsh 读得懂, dsh 产的日志 avox 读得懂」的一块证据。
+
+#include <doctest.h>
 
 #include <cstdint>
 #include <cstring>
@@ -35,9 +39,9 @@ namespace {
 
 namespace fs = std::filesystem;
 
-int g_failures = 0;
+static int g_failures = 0;
 
-#define CHECK(cond)                                                       \
+#define SELF_CHECK(cond)                                                       \
   do {                                                                    \
     if (!(cond)) {                                                        \
       std::cout << "FAIL line " << __LINE__ << ": " << #cond << std::endl; \
@@ -45,7 +49,7 @@ int g_failures = 0;
     }                                                                     \
   } while (0)
 
-#define CHECK_EQ(actual, expected)                                            \
+#define SELF_CHECK_EQ(actual, expected)                                            \
   do {                                                                        \
     const auto actualValue = (actual);                                        \
     const auto expectedValue = (expected);                                    \
@@ -56,7 +60,7 @@ int g_failures = 0;
     }                                                                         \
   } while (0)
 
-#define CHECK_THROWS(expr)                                                  \
+#define SELF_CHECK_THROWS(expr)                                                  \
   do {                                                                      \
     bool threw = false;                                                     \
     try {                                                                   \
@@ -72,7 +76,7 @@ int g_failures = 0;
   } while (0)
 
 // 抛出的异常消息须含 needle (限额用例靠它核对 dsh 错误码字样与恢复指引)。
-#define CHECK_THROWS_WITH(expr, needle)                                       \
+#define SELF_CHECK_THROWS_WITH(expr, needle)                                       \
   do {                                                                        \
     bool threw = false;                                                       \
     std::string what;                                                         \
@@ -169,14 +173,14 @@ fs::path freshDir(const char* name) {
 
 void testSeqContiguity() {
   Session session(SessionId("t1"));
-  CHECK_EQ(session.seq(), size_t(0));
-  CHECK_EQ(session.append(TurnStartData{1}), size_t(0));
-  CHECK_EQ(session.append(StepStartData{1, 1}), size_t(1));
-  CHECK_EQ(session.append(UserMessageData{userMessage("m1", "hi")}, appendIntent()),
+  SELF_CHECK_EQ(session.seq(), size_t(0));
+  SELF_CHECK_EQ(session.append(TurnStartData{1}), size_t(0));
+  SELF_CHECK_EQ(session.append(StepStartData{1, 1}), size_t(1));
+  SELF_CHECK_EQ(session.append(UserMessageData{userMessage("m1", "hi")}, appendIntent()),
            size_t(2));
-  CHECK_EQ(session.seq(), size_t(3));
+  SELF_CHECK_EQ(session.seq(), size_t(3));
   for (size_t i = 0; i < session.events().size(); ++i) {
-    CHECK_EQ(session.events()[i].seq, i);
+    SELF_CHECK_EQ(session.events()[i].seq, i);
   }
 }
 
@@ -193,11 +197,11 @@ void testProjectionSkipsNonSurface() {
   session.append(StepEndData{1, 1});
   session.append(TurnEndData{1, TurnEndCompleted{}});
 
-  CHECK_EQ(session.events().size(), size_t(8));
+  SELF_CHECK_EQ(session.events().size(), size_t(8));
   // 8 条事件, 只有 2 条进历史。
-  CHECK_EQ(session.deriveMessages().size(), size_t(2));
-  CHECK(std::holds_alternative<UserMessage>(session.deriveMessages()[0]));
-  CHECK(std::holds_alternative<AssistantMessage>(session.deriveMessages()[1]));
+  SELF_CHECK_EQ(session.deriveMessages().size(), size_t(2));
+  SELF_CHECK(std::holds_alternative<UserMessage>(session.deriveMessages()[0]));
+  SELF_CHECK(std::holds_alternative<AssistantMessage>(session.deriveMessages()[1]));
 }
 
 // 只承载 usage 的空 assistant/message 不该往历史里塞一条无内容的助手轮次。
@@ -208,8 +212,8 @@ void testEmptyAssistantMessageSkipped() {
   usage.inputTokens = 100;
   session.append(AssistantMessageData{1, 1, assistantMessage(""), usage},
                  appendIntent({}));
-  CHECK_EQ(session.events().size(), size_t(2));
-  CHECK_EQ(session.deriveMessages().size(), size_t(1));
+  SELF_CHECK_EQ(session.events().size(), size_t(2));
+  SELF_CHECK_EQ(session.deriveMessages().size(), size_t(1));
 }
 
 // 压缩: 历史变短而事件一条不减。
@@ -227,7 +231,7 @@ void testCompactionReplaceShortensHistoryWithoutDeletingEvents() {
       appendIntent({}));
   session.append(UserMessageData{userMessage("m3", "轮3提问")}, appendIntent());
 
-  CHECK_EQ(session.deriveMessages().size(), size_t(5));
+  SELF_CHECK_EQ(session.deriveMessages().size(), size_t(5));
   const size_t eventsBefore = session.events().size();
   const size_t generationBefore = session.getSurface().replaceGeneration();
 
@@ -238,14 +242,14 @@ void testCompactionReplaceShortensHistoryWithoutDeletingEvents() {
       replaceIntent(u1, a2, {u1, a1, u2, a2}));
 
   // 历史: 摘要 + 轮3提问 = 2 条。
-  CHECK_EQ(session.deriveMessages().size(), size_t(2));
+  SELF_CHECK_EQ(session.deriveMessages().size(), size_t(2));
   // 事件只增不减。
-  CHECK_EQ(session.events().size(), eventsBefore + 1);
-  CHECK_EQ(session.getSurface().replaceGeneration(), generationBefore + 1);
+  SELF_CHECK_EQ(session.events().size(), eventsBefore + 1);
+  SELF_CHECK_EQ(session.getSurface().replaceGeneration(), generationBefore + 1);
   // 被遮蔽的原始事件仍在日志里, 可审计可回放。
-  CHECK_EQ(std::string(eventTypeName(session.events()[u1].type)),
+  SELF_CHECK_EQ(std::string(eventTypeName(session.events()[u1].type)),
            std::string("user/message"));
-  CHECK_EQ(std::string(eventTypeName(session.events()[a1].type)),
+  SELF_CHECK_EQ(std::string(eventTypeName(session.events()[a1].type)),
            std::string("assistant/message"));
 }
 
@@ -258,21 +262,21 @@ void testReplaceValidation() {
       appendIntent({}));
 
   // 起点不在 surface 上 (指向一个不存在的 seq)。
-  CHECK_THROWS(session.append(
+  SELF_CHECK_THROWS(session.append(
       UserMessageData{userMessage("bad1", "x")},
       replaceIntent(999, a1, {999, a1})));
 
   // sourceEventSeqs 未覆盖全部被遮蔽节点。
-  CHECK_THROWS(session.append(UserMessageData{userMessage("bad2", "x")},
+  SELF_CHECK_THROWS(session.append(UserMessageData{userMessage("bad2", "x")},
                              replaceIntent(u1, a1, {u1})));
 
   // 引用了不更早的事件 (自己或未来)。
-  CHECK_THROWS(session.append(UserMessageData{userMessage("bad3", "x")},
+  SELF_CHECK_THROWS(session.append(UserMessageData{userMessage("bad3", "x")},
                              appendIntent({9999})));
 
   // 上面每次失败都不该改变日志。
-  CHECK_EQ(session.events().size(), size_t(2));
-  CHECK_EQ(session.deriveMessages().size(), size_t(2));
+  SELF_CHECK_EQ(session.events().size(), size_t(2));
+  SELF_CHECK_EQ(session.deriveMessages().size(), size_t(2));
 }
 
 // tool/result 的 replace 只能改正文, 不能改身份或成败。
@@ -290,14 +294,14 @@ void testToolResultRewriteRestriction() {
   pruned.message.content[0].content.clear();
   pruned.message.content[0].content.push_back(TextBlock{"(已裁剪)"});
   session.append(pruned, replaceIntent(resultSeq, resultSeq, {resultSeq}));
-  CHECK_EQ(session.deriveMessages().size(), size_t(2));
+  SELF_CHECK_EQ(session.deriveMessages().size(), size_t(2));
 
   // 非法: 改了成败标志。
   const std::vector<size_t>& nodes = session.getSurface().nodes();
   const size_t currentResultSeq = nodes.back();
   ToolResultData tampered = pruned;
   tampered.message.content[0].isError = true;
-  CHECK_THROWS(session.append(
+  SELF_CHECK_THROWS(session.append(
       tampered, replaceIntent(currentResultSeq, currentResultSeq, {currentResultSeq})));
 }
 
@@ -323,24 +327,24 @@ void testCodecRoundTrip() {
   for (const SessionEvent& original : session.events()) {
     const std::string line = encodeEvent(original);
     const DecodedEvent decoded = decodeEvent(line);
-    CHECK(decoded.status == DecodedEvent::Status::Ok);
-    CHECK_EQ(decoded.event.seq, original.seq);
-    CHECK(decoded.event.type == original.type);
-    CHECK_EQ(decoded.event.timeMs, original.timeMs);
+    SELF_CHECK(decoded.status == DecodedEvent::Status::Ok);
+    SELF_CHECK_EQ(decoded.event.seq, original.seq);
+    SELF_CHECK(decoded.event.type == original.type);
+    SELF_CHECK_EQ(decoded.event.timeMs, original.timeMs);
     // 二次编码应当字节一致 —— 那才说明解码没丢信息。
-    CHECK_EQ(encodeEvent(decoded.event), line);
+    SELF_CHECK_EQ(encodeEvent(decoded.event), line);
   }
 }
 
 // 未识别的必需事件必须拒绝整个日志; 带 ignorable 的才可跳过。
 void testUnknownEventTypeHandling() {
-  CHECK_THROWS(decodeEvent(
+  SELF_CHECK_THROWS(decodeEvent(
       "{\"type\":\"future/thing\",\"seq\":0,\"time\":1,\"data\":{}}"));
 
   const DecodedEvent skipped = decodeEvent(
       "{\"type\":\"future/thing\",\"seq\":0,\"time\":1,\"data\":{},"
       "\"ignorable\":true}");
-  CHECK(skipped.status == DecodedEvent::Status::SkippedIgnorable);
+  SELF_CHECK(skipped.status == DecodedEvent::Status::SkippedIgnorable);
 }
 
 // resume 保真: 工具调用与结果在恢复后仍在派生历史里。
@@ -359,7 +363,7 @@ void testResumePreservesToolHistory() {
     auto session = std::make_unique<Session>(SessionId("resume"),
                                              std::vector<SessionEvent>{}, header);
     SessionWriter writer;
-    CHECK(writer.attach(*session, path));
+    SELF_CHECK(writer.attach(*session, path));
 
     session->append(TurnStartData{1});
     session->append(StepStartData{1, 1});
@@ -380,45 +384,45 @@ void testResumePreservesToolHistory() {
   }
 
   // 历史应有 3 条: user + assistant + tool result。
-  CHECK_EQ(messagesBefore, size_t(3));
+  SELF_CHECK_EQ(messagesBefore, size_t(3));
 
   LoadedSession loaded = loadSession(path);
-  CHECK_EQ(loaded.events.size(), eventsBefore);
-  CHECK(!loaded.repairedInterruptedTail);
+  SELF_CHECK_EQ(loaded.events.size(), eventsBefore);
+  SELF_CHECK(!loaded.repairedInterruptedTail);
 
   Session resumed(SessionId("resume"), std::move(loaded.events),
                   std::move(loaded.header));
   // 关键: 工具调用与结果在 resume 之后仍然可见。
-  CHECK_EQ(resumed.deriveMessages().size(), size_t(3));
+  SELF_CHECK_EQ(resumed.deriveMessages().size(), size_t(3));
   bool foundToolResult = false;
   for (const Message& message : resumed.deriveMessages()) {
     if (std::holds_alternative<ToolResultMessage>(message)) foundToolResult = true;
   }
-  CHECK(foundToolResult);
+  SELF_CHECK(foundToolResult);
   // 构造应补一条 end-seed 标记 seed 边界。
-  CHECK_EQ(resumed.events().size(), eventsBefore + 1);
-  CHECK(resumed.events().back().type == EventType::SessionEndSeed);
-  CHECK_EQ(resumed.getFirstLiveSeq(), eventsBefore);
+  SELF_CHECK_EQ(resumed.events().size(), eventsBefore + 1);
+  SELF_CHECK(resumed.events().back().type == EventType::SessionEndSeed);
+  SELF_CHECK_EQ(resumed.getFirstLiveSeq(), eventsBefore);
 
   // attach 对齐: 补写内存里多出来的 end-seed, 且不重复。
   {
     SessionWriter writer;
-    CHECK(writer.attach(resumed, path));
+    SELF_CHECK(writer.attach(resumed, path));
     writer.detach();
   }
   LoadedSession reloaded = loadSession(path);
-  CHECK_EQ(reloaded.events.size(), eventsBefore + 1);
+  SELF_CHECK_EQ(reloaded.events.size(), eventsBefore + 1);
 
   // 再 attach 一次不应再长。
   {
     Session again(SessionId("resume"), std::move(reloaded.events),
                   std::move(reloaded.header));
     SessionWriter writer;
-    CHECK(writer.attach(again, path));
+    SELF_CHECK(writer.attach(again, path));
     writer.detach();
   }
   LoadedSession thirdLoad = loadSession(path);
-  CHECK_EQ(thirdLoad.events.size(), eventsBefore + 1);
+  SELF_CHECK_EQ(thirdLoad.events.size(), eventsBefore + 1);
 
   fs::remove_all(root);
 }
@@ -436,7 +440,7 @@ void testInterruptedTailRepair() {
     header.createdAt = 1;
     Session session(SessionId("crash"), std::vector<SessionEvent>{}, header);
     SessionWriter writer;
-    CHECK(writer.attach(session, path));
+    SELF_CHECK(writer.attach(session, path));
     session.append(TurnStartData{1});
     session.append(StepStartData{1, 1});
     session.append(UserMessageData{userMessage("m1", "干活")}, appendIntent());
@@ -446,12 +450,12 @@ void testInterruptedTailRepair() {
   }
 
   LoadedSession loaded = loadSession(path);
-  CHECK(loaded.repairedInterruptedTail);
-  CHECK_EQ(loaded.events.size(), eventsBefore + 2);
-  CHECK(loaded.events[eventsBefore].type == EventType::StepEnd);
-  CHECK(loaded.events[eventsBefore + 1].type == EventType::TurnEnd);
+  SELF_CHECK(loaded.repairedInterruptedTail);
+  SELF_CHECK_EQ(loaded.events.size(), eventsBefore + 2);
+  SELF_CHECK(loaded.events[eventsBefore].type == EventType::StepEnd);
+  SELF_CHECK(loaded.events[eventsBefore + 1].type == EventType::TurnEnd);
   const auto& turnEnd = std::get<TurnEndData>(loaded.events[eventsBefore + 1].data);
-  CHECK(std::holds_alternative<TurnEndInterrupted>(turnEnd.reason));
+  SELF_CHECK(std::holds_alternative<TurnEndInterrupted>(turnEnd.reason));
 
   fs::remove_all(root);
 }
@@ -459,20 +463,20 @@ void testInterruptedTailRepair() {
 // header 折叠: 仅取最后一条。
 void testRequestHeaderFold() {
   Session session(SessionId("t8"));
-  CHECK(session.requestHeader() == nullptr);
+  SELF_CHECK(session.requestHeader() == nullptr);
 
   EpochHeader first;
   first.config.provider = "openai";
   first.config.model = "gpt-a";
   first.system = "系统提示";
   session.append(RequestHeaderData{first, RequestHeaderReason::Initial});
-  CHECK(session.requestHeader() != nullptr);
-  CHECK_EQ(session.requestHeader()->config.model, std::string("gpt-a"));
+  SELF_CHECK(session.requestHeader() != nullptr);
+  SELF_CHECK_EQ(session.requestHeader()->config.model, std::string("gpt-a"));
 
   EpochHeader second = first;
   second.config.model = "gpt-b";
   session.append(RequestHeaderData{second, RequestHeaderReason::Change});
-  CHECK_EQ(session.requestHeader()->config.model, std::string("gpt-b"));
+  SELF_CHECK_EQ(session.requestHeader()->config.model, std::string("gpt-b"));
 }
 
 // seed 必须走与 append 相同的校验。
@@ -485,7 +489,7 @@ void testSeedValidation() {
   event.timeMs = 1;
   event.data = TurnStartData{1};
   badSeed.push_back(event);
-  CHECK_THROWS(Session(SessionId("bad"), badSeed));
+  SELF_CHECK_THROWS(Session(SessionId("bad"), badSeed));
 
   // 类型标签与载荷不符。
   std::vector<SessionEvent> mismatched;
@@ -495,7 +499,7 @@ void testSeedValidation() {
   wrong.timeMs = 1;
   wrong.data = TurnStartData{1};
   mismatched.push_back(wrong);
-  CHECK_THROWS(Session(SessionId("bad2"), mismatched));
+  SELF_CHECK_THROWS(Session(SessionId("bad2"), mismatched));
 }
 
 // ---------------------------------------------------------------------------
@@ -505,38 +509,38 @@ void testSeedValidation() {
 // 目录布局逐字节对齐 dsh format.ts: encodeSegment / projectKey / logPath。
 void testDshLayout() {
   // encodeSegment: 安全字符直通, ~XXXX 转义按 UTF-16 码单元 (增补平面拆代理对)。
-  CHECK_EQ(dshEncodeSegment("abc-1_2.3"), "abc-1_2.3");
-  CHECK_EQ(dshEncodeSegment("."), "~002E");
-  CHECK_EQ(dshEncodeSegment(".."), "~002E~002E");
-  CHECK_EQ(dshEncodeSegment("a b"), "a~0020b");
-  CHECK_EQ(dshEncodeSegment("a~b"), "a~007Eb");
-  CHECK_EQ(dshEncodeSegment("中文"), "~4E2D~6587");
+  SELF_CHECK_EQ(dshEncodeSegment("abc-1_2.3"), "abc-1_2.3");
+  SELF_CHECK_EQ(dshEncodeSegment("."), "~002E");
+  SELF_CHECK_EQ(dshEncodeSegment(".."), "~002E~002E");
+  SELF_CHECK_EQ(dshEncodeSegment("a b"), "a~0020b");
+  SELF_CHECK_EQ(dshEncodeSegment("a~b"), "a~007Eb");
+  SELF_CHECK_EQ(dshEncodeSegment("中文"), "~4E2D~6587");
   // 🎬 = U+1F3AC = 代理对 D83C DFAC。
-  CHECK_EQ(dshEncodeSegment("\xF0\x9F\x8E\xAC"), "~D83C~DFAC");
-  CHECK_THROWS(dshEncodeSegment(""));
+  SELF_CHECK_EQ(dshEncodeSegment("\xF0\x9F\x8E\xAC"), "~D83C~DFAC");
+  SELF_CHECK_THROWS(dshEncodeSegment(""));
 
   // projectKey: 分隔符折叠成单个 '-', 去首部 '-', 空 -> root, --slug(≤251)--。
-  CHECK_EQ(dshProjectKey("D:\\Work\\github\\avox"), "--D-Work-github-avox--");
-  CHECK_EQ(dshProjectKey("/home/u/proj"), "--home-u-proj--");
-  CHECK_EQ(dshProjectKey(":::"), "--root--");
-  CHECK_EQ(dshProjectKey("C:\\x~~y"), "--C-x~007E~007Ey--");
-  CHECK_THROWS(dshProjectKey(""));
+  SELF_CHECK_EQ(dshProjectKey("D:\\Work\\github\\avox"), "--D-Work-github-avox--");
+  SELF_CHECK_EQ(dshProjectKey("/home/u/proj"), "--home-u-proj--");
+  SELF_CHECK_EQ(dshProjectKey(":::"), "--root--");
+  SELF_CHECK_EQ(dshProjectKey("C:\\x~~y"), "--C-x~007E~007Ey--");
+  SELF_CHECK_THROWS(dshProjectKey(""));
   std::string longCwd(300, 'a');
-  CHECK_EQ(dshProjectKey(longCwd).size(), size_t(255));
+  SELF_CHECK_EQ(dshProjectKey(longCwd).size(), size_t(255));
 
   // 目录树: <root>/<projectKey>/<encodeSegment(id)>/session.jsonl。
   const fs::path logFile(dshSessionLogPath("R", "D:\\Work\\github\\avox",
                                            SessionId("s-1")));
   // 4 个组件: root / projectKey / encodeSegment(id) / session.jsonl。
   const std::vector<fs::path> parts(logFile.begin(), logFile.end());
-  CHECK_EQ(parts.size(), size_t(4));
-  CHECK_EQ(parts[0].string(), std::string("R"));
-  CHECK_EQ(parts[1].string(), std::string("--D-Work-github-avox--"));
-  CHECK_EQ(parts[2].string(), std::string("s-1"));
-  CHECK_EQ(parts[3].string(), std::string("session.jsonl"));
+  SELF_CHECK_EQ(parts.size(), size_t(4));
+  SELF_CHECK_EQ(parts[0].string(), std::string("R"));
+  SELF_CHECK_EQ(parts[1].string(), std::string("--D-Work-github-avox--"));
+  SELF_CHECK_EQ(parts[2].string(), std::string("s-1"));
+  SELF_CHECK_EQ(parts[3].string(), std::string("session.jsonl"));
   // 无 cwd 的会话归置到 _no-cwd。
   const fs::path noCwd(dshProjectDir("R", std::nullopt));
-  CHECK_EQ(noCwd.filename().string(), std::string("_no-cwd"));
+  SELF_CHECK_EQ(noCwd.filename().string(), std::string("_no-cwd"));
 }
 
 // 头行形状: exact-key, delegationDepth 恒写, 退役字段拒收, 版本不符先拒。
@@ -550,28 +554,28 @@ void testDshHeaderShape() {
 
   const Json j = parserJson(line.c_str());
   const Json::JsonObject& object = j.get<Json::JsonObject>();
-  CHECK_EQ(object.size(), size_t(6));
-  CHECK(object.find("type") != object.end());
-  CHECK(object.find("version") != object.end());
-  CHECK(object.find("id") != object.end());
-  CHECK(object.find("createdAt") != object.end());
-  CHECK(object.find("cwd") != object.end());
+  SELF_CHECK_EQ(object.size(), size_t(6));
+  SELF_CHECK(object.find("type") != object.end());
+  SELF_CHECK(object.find("version") != object.end());
+  SELF_CHECK(object.find("id") != object.end());
+  SELF_CHECK(object.find("createdAt") != object.end());
+  SELF_CHECK(object.find("cwd") != object.end());
   // delegationDepth 无值也恒写 0 (dsh 头行校验必填)。
-  CHECK(object.find("delegationDepth") != object.end());
-  CHECK(j["delegationDepth"].bInt() && j["delegationDepth"].get<int64_t>() == 0);
+  SELF_CHECK(object.find("delegationDepth") != object.end());
+  SELF_CHECK(j["delegationDepth"].bInt() && j["delegationDepth"].get<int64_t>() == 0);
   // 退役字段绝不写。
-  CHECK(object.find("sandboxMode") == object.end());
-  CHECK(object.find("approvalPolicy") == object.end());
-  CHECK_EQ(j["type"].get<std::string>(), std::string("session"));
+  SELF_CHECK(object.find("sandboxMode") == object.end());
+  SELF_CHECK(object.find("approvalPolicy") == object.end());
+  SELF_CHECK_EQ(j["type"].get<std::string>(), std::string("session"));
 
   // 读侧: 退役字段 / 版本不符 / 缺 delegationDepth 一律拒绝。
-  CHECK_THROWS(decodeHeader(
+  SELF_CHECK_THROWS(decodeHeader(
       "{\"type\":\"session\",\"version\":0,\"id\":\"x\",\"createdAt\":1,"
       "\"delegationDepth\":0,\"sandboxMode\":\"danger\"}"));
-  CHECK_THROWS(decodeHeader(
+  SELF_CHECK_THROWS(decodeHeader(
       "{\"type\":\"session\",\"version\":99,\"id\":\"x\",\"createdAt\":1,"
       "\"delegationDepth\":0}"));
-  CHECK_THROWS(decodeHeader(
+  SELF_CHECK_THROWS(decodeHeader(
       "{\"type\":\"session\",\"version\":0,\"id\":\"x\",\"createdAt\":1}"));
 }
 
@@ -606,30 +610,30 @@ void testDeltaChunkRoundTrip() {
     event.data = AssistantChunkData{1, 1, chunks[i]};
     const std::string line = encodeEvent(event);
     const DecodedEvent decoded = decodeEvent(line);
-    CHECK(decoded.status == DecodedEvent::Status::Ok);
-    CHECK(decoded.event.type == EventType::AssistantChunk);
+    SELF_CHECK(decoded.status == DecodedEvent::Status::Ok);
+    SELF_CHECK(decoded.event.type == EventType::AssistantChunk);
     const auto& data = std::get<AssistantChunkData>(decoded.event.data);
-    CHECK(data.chunk.index() == chunks[i].index());
-    CHECK_EQ(encodeEvent(decoded.event), line);
+    SELF_CHECK(data.chunk.index() == chunks[i].index());
+    SELF_CHECK_EQ(encodeEvent(decoded.event), line);
   }
 
   // 组装: 块按首见定序, delta 按索引归位, usage/finish 不进内容。
   BlockAssembler assembler;
   for (size_t i = 0; i < 9; ++i) assembler.push(chunks[i]);
-  CHECK_EQ(assembler.blocks().size(), size_t(3));
+  SELF_CHECK_EQ(assembler.blocks().size(), size_t(3));
   const auto* text = std::get_if<TextBlock>(&assembler.blocks()[0]);
-  CHECK(text != nullptr && text->text == "你好");
+  SELF_CHECK(text != nullptr && text->text == "你好");
   const auto* reasoning = std::get_if<ReasoningBlock>(&assembler.blocks()[1]);
-  CHECK(reasoning != nullptr && reasoning->text == "想");
+  SELF_CHECK(reasoning != nullptr && reasoning->text == "想");
   assembler.push(StreamUsage{usage});
   assembler.push(StreamFinish{FinishToolCalls{}});
-  CHECK_EQ(assembler.blocks().size(), size_t(3));
-  CHECK(assembler.hasToolCalls());
+  SELF_CHECK_EQ(assembler.blocks().size(), size_t(3));
+  SELF_CHECK(assembler.hasToolCalls());
   const std::vector<ToolCallBlock> calls = assembler.toolCalls();
-  CHECK_EQ(calls.size(), size_t(1));
-  CHECK_EQ(calls[0].id.value, std::string("c9"));
-  CHECK_EQ(calls[0].name, std::string("grep"));
-  CHECK_EQ(calls[0].arguments, std::string("{}{\"p\":1}"));
+  SELF_CHECK_EQ(calls.size(), size_t(1));
+  SELF_CHECK_EQ(calls[0].id.value, std::string("c9"));
+  SELF_CHECK_EQ(calls[0].name, std::string("grep"));
+  SELF_CHECK_EQ(calls[0].arguments, std::string("{}{\"p\":1}"));
 }
 
 // dsh 载荷词汇: provider/model 在 source 内, tool/result 的 toolCallId 与
@@ -650,16 +654,16 @@ void testDshPayloadVocabulary() {
   assistantEvent.sourceEventSeqs = std::vector<size_t>{5, 6, 7};
   const Json a = parserJson(encodeEvent(assistantEvent).c_str());
   const Json::JsonObject& envelope = a.get<Json::JsonObject>();
-  CHECK_EQ(envelope.size(), size_t(6));
-  CHECK(a["data"]["message"]["source"]["kind"].get<std::string>() == "model");
-  CHECK(a["data"]["message"]["source"]["provider"].get<std::string>() == "test");
-  CHECK(a["data"]["message"]["source"]["model"].get<std::string>() == "test-model");
-  CHECK(a["data"]["message"]["role"].get<std::string>() == "assistant");
-  CHECK(a["data"]["usage"]["inputTokens"].bInt()
+  SELF_CHECK_EQ(envelope.size(), size_t(6));
+  SELF_CHECK(a["data"]["message"]["source"]["kind"].get<std::string>() == "model");
+  SELF_CHECK(a["data"]["message"]["source"]["provider"].get<std::string>() == "test");
+  SELF_CHECK(a["data"]["message"]["source"]["model"].get<std::string>() == "test-model");
+  SELF_CHECK(a["data"]["message"]["role"].get<std::string>() == "assistant");
+  SELF_CHECK(a["data"]["usage"]["inputTokens"].bInt()
         && a["data"]["usage"]["inputTokens"].get<int64_t>() == 7);
-  CHECK(a["sourceEventSeqs"].bArray() && a["sourceEventSeqs"].size() == 3);
-  CHECK(a["sourceEventSeqs"].at(0).get<int64_t>() == 5);
-  CHECK(a["surfaceOp"].get<std::string>() == "append");
+  SELF_CHECK(a["sourceEventSeqs"].bArray() && a["sourceEventSeqs"].size() == 3);
+  SELF_CHECK(a["sourceEventSeqs"].at(0).get<int64_t>() == 5);
+  SELF_CHECK(a["surfaceOp"].get<std::string>() == "append");
 
   // tool/result: toolCallId === source.callId (dsh 硬校验) 且 role 为 user。
   SessionEvent toolEvent;
@@ -669,12 +673,12 @@ void testDshPayloadVocabulary() {
   toolEvent.data = toolResult(1, 2, CallId("c1"), "输出", false);
   toolEvent.surfaceOp = SurfaceAppend{};
   const Json t = parserJson(encodeEvent(toolEvent).c_str());
-  CHECK(t["data"]["message"]["role"].get<std::string>() == "user");
-  CHECK(t["data"]["message"]["source"]["kind"].get<std::string>() == "tool");
-  CHECK_EQ(t["data"]["message"]["content"].at(0)["toolCallId"].get<std::string>(),
+  SELF_CHECK(t["data"]["message"]["role"].get<std::string>() == "user");
+  SELF_CHECK(t["data"]["message"]["source"]["kind"].get<std::string>() == "tool");
+  SELF_CHECK_EQ(t["data"]["message"]["content"].at(0)["toolCallId"].get<std::string>(),
            t["data"]["message"]["source"]["callId"].get<std::string>());
-  CHECK(t["data"]["message"]["content"].size() == 1);
-  CHECK(t["data"]["message"]["content"].at(0)["type"].get<std::string>()
+  SELF_CHECK(t["data"]["message"]["content"].size() == 1);
+  SELF_CHECK(t["data"]["message"]["content"].at(0)["type"].get<std::string>()
         == "tool-result");
 
   // 压缩检查点 source 的扩展键往返。
@@ -687,9 +691,9 @@ void testDshPayloadVocabulary() {
   compactEvent.surfaceOp = SurfaceAppend{};
   const DecodedEvent decodedCompact = decodeEvent(encodeEvent(compactEvent));
   const auto& back = std::get<UserMessageData>(decodedCompact.event.data).message;
-  CHECK(back.source.kind == MessageSourceKind::Plugin);
-  CHECK(back.source.plugin.value_or("") == "compact");
-  CHECK(back.source.compactionId.value_or("") == "cx-9");
+  SELF_CHECK(back.source.kind == MessageSourceKind::Plugin);
+  SELF_CHECK(back.source.plugin.value_or("") == "compact");
+  SELF_CHECK(back.source.compactionId.value_or("") == "cx-9");
 }
 
 // 打包存储行 (dsh chunk-rows.ts): 展开、时间累计、attach 对齐、坏行拒读。
@@ -706,49 +710,49 @@ void testPackedRows() {
   });
 
   LoadedSession loaded = loadSession(path);
-  CHECK_EQ(loaded.events.size(), size_t(8));
-  CHECK(!loaded.repairedInterruptedTail);
+  SELF_CHECK_EQ(loaded.events.size(), size_t(8));
+  SELF_CHECK(!loaded.repairedInterruptedTail);
   // text-chunks 展开: seq 1..3, time = time0 + 前缀和。
-  CHECK(loaded.events[1].type == EventType::AssistantChunk);
-  CHECK(loaded.events[3].type == EventType::AssistantChunk);
+  SELF_CHECK(loaded.events[1].type == EventType::AssistantChunk);
+  SELF_CHECK(loaded.events[3].type == EventType::AssistantChunk);
   const auto& first = std::get<AssistantChunkData>(loaded.events[1].data);
   const auto* delta1 = std::get_if<StreamTextDelta>(&first.chunk);
-  CHECK(delta1 != nullptr && delta1->index == 0 && delta1->text == "a");
-  CHECK_EQ(loaded.events[2].timeMs, int64_t(102));
+  SELF_CHECK(delta1 != nullptr && delta1->index == 0 && delta1->text == "a");
+  SELF_CHECK_EQ(loaded.events[2].timeMs, int64_t(102));
   const auto* delta3 = std::get_if<StreamTextDelta>(
       &std::get<AssistantChunkData>(loaded.events[3].data).chunk);
-  CHECK(delta3 != nullptr && delta3->text == "ccc");
-  CHECK_EQ(loaded.events[3].timeMs, int64_t(105));
+  SELF_CHECK(delta3 != nullptr && delta3->text == "ccc");
+  SELF_CHECK_EQ(loaded.events[3].timeMs, int64_t(105));
   // tool-call-chunks 展开: name 每成员都带, argumentsDelta 逐片。
   const auto& callFirst = std::get<AssistantChunkData>(loaded.events[4].data);
   const auto* callDelta = std::get_if<StreamToolCallDelta>(&callFirst.chunk);
-  CHECK(callDelta != nullptr && callDelta->id.value == "c1"
+  SELF_CHECK(callDelta != nullptr && callDelta->id.value == "c1"
         && callDelta->name.value_or("") == "grep" && callDelta->argumentsDelta == "{\"p\":");
   const auto* callSecond = std::get_if<StreamToolCallDelta>(
       &std::get<AssistantChunkData>(loaded.events[5].data).chunk);
-  CHECK(callSecond != nullptr && callSecond->argumentsDelta == "1}"
+  SELF_CHECK(callSecond != nullptr && callSecond->argumentsDelta == "1}"
         && callSecond->name.value_or("") == "grep");
-  CHECK_EQ(loaded.events[5].timeMs, int64_t(205));
+  SELF_CHECK_EQ(loaded.events[5].timeMs, int64_t(205));
 
   // attach 对齐按成员数计: 构造补 end-seed 后只写 1 行, 重复 attach 不再长。
   {
     Session session(SessionId("packed"), std::move(loaded.events),
                     std::move(loaded.header));
-    CHECK_EQ(session.events().size(), size_t(9));
+    SELF_CHECK_EQ(session.events().size(), size_t(9));
     SessionWriter writer;
-    CHECK(writer.attach(session, path));
+    SELF_CHECK(writer.attach(session, path));
     writer.detach();
   }
   {
     LoadedSession reloaded = loadSession(path);
-    CHECK_EQ(reloaded.events.size(), size_t(9));
+    SELF_CHECK_EQ(reloaded.events.size(), size_t(9));
     Session session(SessionId("packed"), std::move(reloaded.events),
                     std::move(reloaded.header));
     SessionWriter writer;
-    CHECK(writer.attach(session, path));
+    SELF_CHECK(writer.attach(session, path));
     writer.detach();
   }
-  CHECK_EQ(loadSession(path).events.size(), size_t(9));
+  SELF_CHECK_EQ(loadSession(path).events.size(), size_t(9));
 
   // 坏行 (dt 配不平) 是损坏的存储, 必须响亮拒读。
   const std::string bad = (root / "bad.jsonl").string();
@@ -757,7 +761,7 @@ void testPackedRows() {
       R"jsonl({"type":"turn/start","seq":0,"time":10,"data":{"turn":1}})jsonl",
       R"jsonl({"type":"text-chunks","seq0":1,"time0":100,"data":{"turn":1,"step":1,"index":0,"dt":[1],"texts":["a","bb","ccc"]}})jsonl",
   });
-  CHECK_THROWS(loadSession(bad));
+  SELF_CHECK_THROWS(loadSession(bad));
 
   // 信封多键同样拒 (exact-key)。
   const std::string extra = (root / "extra.jsonl").string();
@@ -765,7 +769,7 @@ void testPackedRows() {
       R"jsonl({"type":"session","version":0,"id":"e","createdAt":1,"delegationDepth":0})jsonl",
       R"jsonl({"type":"text-chunks","seq0":0,"time0":1,"data":{"turn":1,"step":1,"index":0,"dt":[],"texts":["a"]},"ignorable":true})jsonl",
   });
-  CHECK_THROWS(loadSession(extra));
+  SELF_CHECK_THROWS(loadSession(extra));
 
   fs::remove_all(root);
 }
@@ -790,20 +794,20 @@ void testTombstoneLoad() {
   });
 
   LoadedSession loaded = loadSession(path);
-  CHECK_EQ(loaded.events.size(), size_t(6));
-  CHECK_EQ(loaded.skippedIgnorable, size_t(0));
+  SELF_CHECK_EQ(loaded.events.size(), size_t(6));
+  SELF_CHECK_EQ(loaded.skippedIgnorable, size_t(0));
   // 墓碑保住 seq 槽位 (seq == 下标契约) 与原始行。
-  CHECK(loaded.events[0].type == EventType::Opaque);
-  CHECK_EQ(std::get<OpaqueEventData>(loaded.events[0].data).typeName,
+  SELF_CHECK(loaded.events[0].type == EventType::Opaque);
+  SELF_CHECK_EQ(std::get<OpaqueEventData>(loaded.events[0].data).typeName,
            std::string("llm/retry"));
-  CHECK_EQ(encodeEvent(loaded.events[0]), tombLine);
-  CHECK(loaded.events[1].type == EventType::Opaque);
-  CHECK(loaded.events[2].type == EventType::Opaque);
+  SELF_CHECK_EQ(encodeEvent(loaded.events[0]), tombLine);
+  SELF_CHECK(loaded.events[1].type == EventType::Opaque);
+  SELF_CHECK(loaded.events[2].type == EventType::Opaque);
 
   Session session(SessionId("tomb"), std::move(loaded.events),
                   std::move(loaded.header));
   // surface 只有那条 user 消息。
-  CHECK_EQ(session.deriveMessages().size(), size_t(1));
+  SELF_CHECK_EQ(session.deriveMessages().size(), size_t(1));
 
   // 名单外且无 ignorable: 拒绝重建。
   const std::string alien = (root / "alien.jsonl").string();
@@ -811,7 +815,7 @@ void testTombstoneLoad() {
       R"jsonl({"type":"session","version":0,"id":"a","createdAt":1,"delegationDepth":0})jsonl",
       R"jsonl({"type":"alien/thing","seq":0,"time":1,"data":{}})jsonl",
   });
-  CHECK_THROWS(loadSession(alien));
+  SELF_CHECK_THROWS(loadSession(alien));
 
   fs::remove_all(root);
 }
@@ -826,15 +830,15 @@ void testZstdRefused() {
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     out.write(magic, sizeof(magic));
   }
-  CHECK_THROWS(loadSession(path));
+  SELF_CHECK_THROWS(loadSession(path));
   // attach 同样拒绝, 且失败原因可查。
   SessionHeader header;
   header.version = SESSION_FORMAT_VERSION;
   header.id = SessionId("z");
   Session session(SessionId("z"), std::vector<SessionEvent>{}, header);
   SessionWriter writer;
-  CHECK(!writer.attach(session, path));
-  CHECK(!writer.lastError().empty());
+  SELF_CHECK(!writer.attach(session, path));
+  SELF_CHECK(!writer.lastError().empty());
   fs::remove_all(root);
 }
 
@@ -929,45 +933,45 @@ void testAttachmentBridge() {
   uint8_t digest[32];
   sha.finalize(digest);
   const std::string hex = hexEncode(std::vector<uint8_t>(digest, digest + 32));
-  CHECK_EQ(ref.attachmentId, "sha256:" + hex);
-  CHECK_EQ(ref.mediaType, std::string("image/png"));
-  CHECK_EQ(ref.bytes, static_cast<int64_t>(png.size()));
+  SELF_CHECK_EQ(ref.attachmentId, "sha256:" + hex);
+  SELF_CHECK_EQ(ref.mediaType, std::string("image/png"));
+  SELF_CHECK_EQ(ref.bytes, static_cast<int64_t>(png.size()));
   // 宽高从字节解出 (1x1)。
-  CHECK_EQ(ref.width, int64_t(1));
-  CHECK_EQ(ref.height, int64_t(1));
+  SELF_CHECK_EQ(ref.width, int64_t(1));
+  SELF_CHECK_EQ(ref.height, int64_t(1));
   // 展示名剥掉了本地路径。
-  CHECK_EQ(ref.name.value_or(""), std::string("红点.png"));
+  SELF_CHECK_EQ(ref.name.value_or(""), std::string("红点.png"));
   // 对象落在内容寻址布局: objects/<前2 hex>/<hex>。
-  CHECK(fs::exists(fs::path(storeRoot) / "objects" / hex.substr(0, 2) / hex));
+  SELF_CHECK(fs::exists(fs::path(storeRoot) / "objects" / hex.substr(0, 2) / hex));
 
   // 装载往返逐字节一致。
   const std::vector<uint8_t> back = store.load(ref);
-  CHECK(back == png);
+  SELF_CHECK(back == png);
 
   // 声明的媒体类型与字节不符 → 拒绝。
-  CHECK_THROWS(store.publish(png.data(), png.size(), "image/jpeg", std::nullopt));
+  SELF_CHECK_THROWS(store.publish(png.data(), png.size(), "image/jpeg", std::nullopt));
   // 引用被篡改 (字节数不符) → 拒绝。
   ImageAttachmentRef tampered = ref;
   tampered.bytes += 1;
-  CHECK_THROWS(store.load(tampered));
+  SELF_CHECK_THROWS(store.load(tampered));
 
   // —— 准入限额 (dsh #2629/#2623): 已入仓的图随历史搭每一次请求, 拒在入仓线 ——
   // 超字节: 合法 PNG 尾部垫到 3.5MB 以上 —— 字节检查先于任何解码 (dsh saveImageFile 同序)。
   std::vector<uint8_t> padded = png;
   padded.resize(static_cast<size_t>(kImageMaxBytes) + 1, 0);
-  CHECK_THROWS_WITH(store.publish(padded.data(), padded.size(), "image/png",
+  SELF_CHECK_THROWS_WITH(store.publish(padded.data(), padded.size(), "image/png",
                                   std::nullopt),
                     "IMAGE_TOO_LARGE");
   // 超像素: 6500x6500 = 42.25M > 40M (两轴均过解码, 限额在解码成功之后)。
   const std::vector<uint8_t> manyPixels =
       encodeSolidPng(root / "many_pixels.png", 6500, 6500);
-  CHECK_THROWS_WITH(store.publish(manyPixels.data(), manyPixels.size(),
+  SELF_CHECK_THROWS_WITH(store.publish(manyPixels.data(), manyPixels.size(),
                                   "image/png", std::nullopt),
                     "IMAGE_TOO_MANY_PIXELS");
   // 单边超限: 2001x2001 = 4M 像素 (不触像素限额), 边 2001 > 2000。
   const std::vector<uint8_t> tallSide =
       encodeSolidPng(root / "tall_side.png", 2001, 2001);
-  CHECK_THROWS_WITH(store.publish(tallSide.data(), tallSide.size(), "image/png",
+  SELF_CHECK_THROWS_WITH(store.publish(tallSide.data(), tallSide.size(), "image/png",
                                   std::nullopt),
                     "IMAGE_DIMENSION_TOO_LARGE");
   // 边界内 (2000x2000 = 4M 像素, 单边恰在限上) 正常入仓。
@@ -975,8 +979,8 @@ void testAttachmentBridge() {
       encodeSolidPng(root / "at_limit.png", 2000, 2000);
   const ImageAttachmentRef atLimitRef =
       store.publish(atLimit.data(), atLimit.size(), "image/png", std::nullopt);
-  CHECK_EQ(atLimitRef.width, int64_t(2000));
-  CHECK_EQ(atLimitRef.height, int64_t(2000));
+  SELF_CHECK_EQ(atLimitRef.width, int64_t(2000));
+  SELF_CHECK_EQ(atLimitRef.height, int64_t(2000));
 
   fs::remove_all(root);
 }
@@ -1040,50 +1044,50 @@ void testChatProviderWire() {
   const std::string payload = provider.buildPayload(req);
   Json wire = parserJson(payload.c_str());
   Json& msgs = wire["messages"];
-  CHECK(msgs.bArray());
+  SELF_CHECK(msgs.bArray());
   // system, user1, assistant, tool1, tool2, tool3, flush-user(2 图), user2。
-  CHECK_EQ(msgs.size(), size_t(8));
+  SELF_CHECK_EQ(msgs.size(), size_t(8));
 
-  CHECK_EQ(msgs[0]["role"].get<std::string>(), std::string("system"));
-  CHECK_EQ(msgs[0]["content"].get<std::string>(), std::string("sys"));
-  CHECK_EQ(msgs[1]["role"].get<std::string>(), std::string("user"));
-  CHECK_EQ(msgs[1]["content"].get<std::string>(), std::string("你好 世界"));
+  SELF_CHECK_EQ(msgs[0]["role"].get<std::string>(), std::string("system"));
+  SELF_CHECK_EQ(msgs[0]["content"].get<std::string>(), std::string("sys"));
+  SELF_CHECK_EQ(msgs[1]["role"].get<std::string>(), std::string("user"));
+  SELF_CHECK_EQ(msgs[1]["content"].get<std::string>(), std::string("你好 世界"));
   // assistant: content "" (绝不能 null) + reasoning_content + tool_calls。
-  CHECK_EQ(msgs[2]["role"].get<std::string>(), std::string("assistant"));
-  CHECK_EQ(msgs[2]["content"].get<std::string>(), std::string(""));
-  CHECK_EQ(msgs[2]["reasoning_content"].get<std::string>(),
+  SELF_CHECK_EQ(msgs[2]["role"].get<std::string>(), std::string("assistant"));
+  SELF_CHECK_EQ(msgs[2]["content"].get<std::string>(), std::string(""));
+  SELF_CHECK_EQ(msgs[2]["reasoning_content"].get<std::string>(),
            std::string("想想"));
-  CHECK_EQ(msgs[2]["tool_calls"].size(), size_t(1));
+  SELF_CHECK_EQ(msgs[2]["tool_calls"].size(), size_t(1));
   // tool1: 文本留下, 图不在此消息。
-  CHECK_EQ(msgs[3]["role"].get<std::string>(), std::string("tool"));
-  CHECK_EQ(msgs[3]["tool_call_id"].get<std::string>(), std::string("call_1"));
-  CHECK_EQ(msgs[3]["content"].get<std::string>(),
+  SELF_CHECK_EQ(msgs[3]["role"].get<std::string>(), std::string("tool"));
+  SELF_CHECK_EQ(msgs[3]["tool_call_id"].get<std::string>(), std::string("call_1"));
+  SELF_CHECK_EQ(msgs[3]["content"].get<std::string>(),
            std::string("<path>x.png</path>"));
   // tool2: 只有图 → 占位文本。
-  CHECK_EQ(msgs[4]["content"].get<std::string>(),
+  SELF_CHECK_EQ(msgs[4]["content"].get<std::string>(),
            std::string("(see attached image)"));
   // tool3: 空 → "(no output)"。
-  CHECK_EQ(msgs[5]["content"].get<std::string>(), std::string("(no output)"));
+  SELF_CHECK_EQ(msgs[5]["content"].get<std::string>(), std::string("(no output)"));
   // flush 的 user 消息: 前缀文本 + 两个图 part (按原序)。
-  CHECK_EQ(msgs[6]["role"].get<std::string>(), std::string("user"));
-  CHECK(msgs[6]["content"].bArray());
-  CHECK_EQ(msgs[6]["content"].size(), size_t(3));
-  CHECK_EQ(msgs[6]["content"][0]["type"].get<std::string>(),
+  SELF_CHECK_EQ(msgs[6]["role"].get<std::string>(), std::string("user"));
+  SELF_CHECK(msgs[6]["content"].bArray());
+  SELF_CHECK_EQ(msgs[6]["content"].size(), size_t(3));
+  SELF_CHECK_EQ(msgs[6]["content"][0]["type"].get<std::string>(),
            std::string("text"));
-  CHECK_EQ(msgs[6]["content"][0]["text"].get<std::string>(),
+  SELF_CHECK_EQ(msgs[6]["content"][0]["text"].get<std::string>(),
            std::string("Attached image(s) from tool result:"));
-  CHECK_EQ(msgs[6]["content"][1]["image_url"]["url"].get<std::string>(),
+  SELF_CHECK_EQ(msgs[6]["content"][1]["image_url"]["url"].get<std::string>(),
            std::string("data:image/png;base64,AAAA"));
-  CHECK_EQ(msgs[6]["content"][2]["image_url"]["url"].get<std::string>(),
+  SELF_CHECK_EQ(msgs[6]["content"][2]["image_url"]["url"].get<std::string>(),
            std::string("data:image/png;base64,BBBB"));
   // user2: 文本 + 图 → 数组形态, 序保持。
-  CHECK_EQ(msgs[7]["content"].size(), size_t(2));
-  CHECK_EQ(msgs[7]["content"][0]["text"].get<std::string>(),
+  SELF_CHECK_EQ(msgs[7]["content"].size(), size_t(2));
+  SELF_CHECK_EQ(msgs[7]["content"][0]["text"].get<std::string>(),
            std::string("看第二张"));
-  CHECK_EQ(msgs[7]["content"][1]["image_url"]["url"].get<std::string>(),
+  SELF_CHECK_EQ(msgs[7]["content"][1]["image_url"]["url"].get<std::string>(),
            std::string("data:image/png;base64,CCCC"));
   // stream_options: DeepSeek 官方流式回 usage 的开关。
-  CHECK_EQ(wire["stream_options"]["include_usage"].get<bool>(), true);
+  SELF_CHECK_EQ(wire["stream_options"]["include_usage"].get<bool>(), true);
 }
 
 // 模型路由重试臂 (dsh 0ca0f3d0b8 统一 5 次重试默认): 默认 6 次尝试 = 首次 + 5 次重试;
@@ -1103,11 +1107,11 @@ void testModelRouteRetry() {
     payload.signal = controller.signal();
     payload.failure = LlmFailure{"限流", "RATE_LIMITED"};
     for (int i = 0; i < 5; ++i) {
-      CHECK(points.requestError.run(payload, nullptr, giveUp).has_value());
+      SELF_CHECK(points.requestError.run(payload, nullptr, giveUp).has_value());
     }
-    CHECK(!points.requestError.run(payload, nullptr, giveUp).has_value());
+    SELF_CHECK(!points.requestError.run(payload, nullptr, giveUp).has_value());
     payload.failure = LlmFailure{"key 无效", "AUTH_FAILED"};
-    CHECK(!points.requestError.run(payload, nullptr, giveUp).has_value());
+    SELF_CHECK(!points.requestError.run(payload, nullptr, giveUp).has_value());
     dispose();
   }
   // Retry-After 语义 (dsh normal 模式): ≤ max 采纳原值照常重试; > max 等不起就放弃。
@@ -1121,9 +1125,9 @@ void testModelRouteRetry() {
     payload.signal = controller.signal();
     payload.failure = LlmFailure{"限流", "RATE_LIMITED"};
     payload.failure.providerRetryAfterMs = 50;
-    CHECK(points.requestError.run(payload, nullptr, giveUp).has_value());
+    SELF_CHECK(points.requestError.run(payload, nullptr, giveUp).has_value());
     payload.failure.providerRetryAfterMs = 5000;
-    CHECK(!points.requestError.run(payload, nullptr, giveUp).has_value());
+    SELF_CHECK(!points.requestError.run(payload, nullptr, giveUp).has_value());
     dispose();
   }
   // abort 唤醒: 已取消的 signal 让退避等待立即返回 nullopt (不重试)。退避调到 10s,
@@ -1137,7 +1141,7 @@ void testModelRouteRetry() {
     RequestErrorPayload payload;
     payload.signal = controller.signal();
     payload.failure = LlmFailure{"断连", "CONNECTION_FAILED"};
-    CHECK(!points.requestError.run(payload, nullptr, giveUp).has_value());
+    SELF_CHECK(!points.requestError.run(payload, nullptr, giveUp).has_value());
     dispose();
   }
 }
@@ -1176,63 +1180,63 @@ void testDshGoldenLogLoad() {
   });
 
   LoadedSession loaded = loadSession(path);
-  CHECK_EQ(loaded.events.size(), size_t(40));
-  CHECK_EQ(loaded.skippedIgnorable, size_t(0));
-  CHECK(!loaded.repairedInterruptedTail);
-  CHECK_EQ(loaded.header.id.value,
+  SELF_CHECK_EQ(loaded.events.size(), size_t(40));
+  SELF_CHECK_EQ(loaded.skippedIgnorable, size_t(0));
+  SELF_CHECK(!loaded.repairedInterruptedTail);
+  SELF_CHECK_EQ(loaded.header.id.value,
            std::string("539aa64c-7f37-40ff-abd8-ed45b717be1b"));
-  CHECK_EQ(loaded.header.cwd.value_or(""), std::string("D:\\Work\\github\\avox"));
-  CHECK_EQ(loaded.header.delegationDepth.value_or(-1), 0);
+  SELF_CHECK_EQ(loaded.header.cwd.value_or(""), std::string("D:\\Work\\github\\avox"));
+  SELF_CHECK_EQ(loaded.header.delegationDepth.value_or(-1), 0);
 
   // 打包行展开出的分片 (seq 10..29)。
-  CHECK(loaded.events[10].type == EventType::AssistantChunk);
+  SELF_CHECK(loaded.events[10].type == EventType::AssistantChunk);
   const auto& firstDelta = std::get<AssistantChunkData>(loaded.events[10].data);
   const auto* reasoning0 = std::get_if<StreamReasoningDelta>(&firstDelta.chunk);
-  CHECK(reasoning0 != nullptr && reasoning0->text == "The");
-  CHECK(loaded.events[29].type == EventType::AssistantChunk);
+  SELF_CHECK(reasoning0 != nullptr && reasoning0->text == "The");
+  SELF_CHECK(loaded.events[29].type == EventType::AssistantChunk);
   const auto& lastDelta = std::get<AssistantChunkData>(loaded.events[29].data);
   const auto* reasoningLast = std::get_if<StreamReasoningDelta>(&lastDelta.chunk);
-  CHECK(reasoningLast != nullptr && reasoningLast->text == ".");
+  SELF_CHECK(reasoningLast != nullptr && reasoningLast->text == ".");
   // time = time0 + Σdt = 1783600630852 + 128。
-  CHECK_EQ(loaded.events[29].timeMs, int64_t(1783600630980));
+  SELF_CHECK_EQ(loaded.events[29].timeMs, int64_t(1783600630980));
   // 手写分片行照常解码。
   const auto& textP = std::get<AssistantChunkData>(loaded.events[31].data);
   const auto* textDelta = std::get_if<StreamTextDelta>(&textP.chunk);
-  CHECK(textDelta != nullptr && textDelta->text == "P");
+  SELF_CHECK(textDelta != nullptr && textDelta->text == "P");
   // session/title 进墓碑且原始行逐字节保留。
-  CHECK(loaded.events[6].type == EventType::Opaque);
-  CHECK_EQ(encodeEvent(loaded.events[6]), titleLine);
+  SELF_CHECK(loaded.events[6].type == EventType::Opaque);
+  SELF_CHECK_EQ(encodeEvent(loaded.events[6]), titleLine);
 
   // assistant 消息: usage 记账与 source 内路由。
   const auto& assistant = std::get<AssistantMessageData>(loaded.events[37].data);
-  CHECK_EQ(assistant.usage->inputTokens, int64_t(3091));
-  CHECK(assistant.message.source.provider.value_or("") == "deepseek-official");
+  SELF_CHECK_EQ(assistant.usage->inputTokens, int64_t(3091));
+  SELF_CHECK(assistant.message.source.provider.value_or("") == "deepseek-official");
 
   Session session(SessionId("539aa64c-7f37-40ff-abd8-ed45b717be1b"),
                   std::move(loaded.events), std::move(loaded.header));
   // 模型可见历史: 两条 user (含插件注入的 runtime context) + 一条 assistant。
-  CHECK_EQ(session.deriveMessages().size(), size_t(3));
+  SELF_CHECK_EQ(session.deriveMessages().size(), size_t(3));
   const auto& reply = std::get<AssistantMessage>(session.deriveMessages()[2]);
-  CHECK_EQ(reply.content.size(), size_t(2));
+  SELF_CHECK_EQ(reply.content.size(), size_t(2));
   const auto* replyText = std::get_if<TextBlock>(&reply.content[1]);
-  CHECK(replyText != nullptr && replyText->text == "PONG");
+  SELF_CHECK(replyText != nullptr && replyText->text == "PONG");
   // 构造补 end-seed 后事件 41 条; attach 对齐写 1 行, 重复 attach 不再长。
-  CHECK_EQ(session.events().size(), size_t(41));
+  SELF_CHECK_EQ(session.events().size(), size_t(41));
   {
     SessionWriter writer;
-    CHECK(writer.attach(session, path));
+    SELF_CHECK(writer.attach(session, path));
     writer.detach();
   }
   {
     LoadedSession reloaded = loadSession(path);
-    CHECK_EQ(reloaded.events.size(), size_t(41));
+    SELF_CHECK_EQ(reloaded.events.size(), size_t(41));
     Session again(SessionId("539aa64c-7f37-40ff-abd8-ed45b717be1b"),
                   std::move(reloaded.events), std::move(reloaded.header));
     SessionWriter writer;
-    CHECK(writer.attach(again, path));
+    SELF_CHECK(writer.attach(again, path));
     writer.detach();
   }
-  CHECK_EQ(loadSession(path).events.size(), size_t(41));
+  SELF_CHECK_EQ(loadSession(path).events.size(), size_t(41));
 
   fs::remove_all(root);
 }
@@ -1241,6 +1245,7 @@ void testDshGoldenLogLoad() {
 
 void run(const char* name, void (*test)()) {
   std::cout << "-- " << name << std::flush;
+  const int before = g_failures;
   try {
     test();
     std::cout << " ok" << std::endl;
@@ -1251,9 +1256,11 @@ void run(const char* name, void (*test)()) {
     std::cout << " 抛出未知异常" << std::endl;
     ++g_failures;
   }
+  // 每个子项单独进 doctest, 失败时能看到是哪一个 (doctest 允许在函数内断言)
+  CHECK(g_failures == before);
 }
 
-int main() {
+TEST_CASE("avox_agent/core 会话日志不变式") {
   std::cout << "=== avox_agent/core 会话日志不变式自测 ===" << std::endl;
 
   run("seq 连续性", testSeqContiguity);
@@ -1281,10 +1288,10 @@ int main() {
   run("模型路由重试臂 (dsh 5 次默认)", testModelRouteRetry);
   run("dsh 真实日志装载", testDshGoldenLogLoad);
 
+  CHECK(g_failures == 0);
   if (g_failures == 0) {
     std::cout << "全部通过" << std::endl;
-    return 0;
+    return;
   }
   std::cout << g_failures << " 项失败" << std::endl;
-  return 1;
 }

@@ -95,7 +95,7 @@ int main(int argc, char* argv[]) {
   ob.prefix = prefix;
   IMediaPlayer* player = createMediaPlayer();
   if (!player) {
-    std::printf("case=latprobe FAIL (createMediaPlayer null)\n");
+    std::printf("[AVOX][TEST] case=latprobe result=FAIL reason=createMediaPlayer-null\n");
     return 1;
   }
   if (mode == "low") {
@@ -115,8 +115,8 @@ int main(int argc, char* argv[]) {
   removeSurfaceRenderOb(sr, &ob);
   delete player;
   bool ok = !g_failed && ob.saved >= 3;
-  std::printf("frames=%lld saved=%lld case=latprobe %s%s\n",
-              (long long)ob.frames, (long long)ob.saved, ok ? "PASS" : "FAIL",
+  std::printf("[AVOX][TEST] case=latprobe result=%s frames=%lld saved=%lld%s\n",
+              ok ? "PASS" : "FAIL", (long long)ob.frames, (long long)ob.saved,
               g_failed ? (" reason: " + g_reason).c_str() : "");
   return ok ? 0 : 1;
 }

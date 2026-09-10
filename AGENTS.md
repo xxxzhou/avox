@@ -21,7 +21,7 @@
 
 ## 目录结构
 
-`3rdparty/` 第三方库源码 · `assets/` 资源 · `cmake/` 构建脚本 · `glsl/` 着色器源码 · `platform/` 平台代码 (UE/Unity/Godot 插件) · `samples/` 示例 · `src/` SDK 源码 (avox 模块) · `swig/` C#/Java/Node/python 绑定 · `build/` 构建输出 · `tests/` 单测 (doctest, 随主构建编译) 与播放回归矩阵共享用例表 (tests/playmatrix) · `doc/` 文档 · `plugins/` 插件 · `script/` 辅助脚本
+`3rdparty/` 第三方库源码 · `assets/` 资源 · `cmake/` 构建脚本 · `glsl/` 着色器源码 · `platform/` 平台代码 (UE/Unity/Godot 插件) · `samples/` 探针与人工走查样例 (归位说明见 samples/README.md) · `src/` SDK 源码 (avox 模块) · `swig/` C#/Java/Node/python 绑定 · `build/` 构建输出 · `tests/` 单测 (doctest, 随主构建编译) 与播放回归矩阵共享用例表 (tests/playmatrix) · `doc/` 文档 · `plugins/` 插件 · `script/` 辅助脚本
 
 ## 构建命令
 
@@ -37,6 +37,10 @@ ctest --test-dir build/windows/avox --output-on-failure -C Release
 
 # 播放回归矩阵 (每次改动后跑一次, 确认播放链路未坏; 需本机 ZLM MediaServer)
 python script/testenv/play_regress.py
+python script/testenv/play_regress.py --offline   # 无 ZLM 的离线子集 (CI 用这个)
+
+# 提交门禁: pre-push 跑 ctest + 上面那个离线子集 (已装 core.hooksPath=.githooks)
+# 跳过: AVOX_SKIP_GATE=1 git push; 全量: AVOX_GATE_FULL=1 git push
 ```
 
 ## 平台支持

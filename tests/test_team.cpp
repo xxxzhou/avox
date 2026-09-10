@@ -1,3 +1,6 @@
+// 从 samples/functest/teamtest.cpp 迁来: agent team 契约自测
+// 该文件此前未在任何 CMakeLists 注册, 从未被编译过, 本次一并纳入 ctest。
+// 自带断言宏已重命名 (SELF_CHECK_*), 避免与 doctest 的 CHECK 冲突。
 // Agent Teams 持久运行时的自测。
 //
 // 覆盖 src/avox_agent/team 的关键契约:
@@ -10,6 +13,8 @@
 //
 // 全离线: LlmProvider 用脚本假件, 不发网络请求。直接编译 core + team 的源文件参与
 // (与 sessiontest 同因: avox 用静态 CRT, core/team 是 DLL 内部设施, 不跨边界导出)。
+
+#include <doctest.h>
 
 #include <atomic>
 #include <chrono>
@@ -38,9 +43,9 @@ namespace {
 
 namespace fs = std::filesystem;
 
-int g_failures = 0;
+static int g_failures = 0;
 
-#define CHECK(cond)                                                         \
+#define SELF_CHECK(cond)                                                         \
   do {                                                                      \
     if (!(cond)) {                                                          \
       std::cout << "FAIL line " << __LINE__ << ": " << #cond << std::endl;  \
@@ -48,7 +53,7 @@ int g_failures = 0;
     }                                                                       \
   } while (0)
 
-#define CHECK_EQ(actual, expected)                                          \
+#define SELF_CHECK_EQ(actual, expected)                                          \
   do {                                                                      \
     const auto& actualValue = (actual);                                     \
     const auto& expectedValue = (expected);                                 \
@@ -59,7 +64,7 @@ int g_failures = 0;
     }                                                                       \
   } while (0)
 
-#define CHECK_THROWS(expr)                                                  \
+#define SELF_CHECK_THROWS(expr)                                                  \
   do {                                                                      \
     bool threw = false;                                                     \
     try {                                                                   \
@@ -74,7 +79,7 @@ int g_failures = 0;
     }                                                                       \
   } while (0)
 
-#define CHECK_THROWS_WITH(expr, needle)                                     \
+#define SELF_CHECK_THROWS_WITH(expr, needle)                                     \
   do {                                                                      \
     bool threw = false;                                                     \
     std::string what;                                                       \
@@ -94,7 +99,7 @@ int g_failures = 0;
   } while (0)
 
 // 抛出的 TeamError 须携指定稳定码 (dsh 错误词汇逐字对应, 模型依码自愈)。
-#define CHECK_TEAM_ERROR(expr, expectedCode)                                \
+#define SELF_CHECK_TEAM_ERROR(expr, expectedCode)                                \
   do {                                                                      \
     bool threw = false;                                                     \
     std::string code;                                                       \
@@ -236,7 +241,7 @@ struct TeamHarness {
     message.content.push_back(TextBlock{text});
     message.source = userSource();
     lead->followup(std::move(message));
-    CHECK(lead->whenIdle(30000));
+    SELF_CHECK(lead->whenIdle(30000));
   }
 
   SpawnTeammateRequest spawnRequest(const std::string& name,
@@ -333,13 +338,13 @@ void testFoldInvariants() {
                                     SessionId("session-m1")}));
 
     const TeamFoldState state = foldTeam(root, events);
-    CHECK_EQ(state.members.size(), static_cast<size_t>(1));
-    CHECK(state.members[0].phase == TeamMemberPhase::Active);
-    CHECK_EQ(state.tasks.size(), static_cast<size_t>(1));
-    CHECK_EQ(state.tasks[0].revision, 2);
-    CHECK(state.delivered.count("msg-1") == 1);
-    CHECK_EQ(state.nextTaskNumber, static_cast<int64_t>(2));
-    CHECK_EQ(state.nextMessageNumber, static_cast<int64_t>(2));
+    SELF_CHECK_EQ(state.members.size(), static_cast<size_t>(1));
+    SELF_CHECK(state.members[0].phase == TeamMemberPhase::Active);
+    SELF_CHECK_EQ(state.tasks.size(), static_cast<size_t>(1));
+    SELF_CHECK_EQ(state.tasks[0].revision, 2);
+    SELF_CHECK(state.delivered.count("msg-1") == 1);
+    SELF_CHECK_EQ(state.nextTaskNumber, static_cast<int64_t>(2));
+    SELF_CHECK_EQ(state.nextMessageNumber, static_cast<int64_t>(2));
   }
 
   // teamId 不符的 team/* 事件整条忽略 (fork 前缀继承的别队状态)。
@@ -351,12 +356,12 @@ void testFoldInvariants() {
                memberSnapshot("session-x", "ghost",
                               TeamMemberPhase::Provisioning)}));
     const TeamFoldState state = foldTeam(root, events);
-    CHECK(state.members.empty());
-    CHECK_EQ(state.nextTaskNumber, static_cast<int64_t>(1));
+    SELF_CHECK(state.members.empty());
+    SELF_CHECK_EQ(state.nextTaskNumber, static_cast<int64_t>(1));
   }
 
   // 名字永不复用。
-  CHECK_THROWS((foldTeam(root, std::vector<SessionEvent>{
+  SELF_CHECK_THROWS((foldTeam(root, std::vector<SessionEvent>{
                                    teamEvent(0, TeamMemberEventData{
                                                     TEAM_EVENT_VERSION, root,
                                                     memberSnapshot(
@@ -372,7 +377,7 @@ void testFoldInvariants() {
                                })));
 
   // phase 只能 provisioning 起步。
-  CHECK_THROWS((foldTeam(root, std::vector<SessionEvent>{
+  SELF_CHECK_THROWS((foldTeam(root, std::vector<SessionEvent>{
                                    teamEvent(0, TeamMemberEventData{
                                                     TEAM_EVENT_VERSION, root,
                                                     memberSnapshot(
@@ -382,7 +387,7 @@ void testFoldInvariants() {
                                })));
 
   // phase 只能一次收敛 (failed 不得回 active)。
-  CHECK_THROWS((foldTeam(root, std::vector<SessionEvent>{
+  SELF_CHECK_THROWS((foldTeam(root, std::vector<SessionEvent>{
                                    teamEvent(0, TeamMemberEventData{
                                                     TEAM_EVENT_VERSION, root,
                                                     memberSnapshot(
@@ -404,7 +409,7 @@ void testFoldInvariants() {
                                })));
 
   // 任务 revision 从 1 起。
-  CHECK_THROWS((foldTeam(root, std::vector<SessionEvent>{
+  SELF_CHECK_THROWS((foldTeam(root, std::vector<SessionEvent>{
                                    teamEvent(0, TeamTaskEventData{
                                                     TEAM_EVENT_VERSION, root,
                                                     taskSnapshot(
@@ -419,13 +424,13 @@ void testFoldInvariants() {
     message.id = "msg-1";
     message.senderId = root;
     message.targetId = SessionId("session-m1");
-    CHECK_THROWS((foldTeam(root, std::vector<SessionEvent>{
+    SELF_CHECK_THROWS((foldTeam(root, std::vector<SessionEvent>{
                                      teamEvent(0, TeamMessageDeliveredData{
                                                       TEAM_EVENT_VERSION, root,
                                                       std::string("msg-1"),
                                                       SessionId("session-m1")}),
                                  })));
-    CHECK_THROWS((foldTeam(root, std::vector<SessionEvent>{
+    SELF_CHECK_THROWS((foldTeam(root, std::vector<SessionEvent>{
                                      teamEvent(0, TeamMessageQueuedData{
                                                       TEAM_EVENT_VERSION, root,
                                                       message}),
@@ -439,15 +444,15 @@ void testFoldInvariants() {
 // ---- 2. 入参校验 ----
 
 void testValidation() {
-  CHECK_TEAM_ERROR(checkTeamMemberName("Worker"), TEAM_INVALID_MEMBER_NAME);
-  CHECK_TEAM_ERROR(checkTeamMemberName("lead"), TEAM_INVALID_MEMBER_NAME);
-  CHECK_TEAM_ERROR(checkTeamMemberName("a-"), TEAM_INVALID_MEMBER_NAME);
+  SELF_CHECK_TEAM_ERROR(checkTeamMemberName("Worker"), TEAM_INVALID_MEMBER_NAME);
+  SELF_CHECK_TEAM_ERROR(checkTeamMemberName("lead"), TEAM_INVALID_MEMBER_NAME);
+  SELF_CHECK_TEAM_ERROR(checkTeamMemberName("a-"), TEAM_INVALID_MEMBER_NAME);
   checkTeamMemberName("worker-2");
   checkTeamMemberName("w");
-  CHECK_EQ(teamWriteScope("src\\avox_agent\\"), std::string("src/avox_agent"));
-  CHECK_EQ(teamWriteScope("./docs"), std::string("docs"));
-  CHECK_TEAM_ERROR(teamWriteScope("/abs"), TEAM_INVALID_WRITE_SCOPE);
-  CHECK_TEAM_ERROR(teamWriteScope("a/../b"), TEAM_INVALID_WRITE_SCOPE);
+  SELF_CHECK_EQ(teamWriteScope("src\\avox_agent\\"), std::string("src/avox_agent"));
+  SELF_CHECK_EQ(teamWriteScope("./docs"), std::string("docs"));
+  SELF_CHECK_TEAM_ERROR(teamWriteScope("/abs"), TEAM_INVALID_WRITE_SCOPE);
+  SELF_CHECK_TEAM_ERROR(teamWriteScope("a/../b"), TEAM_INVALID_WRITE_SCOPE);
 }
 
 // ---- 3. 任务板 CAS ----
@@ -460,30 +465,30 @@ void testTaskBoard() {
   create.subject = "调研 zlm 协议";
   create.description = "拉通 fmp4 直播链路";
   const TeamTaskSnapshot task1 = harness.team->createTask(create);
-  CHECK_EQ(task1.id, std::string("task-1"));
-  CHECK_EQ(task1.revision, 1);
-  CHECK(task1.status == TeamTaskStatus::Pending);
+  SELF_CHECK_EQ(task1.id, std::string("task-1"));
+  SELF_CHECK_EQ(task1.revision, 1);
+  SELF_CHECK(task1.status == TeamTaskStatus::Pending);
 
   // blockedBy 引用不存在的任务。
   CreateTeamTaskRequest badDeps;
   badDeps.subject = "坏依赖";
   badDeps.blockedBy = std::vector<std::string>{"task-404"};
-  CHECK_TEAM_ERROR(harness.team->createTask(badDeps), TEAM_TASK_NOT_FOUND);
+  SELF_CHECK_TEAM_ERROR(harness.team->createTask(badDeps), TEAM_TASK_NOT_FOUND);
 
   // 依赖任务: task-2 等 task-1。
   CreateTeamTaskRequest create2;
   create2.subject = "写测试";
   create2.blockedBy = std::vector<std::string>{"task-1"};
   const TeamTaskSnapshot task2 = harness.team->createTask(create2);
-  CHECK_EQ(task2.id, std::string("task-2"));
+  SELF_CHECK_EQ(task2.id, std::string("task-2"));
 
   // 就绪度: task-1 pending 即就绪; task-2 被阻塞。
   {
     const std::vector<TeamTaskView> views = harness.team->listTasks();
-    CHECK_EQ(views.size(), static_cast<size_t>(2));
-    CHECK(views[0].ready);
-    CHECK(!views[1].ready);
-    CHECK_EQ(views[1].blockedBy.size(), static_cast<size_t>(1));
+    SELF_CHECK_EQ(views.size(), static_cast<size_t>(2));
+    SELF_CHECK(views[0].ready);
+    SELF_CHECK(!views[1].ready);
+    SELF_CHECK_EQ(views[1].blockedBy.size(), static_cast<size_t>(1));
   }
 
   // 三个独立身份: worker / other 各自一个真 agent (不跑轮次, 只作身份), lead 用
@@ -517,27 +522,27 @@ void testTaskBoard() {
   stale.taskId = "task-1";
   stale.expectedRevision = 99;
   stale.action = TeamTaskAction::Claim;
-  CHECK_TEAM_ERROR(harness.team->updateTask(worker, stale),
+  SELF_CHECK_TEAM_ERROR(harness.team->updateTask(worker, stale),
                    TEAM_TASK_STALE_REVISION);
 
   // claim: pending+无主+无未完依赖。
   UpdateTeamTaskRequest claim = stale;
   claim.expectedRevision = 1;
   const TeamTaskSnapshot claimed = harness.team->updateTask(worker, claim);
-  CHECK(claimed.status == TeamTaskStatus::InProgress);
-  CHECK(claimed.ownerId.has_value());
-  CHECK_EQ(claimed.revision, 2);
+  SELF_CHECK(claimed.status == TeamTaskStatus::InProgress);
+  SELF_CHECK(claimed.ownerId.has_value());
+  SELF_CHECK_EQ(claimed.revision, 2);
 
   // 重复 claim / 阻塞 claim。
   UpdateTeamTaskRequest claimAgain = claim;
   claimAgain.expectedRevision = 2;
-  CHECK_TEAM_ERROR(harness.team->updateTask(worker, claimAgain),
+  SELF_CHECK_TEAM_ERROR(harness.team->updateTask(worker, claimAgain),
                    TEAM_TASK_ALREADY_CLAIMED);
   UpdateTeamTaskRequest claimBlocked;
   claimBlocked.taskId = "task-2";
   claimBlocked.expectedRevision = 1;
   claimBlocked.action = TeamTaskAction::Claim;
-  CHECK_TEAM_ERROR(harness.team->updateTask(worker, claimBlocked),
+  SELF_CHECK_TEAM_ERROR(harness.team->updateTask(worker, claimBlocked),
                    TEAM_TASK_BLOCKED);
 
   // 归属: 他人 release 被拒; owner complete 通过。
@@ -545,11 +550,11 @@ void testTaskBoard() {
   release.taskId = "task-1";
   release.expectedRevision = 2;
   release.action = TeamTaskAction::Release;
-  CHECK_TEAM_ERROR(harness.team->updateTask(other, release),
+  SELF_CHECK_TEAM_ERROR(harness.team->updateTask(other, release),
                    TEAM_TASK_UNAUTHORIZED);
   UpdateTeamTaskRequest complete = release;
   complete.action = TeamTaskAction::Complete;
-  CHECK(harness.team->updateTask(worker, complete).status
+  SELF_CHECK(harness.team->updateTask(worker, complete).status
         == TeamTaskStatus::Completed);
 
   // 依赖闭合: task-1 完成后 task-2 就绪, 可认领。
@@ -557,7 +562,7 @@ void testTaskBoard() {
   claim2.taskId = "task-2";
   claim2.expectedRevision = 1;
   claim2.action = TeamTaskAction::Claim;
-  CHECK(harness.team->updateTask(worker, claim2).status
+  SELF_CHECK(harness.team->updateTask(worker, claim2).status
         == TeamTaskStatus::InProgress);
 
   // 依赖成环: task-1 (重开) 反向依赖 task-2。
@@ -565,26 +570,26 @@ void testTaskBoard() {
   reopen.taskId = "task-1";
   reopen.expectedRevision = 3;
   reopen.action = TeamTaskAction::Reopen;
-  CHECK(harness.team->updateTask(worker, reopen).status
+  SELF_CHECK(harness.team->updateTask(worker, reopen).status
         == TeamTaskStatus::Pending);
   UpdateTeamTaskRequest cycle;
   cycle.taskId = "task-1";
   cycle.expectedRevision = 4;
   cycle.action = TeamTaskAction::SetDependencies;
   cycle.blockedBy = std::vector<std::string>{"task-2"};
-  CHECK_TEAM_ERROR(harness.team->updateTask(worker, cycle),
+  SELF_CHECK_TEAM_ERROR(harness.team->updateTask(worker, cycle),
                    TEAM_TASK_DEPENDENCY_CYCLE);
 
   // 有依赖者不可删: task-3 等 task-2, 删 task-2 被拒。
   CreateTeamTaskRequest create3;
   create3.subject = "下游";
   create3.blockedBy = std::vector<std::string>{"task-2"};
-  CHECK_EQ(harness.team->createTask(create3).id, std::string("task-3"));
+  SELF_CHECK_EQ(harness.team->createTask(create3).id, std::string("task-3"));
   UpdateTeamTaskRequest del;
   del.taskId = "task-2";
   del.expectedRevision = 2;
   del.action = TeamTaskAction::Delete;
-  CHECK_TEAM_ERROR(harness.team->updateTask(worker, del),
+  SELF_CHECK_TEAM_ERROR(harness.team->updateTask(worker, del),
                    TEAM_TASK_HAS_DEPENDENTS);
 
   // writeScopes: 名单外队友被拒, Lead 豁免。
@@ -597,9 +602,9 @@ void testTaskBoard() {
   touch.expectedRevision = 1;
   touch.action = TeamTaskAction::Edit;
   touch.subject = "改写";
-  CHECK_TEAM_ERROR(harness.team->updateTask(other, touch),
+  SELF_CHECK_TEAM_ERROR(harness.team->updateTask(other, touch),
                    TEAM_TASK_UNAUTHORIZED);
-  CHECK_EQ(harness.team->updateTask(leadRole, touch).revision, 2);
+  SELF_CHECK_EQ(harness.team->updateTask(leadRole, touch).revision, 2);
 
   // reassign 到不存在的成员。
   UpdateTeamTaskRequest reassign;
@@ -607,11 +612,11 @@ void testTaskBoard() {
   reassign.expectedRevision = 2;
   reassign.action = TeamTaskAction::Reassign;
   reassign.owner = "ghost";
-  CHECK_TEAM_ERROR(harness.team->updateTask(leadRole, reassign),
+  SELF_CHECK_TEAM_ERROR(harness.team->updateTask(leadRole, reassign),
                    TEAM_MEMBER_NOT_FOUND);
 
   // get: 不存在。
-  CHECK_TEAM_ERROR(harness.team->getTask("task-404"), TEAM_TASK_NOT_FOUND);
+  SELF_CHECK_TEAM_ERROR(harness.team->getTask("task-404"), TEAM_TASK_NOT_FOUND);
 
   workerAgent.shutdown();
   otherAgent.shutdown();
@@ -623,58 +628,58 @@ void testSpawn() {
   TeamHarness harness("spawn");
 
   // 坏名字 / 保留名。
-  CHECK_TEAM_ERROR(
+  SELF_CHECK_TEAM_ERROR(
       harness.team->spawnTeammate(harness.spawnRequest("Bad", "x")),
       TEAM_INVALID_MEMBER_NAME);
-  CHECK_TEAM_ERROR(
+  SELF_CHECK_TEAM_ERROR(
       harness.team->spawnTeammate(harness.spawnRequest("lead", "x")),
       TEAM_INVALID_MEMBER_NAME);
 
   // 正常起动: checkpoint 通过 (初始提示在子日志), 首轮跑完 (脚本 LLM)。
   const TeamMemberSnapshot worker =
       harness.team->spawnTeammate(harness.spawnRequest("worker", "去数星星"));
-  CHECK(worker.phase == TeamMemberPhase::Active);
-  CHECK(!worker.error.has_value());
-  CHECK_EQ(worker.provider, std::string("fake"));
+  SELF_CHECK(worker.phase == TeamMemberPhase::Active);
+  SELF_CHECK(!worker.error.has_value());
+  SELF_CHECK_EQ(worker.provider, std::string("fake"));
 
   // 子日志存在且含 assistant 消息。checkpoint 只等初始提示被记录 (首次模型请求前),
   // spawn 返回时首轮可能仍在跑 —— 先等静止再读盘。
   ReactLoopAgent* workerLive = harness.team->roster().findLive(worker.id);
-  CHECK(workerLive != nullptr);
-  CHECK(workerLive->whenIdle(30000));
+  SELF_CHECK(workerLive != nullptr);
+  SELF_CHECK(workerLive->whenIdle(30000));
   const std::string childPath =
       dshSessionLogPath(harness.sessionRoot, std::nullopt, worker.id);
-  CHECK(fs::exists(childPath));
+  SELF_CHECK(fs::exists(childPath));
   {
     const LoadedSession loaded = loadSession(childPath);
     bool hasAssistant = false;
     for (const SessionEvent& event : loaded.events) {
       if (event.type == EventType::AssistantMessageEvent) hasAssistant = true;
     }
-    CHECK(hasAssistant);
+    SELF_CHECK(hasAssistant);
     // 头行血缘。
-    CHECK(loaded.header.parentSession.has_value());
-    CHECK_EQ(loaded.header.parentSession->value, harness.lead->id().value);
-    CHECK_EQ(loaded.header.origin.value_or(""), std::string("subagent"));
+    SELF_CHECK(loaded.header.parentSession.has_value());
+    SELF_CHECK_EQ(loaded.header.parentSession->value, harness.lead->id().value);
+    SELF_CHECK_EQ(loaded.header.origin.value_or(""), std::string("subagent"));
   }
 
   // 名字永不复用。
-  CHECK_TEAM_ERROR(
+  SELF_CHECK_TEAM_ERROR(
       harness.team->spawnTeammate(harness.spawnRequest("worker", "x")),
       TEAM_MEMBER_NAME_TAKEN);
 
   // 名册: Lead 行 + 队友行。
   {
     const std::vector<TeamMemberView> views = harness.team->listMembers();
-    CHECK_EQ(views.size(), static_cast<size_t>(2));
-    CHECK_EQ(views[0].name, std::string("lead"));
-    CHECK(views[0].role == TeamRole::Lead);
-    CHECK_EQ(views[1].name, std::string("worker"));
+    SELF_CHECK_EQ(views.size(), static_cast<size_t>(2));
+    SELF_CHECK_EQ(views[0].name, std::string("lead"));
+    SELF_CHECK(views[0].role == TeamRole::Lead);
+    SELF_CHECK_EQ(views[1].name, std::string("worker"));
     // 首轮在跑或刚结束: 先等静止再断言 idle。
     ReactLoopAgent* live = harness.team->roster().findLive(worker.id);
-    CHECK(live != nullptr);
-    CHECK(live->whenIdle(30000));
-    CHECK(harness.team->listMembers()[1].status
+    SELF_CHECK(live != nullptr);
+    SELF_CHECK(live->whenIdle(30000));
+    SELF_CHECK(harness.team->listMembers()[1].status
           == TeamMemberRuntimeStatus::Idle);
   }
 
@@ -682,9 +687,9 @@ void testSpawn() {
   {
     ReactLoopAgent* live = harness.team->roster().findLive(worker.id);
     const TeamMembership membership = harness.team->membershipOf(live);
-    CHECK(membership.role == TeamRole::Teammate);
-    CHECK_EQ(membership.name, std::string("worker"));
-    CHECK(harness.team->membershipOf(harness.lead.get()).role == TeamRole::Lead);
+    SELF_CHECK(membership.role == TeamRole::Teammate);
+    SELF_CHECK_EQ(membership.name, std::string("worker"));
+    SELF_CHECK(harness.team->membershipOf(harness.lead.get()).role == TeamRole::Lead);
 
     ReactLoopAgent::Deps outsiderDeps;
     outsiderDeps.systemPrompt = &harness.systemPrompt;
@@ -694,7 +699,7 @@ void testSpawn() {
     ReactLoopAgent outsider(
         std::make_unique<Session>(SessionId("session-outsider")),
         AgentOptions{}, outsiderDeps);
-    CHECK_TEAM_ERROR(harness.team->membershipOf(&outsider),
+    SELF_CHECK_TEAM_ERROR(harness.team->membershipOf(&outsider),
                      TEAM_MEMBER_NOT_FOUND);
     outsider.shutdown();
   }
@@ -705,13 +710,13 @@ void testSpawn() {
       harness.spawnRequest("forked", "接着聊");
   forkRequest.context = TeamMemberContext::Fork;
   const TeamMemberSnapshot forked = harness.team->spawnTeammate(forkRequest);
-  CHECK(forked.phase == TeamMemberPhase::Active);
+  SELF_CHECK(forked.phase == TeamMemberPhase::Active);
   {
     const std::string forkPath =
         dshSessionLogPath(harness.sessionRoot, std::nullopt, forked.id);
     const LoadedSession loaded = loadSession(forkPath);
-    CHECK(loaded.header.seedLength.has_value());
-    CHECK(*loaded.header.seedLength > 0);
+    SELF_CHECK(loaded.header.seedLength.has_value());
+    SELF_CHECK(*loaded.header.seedLength > 0);
     // 种子里带着 Lead 的那条用户消息。
     bool sawLeadText = false;
     for (const SessionEvent& event : loaded.events) {
@@ -723,14 +728,14 @@ void testSpawn() {
         }
       }
     }
-    CHECK(sawLeadText);
+    SELF_CHECK(sawLeadText);
   }
 
   // interrupt: 活成员可中断 (空闲时 cancel 是空操作, 不抛); lead 不可被中断。
   const InterruptResult interrupted = harness.team->interruptAgent(
       harness.team->membershipOf(harness.lead.get()), "worker");
-  CHECK(interrupted.previousStatus == TeamMemberRuntimeStatus::Idle);
-  CHECK_TEAM_ERROR(
+  SELF_CHECK(interrupted.previousStatus == TeamMemberRuntimeStatus::Idle);
+  SELF_CHECK_TEAM_ERROR(
       harness.team->interruptAgent(
           harness.team->membershipOf(harness.lead.get()), "lead"),
       TEAM_LEAD_REQUIRED);
@@ -745,29 +750,29 @@ void testMailbox() {
   TeamHarness harness("mailbox", config);
   const TeamMemberSnapshot worker =
       harness.team->spawnTeammate(harness.spawnRequest("worker", "待命"));
-  CHECK(worker.phase == TeamMemberPhase::Active);
+  SELF_CHECK(worker.phase == TeamMemberPhase::Active);
 
   SendTeamMessageRequest request;
   request.content.push_back(ContentBlock{TextBlock{"第一条"}});
 
   // 自发送 / 未知目标。
   request.target = "lead";
-  CHECK_TEAM_ERROR(harness.team->sendMessage(*harness.lead, request),
+  SELF_CHECK_TEAM_ERROR(harness.team->sendMessage(*harness.lead, request),
                    TEAM_SELF_MESSAGE);
   request.target = "ghost";
-  CHECK_TEAM_ERROR(harness.team->sendMessage(*harness.lead, request),
+  SELF_CHECK_TEAM_ERROR(harness.team->sendMessage(*harness.lead, request),
                    TEAM_INVALID_TARGET);
 
   // 活成员: quiet 也立即投递, 投递帧携 dsh 框头, 目标日志可回放。
   request.target = "worker";
   const SendTeamMessageResult live =
       harness.team->sendMessage(*harness.lead, request);
-  CHECK(live.accepted);
-  CHECK_EQ(live.messageId, std::string("msg-1"));
+  SELF_CHECK(live.accepted);
+  SELF_CHECK_EQ(live.messageId, std::string("msg-1"));
   {
     ReactLoopAgent* liveWorker = harness.team->roster().findLive(worker.id);
-    CHECK(liveWorker != nullptr);
-    CHECK(liveWorker->whenIdle(30000));
+    SELF_CHECK(liveWorker != nullptr);
+    SELF_CHECK(liveWorker->whenIdle(30000));
     // quiet 不唤醒: 帧停在 inbox (InboxSpliced), 目标下一轮才排干成 UserMessage。
     // 两种事件形态都算见帧 (与域层 deliveredTo 同规则)。
     bool sawFrame = false;
@@ -790,7 +795,7 @@ void testMailbox() {
         }
       }
     });
-    CHECK(sawFrame);
+    SELF_CHECK(sawFrame);
   }
 
   // 停掉成员 -> quiet 只排队不投递 (惰性: 不冷恢复)。
@@ -799,8 +804,8 @@ void testMailbox() {
   request.content.push_back(ContentBlock{TextBlock{"第二条"}});
   const SendTeamMessageResult queued =
       harness.team->sendMessage(*harness.lead, request);
-  CHECK(!queued.accepted);
-  CHECK_EQ(queued.messageId, std::string("msg-2"));
+  SELF_CHECK(!queued.accepted);
+  SELF_CHECK_EQ(queued.messageId, std::string("msg-2"));
 
   // wakeup: 惰性冷恢复 (从子日志重建驱动) 后投递。
   request.delivery = TeamMessageDelivery::Wakeup;
@@ -808,7 +813,7 @@ void testMailbox() {
   request.content.push_back(ContentBlock{TextBlock{"第三条"}});
   const SendTeamMessageResult wakeup =
       harness.team->sendMessage(*harness.lead, request);
-  CHECK(wakeup.accepted);
+  SELF_CHECK(wakeup.accepted);
 
   // 邮箱上限: 排队 (queued - delivered) 超 maxPendingMessagesPerMember。
   // 此刻 msg-2 仍排队 (quiet 到 Inactive 成员未投), 占 1 坑; 再排 1 条到 2 满。
@@ -816,17 +821,17 @@ void testMailbox() {
   request.delivery = TeamMessageDelivery::Quiet;
   request.content.clear();
   request.content.push_back(ContentBlock{TextBlock{"积压"}});
-  CHECK(!harness.team->sendMessage(*harness.lead, request).accepted);
+  SELF_CHECK(!harness.team->sendMessage(*harness.lead, request).accepted);
   request.content.clear();
   request.content.push_back(ContentBlock{TextBlock{"溢出"}});
-  CHECK_TEAM_ERROR(harness.team->sendMessage(*harness.lead, request),
+  SELF_CHECK_TEAM_ERROR(harness.team->sendMessage(*harness.lead, request),
                    TEAM_MAILBOX_FULL);
 
   // 帧大小上限 (含框头的完整帧)。
   request.content.clear();
   request.content.push_back(ContentBlock{TextBlock{
       "这条消息比 maxMessageBytes=64 长得多得多得多得多得多得多得多得多"}});
-  CHECK_TEAM_ERROR(harness.team->sendMessage(*harness.lead, request),
+  SELF_CHECK_TEAM_ERROR(harness.team->sendMessage(*harness.lead, request),
                    TEAM_MESSAGE_TOO_LARGE);
 }
 
@@ -922,19 +927,19 @@ void testRecovery() {
     spawn.description = "恢复测试";
     spawn.prompt.push_back(ContentBlock{TextBlock{"待命"}});
     const TeamMemberSnapshot worker = rig->team->spawnTeammate(spawn);
-    CHECK(worker.phase == TeamMemberPhase::Active);
+    SELF_CHECK(worker.phase == TeamMemberPhase::Active);
     workerId = worker.id.value;
 
     SendTeamMessageRequest delivered;
     delivered.target = "worker";
     delivered.content.push_back(ContentBlock{TextBlock{"已投递"}});
-    CHECK(rig->team->sendMessage(*rig->lead, delivered).accepted);
+    SELF_CHECK(rig->team->sendMessage(*rig->lead, delivered).accepted);
 
     rig->team->dispose();
     SendTeamMessageRequest pending;
     pending.target = "worker";
     pending.content.push_back(ContentBlock{TextBlock{"排队中"}});
-    CHECK(!rig->team->sendMessage(*rig->lead, pending).accepted);
+    SELF_CHECK(!rig->team->sendMessage(*rig->lead, pending).accepted);
 
     // 手工塞一个 provisioning 残留 (子日志缺失): 模拟崩在 spawn 段间。
     rig->team->journal().transact([&]() {
@@ -954,29 +959,29 @@ void testRecovery() {
     // provisioning 残留被冷裁定为 failed。
     {
       const std::vector<TeamMemberView> views = rig->team->listMembers();
-      CHECK_EQ(views.size(), static_cast<size_t>(3));
+      SELF_CHECK_EQ(views.size(), static_cast<size_t>(3));
       bool sawWorker = false;
       bool sawLeftover = false;
       for (const TeamMemberView& view : views) {
         if (view.name == "worker") {
           sawWorker = true;
-          CHECK(view.status == TeamMemberRuntimeStatus::Inactive);
+          SELF_CHECK(view.status == TeamMemberRuntimeStatus::Inactive);
         }
         if (view.name == "leftover") {
           sawLeftover = true;
-          CHECK(view.status == TeamMemberRuntimeStatus::Failed);
-          CHECK(!view.diagnostics.empty());
+          SELF_CHECK(view.status == TeamMemberRuntimeStatus::Failed);
+          SELF_CHECK(!view.diagnostics.empty());
         }
       }
-      CHECK(sawWorker);
-      CHECK(sawLeftover);
+      SELF_CHECK(sawWorker);
+      SELF_CHECK(sawLeftover);
     }
 
     // 冷裁定已落盘: 再恢复一次仍收敛 (failed 不回 provisioning)。
     rig->team->recover();
     for (const TeamMemberView& view : rig->team->listMembers()) {
       if (view.name == "leftover") {
-        CHECK(view.status == TeamMemberRuntimeStatus::Failed);
+        SELF_CHECK(view.status == TeamMemberRuntimeStatus::Failed);
       }
     }
 
@@ -989,7 +994,7 @@ void testRecovery() {
           ++pendingForWorker;
         }
       }
-      CHECK_EQ(pendingForWorker, static_cast<size_t>(1));
+      SELF_CHECK_EQ(pendingForWorker, static_cast<size_t>(1));
     });
 
     // wakeup 投递: 惰性冷恢复 (worker 子日志在) + 本条投递成功。
@@ -997,14 +1002,14 @@ void testRecovery() {
     wake.target = "worker";
     wake.delivery = TeamMessageDelivery::Wakeup;
     wake.content.push_back(ContentBlock{TextBlock{"醒醒"}});
-    CHECK(rig->team->sendMessage(*rig->lead, wake).accepted);
+    SELF_CHECK(rig->team->sendMessage(*rig->lead, wake).accepted);
 
     // 名字永不复用跨重启。
     SpawnTeammateRequest reuse;
     reuse.name = "worker";
     reuse.description = "重名";
     reuse.prompt.push_back(ContentBlock{TextBlock{"x"}});
-    CHECK_TEAM_ERROR(rig->team->spawnTeammate(reuse), TEAM_MEMBER_NAME_TAKEN);
+    SELF_CHECK_TEAM_ERROR(rig->team->spawnTeammate(reuse), TEAM_MEMBER_NAME_TAKEN);
   }
 
   fs::remove_all(root, ignored);
@@ -1012,8 +1017,12 @@ void testRecovery() {
 
 }  // namespace
 
-int main() {
+TEST_CASE("avox_agent/team 契约") {
+  // mark 在每段测试之后调用: 顺带把这一段单独交给 doctest 判一次
+  static int seen = 0;
   auto mark = [](const char* next) {
+    CHECK(g_failures == seen);
+    seen = g_failures;
     std::cout << "-- " << next << std::endl;
   };
   testFoldInvariants();
@@ -1028,10 +1037,10 @@ int main() {
   mark("recovery");
   testRecovery();
   mark("done");
+  CHECK(g_failures == 0);
   if (g_failures == 0) {
     std::cout << "teamtest: 全部通过" << std::endl;
-    return 0;
+    return;
   }
   std::cout << "teamtest: " << g_failures << " 处失败" << std::endl;
-  return 1;
 }

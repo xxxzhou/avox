@@ -1,37 +1,9 @@
 
 
-generatetest(jsontest)
-generatetest(observertest)
-# 会话事件日志的不变式自测 (surface 投影 / replace 校验 / resume 保真 / 编解码往返)
-#
-# 直接编译 core 的源文件参与, 不从 avox.dll 导入: avox 用静态 CRT (/MT), 而 core 的接口
-# 大量使用 std::string / vector —— 跨 DLL 边界传它们会让对象在一个堆上构造、在另一个堆上
-# 析构。core 是 DLL 内部设施, 跨边界一律走 avox_agent/export 的 C 接口。
-generatetest(sessiontest)
-target_sources(sessiontest PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/avox_agent/core/SessionTypes.cpp
-    ${CMAKE_SOURCE_DIR}/src/avox_agent/core/Surface.cpp
-    ${CMAKE_SOURCE_DIR}/src/avox_agent/core/Session.cpp
-    ${CMAKE_SOURCE_DIR}/src/avox_agent/core/SessionCodec.cpp
-    ${CMAKE_SOURCE_DIR}/src/avox_agent/core/SessionPersistence.cpp
-    # dsh 互通自测: 目录布局编码 + 附件仓 (publish 走核心图像解码, 链 avox 导出层)。
-    ${CMAKE_SOURCE_DIR}/src/avox_agent/core/DshLayout.cpp
-    ${CMAKE_SOURCE_DIR}/src/avox_agent/adapter/DshAttachmentStore.cpp
-    # BlockAssembler 组装测试 + 摘要核对: 这两个实现都未从 avox.dll 导出 (DLL 内部设施),
-    # 与 core 源码一样直接编进测试。
-    ${CMAKE_SOURCE_DIR}/src/avox_agent/core/Llm.cpp
-    # ChatProvider wire 形状测试 (dsh #2724 tool 图片卸载): 同为 DLL 内部设施。
-    ${CMAKE_SOURCE_DIR}/src/avox_agent/provider/ChatProvider.cpp
-    # 模型路由重试臂测试 (dsh 0ca0f3d0b8 5 次重试默认): 策略同样编进测试。
-    ${CMAKE_SOURCE_DIR}/src/avox_agent/policy/ModelRoutePolicy.cpp
-    ${CMAKE_SOURCE_DIR}/src/avox/module/Sha256.cpp
-    # SessionCodec 的编码卫生 (patchInvalidUtf8) 实现在这, 同样未从 avox.dll 导出
-    ${CMAKE_SOURCE_DIR}/src/avox/module/Utf8.cpp
-)
-if(MSVC)
-    # 源码含中文断言消息与测试数据, 需以 UTF-8 解释源码/执行字符集
-    target_compile_options(sessiontest PRIVATE /utf-8)
-endif()
+# 注: 以下纯逻辑探针已迁入 tests/ 的 doctest (见 tests/CMakeLists.txt), 此处不再注册:
+#   mathtest -> test_math.cpp; sessiontest/teamtest -> avox_agent_tests;
+#   jsontest/ringbuffertest/logtest/regedittest/cfunc/observertest/threadtest
+#   -> test_json/test_ringbuffer/test_time/test_pipenode/test_observer/test_threadsync.cpp
 
 # agent 端到端测试: 走 C 导出层发一次真实请求 (需要 agent.json 里的可用 key)。
 # 不必编 core 源文件 —— 接口全是裸指针 + const char*, 无 std 容器跨 DLL 边界。
@@ -39,17 +11,11 @@ generatetest(agenttest)
 if(MSVC)
     target_compile_options(agenttest PRIVATE /utf-8)
 endif()
-generatetest(logtest)
-generatetest(threadtest)
-generatetest(ringbuffertest)
-generatetest(regedittest)
 generatetest(recordertest)
 generatetest(transcoderecordertest)
 generatetest(yuvouttest)
 generatetest(latprobe)
-generatetest(cfunc)
 generatetest(inputtest)
-generatetest(mathtest)
 generatetest(httplibtest)
 if(AVOX_ENABLE_TRANSLATION)
     generatetest(translationtest)

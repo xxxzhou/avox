@@ -32,6 +32,15 @@ PUSH = TESTENV / "push_streams.py"
 ANDROID_REMOTE = "/data/local/tmp/playmatrix"
 ASSETS = ["webrtc_pull.mp4", "avox_electron.mp4"]
 
+# 离线子集: 只吃仓库里的本地 mp4, 不需要 ZLM/局域网 —— CI 上可跑的那部分。
+# 保留: file-h264/h265(硬解) · file-h264/h265-soft(软解) · shot(截图+图像质量) · rec-transcode-h264
+OFFLINE_SKIP = [
+    "rtsp-h264", "rtsp-h265", "rtmp-h264", "rtmp-h265", "hls-h264", "hls-h265",
+    "ts-h264", "ts-h265", "rtsp-h264-zm", "rtsp-h265-zm",
+    "rtsp-h264-soft", "rtsp-h265-soft",
+    "webrtc-h264", "webrtc-h265", "frame-contract", "rec-copy-h264",
+]
+
 
 def local_env() -> dict:
     """去掉代理变量: 流源与 runner 全在本机/局域网, 走代理会把 127.0.0.1 请求打飞。"""
@@ -266,6 +275,8 @@ def main() -> int:
     ap.add_argument("--host", default="", help="拉流主机 (默认: 桌面 127.0.0.1, 真机取本机局域网 IP)")
     ap.add_argument("--lan-ip", default="", help="推流时给真机用的局域网 IP")
     ap.add_argument("--no-push", action="store_true", help="不推流 (假定源已就绪)")
+    ap.add_argument("--offline", action="store_true",
+                    help="离线子集: 跳过全部网络用例 (不需要 ZLM, 供 CI/无流源时跑)")
     ap.add_argument("--ffmpeg", default="", help="推流用 ffmpeg 路径 (默认 PATH, 再退回 3rdparty)")
     ap.add_argument("--skip", default="", help="跳过的 case id, 逗号分隔")
     ap.add_argument("--retries", type=int, default=3, help="拉流失败重开次数")
@@ -278,6 +289,12 @@ def main() -> int:
     ap.add_argument("--serial", default="", help="adb 设备序列号 (多设备时指定)")
     ap.add_argument("--adb", default="", help="adb 路径 (默认 PATH)")
     args = ap.parse_args()
+
+    if args.offline:
+        args.no_push = True
+        merged = [s for s in args.skip.split(",") if s] + OFFLINE_SKIP
+        args.skip = ",".join(dict.fromkeys(merged))
+        print(f"[offline] 跳过 {len(OFFLINE_SKIP)} 条网络用例, 只跑本地文件子集")
 
     kind = "android" if args.android else (
         "apple" if (args.apple or sys.platform == "darwin") else "desktop")

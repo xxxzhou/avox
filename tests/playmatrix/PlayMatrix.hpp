@@ -14,8 +14,10 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <map>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -143,11 +145,12 @@ inline std::vector<PlayCase> buildCases(const Endpoints& ep) {
   // E 帧契约 / 截图 / 录制
   special("frame-contract", CaseKind::frameContract, ep.rtsp(k264), 8);
   {
-    // 截图走平台原生渲染 (关 vulkan): 离屏 vulkan 路线 fetchFrame 返回 0, 见 README 已知取舍
+    // 截图走平台原生渲染 (关 vulkan): 离屏 vulkan 路线 fetchFrame 返回 0, 见 README 已知取舍。
+    // 用本地文件而不是网络源: 截图能力与协议无关, 这样它也能进离线子集(CI 覆盖)
     PlayCase c;
     c.id = "shot";
     c.kind = CaseKind::screenShot;
-    c.url = ep.rtsp(k264);
+    c.url = ep.fileH264;
     c.seconds = 6;
     c.nativeRender = true;
     cases.push_back(c);
@@ -188,6 +191,91 @@ inline int64_t fileSize(const std::string& path) {
   long size = std::ftell(f);
   std::fclose(f);
   return size > 0 ? (int64_t)size : 0;
+}
+
+// ── 图像的客观统计 (不看内容, 只排除"废图") ──
+// 渲染链路的回归里绝大多数坏图是: 纯色/黑屏/白屏/绿屏/静止不动 —— 这些几行算术就能
+// 确定性判定, 比调大模型快几个数量级且可复现。需要语义判断的(人脸像不像/水印干不干净)
+// 才轮到模型, 见 README「画面质量怎么自动判」。
+struct ImageStats {
+  double meanLuma = 0;
+  double stdLuma = 0;       // 灰度标准差: 纯色/纯屏时接近 0
+  double topColorRatio = 0; // 最常见颜色的占比: 纯色/卡帧时接近 1
+  int32_t width = 0;
+  int32_t height = 0;
+};
+
+// 抽样统计 (最多 128x128 个点), 大图也不拖慢
+inline ImageStats analyzeImage(IImageBuffer* buf) {
+  ImageStats st;
+  if (!buf || !buf->getPointer()) {
+    return st;
+  }
+  ImageFormat fmt = buf->getImageFormat();
+  if (fmt.width <= 0 || fmt.height <= 0) {
+    return st;
+  }
+  st.width = fmt.width;
+  st.height = fmt.height;
+  int32_t px = getPixelSize(fmt.imageType);
+  if (px < 3) {  // 至少 3 通道才谈得上色偏判断
+    return st;
+  }
+  const uint8_t* base = buf->getPointer();
+  int32_t pitch = fmt.rowPitch > 0 ? fmt.rowPitch : fmt.width * px;
+  int32_t stepX = fmt.width > 128 ? fmt.width / 128 : 1;
+  int32_t stepY = fmt.height > 128 ? fmt.height / 128 : 1;
+  std::map<uint32_t, int32_t> hist;  // 每通道 5bit 量化后的桶
+  double sum = 0;
+  double sum2 = 0;
+  int64_t n = 0;
+  for (int32_t y = 0; y < fmt.height; y += stepY) {
+    const uint8_t* row = base + (size_t)y * pitch;
+    for (int32_t x = 0; x < fmt.width; x += stepX) {
+      const uint8_t* p = row + (size_t)x * px;
+      // 通道序随原生格式(bgra/rgba)不同, 求亮度时权重会略有偏差;
+      // 但黑屏/白屏/纯色的判定不受影响, 只用于粗筛
+      double luma = 0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2];
+      sum += luma;
+      sum2 += luma * luma;
+      ++n;
+      uint32_t key = ((uint32_t)(p[0] >> 3) << 10) | ((uint32_t)(p[1] >> 3) << 5) |
+                     (uint32_t)(p[2] >> 3);
+      ++hist[key];
+    }
+  }
+  if (n == 0) {
+    return st;
+  }
+  st.meanLuma = sum / (double)n;
+  st.stdLuma = std::sqrt(std::max(0.0, sum2 / (double)n - st.meanLuma * st.meanLuma));
+  int32_t top = 0;
+  for (const auto& kv : hist) {
+    top = std::max(top, kv.second);
+  }
+  st.topColorRatio = (double)top / (double)n;
+  return st;
+}
+
+// 判"这张图不是废图": 有细节、亮度不贴边、不是一整块纯色
+inline bool imageLooksAlive(const ImageStats& st, std::string& why) {
+  if (st.width <= 0 || st.height <= 0) {
+    why = "no-image";
+    return false;
+  }
+  if (st.meanLuma < 12.0 || st.meanLuma > 243.0) {
+    why = "near-black-or-white";
+    return false;
+  }
+  if (st.stdLuma < 6.0) {
+    why = "flat-no-detail";
+    return false;
+  }
+  if (st.topColorRatio > 0.95) {
+    why = "single-color";
+    return false;
+  }
+  return true;
 }
 
 struct Attempt {
@@ -545,18 +633,26 @@ inline Attempt screenShotAttempt(const PlayCase& c, const std::string& path) {
   std::this_thread::sleep_for(std::chrono::milliseconds(1500));
   IImageBuffer* shot = createImageBuffer();
   bool grabbed = sr->screenShot(shot);
+  // 先统计再存盘/释放: 像素只在解码输出缓冲上读一遍
+  ImageStats st = grabbed ? analyzeImage(shot) : ImageStats{};
   bool saved = grabbed && saveImagePath(path.c_str(), shot);
   delete shot;
   removeMediaPlayerOb(player, &ob);
   player->close();
   delete player;
   int64_t bytes = saved ? fileSize(path) : -1;
-  r.pass = playing && saved && bytes > 0;
-  char buf[320];
-  std::snprintf(buf, sizeof(buf), "playing=%d grab=%d out=%s bytes=%lld", (int)playing,
-                (int)grabbed, path.c_str(), (long long)bytes);
+  // 拿不到像素格式(图仍可能存盘成功)时不做质量判定, 避免误杀; note 里会标 stats=na
+  bool haveStats = st.width > 0 && st.height > 0;
+  std::string why;
+  bool alive = !haveStats || imageLooksAlive(st, why);
+  r.pass = playing && saved && bytes > 0 && alive;
+  char buf[384];
+  std::snprintf(buf, sizeof(buf),
+                "playing=%d grab=%d bytes=%lld luma=%.1f std=%.1f top=%.2f %dx%d out=%s",
+                (int)playing, (int)grabbed, (long long)bytes, st.meanLuma, st.stdLuma,
+                st.topColorRatio, st.width, st.height, path.c_str());
   if (!r.pass) {
-    r.note = "shot-failed ";
+    r.note = grabbed ? ("image-" + why + " ") : "shot-failed ";
   }
   r.note += buf;
   return r;
@@ -624,7 +720,16 @@ inline Attempt recordAttempt(const PlayCase& c, bool transcode, const std::strin
   removeMediaPlayerOb(player, &ob);
   player->close();
   delete player;
-  int64_t bytes = fileSize(outPath);
+  // Windows 上 close() 返回后句柄可能仍被写线程短暂持有, 立刻 fopen 会因共享冲突失败
+  // (实测 flake: bytes=-1 而文件其实存在) —— 退避重试最多 2s
+  int64_t bytes = -1;
+  for (int32_t i = 0; i < 20; ++i) {
+    bytes = fileSize(outPath);
+    if (bytes > 0) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
   r.pass = bytes >= c.minBytes;
   char buf[384];
   std::snprintf(buf, sizeof(buf), "mode=%s out=%s bytes=%lld seekTo=%lldms",

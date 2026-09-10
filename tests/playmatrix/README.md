@@ -28,7 +28,7 @@
 | | `rtsp-h264-soft` · `rtsp-h265-soft` | ZLM | 软解 + 网络 |
 | D WebRTC | `webrtc-h264` · `webrtc-h265` | ZLM WHEP 信令 | 独立通道, 不经 IO 方案 |
 | E 帧 / 截图 / 录制 | `frame-contract` | ZLM | 离屏 yuv420P packed 契约 + 抽帧 RGBA |
-| | `shot` | ZLM | 截图 (关 vulkan, 走平台原生渲染) |
+| | `shot` | 本地 mp4 | 截图 + **图像客观质量** (关 vulkan 走原生渲染) |
 | | `shot-vk` | ZLM | 截图 (离屏 vulkan 路线) — **已知返回 0, 默认不跑** |
 | | `rec-copy-h264` | ZLM | 直通录制 (原流拷贝) |
 | | `rec-transcode-h264` | 本地 mp4 | 转码录制 + 中途 seek |
@@ -42,17 +42,60 @@
 | `*/h264` `*/h265` 拉流 | 15s 内 `playing && fps>0 && pos>1500ms`, 失败自动重开重试 3 次 |
 | `webrtc-*` | `connected && firstFrame && fps>0` |
 | `frame-contract` | 帧数 ≥10 且 `rowPitch ≥ width`、缓冲容纳整帧, 且抽 2 帧 packed→split→RGBA 的 PNG 非空 |
-| `shot` | 进入 playing 且 `screenShot` 取出、PNG 落盘非空 |
+| `shot` | 取到图 + PNG 落盘非空 + **不是废图** (见下节): 灰度均值 12~243、标准差 ≥6、最常见颜色占比 ≤95% |
 | `rec-*` | 产物 ≥8KB (空文件/仅文件头判掉); 转码用例额外走一次中途 seek |
 
 统一输出 `[AVOX][TEST] case=<id> result=PASS|FAIL [k=v ...]`, 末尾一行
 `case=play-matrix result=... pass=/fail=/skip=`; 进程退出码 0=全过。
+
+## 画面质量怎么自动判（三刀）
+
+"需要人看的"那一类, 多数既不需要人、也不需要大模型。按代价从低到高分三刀:
+
+### 第一刀 · 客观像素统计（已做, 确定性, 秒级, 可进门禁）
+
+`shot` 用例现在不只判"能不能取到图", 还判"这图是不是废的": 截图后抽样算
+灰度均值 / 标准差 / 最常见颜色占比, 命中任一条即 FAIL ——
+
+| 症状 | 判据 |
+|------|------|
+| 黑屏 | 灰度均值 < 12 |
+| 白屏 | 灰度均值 > 243 |
+| 纯色 / 无细节 | 灰度标准差 < 6 |
+| 一整块同色 / 卡帧 | 最常见颜色占比 > 95% |
+
+实测输出: `grab=1 bytes=152050 luma=37.1 std=51.5 top=0.65 1524x726`。
+渲染链路的回归里绝大多数坏图就是这四类, 几行算术就能定性, 比调模型快几个数量级且
+完全可复现 —— **这是它进得了门禁的原因**, 且已随离线子集进了 CI。
+
+### 第二刀 · 大模型做语义判定（未做, 非确定性, 不建议进门禁）
+
+真正需要"看懂画面"的: 人脸像不像、水印干不干净、AI 超分出图质量、字幕位置对不对。
+截图落盘后可以交给 VLM, 但有三个前提:
+
+1. **别问"这图正常吗", 要问"和参考图有哪些差异"** —— VLM 擅长找差异, 不擅长给正确性背书
+2. **要结构化输出**（JSON: `pass` / `reason` / `confidence`), 别要一段散文
+3. **固定 rubric + temperature 0 + 按图片 hash 缓存**, 否则门禁会抖
+
+所以它的定位是**夜间 / 手动跑的诊断层**, 不是每次改动都要过的门禁。
+
+### 第三刀 · 人工兜底
+
+人不再"全看一遍", 只看前两刀标了不确定的少数。
+
+### 产物落地约定（为第二刀留的接口）
+
+截图统一落 `<outdir>/<prefix><case>.png` (默认前缀 `pm_`), 用例失败时保留、
+成功时覆盖。要接 VLM 时直接读这个目录即可, **不用改 runner**。
 
 ## 跑法
 
 ```bash
 # 一键 (推流 → 跑 runner → 汇总), 需本机 ZLM MediaServer
 python script/testenv/play_regress.py
+
+# 离线子集 (不需要 ZLM): 本地文件硬解/软解 + 截图质量 + 转码录制, 供 CI / 无流源时跑
+python script/testenv/play_regress.py --offline
 
 # 已有流源 / 拉另一台 ZLM / 跳过用例
 python script/testenv/play_regress.py --no-push
@@ -68,6 +111,9 @@ python script/testenv/play_regress.py --list
 # 直接跑 runner (Windows 产物在 build/.../install/*/Release/)
 playtest --host=127.0.0.1 --skip=webrtc-h265
 ```
+
+`--offline` 已接进 CI: `.github/workflows/release.yml` 的 `Run playback regression
+(Windows, offline subset)` 步骤, 紧跟 ctest 之后, 失败即整体失败。
 
 流源由 `script/testenv/push_streams.py` 提供 (`live/avox264`=H264, `live/avox`=H265);
 局域网真机跑时加 `--lan-ip=<本机 IP>`。
@@ -141,7 +187,10 @@ console 宿主**能编出来**, 但**跑起来会在渲染阶段挂**: avox 在 
 
 ## 已知取舍与悬案
 
-- **截图分两条路线**: `shot` 关掉 vulkan 走平台原生渲染 (稳定路线, Windows 实测 PASS);
+- **`shot` 的质量阈值是经验值**（均值 12~243 / 标准差 6 / 同色比 95%）：能抓住黑屏、
+  纯色、卡帧这类典型坏图，但**没做过对抗性验证** —— 比如"画面对但整体偏暗"的合法场景
+  可能被误杀。阈值在 `PlayMatrix.hpp::imageLooksAlive`，按实际误报调。
+- **截图分两条路线**: `shot` 关掉 vulkan 走平台原生渲染 (稳定路线, 实测 PASS);
   `shot-vk` 走离屏 vulkan, `fetchFrame` 返回 0 —— Windows 实测 `VideoRender.cpp:117 check shot:0`,
   Apple 侧见 `doc/test/功能测试矩阵.md` W5 同源问题。修好前 `shot-vk` 默认不跑 (`--all` 可开)。
 - **zlmediakit IO 的 PTS 异常**: `rtsp-*-zm` 判 PASS 但 `pos` 报出 1.78e12 ms 量级的绝对时间戳

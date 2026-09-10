@@ -200,6 +200,17 @@ jobs:
           # 单元测试随 build_windows.py 一同构建 (AVOX_BUILD_TESTS=ON), 此处只负责运行
           ctest --test-dir build/windows/avox --output-on-failure -C Release
 
+      - name: Run playback regression (Windows, offline subset)
+        shell: pwsh
+        run: |
+          # 播放回归矩阵的离线子集: 本地文件硬解/软解 + 转码录制(含 seek), 不需要 ZLM。
+          # 用例表与判定口径在 tests/playmatrix/PlayMatrix.hpp。
+          # 网络用例 (rtsp/rtmp/hls/ts/webrtc/frame-contract/shot/rec-copy) 要有本机
+          # ZLM 才能跑, 由开发机用 `python script/testenv/play_regress.py` 跑全量。
+          python script/testenv/play_regress.py --offline; exit $LASTEXITCODE
+        env:
+          PYTHONIOENCODING: utf-8
+
       - name: Verify C++ SDK (Windows)
         shell: pwsh
         run: |
