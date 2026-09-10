@@ -93,6 +93,9 @@ void MetalRender::onSetSurface() {
   // 抓帧(screenShot)必须关掉; 代价是放弃部分合成器优化
   if (metalLayer) {
     metalLayer.framebufferOnly = NO;
+    // CAMetalLayer 默认 BGRA8Unorm, 而渲染管线(255行)固定 RGBA8Unorm,
+    // 不对齐会被 Metal 校验层断言(iOS 实测): framebuffer 与 pipeline 格式必须一致
+    metalLayer.pixelFormat = MTLPixelFormatRGBA8Unorm;
   }
 }
 
@@ -115,6 +118,13 @@ void MetalRender::releaseGraph() {
   closeTextureCache();
   // 抓帧引用的是 drawable 纹理, 关闭时立刻放开, 不跨窗口生命周期持有
   lastTargetTexture = nil;
+  // 释放回读资源,锁定随解锁一并放开
+  if (cpuPb) {
+    CVPixelBufferUnlockBaseAddress(cpuPb, kCVPixelBufferLock_ReadOnly);
+    CFRelease(cpuPb);
+    cpuPb = nullptr;
+    bCpuPublished = false;
+  }
   unInit();
 }
 
@@ -127,9 +137,73 @@ IOSurfaceRef MetalRender::getIOSurface() { return ioSurface; }
 void MetalRender::renderGpuFrame(const GpuFrame &frame) {
   CVImageBufferRef imageBuffer = (CVImageBufferRef)frame.buffer;
   updateNV12ToMetalLayer(imageBuffer);
+  // bOutCpuYuv时在buffer还存活的地方锁定发布(releaseGpuFrame随后CVBufferRelease,
+  // 惰性回读会拿到已释放的buffer)
+  if (bOutCpuYuv && !cpuIn) {
+    publishCpuFrame(imageBuffer);
+  }
   // 放到VideoRender::renderFrame中释放,不太好处理,后面再想下
   // 主要是有二种方式,一种是队列数据,一种是
   // CFRelease(imageBuffer);
+}
+
+void MetalRender::publishCpuFrame(CVImageBufferRef imageBuffer) {
+  if (!imageBuffer || publishedTick == renderTick) {
+    return;
+  }
+  OSType pbType = CVPixelBufferGetPixelFormatType(imageBuffer);
+  if (pbType != kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange &&
+      pbType != kCVPixelFormatType_420YpCbCr8BiPlanarFullRange) {
+    LOGFLF(LogLevel::warn, "cpu yuv out not support pixel format:",
+           (int32_t)pbType);
+    publishedTick = renderTick;
+    return;
+  }
+  if (cpuPb != imageBuffer) {
+    if (cpuPb) {
+      CVPixelBufferUnlockBaseAddress(cpuPb, kCVPixelBufferLock_ReadOnly);
+      CFRelease(cpuPb);
+      cpuPb = nullptr;
+    }
+    CFRetain(imageBuffer);
+    if (CVPixelBufferLockBaseAddress(imageBuffer, kCVPixelBufferLock_ReadOnly) !=
+        kCVReturnSuccess) {
+      LOGFLF(LogLevel::warn, "lock pixel buffer failed");
+      CFRelease(imageBuffer);
+      publishedTick = renderTick;
+      return;
+    }
+    cpuPb = imageBuffer;
+    // nv12 packed布局约定: r8 + height*3/2 + rowPitch(字节),
+    // biplanar连续内存,UV平面紧跟Y平面
+    ImageFormat fmt = {};
+    fmt.width = (int32_t)CVPixelBufferGetWidth(imageBuffer);
+    fmt.height = (int32_t)CVPixelBufferGetHeight(imageBuffer) * 3 / 2;
+    fmt.imageType = ImageType::r8;
+    fmt.rowPitch = (int32_t)CVPixelBufferGetBytesPerRowOfPlane(imageBuffer, 0);
+    cpuBuffer.setData(
+        (uint8_t *)CVPixelBufferGetBaseAddressOfPlane(imageBuffer, 0), fmt,
+        false);
+    bCpuPublished = true;
+  }
+  publishedTick = renderTick;
+}
+
+bool MetalRender::getCpuFrameBuffer(IImageBuffer **buffer, YuvType &yuvType,
+                                    int64_t *pts) {
+  // CPU输入(软解)不经过GPU,交基类packed视图
+  if (cpuIn) {
+    return VideoRender::getCpuFrameBuffer(buffer, yuvType, pts);
+  }
+  if (!bOutCpuYuv || !bCpuPublished || publishedTick != renderTick) {
+    return false;
+  }
+  *buffer = &cpuBuffer;
+  yuvType = YuvType::nv12;
+  if (pts) {
+    *pts = gpuFrame.pts;
+  }
+  return true;
 }
 
 bool MetalRender::fetchFrame(ImageBuffer *imageBuffer) {

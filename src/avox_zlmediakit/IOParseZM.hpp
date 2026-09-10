@@ -11,6 +11,10 @@
 
 namespace avox {
 
+// ZLM 环境+事件注册, 幂等; 必须延后到首个 IO/Muxer 实例化时调用,
+// 不能在静态初始化期执行(事件名常量彼时尚未构造, 见 IOParseZM.cpp 注释)
+void initZmEnv();
+
 // Observer<IAVSourceOb>能转发回调到多个对象上
 // ZL里的MediaPlayer主要是解析网络协议的功能，没有同步/渲染等播放功能
 // mediakit::MediaPlayer本身回调转IOParseOb上

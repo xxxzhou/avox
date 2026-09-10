@@ -1,5 +1,7 @@
 #include "IOMuxerZM.hpp"
 
+#include "IOParseZM.hpp"
+
 #include <cstring>
 
 #include "ZlmHelper.hpp"
@@ -34,7 +36,10 @@ void regZmMuxer() {
   AvoxManager::Get().initFuncs.push_back(onvifMuxerReg);
 }
 
-IOMuxerZM::IOMuxerZM() {}
+IOMuxerZM::IOMuxerZM() {
+  // 首个 ZLM Muxer 实例化时才初始化环境+事件(此时已过静态初始化期)
+  initZmEnv();
+}
 
 IOMuxerZM::~IOMuxerZM() { onClose(); }
 

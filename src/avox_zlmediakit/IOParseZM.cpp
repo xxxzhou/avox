@@ -1,6 +1,7 @@
 #include "IOParseZM.hpp"
 
 #include <functional>
+#include <mutex>
 
 #include "ZlmHelper.hpp"
 #include "avox/module/AvoxManager.hpp"
@@ -41,30 +42,37 @@ static void API_CALL onZmLog(int level, const char* file, int line,
   logMsg(avoxLevel, msg.c_str());
 }
 
-static void initZmEnv() {
+void initZmEnv() {
+  // Apple/iOS 静态链下本函数曾由 AvoxManager::init() 在静态初始化阶段执行, 而
+  // ZLM/ZLToolKit 的事件名常量(config.cpp/logger.cpp 的 const std::string)的本体
+  // 构造函数排在 libavox 之后 → mk_events_listen 拿到全空 key, 22 类监听塌缩到
+  // 同一分发器, 静态期首条日志 any_cast 撞类型未捕获直接崩(真机 iOS 实测)。
+  // 改为首次创建 ZLM IO/Muxer 时才初始化(call_once 保幂等), 此时已过静态期。
+  static std::once_flag s_zmEnvOnce;
+  std::call_once(s_zmEnvOnce, []() {
 #ifdef __APPLE__
-  // Apple 是静态链, 没有 DllMain(DETACH) 这个时机去触发 AvoxManager::clean()
-  // 里的 mk_env_release, ZLToolKit 的 Logger 单例会一路撑到静态析构期; 而
-  // ~Logger 里还会写日志, LogContextCapture 析构时锁的 mutex 已析构 ->
-  // 抛 std::system_error(recursive_mutex lock failed) 无人接 -> abort(EXIT=134),
-  // 判定行虽已打完但退出码骗自动化。故意泄漏一份引用让 ~Logger 永不执行
-  // (同 RtcEngine 泄漏 PeerConnectionFactory 的策略)。
-  static auto* leakedZlLogger =
-      new std::shared_ptr<toolkit::Logger>(toolkit::Logger::Instance().shared_from_this());
-  (void)leakedZlLogger;
+    // Apple 是静态链, 没有 DllMain(DETACH) 这个时机去触发 AvoxManager::clean()
+    // 里的 mk_env_release, ZLToolKit 的 Logger 单例会一路撑到静态析构期; 而
+    // ~Logger 里还会写日志, LogContextCapture 析构时锁的 mutex 已析构 ->
+    // 抛 std::system_error(recursive_mutex lock failed) 无人接 -> abort(EXIT=134),
+    // 判定行虽已打完但退出码骗自动化。故意泄漏一份引用让 ~Logger 永不执行
+    // (同 RtcEngine 泄漏 PeerConnectionFactory 的策略)。
+    static auto* leakedZlLogger =
+        new std::shared_ptr<toolkit::Logger>(toolkit::Logger::Instance().shared_from_this());
+    (void)leakedZlLogger;
 #endif
-  // log_mask: 只用 LOG_CALLBACK，不用 LOG_CONSOLE/LOG_FILE
-  // log_level: 2 = LInfo，过滤掉 0Trace/1Debug
-  mk_env_init2(1, 0, LOG_CALLBACK, nullptr, 0, 0, nullptr, 0, nullptr, nullptr);
+    // log_mask: 只用 LOG_CALLBACK，不用 LOG_CONSOLE/LOG_FILE
+    // log_level: 2 = LInfo，过滤掉 0Trace/1Debug
+    mk_env_init2(1, 0, LOG_CALLBACK, nullptr, 0, 0, nullptr, 0, nullptr, nullptr);
 
-  mk_events events = {};
-  events.on_mk_log = onZmLog;
-  mk_events_listen(&events);
+    mk_events events = {};
+    events.on_mk_log = onZmLog;
+    mk_events_listen(&events);
+  });
 }
 
 void regZmIO() {
   RegFunc regFunc = {"zlmediakit io init", []() {
-                       initZmEnv();
                        IoPlanDesc zlDesc = {};
                        // 初始化 例如名称、是否支持硬件加速等
                        zlDesc.name = "zlmediakit";
@@ -86,6 +94,8 @@ void regZmIO() {
 }
 
 IOParseZM::IOParseZM() {
+  // 首个 ZLM IO 实例化时才初始化环境+事件(此时已过静态初始化期)
+  initZmEnv();
   // h264_prefix=1: 合并同一AU的帧(SPS+PPS+IDR)，使用AnnexB前缀(00 00 00 01)
   zlMerger = mk_frame_merger_create(1);
   // 记录创建线程（player 主线程），ZM socket 线程据此归属到所属 TaskTrack
