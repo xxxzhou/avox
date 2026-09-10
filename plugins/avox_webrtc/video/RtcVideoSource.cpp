@@ -139,19 +139,21 @@ void RtcVideoSource::onGpuFrame(const GpuFrame& frame) {
 void RtcVideoSource::pushFrame() {
   VideoRender* vrender = localVRender->getVkVideoRender();
   if (vrender->bCpuOut()) {
-    YUVFrame yframe = {};
-    bool bGet = vrender->getCpuFrame(yframe);
+    IImageBuffer* buf = nullptr;
+    YuvType yuvType = YuvType::other;
+    int64_t pts = 0;
+    bool bGet = vrender->getCpuFrameBuffer(&buf, yuvType, &pts);
     if (bGet) {
-      // CPU 数据直接封装,到编码会取出其GpuFrame处理
+      // packed 帧直取(省一次split重排),编码侧经 toFrame 物化 split;
+      // GPU 直通时编码会取出其 GpuFrame 处理
       auto rtcBuffer = webrtc::make_ref_counted<RtcVideoBuffer>();
-      rtcBuffer->form(yframe);
+      rtcBuffer->form(buf, yuvType);
       webrtc::VideoFrame videoFrame =
           webrtc::VideoFrame::Builder()
               .set_video_frame_buffer(rtcBuffer)
               .set_rotation(webrtc::kVideoRotation_0)
-              .set_timestamp_us(yframe.pts * 1000)
+              .set_timestamp_us(pts * 1000)
               .build();
-      // log(LogLevel::info, "rtc camera video cpu pts:", yframe.pts);
       // CPU 直通分发
       broadcaster.OnFrame(videoFrame);
     }

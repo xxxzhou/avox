@@ -7,6 +7,7 @@
 namespace avox {
 
 // avox里的VideoBuffer与webrtc的VideoFrameBuffer的转换类
+// 契约: 内部恒持有packed块(IImageBuffer), split布局只在消费边缘(toFrame/ToI420)物化
 class RtcVideoBuffer : public webrtc::VideoFrameBuffer {
 public:
   RtcVideoBuffer();
@@ -15,9 +16,15 @@ public:
 protected:
   VideoBufferPtr buffer = nullptr;
   YUVFormat format = {};
+  YuvType yuvType = YuvType::other;
+  // toFrame重排副本(仅420P/422P带padding时实际拷贝)
+  std::shared_ptr<ImageBuffer> splitTmp;
 
 public:
+  // 解码输出帧(天生split),拷成packed持有
   void form(const YUVFrame &yuvFrame);
+  // 渲染透传的packed帧(整块拷贝获得所有权), RTC发送路径用
+  void form(IImageBuffer *imgBuffer, YuvType type);
   void form(const GpuFrame &gpuFrame);
   // android的buffer被用后,要说明一下,在后面不要再释放
   void use();

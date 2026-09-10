@@ -133,6 +133,11 @@ class AVOX_EXPORT VideoRender : public OptionLink {
  public:
   // 当bOutCpuYuv为true,返回处理后的YUV资源
   virtual bool getCpuFrame(YUVFrame& frame);
+  // 直接取packed CPU帧(不做split重排),pts可选带回; 供透传型消费方(如RTC)使用
+  virtual bool getCpuFrameBuffer(IImageBuffer** buffer, YuvType& yuvType,
+                                 int64_t* pts = nullptr) {
+    return false;
+  }
   virtual bool getGpuFrame(GpuFrame& frame);
   // 把Vk处理后的GPU资源映射到Dx11/OpenGL/Metal的GPU资源
   virtual bool outputGpuFrame(IRenderContext* ctx) { return false; }
