@@ -13,6 +13,8 @@
 
 #include "AvoxPlayer.h"
 #include "AvoxLog.h"
+// 播放回归矩阵: 用例表与判定口径与 Windows/Linux 宿主共用同一份
+#include "playmatrix/PlayMatrix.hpp"
 
 // 进程内 ZLM 服务端 C API (只调 API, 不改第三方库)
 #include "mk_mediakit.h"
@@ -58,6 +60,7 @@ static void ulog(NSString* fmt, ...) {
 }
 
 using namespace avox;
+using namespace avox::playmatrix;
 
 #if TARGET_OS_IPHONE
 #import <UIKit/UIKit.h>
@@ -385,24 +388,54 @@ static void finishSummary(void) {
   }
 }
 
-// ── 局域网矩阵: Windows ZLM 完整服务 (rtsp/rtmp/hls/ts/webrtc), 一次启动顺序跑完 ──
-static void startLanMatrix(void* surface) {
+// ── 局域网播放回归矩阵: 用例表来自 tests/playmatrix (与 Windows/Linux 宿主同一份) ──
+// 端点可用 AVOX_HOST / AVOX_RTSP_PORT / AVOX_RTMP_PORT / AVOX_HTTP_PORT 覆盖,
+// 默认指向 Windows 上那台 ZLM (script/testenv/push_streams.py --lan-ip 供流)
+static Endpoints lanEndpoints(void) {
+  Endpoints ep;
+  ep.host = "192.168.68.245";
+  if (const char* v = getenv("AVOX_HOST")) ep.host = v;
+  if (const char* v = getenv("AVOX_RTSP_PORT")) ep.rtspPort = atoi(v);
+  if (const char* v = getenv("AVOX_RTMP_PORT")) ep.rtmpPort = atoi(v);
+  if (const char* v = getenv("AVOX_HTTP_PORT")) ep.httpPort = atoi(v);
+  return ep;
+}
+
+// 本地文件源: wall_long(300s h264)/wall_1 与 wall_265(h265), 生成命令见 README
+static void fillLocalSources(Endpoints& ep) {
+  NSString* w1 = findMedia(@"wall_long", @"mp4") ?: findMedia(@"wall_1", @"mp4");
+  NSString* w265 = findMedia(@"wall_265", @"mp4");
+  if (w1) ep.fileH264 = w1.UTF8String;
+  if (w265) ep.fileH265 = w265.UTF8String;
+}
+
+// 每条用例结束 → 上屏 + 日志 (iOS 大字列表; macOS 只看 stdout 的判定行)
+static void onCaseResult(const std::string& id, bool pass, const std::string& note) {
+  addResult([NSString stringWithUTF8String:id.c_str()], pass,
+            note.empty() ? nil : [NSString stringWithUTF8String:note.c_str()]);
+}
+
+static void startPlayMatrix(void* surface, Endpoints ep, RunOptions opt) {
   setenv("AVOX_IO_PLAN", "ffmpeg", 1);  // 拉流统一走 ffmpeg9 IO, webrtc 忽略此项
   dispatch_async(dispatch_get_global_queue(0, 0), ^{
-    probeConnect("192.168.68.245", 554);   // 拉流前先探: 进程能否直连
-    probeConnect("192.168.68.219", 9999);  // 对照: UDP 日志目标(无监听属正常)
-    mediaPullCase(surface, @"ios-rtsp-h264",
-                  @"rtsp://192.168.68.245:554/live/avox264");
-    mediaPullCase(surface, @"ios-rtsp-h265", @"rtsp://192.168.68.245:554/live/avox");
-    mediaPullCase(surface, @"ios-rtmp-h264",
-                  @"rtmp://192.168.68.245:1935/live/avox264");
-    mediaPullCase(surface, @"ios-hls-h265", @"http://192.168.68.245/live/avox/hls.m3u8");
-    mediaPullCase(surface, @"ios-ts-h264", @"http://192.168.68.245/live/avox264.live.ts");
-    bool rtcPass = rtcPullOnce(
-        "http://192.168.68.245/index/api/webrtc?app=live&stream=avox264&type=play");
-    addResult(@"ios-webrtc-h264", rtcPass, rtcPass ? nil : @"no p2p frame");
+    std::vector<PlayCase> cases = buildCases(ep);
+    ulog(@"[matrix] cases=%d host=%s file264=%s file265=%s", (int)cases.size(),
+         ep.host.c_str(), ep.fileH264.c_str(), ep.fileH265.c_str());
+    runAll(cases, surface, opt);
     finishSummary();
   });
+}
+
+// ── 局域网模式: 拉 Windows ZLM 的完整服务 (rtsp/rtmp/hls/ts/webrtc) ──
+static void startLanMatrix(void* surface) {
+  Endpoints ep = lanEndpoints();
+  fillLocalSources(ep);
+  probeConnect(ep.host.c_str(), 554);    // 拉流前先探: 进程能否直连
+  probeConnect("192.168.68.219", 9999);  // 对照: UDP 日志目标(无监听属正常)
+  RunOptions opt;
+  opt.retries = 3;
+  opt.onCase = onCaseResult;
+  startPlayMatrix(surface, ep, opt);
 }
 
 // ── 进程内回环全链路矩阵 (surface 可为 null: 离屏解码), AVOX_MATRIX=loop 时启用 ──

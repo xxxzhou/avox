@@ -21,7 +21,7 @@
 
 ## 目录结构
 
-`3rdparty/` 第三方库源码 · `assets/` 资源 · `cmake/` 构建脚本 · `glsl/` 着色器源码 · `platform/` 平台代码 (UE/Unity/Godot 插件) · `samples/` 示例 · `src/` SDK 源码 (avox 模块) · `swig/` C#/Java/Node/python 绑定 · `build/` 构建输出 · `tests/` 单测 (doctest, 随主构建编译) · `doc/` 文档 · `plugins/` 插件 · `script/` 辅助脚本
+`3rdparty/` 第三方库源码 · `assets/` 资源 · `cmake/` 构建脚本 · `glsl/` 着色器源码 · `platform/` 平台代码 (UE/Unity/Godot 插件) · `samples/` 示例 · `src/` SDK 源码 (avox 模块) · `swig/` C#/Java/Node/python 绑定 · `build/` 构建输出 · `tests/` 单测 (doctest, 随主构建编译) 与播放回归矩阵共享用例表 (tests/playmatrix) · `doc/` 文档 · `plugins/` 插件 · `script/` 辅助脚本
 
 ## 构建命令
 
@@ -34,6 +34,9 @@ python build_linux.py     # Linux x64
 
 # 单元测试 (随构建自动编译, 手动运行:)
 ctest --test-dir build/windows/avox --output-on-failure -C Release
+
+# 播放回归矩阵 (每次改动后跑一次, 确认播放链路未坏; 需本机 ZLM MediaServer)
+python script/testenv/play_regress.py
 ```
 
 ## 平台支持

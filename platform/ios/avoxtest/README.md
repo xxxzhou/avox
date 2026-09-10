@@ -7,27 +7,33 @@
 
 ## 测试矩阵 (默认: LAN 模式)
 
-依次拉 Windows ZLM (192.168.68.245, `script/testenv/push_streams.py` 提供流源):
+用例表来自 [`tests/playmatrix/PlayMatrix.hpp`](../../../tests/playmatrix/PlayMatrix.hpp)
+—— 与 Windows/Android 宿主**同一份**, 因此同一 case id 各平台含义一致。22 条覆盖:
 
-| 用例 | URL | 验证点 |
-|------|-----|--------|
-| ios-rtsp-h264 | rtsp://:554/live/avox264 | ffmpeg9 IO + RTSP over TCP + 硬解 |
-| ios-rtsp-h265 | rtsp://:554/live/avox | 同上, HEVC |
-| ios-rtmp-h264 | rtmp://:1935/live/avox264 | RTMP 拉流 |
-| ios-hls-h265 | http://:80/live/avox/hls.m3u8 | HLS 分片 + HEVC |
-| ios-ts-h264 | http://:80/live/avox264.live.ts | MPEG-TS |
-| ios-webrtc-h264 | http://:80/index/api/webrtc?...type=play | WHEP 信令 + WebRTC 拉流 |
+协议 × 编码 (file/rtsp/rtmp/hls/ts × h264/h265)、IO 方案对照 (ffmpeg vs zlmediakit)、
+硬解·软解、WebRTC (h264/h265)、帧契约、截图、直通·转码录制。
+用例清单与判定口径见 [tests/playmatrix/README.md](../../../tests/playmatrix/README.md)。
 
-判定: 15s 内 `playing && fps>0 && pos>1.5s`, 失败自动重开重试 3 次;
+端点默认指向 Windows 上的 ZLM (`192.168.68.245`, 由
+`script/testenv/push_streams.py --lan-ip` 供流), 可用环境变量
+`AVOX_HOST` / `AVOX_RTSP_PORT` / `AVOX_RTMP_PORT` / `AVOX_HTTP_PORT` 覆盖。
+
+本地文件用例 (`file-*`) 需要 bundle(macOS 为 CWD) 下有 `wall_long.mp4`(h264) 与
+`wall_265.mp4`(h265), 生成命令见下方「测试源生成」; 缺了这几条会判 FAIL。
+
+判定: 拉流 15s 内 `playing && fps>0 && pos>1500ms`, 失败自动重开重试 3 次;
 webrtc 为 `connected && firstFrame && fps>0`。
 
 ## 运行模式
 
 | 触发方式 | 模式 |
 |----------|------|
-| 无参数 | LAN 矩阵 (上表) |
+| 无参数 | LAN 播放回归矩阵 (共享用例表, 默认 192.168.68.245) |
 | `AVOX_MATRIX=loop` | 进程内回环: 本进程起 ZLM 服务端(rtsp/rtmp/hls) + ffmpeg 解封装节流推流(mk_media) + 回拉, 不依赖局域网。需 `-DAVOX_FFMPEG_INCLUDE=<ffmpeg头>` 参与编译, 且同目录放 `wall_long.mp4`(300s h264) / `wall_265.mp4`(h265), 生成命令见下 |
 | 启动参数含 `://` | 单 URL 拉流模式 (如 `./avoxtest rtsp://...`) |
+
+注: 回环模式仍走自己那套精简用例 (h264 协议子集 + webrtc), **未接共享用例表** —— 它有
+独立的端口/推流节奏; 做每次改动的门禁请用默认 LAN 模式。
 
 日志: iOS 写 `Documents/avoxlog.txt` (devicectl 取) + UDP 直发 192.168.68.219:9999;
 macOS 全走 stdout。

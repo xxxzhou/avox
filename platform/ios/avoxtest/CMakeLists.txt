@@ -41,7 +41,9 @@ function(avoxtest_include_dirs)
   target_include_directories(avoxtest PRIVATE
     "${ZLM_DIR}/src"
     "${ZLM_DIR}/3rdpart/ZLToolKit/src"
-    "${ZLM_DIR}/api/include")
+    "${ZLM_DIR}/api/include"
+    # 播放回归矩阵共享用例表 (playmatrix/PlayMatrix.hpp)
+    "${AVOX_REPO_ROOT}/tests")
   foreach(d avox avox_apple avox_ffmpeg avox_vulkan avox_zlmediakit avox_freetype
            avox_egl avox_agent)
     target_include_directories(avoxtest PRIVATE "${AVOX_REPO_ROOT}/src/${d}")

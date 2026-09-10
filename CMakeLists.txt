@@ -298,6 +298,17 @@ if(AVOX_ENABLE_SAMPLES)
     add_subdirectory(samples)
 endif()
 
+# 播放回归矩阵 runner (每平台一个, 用例表与判定复用 tests/playmatrix)
+# Apple 侧并入 platform/ios/avoxtest (同一份 PlayMatrix.hpp), Linux 待建
+option(AVOX_ENABLE_PLAYTEST "build play regression matrix runner (每平台一个)" ON)
+if(AVOX_ENABLE_PLAYTEST)
+    if(WIN32)
+        add_subdirectory(platform/windows/playtest)
+    elseif(ANDROID)
+        add_subdirectory(platform/android/playtest)
+    endif()
+endif()
+
 # GLSL文件
 if(AVOX_ENABLE_VULKAN)
     add_subdirectory(glsl)
