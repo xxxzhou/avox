@@ -18,6 +18,7 @@ function(generatetest target)
     # 丢掉后出现的那次 (ignoring duplicate libraries), force_load 静默失效
     if(APPLE)
         target_link_libraries(${target} "$<LINK_LIBRARY:WHOLE_ARCHIVE,avox>" ${ARGN})
+        avox_bundle_resources(${target})
     else()
         target_link_libraries(${target} avox ${ARGN})
     endif()
@@ -35,6 +36,16 @@ function(generateWtest target)
     endif()
 endfunction()
 
+# Apple 样例 .app 打包 avox.bundle(glsl spv/字体/图像): Vulkan(MoltenVK) 管线运行时从
+# 主 bundle 资源定位 shader, 缺了则 shader module 为 null, vkCreateComputePipelines 段错误
+function(avox_bundle_resources target)
+    add_dependencies(${target} AvoxBundle)
+    add_custom_command(TARGET ${target} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E rm -rf "$<TARGET_BUNDLE_CONTENT_DIR:${target}>/Resources/avox.bundle"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_INSTALL_PREFIX}/avox.bundle" "$<TARGET_BUNDLE_CONTENT_DIR:${target}>/Resources/avox.bundle"
+    )
+endfunction()
+
 # macOS 跳过整套 functest (一堆 Windows 专属依赖: agent/cli/录制等), 只出跨平台帧契约运行时验证
 if(NOT APPLE)
     add_subdirectory(functest)
@@ -42,6 +53,7 @@ else()
     add_executable(yuvouttest functest/yuvouttest.cpp)
     target_link_libraries(yuvouttest "$<LINK_LIBRARY:WHOLE_ARCHIVE,avox>")
     avox_output(yuvouttest)
+    avox_bundle_resources(yuvouttest)
 endif()
 add_subdirectory(vulkantest)
 
