@@ -28,26 +28,6 @@ B添加Podfile文件,添加对A模块的路径。
 
 5. 在B工程中的General里的Frameworks, Libraries, Embedded Content里添加a的lib引用。
 
-## 清理重新安装POD
-
-1. 进入 testbed 目录
-cd /Volumes/PSSD/work/github/avox/platform/ios/testbed
-2. 删除 Pods 目录和 Podfile.lock 文件
-rm -rf Pods
-rm Podfile.lock
-3. 重新安装依赖
-pod install
-
-4. 移除项目中的 Pod 集成
-pod deintegrate
-5. 清除 CocoaPods 缓存
-pod cache clean --all
-6. 重新安装 Pod
-pod install
-
-7. 验证podspec文件是否正确
-pod lib lint avoxsdk.podspec --allow-warnings
-
 ## 终端命令
 
 如果有权限问题，尝试在命令前加sudo.
