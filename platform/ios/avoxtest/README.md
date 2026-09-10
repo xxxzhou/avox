@@ -70,8 +70,10 @@ open build-ios/avoxtest.xcodeproj   # 选真机, Run (自动签名)
 - 首选由 Xcode GUI 点 Run (SSH 下 codesign 访问不了钥匙串)
 - CLI `xcodebuild` 只能做编译验证 (签名阶段会 errSecInternalComponent, 属预期)
 
-## 已知问题
+## 说明
 
-- SDK 的 mk_api 编译时未开 `ENABLE_WEBRTC`, 进程内回环的 webrtc 用例会 FAIL
-  (LAN 模式的 webrtc 走独立部署的 ZLM 服务端, 不受影响)
+- webrtc 架构: 客户端走独立的 libwebrtc (avc_library 产物), 服务端在独立部署的
+  ZLM 服务端 —— mk_api 本身**不需要** ENABLE_WEBRTC。因此进程内回环模式
+  (AVOX_MATRIX=loop) 不含 webrtc 用例能力属设计使然; LAN 模式的 webrtc 用例
+  走独立 ZLM 服务端, 不受影响
 - `AVOX_IO_PLAN` 环境变量可切换拉流 IO 方案 (ffmpeg/zlmediakit), 默认 ffmpeg
