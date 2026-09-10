@@ -29,8 +29,9 @@ GPL_MARKS = (
 )
 
 # ---- 公共配置 ----
-# 硬解加速全保留 (dxva/d3d11va/d3d12va/vulkan 只是调系统 API, 与 GPL 无关);
-# 裁剪项均为 avox 源码零使用 (avdevice/avfilter/swscale/postproc 无调用, exe 不随 SDK 分发)
+# 硬解加速保留 d3d11va/dxva2 (纯系统 API, 与 GPL 无关; minsize 白名单见 MINIMUM_HWACCELS,
+# 全量 flavor 默认自带); 裁剪项均为 avox 源码零使用
+# (avdevice/avfilter/swscale/postproc 无调用, exe 不随 SDK 分发)
 COMMON_OPTIONS = [
     "--disable-static",
     "--enable-shared",
@@ -52,6 +53,14 @@ COMMON_OPTIONS = [
 
 # ---- 白名单 (minsize): 对齐 avox 源码实际映射面 ----
 MINIMUM_DECODERS = "h264,hevc,aac,mp3,opus,ac3,pcm_alaw,pcm_mulaw,pcm_s16le,pcm_s24le"
+# hwaccel 是 avcodec 独立组件, --disable-everything 会连它一起裁掉;
+# 不显式加回则 ff_get_format 拿不到 D3D11 配置, 硬解逐帧静默回退软解 (09-10 排查结论)。
+# 注意 FFmpeg9 拆了新旧两个组件: d3d11va(legacy, D3D11VA_VLD, 不支持 hw_device_ctx)
+# 与 d3d11va2(现代, D3D11, 走 hw_device_ctx)—— 运行时走的是 d3d11va2。
+# legacy 必须同开: 9.0.1 的 Makefile 只在 legacy/dxva2 配置下才编 dxva2_h264.o
+# (d3d11va2 的符号也在这个文件里), 只开 d3d11va2 会链接失败 (09-10 实测)。
+# legacy 运行时无害: 无 HW_DEVICE_CTX 方法, 默认选择器会自动跳过
+MINIMUM_HWACCELS = "h264_d3d11va,h264_d3d11va2,hevc_d3d11va,hevc_d3d11va2"
 MINIMUM_ENCODERS = "h264_mf,hevc_mf,aac"   # 商业渠道; h264_mf/hevc_mf 为系统自带 MFT
 MINIMUM_PARSERS = "h264,hevc,aac,mp3,opus,ac3,mpegaudio"
 MINIMUM_BSF = "h264_mp4toannexb,hevc_mp4toannexb,aac_adtstoasc,extract_extradata"
@@ -80,6 +89,7 @@ def build_options(flavor):
             f"--enable-encoder={encoders}",
             f"--enable-parser={MINIMUM_PARSERS}",
             f"--enable-bsf={MINIMUM_BSF}",
+            f"--enable-hwaccel={MINIMUM_HWACCELS}",
         ]
     if flavor in ("gpl", "minsize-gpl"):
         opts += ["--enable-gpl", "--enable-libx264", "--enable-libx265"]
