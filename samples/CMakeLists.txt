@@ -35,9 +35,13 @@ function(generateWtest target)
     endif()
 endfunction()
 
-# macOS 只出 vulkantest 里的 Apple 无头样例: functest 一堆 Windows 专属依赖 (agent/cli/录制等)
+# macOS 跳过整套 functest (一堆 Windows 专属依赖: agent/cli/录制等), 只出跨平台帧契约运行时验证
 if(NOT APPLE)
     add_subdirectory(functest)
+else()
+    add_executable(yuvouttest functest/yuvouttest.cpp)
+    target_link_libraries(yuvouttest "$<LINK_LIBRARY:WHOLE_ARCHIVE,avox>")
+    avox_output(yuvouttest)
 endif()
 add_subdirectory(vulkantest)
 

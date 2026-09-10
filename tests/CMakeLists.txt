@@ -39,4 +39,9 @@ if(MSVC)
   target_compile_options(avox_tests PRIVATE /utf-8)
 endif()
 
+if(APPLE)
+  # VideoBuffer.cpp 的 Apple 分支用 CoreVideo (CVBufferRelease), 直编进测试需链其 framework
+  target_link_libraries(avox_tests PRIVATE "-framework CoreVideo")
+endif()
+
 add_test(NAME avox_tests COMMAND avox_tests)
