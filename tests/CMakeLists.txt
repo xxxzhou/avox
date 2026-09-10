@@ -9,6 +9,7 @@ add_executable(avox_tests
   ${AVOX_TESTS_SRC}/test_main.cpp
   ${AVOX_TESTS_SRC}/test_math.cpp
   ${AVOX_TESTS_SRC}/test_h26x.cpp
+  ${AVOX_TESTS_SRC}/test_videobuffer.cpp
   ${AVOX_TESTS_SRC}/log_sink.cpp
   # 被测源码 (自包含编译)
   ${AVOX_SRC}/module/AvoxMath.cpp
@@ -18,6 +19,10 @@ add_executable(avox_tests
   # 被测代码的依赖 TU (PacketBuf::form / checkAvccPacket / H26XNalReader)
   ${AVOX_SRC}/source/PacketBuf.cpp
   ${AVOX_SRC}/codec/H26XNalReader.cpp
+  # 布局契约被测 TU (form/to/image2SplitYUVFrame/copyPlaneYUV2TightlyBuffer)
+  ${AVOX_SRC}/video/Video.cpp
+  ${AVOX_SRC}/video/VideoBuffer.cpp
+  ${AVOX_SRC}/video/ImageBuffer.cpp
 )
 
 target_include_directories(avox_tests PRIVATE
