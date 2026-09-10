@@ -1,4 +1,5 @@
 #include <iostream>
+#include <string>
 #include <thread>
 
 #include "avox/AvoxMuxer.h"
@@ -52,6 +53,10 @@ int main(int argc, char* argv[]) {
   IRecorder* recorder = createRecorder(true);
   // none=纯音频 seek 测试;验证视频 seek/首帧 IDR 时改为 h265 或注释掉此行
   recorder->setVideoCodec(VCodecId::h264);
+  // 默认硬编; Windows 下 h264_mf 可能因 profile=main 选项打不开, 传 soft 走 FFmpeg 软编
+  if (argc > 4 && std::string(argv[4]) == "soft") {
+    recorder->getOption()->setBool("rec.hard.encode", false);
+  }
   if (!recorder) {
     std::cout << "failed to create transcode recorder" << std::endl;
     return 1;

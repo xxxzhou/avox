@@ -108,29 +108,29 @@ DecodeResult FFVEncoder::onPreEncoder() {
   codecCtx->thread_count = 0;
   codecCtx->thread_type = FF_THREAD_FRAME | FF_THREAD_SLICE;
   AVDictionary* param = nullptr;
-  if (desc.codecId == VCodecId::h264) {
-    av_dict_set(&param, "profile", "main", 0);
-  } else if (desc.codecId == VCodecId::h265) {
-    av_dict_set(&param, "profile", "main", 0);
-  }
   // 不同编码器 preset/码控词汇不同,按实际选中的编码器分发
   const char* codecName = codec->name ? codec->name : "";
   if (strstr(codecName, "libx264") || strstr(codecName, "libx265")) {
     // x264/x265 软编码: 用 CRF 模式 + ultrafast preset
+    av_dict_set(&param, "profile", "main", 0);
     av_dict_set(&param, "preset", "ultrafast", 0);
     av_dict_set(&param, "crf", "23", 0);
     codecCtx->bit_rate = 0;
   } else if (strstr(codecName, "_qsv")) {
     // Intel QSV: preset 用 veryfast,保持 bit_rate
+    av_dict_set(&param, "profile", "main", 0);
     av_dict_set(&param, "preset", "veryfast", 0);
   } else if (strstr(codecName, "_nvenc")) {
     // NVIDIA NVENC: p1(最快) ~ p7(最慢)
+    av_dict_set(&param, "profile", "main", 0);
     av_dict_set(&param, "preset", "p1", 0);
     av_dict_set(&param, "tune", "ll", 0);
   } else if (strstr(codecName, "_amf")) {
     // AMD AMF: 用 quality=speed
     av_dict_set(&param, "quality", "speed", 0);
   }
+  // _mf(MediaFoundation, LGPL 渠道默认)等其余编码器不下发 profile:
+  // MF 封装的 profile 是数值枚举, 字符串 "main" Eval 失败 → avcodec_open2 EINVAL
   // 子类硬编码
   onAttachContext();
   // 打开编码器
