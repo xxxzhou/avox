@@ -51,9 +51,9 @@ protected:
 public:
   // bCopy为true,会复制数据到buff中
   void form(const YUVFrame &yuvFrame, bool bCopy = false);
-  // 转换为YUVFrame
-  void to(YUVFrame &yuvFrame, YuvType type);
-  bool to(YUVFrame &yuvFrame);
+  // 转换为split布局(逻辑行等距,给ffmpeg/逐行读)的YUVFrame
+  // 420P/422P带padding需重排时数据拷到tmp(buffer不被修改),布局已等价时零拷贝指向自身
+  bool to(YUVFrame &yuvFrame, IImageBuffer *tmp = nullptr);
 
 public:
   YuvType getYuvType() { return yuvType; }

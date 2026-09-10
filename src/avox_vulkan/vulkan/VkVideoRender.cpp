@@ -530,9 +530,12 @@ bool VkVideoRender::getCpuFrame(YUVFrame& frame) {
     frame.dts = gpuFrame.dts;
     frame.keyFrame = gpuFrame.keyFrame;
   }
-  // GPU的数据需要对齐padding
-  unpackGpuYUV(nvBuffer, outYuvType);
-  return image2YUVFrame(nvBuffer, frame, outYuvType);
+  // nvBuffer保持packed不原地改(同帧可能被onRenderOut和pushFrame各取一次),
+  // 需要420P/422P重排时拷进splitBuffer,多次调用幂等
+  if (!splitBuffer) {
+    splitBuffer = std::make_unique<ImageBuffer>();
+  }
+  return image2SplitYUVFrame(nvBuffer, outYuvType, frame, splitBuffer.get());
 }
 
 bool VkVideoRender::getGpuFrame(GpuFrame& frame) {

@@ -600,26 +600,13 @@ bool PlayerBridge::PackNv12(const avox::YUVFrame& frame, uint8_t* dst) {
   }
   if (!frame.data[2]) return false;
   // yuv420P → NV12 交织。stride 缺省时退化为 w/2
+  // SDK 契约保证 onFrame 收到的是 split 等距行 (packed 打包已在 SDK 内重排),
+  // 按等距寻址即可, 不再需要 gpuPacked 启发式 (它对真 split 帧会误判)
   const int32_t uStride = frame.stride[1] > 0 ? frame.stride[1] : uvW;
   const int32_t vStride = frame.stride[2] > 0 ? frame.stride[2] : uvW;
-  // avox 的 SwVideoBuffer::to() 在 rowPitch != width 时报的 stride 与实际布局不一致:
-  // 数据是 copyPlaneYUV2TightlyBuffer 产出的 GPU 打包布局 (每物理行 stride[0] 字节装
-  // [逻辑行2p: uvW][逻辑行2p+1: uvW][pad]), 而 stride[1] 报的是 unpack 后的等距值
-  // rowPitch/2。按等距读会让奇数行左移 (rowPitch/2 - uvW) 个样本 → 竖条纹。
-  // (Godot 插件实测: 448x320 出条纹, 640x480 因无 padding 正常)
-  const bool gpuPacked = (uStride != uvW) && (frame.stride[0] > w);
-  const int32_t physPitch = frame.stride[0];
   for (int32_t j = 0; j < uvH; ++j) {
-    const uint8_t* uRow;
-    const uint8_t* vRow;
-    if (gpuPacked) {
-      const size_t off = (size_t)(j / 2) * physPitch + (size_t)(j & 1) * uvW;
-      uRow = frame.data[1] + off;
-      vRow = frame.data[2] + off;
-    } else {
-      uRow = frame.data[1] + (size_t)j * uStride;
-      vRow = frame.data[2] + (size_t)j * vStride;
-    }
+    const uint8_t* uRow = frame.data[1] + (size_t)j * uStride;
+    const uint8_t* vRow = frame.data[2] + (size_t)j * vStride;
     uint8_t* o = uvDst + (size_t)j * w;
     for (int32_t i = 0; i < uvW; ++i) {
       o[i * 2] = uRow[i];

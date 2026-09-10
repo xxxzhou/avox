@@ -24,8 +24,14 @@ void SwVideoBuffer::form(const YUVFrame& frame, bool bCopy) {
   bool bPlane = bVPlaneFormat(frame.format.type);
   // 记录最初始的YUV格式
   yuvType = frame.format.type;
+  // 420P/422P的packed布局(每物理行[偶|奇|pad])与split只在无padding时字节重合,
+  // 带padding的帧直接引用会让GPU按packed错读,必须拷贝
+  bool bPaddedSplit =
+      (frame.format.type == YuvType::yuv420P ||
+       frame.format.type == YuvType::yuv422P) &&
+      frame.stride[0] != tempFormat.width;
   // 要求复制,以及平面格式如果不紧湊也需要重新排列
-  if (bCopy || (bPlane && !bTightlyPacked(frame))) {
+  if (bCopy || (bPlane && !bTightlyPacked(frame)) || bPaddedSplit) {
     uint8_t* bdata = buffer.data();
     uint8_t* idata = frame.data[0];
     int32_t rowPitch = imageFormat.rowPitch;
@@ -52,66 +58,13 @@ void SwVideoBuffer::form(const YUVFrame& frame, bool bCopy) {
   }
 }
 
-void SwVideoBuffer::to(YUVFrame& frame, YuvType type) {
-  yuvType = type;
-  // 当前格式要rgba8/r8
-  image2YUVFormat(imageFormat, type, frame.format);
-  frame.data[0] = data;
-  frame.stride[0] = imageFormat.rowPitch;
-  // 如果是平面格式
-  bool bPlane = bVPlaneFormat(frame.format.type);
-  if (bPlane) {
-    int32_t ySize = imageFormat.rowPitch * frame.format.height;
-    if (type == YuvType::nv12) {
-      // NV12: UV 交织，步长同 Y
-      frame.data[1] = data + ySize;
-      frame.stride[1] = imageFormat.rowPitch;
-      frame.data[2] = nullptr;
-      frame.stride[2] = 0;
-    } else if (type == YuvType::yuv420P10) {
-      // yuv420P10: 每像素2字节, UV是Y的一半宽高
-      int32_t uvPitch = imageFormat.rowPitch / 2;
-      int32_t uvHeight = frame.format.height / 2;
-      int32_t uvSize = uvPitch * uvHeight;
-      frame.data[1] = data + ySize;
-      frame.stride[1] = uvPitch;
-      frame.data[2] = data + ySize + uvSize;
-      frame.stride[2] = uvPitch;
-    } else {
-      // 处理 YUV420P / YUV422P / YUV444P
-      int32_t uvWidthDiv = (type == YuvType::yuv444P) ? 1 : 2;
-      int32_t uvHeightDiv = (type == YuvType::yuv420P) ? 2 : 1;
-      if (type == YuvType::yuv420P || type == YuvType::yuv422P) {
-        // YUV420P/422P的UV在buffer中4块连续排列:
-        // [U even rows] [U odd rows] [V even rows] [V odd rows]
-        // 每块 uvHeight/2 行，每行 rowPitch 字节
-        // U起始在UV段开头，V起始在UV段中间
-        int32_t uvHeight = frame.format.height / uvHeightDiv;
-        int32_t halfUvSize = imageFormat.rowPitch * (uvHeight / 2);
-        frame.data[1] = data + ySize;
-        frame.stride[1] = imageFormat.rowPitch / 2;
-        frame.data[2] = data + ySize + halfUvSize;
-        frame.stride[2] = imageFormat.rowPitch / 2;
-      } else {
-        // YUV444P: UV与Y同尺寸，各自独立块 
-        int32_t uvHeight = frame.format.height / uvHeightDiv;
-        int32_t uvSize = imageFormat.rowPitch * uvHeight;
-        frame.data[1] = data + ySize;
-        frame.stride[1] = imageFormat.rowPitch;
-        frame.data[2] = data + ySize + uvSize;
-        frame.stride[2] = imageFormat.rowPitch;
-      }
-    }
-  }
-}
-
-bool SwVideoBuffer::to(YUVFrame& yuvFrame) {
+bool SwVideoBuffer::to(YUVFrame& yuvFrame, IImageBuffer* tmp) {
   if (yuvType == YuvType::other) {
     LOGFLF(LogLevel::info, "yuvType is other");
     return false;
   }
-  to(yuvFrame, yuvType);
-  return true;
+  // buffer恒为packed布局,420P/422P带padding转split时由tmp持副本
+  return image2SplitYUVFrame(this, yuvType, yuvFrame, tmp);
 }
 
 HwVideoBuffer::HwVideoBuffer() {}

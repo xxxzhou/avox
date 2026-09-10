@@ -73,8 +73,9 @@ AVOX_EXPORT bool bVPlaneFormat(YuvType yuvType);
 AVOX_EXPORT void yuv2ImageFormat(const YUVFrame& yuvFrame, ImageFormat& format);
 AVOX_EXPORT void image2YUVFormat(const ImageFormat& imFormat, YuvType yuvType,
                                 YUVFormat& format);
-// 数据是否紧密排列,考虑stride,如果紧密排列可以直接复制
-// 但是如果是三平面的YUV420P,其UV必需是Y的一半,才能共用一个stride
+// 判定"单块连续 + UV步长为Y步长的整数分之一"的紧凑排布(此时连续split与packed字节重合)
+// 注意它不代表无padding: yuv420P/422P带padding时packed([偶|奇|pad])与split(等距行)不一致,
+// 直接引用外部帧还需满足stride[0]==width
 AVOX_EXPORT bool bTightlyPacked(const YUVFrame& yuvFrame);
 // 把平面frame的数据复制到紧湊的buffer中
 // 确保yrowpitch是双倍,让UV交及可放一行Y,或是二行uv可放一行Y
@@ -84,6 +85,12 @@ AVOX_EXPORT void copyPlaneYUV2TightlyBuffer(const YUVFrame& frame,
 // 从IImageBuffer得到YUVFrame,Image为R8类型
 AVOX_EXPORT bool image2YUVFrame(IImageBuffer* buffer, YUVFrame& yuvFrame,
                                YuvType yuvType);
+// 从IImageBuffer得到split布局(逻辑行等距,stride[1]=rowPitch/2,可直接给ffmpeg逐行读)的YUVFrame
+// 契约: IImageBuffer恒为packed布局(yuv420P/422P的UV物理行为[偶|奇|pad])
+// 仅420P/422P且rowPitch!=width时需要重排,此时数据拷到tmp再重排(buffer不被修改),
+// 布局已等价时零拷贝指向buffer; 需要重排而tmp为空时返回false
+AVOX_EXPORT bool image2SplitYUVFrame(IImageBuffer* buffer, YuvType yuvType,
+                                    YUVFrame& yuvFrame, IImageBuffer* tmp);
 
 // YUVFrame → RGBA 转换（根据 format.type 自动分发，内部设置 buffer 格式）
 // 注意IImageBuffer在yuv420P/yuv422P的情况下

@@ -85,6 +85,8 @@ class VkVideoRender : public VideoRender, public IVOutputLayerOb {
   VKTNodePtr<VkResizeLayer> imageResizeLayer = nullptr;
   VKTNodePtr<VkOutputLayer> imageOutLayer = nullptr;
   IImageBuffer* nvBuffer = nullptr;
+  // getCpuFrame的split重排副本(仅420P/422P带padding时实际拷贝),nvBuffer保持packed且多次调用幂等
+  std::unique_ptr<ImageBuffer> splitBuffer;
   // 录制/播放颜色空间, 驱动 rgba2YUV/yuv2RGBA 的转换矩阵(与 encoder tag 同源)
   ColorSpaceDesc colorSpace{YuvStandard::bt601, YuvRange::full};
 

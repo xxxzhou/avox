@@ -57,6 +57,8 @@ class AVOX_EXPORT VideoRender : public OptionLink {
   bool bRgbaInput = false;
   YUVFrame yuvFrame = {};
   GpuFrame gpuFrame = {};
+  // yuvFrame指向的split重排副本(仅420P/422P带padding时实际拷贝),vbuffer保持packed
+  std::unique_ptr<ImageBuffer> splitBuffer;
 
   // 调用截图，需要同步调用
   std::mutex mtxShot;

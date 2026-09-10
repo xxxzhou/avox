@@ -294,6 +294,25 @@ bool image2YUVFrame(IImageBuffer* buffer, YUVFrame& yuvFrame, YuvType yuvType) {
   return true;
 }
 
+bool image2SplitYUVFrame(IImageBuffer* buffer, YuvType yuvType,
+                         YUVFrame& yuvFrame, IImageBuffer* tmp) {
+  ImageFormat imageFormat = buffer->getImageFormat();
+  int32_t tightPitch = imageFormat.width * getPixelSize(imageFormat.imageType);
+  // 仅420P/422P的packed(每物理行[偶|奇|pad])与split(等距行)在有padding时不重合
+  bool bDiverge = (yuvType == YuvType::yuv420P || yuvType == YuvType::yuv422P) &&
+                  imageFormat.rowPitch != tightPitch;
+  if (bDiverge) {
+    if (!tmp) {
+      return false;
+    }
+    tmp->setImageFormat(imageFormat);
+    tmp->copyFrom(buffer, true);
+    unpackGpuYUV(tmp, yuvType);
+    buffer = tmp;
+  }
+  return image2YUVFrame(buffer, yuvFrame, yuvType);
+}
+
 IImageBuffer* createImageBuffer() {
   ImageBuffer* buffer = new ImageBuffer();
   return buffer;

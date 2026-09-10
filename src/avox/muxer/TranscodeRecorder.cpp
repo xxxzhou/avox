@@ -330,11 +330,15 @@ void TranscodeRecorder::processVideo(VideoFramePtr vframe) {
   if (!vframe || !vframe->buffer || !muxer || !running()) {
     return;
   }
-  // VideoFrame里存的是已经过GPU处理+unpack的YUVFrame数据,直接构造给muxer
+  // VideoFrame里的SwVideoBuffer恒为packed布局,to()取split帧给编码器,
+  // 需要重排时数据拷进splitBuffer(buffer可能与渲染线程共享,不可原地改)
   std::shared_ptr<SwVideoBuffer> hostBuffer =
       std::static_pointer_cast<SwVideoBuffer>(vframe->buffer);
   YUVFrame yframe = {};
-  if (!hostBuffer->to(yframe)) {
+  if (!splitBuffer) {
+    splitBuffer = std::make_unique<ImageBuffer>();
+  }
+  if (!hostBuffer->to(yframe, splitBuffer.get())) {
     return;
   }
   yframe.pts = vframe->pts;

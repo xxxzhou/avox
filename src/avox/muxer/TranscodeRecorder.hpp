@@ -51,6 +51,8 @@ class TranscodeRecorder : public IRecorder,
   // 帧队列，上限5，满时阻塞解码线程
   RingBuffer<VideoFramePtr> vFrameQueue{5};
   RingBuffer<AudioFramePtr> aFrameQueue{5};
+  // to()取split帧的重排副本(仅420P/422P带padding时实际拷贝),编码线程私有
+  std::unique_ptr<ImageBuffer> splitBuffer;
   // 进度
   RecorderProgress progress = {};
   // seek 状态(均跨线程:调用线程写,编码/IO 线程读)

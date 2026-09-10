@@ -112,26 +112,13 @@ void SurfaceTextureBridge::onFrame(const avox::YUVFrame &frame) {
         }
     } else {
         // yuv420P → NV12 交织。stride 缺省时退化为 w/2 (同原 CPU 路径的兜底)
+        // SDK 契约保证 onFrame 收到的是 split 等距行 (packed 打包已在 SDK 内重排),
+        // 按等距寻址即可, 不再需要 gpuPacked 启发式 (它对真 split 帧会误判)
         const int uStride = frame.stride[1] > 0 ? frame.stride[1] : uvW;
         const int vStride = frame.stride[2] > 0 ? frame.stride[2] : uvW;
-        // avox 的 SwVideoBuffer::to() 在 rowPitch != width 时报的 stride 与实际布局
-        // 不一致: 数据是 copyPlaneYUV2TightlyBuffer 产出的 GPU 打包布局
-        // (每物理行 stride[0] 字节装 [逻辑行2p: uvW][逻辑行2p+1: uvW][pad]),
-        // 而 stride[1] 报的是 unpack 后的等距值 rowPitch/2。按等距读会让奇数行
-        // 左移 (rowPitch/2 - uvW) 个样本 → 竖条纹。这里按真实布局寻址。
-        const bool gpuPacked = (uStride != uvW) && (frame.stride[0] > w);
-        const int physPitch = frame.stride[0];
         for (int i = 0; i < uvH; ++i) {
-            const uint8_t *uRow;
-            const uint8_t *vRow;
-            if (gpuPacked) {
-                const size_t off = (size_t)(i / 2) * physPitch + (size_t)(i & 1) * uvW;
-                uRow = frame.data[1] + off;
-                vRow = frame.data[2] + off;
-            } else {
-                uRow = frame.data[1] + (size_t)i * uStride;
-                vRow = frame.data[2] + (size_t)i * vStride;
-            }
+            const uint8_t *uRow = frame.data[1] + (size_t)i * uStride;
+            const uint8_t *vRow = frame.data[2] + (size_t)i * vStride;
             uint8_t *o = uvDst + (size_t)i * w;
             for (int x = 0; x < uvW; ++x) {
                 o[x * 2] = uRow[x];

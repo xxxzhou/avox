@@ -134,7 +134,12 @@ void VideoRender::renderFrame(const avox::VideoFrame& frame) {
     if (!vbuffer) {
       return;
     }
-    vbuffer->to(yuvFrame);
+    if (!splitBuffer) {
+      splitBuffer = std::make_unique<ImageBuffer>();
+    }
+    if (!vbuffer->to(yuvFrame, splitBuffer.get())) {
+      return;
+    }
     yuvFrame.pts = frame.pts;
     yuvFrame.dts = frame.dts;
     renderFrame(yuvFrame);
