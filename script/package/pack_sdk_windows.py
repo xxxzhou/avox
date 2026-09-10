@@ -21,6 +21,9 @@ DEFAULT_SRC = os.path.join(
     common.project_root(), "build", "windows", "avox", "install", "AMD64", "Release")
 # 随 SDK 一起部署的 CLI 工具
 CLI_EXES = ("avox_cli.exe", "avox_agent.exe")
+# 顶层剔除的 dll: fdk-aac 源许可 (Fraunhofer SIC-004) 仅限非商业, FFmpeg 归 nonfree,
+# 公开分发的 SDK 不带 (播放解码走 FFmpeg 原生 AAC; 编码需求见 doc/test/发布检查清单.md)
+DENY_TOP_DLLS = ("fdk-aac.dll",)
 
 
 def clean_legacy_plugin_deps(dst):
@@ -61,6 +64,9 @@ def pack(out="", src="", zip_path="", headers=False, abi=None, with_thirdparty=F
         if f.endswith((".dll", ".node")) or f == "AvoxWrapper.py":
             if common.is_plugin_dep(f):
                 continue
+            if f in DENY_TOP_DLLS:
+                print(f"  [跳过] {f} (非商业许可, 公开 SDK 不分发)")
+                continue
             common.copy_file(s, os.path.join(out, f))
             copied += 1
     print(f"  [复制] 顶层运行文件 ({copied} 个)")
@@ -78,9 +84,11 @@ def pack(out="", src="", zip_path="", headers=False, abi=None, with_thirdparty=F
     # 3) assets 子集 (glsl/fonts/script; 模型由用户下载)
     common.copy_assets(os.path.join(src, "assets"), os.path.join(out, "assets"))
 
-    # 4) 头文件 (可选)
+    # 4) 头文件 (可选): install/include (Release 目录上溯两级; 兼容旧布局 install/<arch>/include)
     if headers:
-        include_src = os.path.join(os.path.dirname(src), "include")
+        include_src = os.path.join(os.path.dirname(os.path.dirname(src)), "include")
+        if not os.path.isdir(include_src):
+            include_src = os.path.join(os.path.dirname(src), "include")
         common.copy_dir(include_src, os.path.join(out, "include"))
 
     # 5) 清理旧布局顶层残留
