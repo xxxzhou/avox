@@ -334,13 +334,16 @@ void RtcPlayerBridge::onIceCandidate(const char* candidate, const char* mid,
 // ── avox::ISurfaceRenderOb (avox 渲染线程) ──
 
 // 只重排成紧凑 NV12, 色转交给 Unity 侧 shader (打包器复用 PlayerBridge 静态实现)
-void RtcPlayerBridge::onFrame(const avox::YUVFrame& frame) {
-  const int32_t w = frame.format.width;
-  const int32_t h = frame.format.height;
+void RtcPlayerBridge::onFrame(avox::IImageBuffer* buf, avox::YuvType type) {
+  if (!buf) return;
+  avox::YUVFormat yfmt = {};
+  avox::image2YUVFormat(buf->getImageFormat(), type, yfmt);
+  const int32_t w = yfmt.width;
+  const int32_t h = yfmt.height;
   if (w <= 0 || h <= 0 || (w & 1) || (h & 1)) return;
   std::vector<uint8_t> nv12;
   nv12.resize((size_t)w * h * 3 / 2);
-  if (!PlayerBridge::PackNv12(frame, nv12.data())) return;
+  if (!PlayerBridge::PackNv12(buf, type, nv12.data())) return;
   {
     std::lock_guard<std::mutex> lock(frameMutex);
     frameNv12 = std::move(nv12);

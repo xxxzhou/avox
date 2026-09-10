@@ -280,10 +280,11 @@ def bVPlaneFormat(yuvType):
 
 
 # ─── 进阶 YUV 转换 ──────────────────────────────────────
-# 链路1: ISurfaceRender.onFrame(YUVFrame) → yuvframe2Rgba(frame, buf) → IImageBuffer(RGBA)
+# 链路1: ISurfaceRender.onFrame(IImageBuffer, YuvType) --image2SplitYUVFrame--> YUVFrame
+#        --yuvframe2Rgba--> IImageBuffer(RGBA)
 # 链路2: IImageBuffer(YUV) --image2YUVFrame--> YUVFrame --yuvframe2Rgba--> IImageBuffer(RGBA)
 # unpackGpuYUV: GPU 渲染输出的 YUV IImageBuffer, UV padding 重排给 FFmpeg 读 (原地)
-# YUVFrame.data/stride 由 C++ 填 (onFrame 回调 / image2YUVFrame), Python 不手填。
+# YUVFrame.data/stride 由 C++ 填 (image2YUVFrame/image2SplitYUVFrame), Python 不手填。
 
 def getYuvFrameSize(yuvFormat, rowPitch):
     """计算 YUV 帧字节数。yuvFormat 为 _pw.YUVFormat。"""
@@ -291,10 +292,24 @@ def getYuvFrameSize(yuvFormat, rowPitch):
 
 
 def image2YUVFrame(buf, yuvType):
-    """从 IImageBuffer (R8) 导出 _pw.YUVFrame; 返回 (ok, yuvFrame)。"""
+    """从 IImageBuffer (R8) 导出 _pw.YUVFrame (packed 布局视图); 返回 (ok, yuvFrame)。"""
     native = buf._native if isinstance(buf, IImageBuffer) else buf
     frame = _pw.YUVFrame()
     ok = _pw.image2YUVFrame(native, frame, yuvType)
+    return ok, frame
+
+
+def image2SplitYUVFrame(buf, yuvType, tmp=None):
+    """从 packed IImageBuffer 导出 split 布局 (stride 等距) 的 _pw.YUVFrame; 返回 (ok, yuvFrame)。
+    契约: onFrame 回调给的 IImageBuffer 恒为 packed (420P/422P 的 UV 物理行 [偶|奇|pad]);
+    仅 420P/422P 且 rowPitch != width 时需要重排, 此时会拷到 tmp (传一个 IImageBuffer),
+    布局已等价时零拷贝指向 buf。喂 FFmpeg/逐行读用这个, 别用 image2YUVFrame (那是 packed 视图)。"""
+    native = buf._native if isinstance(buf, IImageBuffer) else buf
+    nativeTmp = None
+    if tmp is not None:
+        nativeTmp = tmp._native if isinstance(tmp, IImageBuffer) else tmp
+    frame = _pw.YUVFrame()
+    ok = _pw.image2SplitYUVFrame(native, yuvType, frame, nativeTmp)
     return ok, frame
 
 

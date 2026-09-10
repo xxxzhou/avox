@@ -108,10 +108,12 @@ class PlayerBridge : public avox::IMediaPlayerOb, public avox::ISurfaceRenderOb 
   bool allocCpuFrame(uint32_t w, uint32_t h, uint32_t bpp, void** texData);
   // 源色彩空间编码 (standard | range<<8), 供 C# 构 shader 矩阵; 未就绪返回 -1
   int32_t colorSpaceCode() const;
-  // 帧 → 紧凑 NV12 (SourceBridge/RtcPlayerBridge CPU 路径复用)。
+  // packed 帧 → 紧凑 NV12 (SourceBridge/RtcPlayerBridge CPU 路径复用)。
+  // buf 恒为 packed 布局 (avox 契约): Y 行距 rowPitch, nv12 的 UV 交织行距 rowPitch,
+  // yuv420P 的 UV 打包为 [U: h/4 物理行 [偶|奇|pad]] + [V: 同构]。
   // dst 需 w*h*3/2 字节; yuv420P 会交织成 NV12, 使下游 shader 只认一种布局。
   // 返回 false 表示格式/尺寸不支持 (未写 dst)
-  static bool PackNv12(const avox::YUVFrame& frame, uint8_t* dst);
+  static bool PackNv12(avox::IImageBuffer* buf, avox::YuvType type, uint8_t* dst);
 
   // ── Option (键值参数, 透传 IMediaPlayer::getOption) ──
   bool setOptionBool(const char* key, bool value);
@@ -142,7 +144,7 @@ class PlayerBridge : public avox::IMediaPlayerOb, public avox::ISurfaceRenderOb 
   void onDecodeError(avox::TrackType trackType, avox::DecodeResult error) override;
 
   // ── avox::ISurfaceRenderOb (avox 渲染线程) ──
-  void onFrame(const avox::YUVFrame& frame) override;
+  void onFrame(avox::IImageBuffer* buf, avox::YuvType yuvType) override;
   void onWinSizeChange(int32_t width, int32_t height) override;
 
   void createPlayer();

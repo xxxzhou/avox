@@ -36,7 +36,7 @@ class SourceBridge : public avox::IMediaPlayerOb, public avox::ISurfaceRenderOb 
   void onReady() override;
 
   // ── avox::ISurfaceRenderOb (avox 渲染线程) ──
-  void onFrame(const avox::YUVFrame& frame) override;
+  void onFrame(avox::IImageBuffer* buf, avox::YuvType type) override;
 
  private:
   void destroyPlayer();

@@ -538,6 +538,16 @@ bool VkVideoRender::getCpuFrame(YUVFrame& frame) {
   return image2SplitYUVFrame(nvBuffer, outYuvType, frame, splitBuffer.get());
 }
 
+bool VkVideoRender::getCpuFrameBuffer(IImageBuffer** buffer, YuvType& yuvType) {
+  if (!bOutCpuYuv || !nvBuffer) {
+    return false;
+  }
+  // packed帧直接透传,不做split重排
+  *buffer = nvBuffer;
+  yuvType = outYuvType;
+  return true;
+}
+
 bool VkVideoRender::getGpuFrame(GpuFrame& frame) {
   if (cpuIn) {
     frame.pts = yuvFrame.pts;

@@ -124,7 +124,7 @@ class RtcPlayerBridge : public avox::IMediaPlayerOb,
                       int mlineIndex) override;
 
   // ── avox::ISurfaceRenderOb (avox 渲染线程) ──
-  void onFrame(const avox::YUVFrame& frame) override;
+  void onFrame(avox::IImageBuffer* buf, avox::YuvType type) override;
   void onWinSizeChange(int32_t width, int32_t height) override;
 
   void createPlayer();

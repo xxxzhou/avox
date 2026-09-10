@@ -94,6 +94,8 @@ class AVOX_EXPORT SurfaceRenderVk : public ISurfaceRender,
   virtual vec2i getOutSize();
   // 拿到处理过后的CPU资源
   virtual bool getCpuFrame(YUVFrame& frame);
+  // 直接取packed CPU帧(不经split重排),供ISurfaceRenderOb::onFrame透传
+  virtual bool getCpuFrameBuffer(IImageBuffer** buffer, YuvType& yuvType);
   // 拿到处理过后的GPU资源
   virtual bool getGpuFrame(GpuFrame& frame);
   // 如果有输出CPU资源,得到CPU的帧的YUV类型

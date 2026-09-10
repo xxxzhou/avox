@@ -77,8 +77,8 @@ class _DefaultSurfaceRenderOb(_pw.ISurfaceRenderOb):
         self._owner._emit('onSurface')
     def onWinSizeChange(self, width, height):
         self._owner._emit('onWinSizeChange', width, height)
-    def onFrame(self, frame):
-        self._owner._emit('onFrame', frame)
+    def onFrame(self, buf, yuvType):
+        self._owner._emit('onFrame', buf, yuvType)
     def onRender(self):
         self._owner._emit('onRender')
 

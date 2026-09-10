@@ -10,6 +10,15 @@
 
 namespace avox {
 
+// onFrame 回调给JS的帧信息 (packed buffer 视图的描述)
+struct JsFrameInfo {
+  int32_t width = 0;
+  int32_t height = 0;
+  int32_t stride = 0;      // rowPitch (Y 行字节数)
+  int32_t frameSize = 0;   // 整块 packed 字节数
+  int32_t format = 0;      // YuvType 数值 (1=yuv420P, 4=nv12)
+};
+
 // ================================
 //  渲染进程 Node.js 回调基类
 //  - 仅使用 N-API
@@ -109,6 +118,14 @@ class JsObserver {
       int32_t frameSize = getYuvFrameSize(value.format, value.stride[0]);
       obj.Set("frameSize", frameSize);
       obj.Set("format", (int32_t)value.format.type);
+      return obj;
+    } else if constexpr (std::is_same_v<std::decay_t<T>, JsFrameInfo>) {
+      Napi::Object obj = Napi::Object::New(env);
+      obj.Set("width", value.width);
+      obj.Set("height", value.height);
+      obj.Set("stride", value.stride);
+      obj.Set("frameSize", value.frameSize);
+      obj.Set("format", value.format);
       return obj;
     }
     return env.Undefined();

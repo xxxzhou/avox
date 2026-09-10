@@ -303,6 +303,13 @@ bool SurfaceRenderVk::getCpuFrame(YUVFrame& frame) {
   return false;
 }
 
+bool SurfaceRenderVk::getCpuFrameBuffer(IImageBuffer** buffer, YuvType& yuvType) {
+  if (vkVideoRender && vkVideoRender->bCpuOut()) {
+    return vkVideoRender->getCpuFrameBuffer(buffer, yuvType);
+  }
+  return false;
+}
+
 bool SurfaceRenderVk::getGpuFrame(GpuFrame& frame) {
   // IOS/ANDROID经vulkan处理后对应的metal/opengles资源
   if (vkVideoRender) {
@@ -340,11 +347,11 @@ void SurfaceRenderVk::pushFrame(RawMuxer* muxer) {
 }
 
 void SurfaceRenderVk::onRenderOut() {
-  YUVFrame yframe = {};
-  bool bGet = getCpuFrame(yframe);
-  if (bGet) {
-    // 给electron用于CPU渲染
-    dispatch(&ISurfaceRenderOb::onFrame, yframe);
+  IImageBuffer* buf = nullptr;
+  YuvType yuvType = YuvType::other;
+  // 给上层透传packed CPU帧,由观察者自行决定是否转split
+  if (getCpuFrameBuffer(&buf, yuvType)) {
+    dispatch(&ISurfaceRenderOb::onFrame, buf, yuvType);
   }
   dispatch(&ISurfaceRenderOb::onRender);
 }

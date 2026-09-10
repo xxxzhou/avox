@@ -516,17 +516,19 @@ void PlayerBridge::onDecodeError(avox::TrackType trackType, avox::DecodeResult e
 
 // ── avox::ISurfaceRenderOb (avox 渲染线程) ──
 
-// frame.data 指向 VkVideoRender 的回读 buffer, 下一帧会被覆盖 —— 必须同步拷走。
-// 只做紧凑重打包不做色转: YUV→RGB 交给 Unity 侧 shader (Blit), 上传量 1.5 而非 4 字节/像素
-void PlayerBridge::onFrame(const avox::YUVFrame& frame) {
-  if (bGpuMode) return;
-  const int32_t w = frame.format.width;
-  const int32_t h = frame.format.height;
+// buf 恒为 packed 块, 下一帧会被覆盖 —— 必须同步拷走。
+// 只做紧凑重排不做色转: YUV→RGB 交给 Unity 侧 shader (Blit), 上传量 1.5 而非 4 字节/像素
+void PlayerBridge::onFrame(avox::IImageBuffer* buf, avox::YuvType type) {
+  if (bGpuMode || !buf) return;
+  avox::YUVFormat yfmt = {};
+  avox::image2YUVFormat(buf->getImageFormat(), type, yfmt);
+  const int32_t w = yfmt.width;
+  const int32_t h = yfmt.height;
   // NV12 打包要求偶数宽高 (avox 输出恒为偶数)
   if (w <= 0 || h <= 0 || (w & 1) || (h & 1)) return;
   std::vector<uint8_t> nv12;
   nv12.resize((size_t)w * h * 3 / 2);
-  if (!PackNv12(frame, nv12.data())) return;
+  if (!PackNv12(buf, type, nv12.data())) return;
   {
     std::lock_guard<std::mutex> lock(frameMutex);
     frameNv12 = std::move(nv12);
@@ -573,40 +575,46 @@ void PlayerBridge::pushEvent(const AvoxUnityEvent& e) {
   events.push_back(e);
 }
 
-// ── 帧 → 紧凑 NV12 (只重排, 不做色转; 色转在 Unity 侧 shader) ──
+// ── packed 帧 → 紧凑 NV12 (只重排, 不做色转; 色转在 Unity 侧 shader) ──
 // 目标布局: [Y: h 行 × w] + [UV: h/2 行 × w (U/V 交错)],
 // C# 侧当成一张 R8 的 w × h*3/2 纹理上传, shader 按行区寻址。
-bool PlayerBridge::PackNv12(const avox::YUVFrame& frame, uint8_t* dst) {
-  const int32_t w = frame.format.width;
-  const int32_t h = frame.format.height;
-  if (!dst || !frame.data[0] || w <= 0 || h <= 0 || (w & 1) || (h & 1)) return false;
-  const avox::YuvType type = frame.format.type;
+// buf 恒为 packed 布局 (avox 契约): Y 行距 rowPitch, nv12 的 UV 交织行距 rowPitch,
+// yuv420P 的 UV 打包为 [U: h/4 物理行, 每行 [偶 uvW | 奇 uvW | pad]] + [V: 同构]
+bool PlayerBridge::PackNv12(avox::IImageBuffer* buf, avox::YuvType type, uint8_t* dst) {
+  if (!dst || !buf || !buf->getPointer()) return false;
   if (type != avox::YuvType::nv12 && type != avox::YuvType::yuv420P) return false;
-  if (!frame.data[1]) return false;
+  avox::YUVFormat yfmt = {};
+  avox::image2YUVFormat(buf->getImageFormat(), type, yfmt);
+  const int32_t w = yfmt.width;
+  const int32_t h = yfmt.height;
+  if (w <= 0 || h <= 0 || (w & 1) || (h & 1)) return false;
+  const uint8_t* src = buf->getPointer();
+  const int32_t rowPitch = buf->getImageFormat().rowPitch;
+  const uint8_t* srcUv = src + (size_t)h * rowPitch;
   const size_t ySize = (size_t)w * h;
   const int32_t uvW = w / 2;
   const int32_t uvH = h / 2;
-  // Y: 逐行去 stride padding
+  // Y: 逐行去 rowPitch padding
   for (int32_t j = 0; j < h; ++j) {
-    memcpy(dst + (size_t)j * w, frame.data[0] + (size_t)j * frame.stride[0], w);
+    memcpy(dst + (size_t)j * w, src + (size_t)j * rowPitch, w);
   }
   uint8_t* uvDst = dst + ySize;
   if (type == avox::YuvType::nv12) {
-    // UV 已交错, 一行正好 w 字节 (w/2 组 UV)
+    // UV 已交织, 每物理行 w 字节有效 (w/2 组 UV)
     for (int32_t j = 0; j < uvH; ++j) {
-      memcpy(uvDst + (size_t)j * w, frame.data[1] + (size_t)j * frame.stride[1], w);
+      memcpy(uvDst + (size_t)j * w, srcUv + (size_t)j * rowPitch, w);
     }
     return true;
   }
-  if (!frame.data[2]) return false;
-  // yuv420P → NV12 交织。stride 缺省时退化为 w/2
-  // SDK 契约保证 onFrame 收到的是 split 等距行 (packed 打包已在 SDK 内重排),
-  // 按等距寻址即可, 不再需要 gpuPacked 启发式 (它对真 split 帧会误判)
-  const int32_t uStride = frame.stride[1] > 0 ? frame.stride[1] : uvW;
-  const int32_t vStride = frame.stride[2] > 0 ? frame.stride[2] : uvW;
+  // yuv420P → NV12 交织: 输出行 j 的逻辑 U/V 行号 lu = j/2,
+  // 落在物理行 lu/2 内, 偶行在行首, 奇行在 +uvW 处
+  const uint8_t* uBase = srcUv;
+  const uint8_t* vBase = srcUv + (size_t)(uvH / 2) * rowPitch;
   for (int32_t j = 0; j < uvH; ++j) {
-    const uint8_t* uRow = frame.data[1] + (size_t)j * uStride;
-    const uint8_t* vRow = frame.data[2] + (size_t)j * vStride;
+    const int32_t lu = j / 2;
+    const size_t off = (size_t)(lu / 2) * rowPitch + (size_t)(lu & 1) * uvW;
+    const uint8_t* uRow = uBase + off;
+    const uint8_t* vRow = vBase + off;
     uint8_t* o = uvDst + (size_t)j * w;
     for (int32_t i = 0; i < uvW; ++i) {
       o[i * 2] = uRow[i];

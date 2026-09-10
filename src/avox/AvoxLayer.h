@@ -315,7 +315,11 @@ class ISurfaceRenderOb {
   virtual void onSurface() {};
   virtual void onWinSizeChange(int32_t width, int32_t height) {};
   // 需要windowrender打开enableYuvOut,electron返回CPU数据给网页
-  virtual void onFrame(const YUVFrame& frame) {};
+  // buf恒为packed布局(ImageType/尺寸由yuvType经yuv2ImageFormat确定: 平面类r8/r16,
+  // yuv420P/422P的UV物理行为[偶行|奇行|pad]; 交织类rgba8半宽),可直接喂GPU;
+  // 需按stride等距逐行读(ffmpeg/CPU色转)时调image2SplitYUVFrame取split的YUVFrame。
+  // buf生命周期仅限本回调内,要留用请自行拷贝
+  virtual void onFrame(IImageBuffer* buf, YuvType yuvType) {};
   // 每帧渲染插入,可以做一些每帧改变图像渲染的操作
   virtual void onRender() {};
 };

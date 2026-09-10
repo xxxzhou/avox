@@ -182,6 +182,8 @@ class VkVideoRender : public VideoRender, public IVOutputLayerOb {
  public:
   // 返回CPU资源
   virtual bool getCpuFrame(YUVFrame& frame) override;
+  // 直接取packed CPU帧(不开销重排),供onFrame回调透传
+  virtual bool getCpuFrameBuffer(IImageBuffer** buffer, YuvType& yuvType);
   virtual bool getGpuFrame(GpuFrame& frame) override;
   // Vk类型的GPU资源转换到Dx11/OpenGL/Metal类型的GPU资源
   virtual bool outputGpuFrame(IRenderContext* ctx) override;

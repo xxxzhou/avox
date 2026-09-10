@@ -39,7 +39,7 @@ class ISurfaceRender(_CallbackBridge):
             _pw.addSurfaceRenderOb(self._native, self._default_ob)
 
     def onFrame(self, callback):
-        """注册帧回调: onFrame(YUVFrame)"""
+        """注册帧回调: onFrame(IImageBuffer, YuvType), buf恒为packed布局, 要split用image2SplitYUVFrame"""
         return self._on('onFrame', callback)
 
     def onSurface(self, callback):

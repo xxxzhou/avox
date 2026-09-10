@@ -46,7 +46,8 @@ inline avox::ColorSpaceDesc decodeColorSpace(int code) {
 ///   若崩则回退 copy-based (sampledImage + 每帧 texture_copy, 见 git 历史)。
 ///
 /// CPU 回退模式(非 Vulkan 后端 / 初始化失败) — YUV 上传, shader 转 RGB:
-///   avox 渲染线程: onFrame 把帧重打包成紧凑 NV12 入队 (yuv420P 顺手交织成 NV12,
+///   avox 渲染线程: onFrame 收 packed 块 (avox 契约, ImageType/尺寸由 yuvType 确定),
+///                  重排成紧凑 NV12 入队 (yuv420P 打包 UV 顺手交织成 NV12,
 ///                  使下游只有一种布局)
 ///   Godot 主线程: update() 把 NV12 整块塞进一张 R8 纹理 (w × h*3/2, Y 在上 2/3,
 ///                  交错 UV 在下 1/3, 同 swig/nodejs/yuvglrender.js 的单图方案),
@@ -74,7 +75,7 @@ public:
     void setOwnerNode(Node *node) { ownerNode = node; }
 
     // ── ISurfaceRenderOb (avox 线程调用) ──
-    void onFrame(const avox::YUVFrame &frame) override;
+    void onFrame(avox::IImageBuffer *buf, avox::YuvType yuvType) override;
     void onSurface() override {}
     void onWinSizeChange(int32_t w, int32_t h) override;
 

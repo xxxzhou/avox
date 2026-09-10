@@ -80,18 +80,24 @@ void SurfaceTextureBridge::unbindSurface() {
 
 // ── ISurfaceRenderOb (CPU 回退模式,avox 线程调用) ──
 
-// frame.data 指向 VkVideoRender 的回读 buffer, 下一帧会被覆盖 —— 必须同步拷走。
-// 统一打包成紧凑 NV12 (下游 shader 只认这一种布局): yuv420P 顺手交织成 NV12,
-// 代价是 w*h/2 字节的字节级写, 远低于原先整帧 w*h*4 的 RGBA 转换。
-void SurfaceTextureBridge::onFrame(const avox::YUVFrame &frame) {
+// buf 恒为 packed 布局 (avox 契约): Y 行行距 rowPitch,
+// nv12 的 UV 交织在 Y 段后 (行距 rowPitch); yuv420P 的 UV 打包为
+// [U: h/4 物理行, 每行 [偶 uvW | 奇 uvW | pad]] + [V: 同构]。buf 下一帧会被覆盖 —— 必须同步拷走。
+// 统一重排成紧凑 NV12 (下游 shader 只认这一种布局), 代价 w*h/2 字节级写。
+void SurfaceTextureBridge::onFrame(avox::IImageBuffer *buf, avox::YuvType type) {
     if (gpuMode) return;
-    int w = frame.format.width;
-    int h = frame.format.height;
-    if (!frame.data[0] || w <= 0 || h <= 0) return;
+    if (!buf || !buf->getPointer()) return;
+    if (type != avox::YuvType::nv12 && type != avox::YuvType::yuv420P) return;
+    avox::YUVFormat yfmt = {};
+    avox::image2YUVFormat(buf->getImageFormat(), type, yfmt);
+    int w = yfmt.width;
+    int h = yfmt.height;
+    if (w <= 0 || h <= 0) return;
     // NV12 打包要求偶数宽高 (avox 输出恒为偶数, 奇数直接丢弃避免越界)
     if ((w & 1) || (h & 1)) return;
-    const avox::YuvType type = frame.format.type;
-    if (type != avox::YuvType::nv12 && type != avox::YuvType::yuv420P) return;
+    const uint8_t *src = buf->getPointer();
+    const int rowPitch = buf->getImageFormat().rowPitch;
+    const uint8_t *srcUv = src + (size_t)h * rowPitch;
     const int ySize = w * h;
     const int uvW = w / 2;
     const int uvH = h / 2;
@@ -100,25 +106,26 @@ void SurfaceTextureBridge::onFrame(const avox::YUVFrame &frame) {
     pf.height = h;
     pf.data.resize(ySize + ySize / 2);
     uint8_t *dst = pf.data.ptrw();
-    // Y: 逐行去 stride padding
+    // Y: 逐行去 rowPitch padding
     for (int i = 0; i < h; ++i) {
-        memcpy(dst + (size_t)i * w, frame.data[0] + (size_t)i * frame.stride[0], w);
+        memcpy(dst + (size_t)i * w, src + (size_t)i * rowPitch, w);
     }
     uint8_t *uvDst = dst + ySize;
     if (type == avox::YuvType::nv12) {
-        // UV 已交错, 一行正好 w 字节 (w/2 组 UV)
+        // UV 已交织, 每物理行 w 字节有效 (w/2 组 UV)
         for (int i = 0; i < uvH; ++i) {
-            memcpy(uvDst + (size_t)i * w, frame.data[1] + (size_t)i * frame.stride[1], w);
+            memcpy(uvDst + (size_t)i * w, srcUv + (size_t)i * rowPitch, w);
         }
     } else {
-        // yuv420P → NV12 交织。stride 缺省时退化为 w/2 (同原 CPU 路径的兜底)
-        // SDK 契约保证 onFrame 收到的是 split 等距行 (packed 打包已在 SDK 内重排),
-        // 按等距寻址即可, 不再需要 gpuPacked 启发式 (它对真 split 帧会误判)
-        const int uStride = frame.stride[1] > 0 ? frame.stride[1] : uvW;
-        const int vStride = frame.stride[2] > 0 ? frame.stride[2] : uvW;
+        // yuv420P → NV12 交织: 输出行 i 的逻辑 U/V 行号 lu = i/2,
+        // 落在物理行 lu/2 内, 偶行在行首, 奇行在 +uvW 处
+        const uint8_t *uBase = srcUv;
+        const uint8_t *vBase = srcUv + (size_t)(uvH / 2) * rowPitch;
         for (int i = 0; i < uvH; ++i) {
-            const uint8_t *uRow = frame.data[1] + (size_t)i * uStride;
-            const uint8_t *vRow = frame.data[2] + (size_t)i * vStride;
+            const int lu = i / 2;
+            const size_t off = (size_t)(lu / 2) * rowPitch + (size_t)(lu & 1) * uvW;
+            const uint8_t *uRow = uBase + off;
+            const uint8_t *vRow = vBase + off;
             uint8_t *o = uvDst + (size_t)i * w;
             for (int x = 0; x < uvW; ++x) {
                 o[x * 2] = uRow[x];

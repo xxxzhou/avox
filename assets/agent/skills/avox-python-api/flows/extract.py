@@ -7,8 +7,10 @@
 #   source='recorder' : IRecorder 的转码模式 (createRecorder(True), src → mp4); IRecorder 另有原样保存/离线处理两用法, 见源码 docstring
 #
 # 视频两种取帧方式 (均经 ISurfaceRender):
-#   'yuv'        : ISurfaceRenderOb.onFrame(YUVFrame) → Image.yuvframe2Rgba → IImageBuffer → 存 PNG
-#                  (onFrame 即 ISurfaceRenderOb 的帧回调; 需先 enableYuvOut/setOffSurface 打开 YUV 输出)
+#   'yuv'        : ISurfaceRenderOb.onFrame(IImageBuffer, YuvType) --image2SplitYUVFrame-->
+#                  yuvframe2Rgba → IImageBuffer → 存 PNG
+#                  (onFrame 即 ISurfaceRenderOb 的帧回调, 给的是 packed IImageBuffer;
+#                   需先 enableYuvOut/setOffSurface 打开 YUV 输出)
 #   'screenshot' : ISurfaceRender.screenShotToPath 定时拉取当前渲染帧
 # 音频:
 #   'wav'        : IAudioRender.startWavRecord 录指定时长 → WAV 文件
@@ -124,8 +126,9 @@ _OPENERS = {'media': _open_media, 'source': _open_source, 'recorder': _open_reco
 # ─── 三条提取链路 ────────────────────────────────────────
 
 def _sample_yuv(sr, out_dir, tag, interval, count, errors, log, kind):
-    """方式A: onFrame(YUVFrame) → yuvframe2Rgba → IImageBuffer → 存 PNG。
-    onFrame 在渲染线程触发; 仅做一次 (C++) 转换并暂存 RGBA 拷贝, 存盘放到主线程。"""
+    """方式A: onFrame(IImageBuffer, YuvType) --image2SplitYUVFrame--> yuvframe2Rgba → 存 PNG。
+    onFrame 在渲染线程触发, 给的是 packed IImageBuffer; 仅做一次 (C++) 转换并暂存 RGBA 拷贝,
+    存盘放到主线程。"""
     res = {'ok': False, 'frames': [], 'errors': []}
     if sr is None:
         res['errors'].append('无 SurfaceRender (此宿主不支持 onFrame 取帧)')
@@ -134,7 +137,7 @@ def _sample_yuv(sr, out_dir, tag, interval, count, errors, log, kind):
         sr.setOffSurface(YuvType.yuv420P)
     st = {'last': 0.0, 'i': 0, 'bufs': []}
 
-    def on_frame(yuvFrame):
+    def on_frame(ybuf, yuvType):
         if st['i'] >= count:
             return
         now = time.time()
@@ -142,9 +145,14 @@ def _sample_yuv(sr, out_dir, tag, interval, count, errors, log, kind):
             return
         st['last'] = now
         try:
-            buf = Image.IImageBuffer()
-            if Image.yuvframe2Rgba(yuvFrame, buf):
-                st['bufs'].append(buf)
+            # 契约: ybuf 恒 packed; yuvframe2Rgba 要 split 布局, 必要时经副本重排
+            ok, frame = Image.image2SplitYUVFrame(ybuf, yuvType, Image.IImageBuffer())
+            if not ok:
+                res['errors'].append('yuv split 转换失败')
+                return
+            rgba = Image.IImageBuffer()
+            if Image.yuvframe2Rgba(frame, rgba):
+                st['bufs'].append(rgba)
                 st['i'] += 1
         except Exception as e:
             res['errors'].append(f'yuv 转换: {e}')

@@ -102,13 +102,16 @@ void SourceBridge::onReady() {
 }
 
 // 只重排成紧凑 NV12, 色转交给 Unity 侧 shader (同 PlayerBridge)
-void SourceBridge::onFrame(const avox::YUVFrame& frame) {
-  const int32_t w = frame.format.width;
-  const int32_t h = frame.format.height;
+void SourceBridge::onFrame(avox::IImageBuffer* buf, avox::YuvType type) {
+  if (!buf) return;
+  avox::YUVFormat yfmt = {};
+  avox::image2YUVFormat(buf->getImageFormat(), type, yfmt);
+  const int32_t w = yfmt.width;
+  const int32_t h = yfmt.height;
   if (w <= 0 || h <= 0 || (w & 1) || (h & 1)) return;
   std::vector<uint8_t> nv12;
   nv12.resize((size_t)w * h * 3 / 2);
-  if (!PlayerBridge::PackNv12(frame, nv12.data())) return;
+  if (!PlayerBridge::PackNv12(buf, type, nv12.data())) return;
   {
     std::lock_guard<std::mutex> lock(frameMutex_);
     frameNv12_ = std::move(nv12);
