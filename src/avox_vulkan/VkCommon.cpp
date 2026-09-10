@@ -130,6 +130,12 @@ VkInstance VkInstanceArgs::crateInstace() {
   VkInstanceCreateInfo instance_info = {};
   instance_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
   instance_info.pApplicationInfo = &app_info;
+#if defined(__APPLE__)
+  // MoltenVK 是 portability 驱动: 不置枚举位并显式启用该扩展, vkCreateInstance 按
+  // spec 返回 ERROR_INCOMPATIBLE_DRIVER (Apple 上 Vulkan 一直因此起不来回退 Metal)
+  instance_info.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+  extensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+#endif
   instance_info.enabledLayerCount = (uint32_t)layers.size();
   instance_info.ppEnabledLayerNames = layers.data();
   instance_info.enabledExtensionCount = (uint32_t)extensions.size();
