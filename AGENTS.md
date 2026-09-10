@@ -11,12 +11,9 @@
 ## 编码规范
 
 - **C++17** + RAII (智能指针，无手动 new/delete)
-- **命名:** 类型 `PascalCase`，函数 `camelCase`，成员 `snakeCase`，常量 `kPascalCase`
-  - 类成员字段：禁止以 `_` 开头或结尾 (如 `int inputSize;` 而非 `int _inputSize;` `int inputSize_;`)
-  - 方法内局部参数：可以以 `_` 结尾 (如 `int inputSize_` 在方法参数中允许)
-- **类定义顺序:** 构造函数/析构函数 → private 成员 → protected 成员 → public 方法
-- **格式:** 函数体内不要空行，逻辑分段用注释而非空行
-- **注释:** 不要太多，写精简点；类最多二行，方法及变量一般一行就够了
+- **命名:** 类型 `PascalCase`，函数 `camelCase`，成员 `snakeCase`，常量 `kPascalCase`；类成员禁用 `_` 前后缀 (写 `int inputSize;` 不写 `_inputSize`/`inputSize_`)，方法局部参数可带 `_` 后缀
+- **类定义顺序:** 构造/析构 → private → protected → public
+- **格式:** 函数体内不空行，逻辑分段用注释；注释精简：类≤2行，方法/变量1行
 - **导出:** `AVOX_EXPORT` 定义于 `src/avox/AvoxDef.h`，`AVOX_EXPORT_DEFINE` 用于构建 SDK
 - **文件:** `.h`(C接口), `.hpp`(C++), `.cpp`(实现), `*Export.h`(公共API)
 
@@ -24,21 +21,7 @@
 
 ## 目录结构
 
-| 文件夹 | 功能 |
-|--------|------|
-| **3rdparty/** | 第三方依赖库源码 |
-| **assets/** | 资源文件 (字体、图片、模型等) |
-| **cmake/** | CMake 构建脚本和工具链配置 |
-| **glsl/** | Vulkan GLSL 着色器源码 (.glsl → .spv) |
-| **platform/** | 平台相关代码 |
-| **samples/** | 示例程序和演示项目 |
-| **src/** | 核心 SDK 源码 (avox 模块) |
-| **swig/** | SWIG 绑定代码 (C#/Java/Node.js) |
-| **build/** | 构建输出目录 |
-| **tests/** | 单元测试 (doctest, 随主构建自动编译) |
-| **doc/** | 项目文档 |
-| **plugins/** | 插件模块 |
-| **script/** | 辅助脚本 |
+`3rdparty/` 第三方库源码 · `assets/` 资源 · `cmake/` 构建脚本 · `glsl/` 着色器源码 · `platform/` 平台代码 (UE/Unity/Godot 插件) · `samples/` 示例 · `src/` SDK 源码 (avox 模块) · `swig/` C#/Java/Node/python 绑定 · `build/` 构建输出 · `tests/` 单测 (doctest, 随主构建编译) · `doc/` 文档 · `plugins/` 插件 · `script/` 辅助脚本
 
 ## 构建命令
 
@@ -60,7 +43,7 @@ ctest --test-dir build/windows/avox --output-on-failure -C Release
 | Windows | x64 | DX11 | DX11/DX12/Vulkan |
 | Android | arm64-v8a, armeabi-v7a | MediaCodec | OpenGL ES/Vulkan |
 | iOS | arm64, x86_64 | VideoToolbox | Metal/Vulkan |
-| macOS | arm64, x64 | VideoToolbox(待验证) | Metal/Vulkan(待验证, 结构就绪 `python build_mac.py`) |
+| macOS | arm64, x64 | VideoToolbox | Metal/Vulkan |
 | Linux | x64 | VAAPI(计划) | Vulkan |
 | WebAssembly | wasm32 | 软件 | WebGL(计划) |
 
@@ -68,9 +51,7 @@ ctest --test-dir build/windows/avox --output-on-failure -C Release
 
 **播放器:** `IMediaPlayer`(URL播放), `ISourcePlayer`(设备采集) → 实现类 `MediaPlayer`, `SourcePlayer`
 
-**数据流:** IO层(`IAVSource`) → 解码层 → 渲染层(`ISurfaceRender`, `IAudioRender`)
-
-**关键接口:** `IAVSource`, `IRawSource`, `ISourceInfo`, `ISurfaceRender`, `IAudioRender`
+**数据流:** IO层(`IAVSource`, `IRawSource`, `ISourceInfo`) → 解码层 → 渲染层(`ISurfaceRender`, `IAudioRender`)
 
 **关键文件:** `src/avox/AvoxPlayer.h`, `src/avox/AvoxSource.h`, `src/avox/AvoxDef.h`
 
@@ -89,36 +70,18 @@ SWIG 绑定: `swig/csharp/`, `swig/nodejs/`, `swig/python/` (Java 绑定构建�
 
 ## 重要说明
 
+- **提交消息:** 首行 ≤50 字、硬上限 100 字，说清「哪个模块 + 做了什么」；细节写 commit body 或文档，不塞首行。历史提交多有超长，不作参照
+- **日志:** 输出只用英文
 - **API 命名:** `create*` 返回需释放的内存，`get*` 返回托管对象
-- **UE 插件:** avox 的 Unreal Engine 插件已迁移至独立分发仓 [avox-ue](platform/ue/README.md)(AvoxPlayer: AvoxMediaPlayerComponent/Actor + AvoxGpuInterop), GPU 直通 UE RHI D3D11/D3D12/Vulkan
-- **Unity 插件:** avox 的 Unity 原生插件在 [platform/unity](platform/unity/README.md)(avox_unity.dll + com.avox.player UPM 包, 帧更新用 IssuePluginCustomTextureUpdateV2; GPU 直通 Unity Vulkan/D3D11/D3D12 后端, 见 platform/unity/plugin/src/GpuPassthrough.h), `platform/unity/deploy_unity.ps1 -UnityProject <工程路径>` 部署; 顶层 AVOX_ENABLE_UNITY 构建原生 dll
-- **Godot 播放器 Android 打包:** 新机器从零编出含 torrent 的 Android APK 全流程见 [platform/godot/docs/新机器Android打包.md](platform/godot/docs/新机器Android打包.md)(一键脚本 platform/godot/build_android_godot.sh; 坑表含 INTERNET 权限/dex/shader/深链注入)
-- **VSCode 卡顿:** 项目用久了"所有操作卡"是 VSCode 工作区缓存按路径累积所致,解法见 [doc/tools/VSCode卡顿排查.md](doc/tools/VSCode卡顿排查.md)(删 Cache/CachedData/workspaceStorage),别重拉 clone 或改名
+- **UE 插件:** 独立分发仓 [avox-ue](platform/ue/README.md) (AvoxMediaPlayerComponent/Actor + AvoxGpuInterop)，GPU 直通 RHI D3D11/D3D12/Vulkan
+- **Unity 插件:** [platform/unity](platform/unity/README.md)；`AVOX_ENABLE_UNITY` 构建原生 dll，`deploy_unity.ps1 -UnityProject <工程路径>` 部署；帧通路/GPU 直通细节见其 README
+- **Godot Android 打包:** 全流程见 [platform/godot/docs/新机器Android打包.md](platform/godot/docs/新机器Android打包.md)，一键脚本 `platform/godot/build_android_godot.sh`
+- **VSCode 卡顿:** 工作区缓存按路径累积所致，解法见 [doc/tools/VSCode卡顿排查.md](doc/tools/VSCode卡顿排查.md)，别重拉 clone 或改名
 - **子模块重置:** `git -C 3rdparty/sherpa-onnx reset --hard HEAD`
-- **GLSL Shader:** `glsl/` 编译为 `.spv`，自动复制到 `build/.../glsl/`
-- git提交消息控制到100字内，一般50字说清楚
-- 所有日志输出都只用英文
+- **GLSL:** `glsl/` 编译为 `.spv`，自动复制到 `build/.../glsl/`
 
 ## 外部依赖库路径
 
-大型依赖库（WebRTC、ONNX Runtime、OpenCV 等）存放在 `../avc_library` 目录，与 avox 同级：
+大型依赖库 (WebRTC、ONNX Runtime、OpenCV 等) 在同级 `../avc_library` (git clone xxxzhou/avc_library)：预编译库在 `3rdparty/library/<android|ios|windows>/`，WebRTC 源码在 `src/`；同级另有 avox-godot/avox-ue/avox-unity 插件仓。
 
-```
-work/
-├── avox/           # 本项目
-├── avox-godot/           # godot插件
-├── avox-ue/              # ue插件
-├── avox-unity/           # unity插件
-└── avc_library/      # 大型依赖库 (git clone xxxzhou/avc_library)
-    ├── 3rdparty/
-    │   └── library/  # 预编译库 (android/ios/windows)
-    │       ├── android/
-    │       ├── ios/
-    │       └── windows/
-    └── src/          # WebRTC 源码目录
-```
-
-**自定义路径:**
-- 环境变量: `export AVOX_EXTERNAL_LIBRARY_DIR=/path/to/avc_library`
-- CMake 参数: `-DAVOX_EXTERNAL_LIBRARY_DIR=/path/to/avc_library`
-- 默认: 自动查找 `../avc_library`
+自定义路径: 环境变量 `AVOX_EXTERNAL_LIBRARY_DIR` 或 CMake 参数 `-DAVOX_EXTERNAL_LIBRARY_DIR=<路径>`，默认自动查找 `../avc_library`。
