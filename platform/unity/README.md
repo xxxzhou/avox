@@ -111,9 +111,10 @@ onReady 尺寸就绪 → pendingGpuInit
 ```
 avox 渲染线程                          Unity 主线程 / 渲染线程
 ──────────────────────────────        ─────────────────────────────────────────────────
-onFrame(YUVFrame) ↓                    IssuePluginCustomTextureUpdateV2 → R8 纹理
-  只重排成紧凑 NV12                      (w × h*3/2, UpdateTextureBegin 从帧槽 memcpy,
-  (yuv420P 顺手交织成 NV12)               无帧补中性黑 Y=16/UV=128, End free)
+onFrame(IImageBuffer*, YuvType) ↓      IssuePluginCustomTextureUpdateV2 → R8 纹理
+  buf 恒为 packed 布局 (avox 契约)       (w × h*3/2, UpdateTextureBegin 从帧槽 memcpy,
+  只重排成紧凑 NV12                      无帧补中性黑 Y=16/UV=128, End free)
+  (yuv420P 打包 UV 顺手交织成 NV12)
   存单帧槽位 (新帧覆盖旧帧)            Graphics.Blit(R8, RenderTexture, YUV shader)
                                         → VideoTexture 对外是转换后的 RenderTexture
 ```
