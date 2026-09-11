@@ -329,6 +329,11 @@ class Recorder {
       this.surfaceRender = this.nrecorder.getSurfaceRender();
     }
   }
+  onStateChange(callback) {
+    // (preState, state) 状态数字: none=0 opening=1 recording=2 completed=3 failed=4
+    // recording=流成立; failed/onIoError=失败换新URL重试; completed才有文件
+    this.nrecorder.on('onStateChange', callback);
+  }
   onIoError(callback) {
     this.nrecorder.on('onIoError', callback);
   }
