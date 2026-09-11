@@ -99,7 +99,7 @@ if(AVOX_ENABLE_ZLMEDIAKIT)
 endif()
 
 # webrtc macOS 静态编入: mac 无成熟的动态插件 dlopen 链路(静态主库+dylib 插件会双份单例),
-# 源码编进 libavox.a, 与 zlmediakit 同机制; Windows 走 plugins/avox_webrtc 动态插件
+# 源码编进 libavox.a, 与 zlmediakit 同机制; Windows/Android 走 plugins/avox_webrtc 动态插件
 if(APPLE AND AVOX_ENABLE_WEBRTC AND WebRTC_FOUND)
     message(STATUS "webrtc 静态编入 avox (macOS)")
     add_sub_path(../plugins/avox_webrtc AVOX_HEADER AVOX_SOURCE)
