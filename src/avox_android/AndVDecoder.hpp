@@ -32,6 +32,7 @@ private:
 
   YUVFormat yuvFormat = {};
   int32_t stride = 0;
+  int32_t sliceHeight = 0;
 
   std::atomic<bool> bFrameAvailable = false;
 

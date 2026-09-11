@@ -168,11 +168,10 @@ DecodeResult AndVEncoder::encode(const YUVFrame& frame) {
       return result;
     }
   }
-  // 计算NV12数据大小
-  // NV12格式：Y平面 + UV平面（U和V交错）
-  size_t ySize = frame.stride[0] * frame.format.height;
-  size_t uvSize = ySize / 2;
-  size_t totalSize = ySize + uvSize;
+  // 编码器输入按紧凑布局(width*height*1.5)分配, 源帧行常带padding,
+  // 必须按行拷; 输入yuv420P时U/V平面需交错成NV12
+  size_t yCompact = (size_t)frame.format.width * frame.format.height;
+  size_t uvCompact = yCompact / 2;
   // 获取输入缓冲区
   ssize_t inputBufferIndex = AMediaCodec_dequeueInputBuffer(mediaCodec, 5000);
   if (inputBufferIndex >= 0) {
@@ -180,27 +179,44 @@ DecodeResult AndVEncoder::encode(const YUVFrame& frame) {
     size_t bufferSize = 0;
     uint8_t* inputBuffer =
         AMediaCodec_getInputBuffer(mediaCodec, inputBufferIndex, &bufferSize);
-    if (inputBuffer && bufferSize >= totalSize) {
-      // 复制Y平面数据
-      memcpy(inputBuffer, frame.data[0], ySize);
-      // 复制UV平面数据
-      if (frame.data[1]) {
-        memcpy(inputBuffer + ySize, frame.data[1], uvSize);
+    if (inputBuffer && bufferSize >= yCompact + uvCompact) {
+      int32_t w = frame.format.width;
+      int32_t h = frame.format.height;
+      // 复制Y平面(去padding)
+      for (int32_t r = 0; r < h; ++r) {
+        memcpy(inputBuffer + (size_t)r * w,
+               frame.data[0] + (size_t)r * frame.stride[0], w);
+      }
+      uint8_t* uvDst = inputBuffer + yCompact;
+      if (frame.format.type == YuvType::nv12) {
+        // 半平面: UV整行拷
+        for (int32_t r = 0; r < h / 2; ++r) {
+          memcpy(uvDst + (size_t)r * w,
+                 frame.data[1] + (size_t)r * frame.stride[1], w);
+        }
       } else {
-        LOGFLF(LogLevel::warn, "UV data is null");
-        // 填充UV平面为零
-        memset(inputBuffer + ySize, 0x80, uvSize);  // 0x80是中性值
+        // yuv420P平面: U/V交错成NV12
+        int32_t uw = w / 2;
+        for (int32_t r = 0; r < h / 2; ++r) {
+          const uint8_t* uRow = frame.data[1] + (size_t)r * frame.stride[1];
+          const uint8_t* vRow = frame.data[2] + (size_t)r * frame.stride[2];
+          uint8_t* dRow = uvDst + (size_t)r * w;
+          for (int32_t c = 0; c < uw; ++c) {
+            dRow[2 * c] = uRow[c];
+            dRow[2 * c + 1] = vRow[c];
+          }
+        }
       }
       // 将缓冲区提交给编码器
       media_status_t status = AMediaCodec_queueInputBuffer(
-          mediaCodec, inputBufferIndex, 0, totalSize, frame.pts, 0);
+          mediaCodec, inputBufferIndex, 0, yCompact + uvCompact, frame.pts, 0);
       if (status != AMEDIA_OK) {
         LOGFLF(LogLevel::warn, "failed to queue input buffer:", status);
         return DecodeResult::dataError;
       }
     } else {
       LOGFLF(LogLevel::warn, "Input buffer is null or too small:", bufferSize,
-             "required:", totalSize);
+             "required:", yCompact + uvCompact);
       // 即使缓冲区无效，也要释放它
       AMediaCodec_queueInputBuffer(mediaCodec, inputBufferIndex, 0, 0, 0, 0);
     }

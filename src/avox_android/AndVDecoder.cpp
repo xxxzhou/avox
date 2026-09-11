@@ -140,8 +140,11 @@ DecodeResult AndVDecoder::onPreDecoder() {
   }
   AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_WIDTH, params.width);
   AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_HEIGHT, params.height);
-  AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_COLOR_FORMAT,
-                        getYuvType(params.yuvType));
+  // byte-buffer模式(console无JNI env,拿不到surface)请求semi-planar(0x15): QC硬解
+  // 原生NV12直出, 避免vendor YV12转换且与yuvout车道的nv12契约一致; APK路径不变
+  bool bHaveJni = AvoxManager::Get().getEnv() != nullptr;
+  int32_t colorFmt = bHaveJni ? getYuvType(params.yuvType) : 0x15;
+  AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_COLOR_FORMAT, colorFmt);
   bOpenglRender = false;
   // 输出窗口的渲染模式，检查是否支持opengl 纹理输入
   eglSize.width = params.width;
@@ -172,7 +175,12 @@ DecodeResult AndVDecoder::onPreDecoder() {
     nativeWindow = surfaceTexture->getNativeWindow();
     LOGFLF(LogLevel::info, "textureId:", textureId, " width:", params.width,
            " height:", params.height);
-    bOpenglRender = true;
+    // console进程无JNI env时surfaceTexture建不出来, nativeWindow为null,
+    // MediaCodec实际落byte-buffer模式, 必须按CPU YUV帧分发, 否则渲染黑图
+    bOpenglRender = nativeWindow != nullptr;
+    if (!bOpenglRender) {
+      LOGFLF(LogLevel::warn, "nativeWindow is null, decode to yuv buffers");
+    }
   }
   LOGFLF(LogLevel::info, "bOpenglRender:", bOpenglRender);
   // 配置解码器
@@ -206,7 +214,13 @@ void AndVDecoder::updateYuvFormat() {
   int32_t localColorFMT = 0;
   AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_COLOR_FORMAT, &localColorFMT);
   AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_STRIDE, &stride);
+  // KEY_SLICE_HEIGHT 宏是API 28+符号, 直接用字面量 (值即"slice-height")
+  AMediaFormat_getInt32(format, "slice-height", &sliceHeight);
   yuvFormat.type = andYuvType(localColorFMT);
+  if (yuvFormat.type == YuvType::other) {
+    // c2 flexible回报不出标准枚举, 按请求的420P对待 (QC2 byte-buffer输出YV12布局)
+    yuvFormat.type = YuvType::yuv420P;
+  }
 }
 
 DecodeResult AndVDecoder::decode(const AvoxPacket& packet) {
@@ -286,11 +300,27 @@ DecodeResult AndVDecoder::decode(const AvoxPacket& packet) {
       dispatch(&IVideoDecoderOb::onDecodeGpu, frame);
     } else {
       YUVFrame frame = {};
-      frame.stride[0] = stride + info.offset;
       frame.format = yuvFormat;
       frame.pts = rawPtsUs;
       frame.dts = frame.pts;
-      frame.data[0] = AMediaCodec_getOutputBuffer(mediaCodec, bufidx, &bufsize);
+      uint8_t* out = AMediaCodec_getOutputBuffer(mediaCodec, bufidx, &bufsize);
+      // byte-buffer输出按KEY_STRIDE/KEY_SLICE_HEIGHT切三平面,
+      // 只填data[0]会让下游按null/0平面拷贝直接段错误
+      frame.data[0] = out ? out + info.offset : nullptr;
+      frame.stride[0] = stride > 0 ? stride : yuvFormat.width;
+      int32_t sliceH = sliceHeight > 0 ? sliceHeight : yuvFormat.height;
+      if (yuvFormat.type == YuvType::nv12) {
+        frame.data[1] = frame.data[0] + (uint64_t)frame.stride[0] * sliceH;
+        frame.stride[1] = frame.stride[0];
+      } else {
+        int32_t uvStride = (frame.stride[0] + 1) / 2;
+        int32_t uvSliceH = (sliceH + 1) / 2;
+        frame.data[1] = frame.data[0] + (uint64_t)frame.stride[0] * sliceH;
+        frame.data[2] =
+            frame.data[1] + (uint64_t)uvStride * uvSliceH;
+        frame.stride[1] = uvStride;
+        frame.stride[2] = uvStride;
+      }
       // https://developer.android.com/reference/android/media/MediaCodec.BufferInfo.html
       // 1 keyframe 2 config 4 end of stream
       if (info.flags == 1) {
@@ -356,13 +386,6 @@ void AndVDecoder::onFrameRelease(bool bRender, const GpuFrame& frame) {
     // surfaceTexture队列输出到纹理上
     surfaceTexture->updateTexImage();
     bFrameAvailable = false;
-    // EGLDBG 临时诊断
-    static int32_t dbgTex = 0;
-    if (dbgTex < 2) {
-      LOGFLF(LogLevel::info, "EGLDBG updateTexImage done curCtx:",
-             (int32_t)(eglGetCurrentContext() != EGL_NO_CONTEXT));
-      dbgTex++;
-    }
   }
 }
 
