@@ -48,6 +48,8 @@ function(avoxtest_include_dirs)
            avox_egl avox_agent)
     target_include_directories(avoxtest PRIVATE "${AVOX_REPO_ROOT}/src/${d}")
   endforeach()
+  # PlayMatrix.hpp 以 avox/ 前缀引公共头 (与 Windows playtest 的 src/ 根一致)
+  target_include_directories(avoxtest PRIVATE "${AVOX_REPO_ROOT}/src")
 endfunction()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
