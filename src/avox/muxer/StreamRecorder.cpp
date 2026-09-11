@@ -56,7 +56,7 @@ bool StreamRecorder::open(const char* url, const char* file) {
   auto& ioSourceInfo = AvoxManager::Get().ioSources.initFunc(ioPlan);
   if (!ioSourceInfo.initFunc) {
     LOGFLF(LogLevel::error, "no io source for plan:", (int32_t)ioPlan);
-    setRecState(RecorderState::completed);
+    setRecState(RecorderState::failed);
     return false;
   }
   source.reset(ioSourceInfo.initFunc());
@@ -76,7 +76,7 @@ bool StreamRecorder::open(const char* url, const char* file) {
   source->disableAudio(bDiscardAudio);
   if (!source->open(url)) {
     LOGFLF(LogLevel::error, "failed to open source:", url);
-    setRecState(RecorderState::completed);
+    setRecState(RecorderState::failed);
     return false;
   }
   setRecState(RecorderState::opening);
@@ -85,7 +85,7 @@ bool StreamRecorder::open(const char* url, const char* file) {
 }
 
 void StreamRecorder::close() {
-  if (state == RecorderState::completed) {
+  if (state == RecorderState::completed || state == RecorderState::failed) {
     return;
   }
   setRecState(RecorderState::completed);
@@ -103,7 +103,10 @@ void StreamRecorder::closeMuxer() {
   muxer->close();
   muxer.reset();
   LOGFLF(LogLevel::info, "recorder closed, output:", outputFile);
-  RDOB::dispatch(&IRecorderOb::onComplete);
+  // 失败态不回调onComplete(已报onIoError), 避免上层把失败当完成
+  if (state == RecorderState::completed) {
+    RDOB::dispatch(&IRecorderOb::onComplete);
+  }
 }
 
 // IAVSourceOb::onReady - Track 信息准备好了
@@ -170,15 +173,32 @@ void StreamRecorder::onComplete() {
 // AVSource 线程已停，可直接 close
 void StreamRecorder::onError(AVError error, const char* msg) {
   LOGFLF(LogLevel::warn, "error:", (int32_t)error, " msg:", msg);
-  // 录制中读到netTimeout = 对端断流且没有EOF, ffmpeg内部已等满自身重试+超时,
-  // 转封装无法恢复连续性,已写部分就是完整产物,按正常完成收尾(onComplete由closeMuxer派发)
-  bool bStreamEnd =
-      (state == RecorderState::recording && error == AVError::netTimeout);
-  setRecState(RecorderState::completed);
-  if (!bStreamEnd) {
-    RDOB::dispatch(&IRecorderOb::onIoError, error, msg);
+  // closeMuxer已收尾(完成/失败), 迟到的错误不再处理
+  if (state == RecorderState::completed || state == RecorderState::failed) {
+    return;
   }
-  closeMuxer();
+  // 录制中读到netTimeout/eof = 对端断流且没有EOF/服务端正常BYE,
+  // 转封装无法恢复连续性,已写部分就是完整产物,按正常完成收尾(onComplete由closeMuxer派发)
+  if (state == RecorderState::recording) {
+    bool bStreamEnd =
+        (error == AVError::netTimeout || error == AVError::endOfFile);
+    setRecState(RecorderState::completed);
+    if (!bStreamEnd) {
+      RDOB::dispatch(&IRecorderOb::onIoError, error, msg);
+    }
+    closeMuxer();
+    return;
+  }
+  // opening态(未写入任何数据)被源终止 = 没拿到数据(如平台拒回放会话),
+  // 属失败而非完成: 标failed只报onIoError, 不发onComplete
+  // (源线程已停可直接清; muxer未写过文件直接放弃, 不产空壳文件)
+  setRecState(RecorderState::failed);
+  RDOB::dispatch(&IRecorderOb::onIoError, error, msg);
+  if (source) {
+    source->close();
+    source.reset();
+  }
+  muxer.reset();
 }
 
 IRecorder* createRecorder(bool bTranscode) {

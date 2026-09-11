@@ -56,7 +56,8 @@ enum class MuxerType {
   XX(none, 0, "none")              \
   XX(opening, 1, "opening")        \
   XX(recording, 2, "recording")    \
-  XX(completed, 3, "completed")
+  XX(completed, 3, "completed")    \
+  XX(failed, 4, "failed")
 
 enum class RecorderState : int16_t {
 #define XX(name, value, str) name = value,

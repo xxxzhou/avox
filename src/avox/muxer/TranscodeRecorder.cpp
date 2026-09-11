@@ -118,7 +118,7 @@ bool TranscodeRecorder::open(const char* url, const char* file) {
   if (!source->open()) {
     LOGFLF(LogLevel::error, "failed to open source:", url);
     stopTask();
-    setRecState(RecorderState::completed);
+    setRecState(RecorderState::failed);
     return false;
   }
   ioSource = source->getSource();
@@ -131,7 +131,10 @@ bool TranscodeRecorder::open(const char* url, const char* file) {
 void TranscodeRecorder::close() {
   // 先置completed: 封死close期间seek/getSourceInfo重入ioSource的窗口
   // (编码线程在join前会source.reset(), ioSource随后悬空)
-  setRecState(RecorderState::completed);
+  // 失败态保持failed, 避免close把失败洗成完成
+  if (state != RecorderState::failed) {
+    setRecState(RecorderState::completed);
+  }
   if (audioRender) {
     // 空输出音频阻塞反压,closeTap 唤醒可能阻塞在 push 的解码线程
     if (bNoOutput) {
@@ -275,14 +278,25 @@ void TranscodeRecorder::onClose() {
 
 void TranscodeRecorder::onError(AVError error, const char* msg) {
   LOGFLF(LogLevel::warn, "error:", (int32_t)error, " msg:", msg);
-  // 录制中读到netTimeout = 对端断流且没有EOF, ffmpeg内部已等满自身重试+超时,
-  // 按源自然结束处理: 编码线程耗尽队列后正常关muxer并回调onComplete
-  bool bStreamEnd =
-      (state == RecorderState::recording && error == AVError::netTimeout);
-  setRecState(RecorderState::completed);
-  if (!bStreamEnd) {
-    RDOB::dispatch(&IRecorderOb::onIoError, error, msg);
+  // 编码线程ioComplete分支已收尾(完成/失败), 迟到的错误不再处理
+  if (state == RecorderState::completed || state == RecorderState::failed) {
+    return;
   }
+  // 录制中读到netTimeout/eof = 源自然结束(对端断流无EOF/服务端正常BYE),
+  // 按完成收尾: 编码线程耗尽队列后正常关muxer并回调onComplete
+  if (state == RecorderState::recording) {
+    bool bStreamEnd =
+        (error == AVError::netTimeout || error == AVError::endOfFile);
+    setRecState(RecorderState::completed);
+    if (!bStreamEnd) {
+      RDOB::dispatch(&IRecorderOb::onIoError, error, msg);
+    }
+    return;
+  }
+  // opening态(一帧未写)被源终止 = 没拿到任何数据(如平台拒回放会话),
+  // 属失败而非完成: 标failed只报onIoError, 收尾不发onComplete, 避免上层把失败当成功
+  setRecState(RecorderState::failed);
+  RDOB::dispatch(&IRecorderOb::onIoError, error, msg);
 }
 
 // RunTask - 编码线程
@@ -304,7 +318,10 @@ void TranscodeRecorder::onRunTask() {
     // 如果io源结束了,并且队列全空了，则关闭编码器
     if (source && source->ioComplete() && vFrameQueue.empty() &&
         aFrameQueue.empty()) {
-      setRecState(RecorderState::completed);
+      // recording按完成收尾; opening/failed态保持, 等onError定failed(不发onComplete)
+      if (state == RecorderState::recording) {
+        setRecState(RecorderState::completed);
+      }
       break;
     }
     // 关闭源,关闭解码
@@ -323,7 +340,10 @@ void TranscodeRecorder::onRunTask() {
     muxer.reset();
   }
   LOGFLF(LogLevel::info, "transcode recorder closed, output:", outputFile);
-  RDOB::dispatch(&IRecorderOb::onComplete);
+  // 失败态不回调onComplete(已报onIoError), 避免上层把失败当完成
+  if (state == RecorderState::completed) {
+    RDOB::dispatch(&IRecorderOb::onComplete);
+  }
 }
 
 void TranscodeRecorder::processVideo(VideoFramePtr vframe) {
