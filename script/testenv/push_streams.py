@@ -128,8 +128,9 @@ def cmd_push(args) -> int:
     if args.all:
         pairs = [(f, f.stem) for f in sorted(REPO_ROOT.glob("assets/video/*.mp4"))]
     else:
-        pairs = [(REPO_ROOT / "assets/video/avox_electron.mp4", "avox"),
-                 (REPO_ROOT / "assets/video/webrtc_pull.mp4", "avox264")]
+        # 默认推标准测试源 (testsrc2 图案); 屏幕录制样本见 assets/video 根目录
+        pairs = [(REPO_ROOT / "assets/video/test/test_h265_aac_960x540.mp4", "avox"),
+                 (REPO_ROOT / "assets/video/test/test_h264_aac_640x360.mp4", "avox264")]
     missing = [str(f) for f, _ in pairs if not f.is_file()]
     if missing:
         raise SystemExit(f"样本缺失: {missing}")

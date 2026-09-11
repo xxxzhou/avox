@@ -142,12 +142,15 @@ int main(int argc, char* argv[]) {
     else if (a == "--list") listOnly = true;
     else std::printf("[warn] unknown arg: %s\n", a.c_str());
   }
-  // 本地源缺省从仓库 assets/video 找 (h264 用 webrtc_pull, h265 用 avox_electron)
+  // 本地源缺省用标准测试源 (assets/video/test, testsrc2 图案+烧录时间码),
+  // 找不到再回退根目录的屏幕录制样本
   if (ep.fileH264.empty()) {
-    ep.fileH264 = findAsset("webrtc_pull.mp4");
+    ep.fileH264 = findAsset("test_h264_aac_640x360.mp4");
+    if (ep.fileH264.empty()) ep.fileH264 = findAsset("webrtc_pull.mp4");
   }
   if (ep.fileH265.empty()) {
-    ep.fileH265 = findAsset("avox_electron.mp4");
+    ep.fileH265 = findAsset("test_h265_aac_960x540.mp4");
+    if (ep.fileH265.empty()) ep.fileH265 = findAsset("avox_electron.mp4");
   }
   std::vector<PlayCase> cases = buildCases(ep);
   // 产物目录不存在时截图/录制会连环失败 (saveImagePath/avio_open2 都不建目录)

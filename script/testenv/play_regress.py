@@ -30,7 +30,7 @@ TESTENV = REPO_ROOT / "script" / "testenv"
 COLLECT = TESTENV / "collect_verdicts.py"
 PUSH = TESTENV / "push_streams.py"
 ANDROID_REMOTE = "/data/local/tmp/playmatrix"
-ASSETS = ["webrtc_pull.mp4", "avox_electron.mp4"]
+ASSETS = ["test_h264_aac_640x360.mp4", "test_h265_aac_960x540.mp4"]
 
 # 离线子集: 只吃仓库里的本地 mp4, 不需要 ZLM/局域网 —— CI 上可跑的那部分。
 # 保留: file-h264/h265(硬解) · file-h264/h265-soft(软解) · shot(截图+图像质量) · rec-transcode-h264
