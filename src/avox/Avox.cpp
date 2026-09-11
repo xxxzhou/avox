@@ -388,7 +388,19 @@ std::string getAvoxPath() {
   }
   return pathStr;
 #elif defined(__ANDROID__)
-  return "";
+  // console 进程靠 /proc/self/exe 定位资源; APK 内指向 app_process, 取不到 assets, 与原返回 "" 等效
+  char buffer[PATH_MAX];
+  ssize_t count = readlink("/proc/self/exe", buffer, PATH_MAX);
+  if (count == -1) {
+    return "";
+  }
+  buffer[count] = '\0';
+  std::string path(buffer);
+  auto pos = path.find_last_of('/');
+  if (pos == std::string::npos) {
+    return "";
+  }
+  return path.substr(0, pos);
 #elif defined(__APPLE__)
   char buffer[MAXPATHLEN];
   uint32_t size = sizeof(buffer);

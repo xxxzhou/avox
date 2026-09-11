@@ -22,6 +22,8 @@
 #include <string>
 #include <vector>
 
+#include "avox/module/AvoxManager.hpp"
+
 #include "playmatrix/PlayMatrix.hpp"
 
 using namespace avox;
@@ -137,8 +139,14 @@ int main(int argc, char* argv[]) {
     printCases(cases);
     return 0;
   }
+  // Android console 进程没有 JNI_OnLoad, 手动触发模块注册 (Windows 走 DllMain 已注册, bInit 幂等)
+  AvoxManager::Get().init();
   std::printf("[AVOX][TEST] case=play-matrix-start result=PASS platform=%s host=%s "
               "cases=%d\n",
               platformName(), ep.host.c_str(), (int)cases.size());
-  return runAll(cases, nullptr, opt);
+  int code = runAll(cases, nullptr, opt);
+  // Android console 没有 DllMain(DETACH) 兜底, 退出前显式有序清理
+  // (mk_env_release 等 cleanFuncs), 否则 libmk_api 静态析构序倒挂退出必崩
+  AvoxManager::clean();
+  return code;
 }

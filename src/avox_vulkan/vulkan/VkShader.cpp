@@ -22,8 +22,13 @@ void VkShader::loadShaderModule(std::string path,
   release();
 #ifdef __ANDROID__
   AAssetManager *assetManager = AvoxManager::Get().getAppEnv().assetManager;
-  assert(assetManager != nullptr);
-  shaderModule = loadShader(assetManager, path.c_str(), vkDevice);
+  if (assetManager) {
+    shaderModule = loadShader(assetManager, path.c_str(), vkDevice);
+  } else {
+    // console 进程无 AAssetManager, 回退文件系统 (<exe目录>/assets), 与桌面分支对称
+    std::string fullPath = getAvoxPath() + "/assets/" + path;
+    shaderModule = loadShader(fullPath.c_str(), vkDevice);
+  }
 #elif __APPLE__
   // 获取应用的主 bundle
   const char *iospath = getShaderPath(path.c_str());

@@ -396,6 +396,11 @@ VkShaderModule loadShader(const char* fileName, VkDevice device) {
 #ifdef __ANDROID__
 VkShaderModule loadShader(AAssetManager* assetManager, const char* fileName,
                           VkDevice device) {
+  if (!assetManager) {
+    // console 进程传 null: AAssetManager_open(nullptr) 属未定义行为, 与 !asset 同样软失败
+    LOGFLF(LogLevel::error, "error: null assetManager for shader ", fileName);
+    return VK_NULL_HANDLE;
+  }
   AAsset* asset =
       AAssetManager_open(assetManager, fileName, AASSET_MODE_STREAMING);
   // asset 缺失(APK 没打 assets/glsl/*.spv)时 assert 在 release 被编译掉,

@@ -204,7 +204,7 @@ def run_apple(args, runner: str) -> int:
     return 0 if proc.returncode == 0 and code == 0 else 1
 
 
-def run_android(args, extra) -> int:
+def run_android(args, extra, runner: str) -> int:
     adb = args.adb or shutil.which("adb") or ""
     if not adb:
         print("[error] 未找到 adb, 传 --adb=<路径>")
@@ -224,7 +224,7 @@ def run_android(args, extra) -> int:
         prefix.append(f"-s{devs[0]}")
     print(f"[android] device={devs[0]}")
 
-    runner = Path(args.bin)
+    runner = Path(runner)
     install = runner.parent
     libs = sorted({p for p in install.rglob("*.so")})
     sh("shell", f"mkdir -p {ANDROID_REMOTE}/assets/video")
@@ -341,7 +341,7 @@ def main() -> int:
         extra.append(f"--outdir={outdir}")
 
     if args.android:
-        return run_android(args, extra)
+        return run_android(args, extra, runner)
     return run_desktop(args, [runner] + extra)
 
 
