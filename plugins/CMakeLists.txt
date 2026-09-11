@@ -7,7 +7,7 @@ include_directories("../src/")
 # DYNAMIC: 独立 avox_<name>.dll/.so 输出到 ${CMAKE_INSTALL_PREFIX}/plugins/
 set(PLUGINS_STATIC  "")
 # avox_python (嵌入 CPython) 已移除: 被 avox.dll 核心的 SubprocessRunner (spawn 机器 python) 取代。
-set(PLUGINS_DYNAMIC avox_opencv avox_sherpa avox_onnx avox_translation avox_cv avox_ocr avox_webrtc avox_openvino avox_avatar avox_torrent avox_calib avox_fbx)
+set(PLUGINS_DYNAMIC avox_opencv avox_sherpa avox_onnx avox_translation avox_cv avox_ocr avox_webrtc avox_openvino avox_avatar avox_torrent avox_calib avox_fbx avox_remote)
 if(ANDROID)
   # Android: jniLibs 平铺 + 目录不可枚举, 动态插件无法被 avox 扫描加载(见 plugins/README.md
   # 静态化规划); Godot 打包场景仅保留 avox_torrent —— so 作为 APK 资源打进包,

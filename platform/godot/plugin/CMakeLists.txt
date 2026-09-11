@@ -37,7 +37,7 @@ add_library(avox_godot SHARED
     src/godot_init.cpp
     src/player.cpp
     src/source_player.cpp
-    src/source_probe.cpp
+    src/remote_source.cpp
     src/recorder.cpp
     src/surface.cpp
     src/audio.cpp

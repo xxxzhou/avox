@@ -1,7 +1,7 @@
 #include "TorrentModule.hpp"
 
 #include "IOParseTorrent.hpp"
-#include "TorrentProbe.hpp"
+#include "TorrentSource.hpp"
 #include "avox/module/AvoxManager.hpp"
 // 静态模式(iOS/WASM)下 AVOX_REGISTER_MODULE 展开 StaticLinkModule, 需此头
 #include "avox/module/ModuleMgr.hpp"
@@ -17,9 +17,9 @@ bool TorrentModule::loadModule(IOption* option) {
   AvoxManager::Get().ioSources.regInitFunc(
       IoPlan::torrent, desc,
       []() -> AVSource* { return new IOParseTorrent(); });
-  // 数据源探测工厂: ISourceProbe("torrent", 见 AvoxBase.h) 磁力/BT 文件列表+选文件
-  AvoxManager::Get().sourceProbeHub.reg(
-      "torrent", []() -> ISourceProbe* { return new TorrentProbe(); });
+  // 远程内容源工厂: IRemoteSource("torrent", 见 AvoxBase.h) 磁力/BT 目录树+选文件
+  AvoxManager::Get().remoteSourceHub.reg(
+      "torrent", []() -> IRemoteSource* { return new TorrentSource(); });
   return true;
 }
 

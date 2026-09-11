@@ -133,11 +133,11 @@ class AVOX_EXPORT AvoxManager {
   RegeditMgr<ADeviceSdk, IAudioManager> aDeviceMgr;
   // 视频设备管理类注册
   RegeditMgr<VDeviceSdk, IVideoManager> vDeviceMgr;
-  // 数据源探测工厂 (avox_torrent loadModule 时 reg "torrent"; 磁力/BT 文件列表+选文件,
-  // 接口 ISourceProbe 见 AvoxBase.h, createSourceProbe 出口)。
+  // 远程内容源工厂 (avox_torrent loadModule 时 reg "torrent"; 后续 avox_remote reg
+  // "dav"/"smb"/"alist"..., 接口 IRemoteSource 见 AvoxBase.h, createRemoteSource 出口)。
   // 必须追加在全部成员末尾 (ABI 约束同上 audioFaceHub 注: 插在中间会挪动其后
   // 所有成员偏移, 未重编插件按旧偏移访问 ioSources/vRender 等即写错地址崩)。
-  RegeditFactory<ISourceProbe> sourceProbeHub;
+  RegeditFactory<IRemoteSource> remoteSourceHub;
   // ============ 虚拟制片标定工厂 (avox_calib loadModule 时 reg "opencv") ============
   // 内参/手眼+scale/PnP/序列标定, 接口见 AvoxCalib.h, 移植自 aoce 虚拟制片标定方案
   // (doc/plan/虚拟制片标定移植方案.md)。同样必须末尾追加 (ABI 约束同上)。

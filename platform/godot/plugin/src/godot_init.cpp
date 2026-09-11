@@ -1,7 +1,7 @@
 #include "player.h"
 #include "rtc_player.h"
 #include "source_player.h"
-#include "source_probe.h"
+#include "remote_source.h"
 #include "recorder.h"
 #ifdef _WIN32
 #include "voice.h"  // 全局热键/文本注入 Win32 专属 (Android 暂无对应概念)
@@ -584,7 +584,7 @@ void avoxGodotInit(ModuleInitializationLevel p_level) {
 #endif
         ClassDB::register_class<AvoxImage>();
         ClassDB::register_class<AvoxOption>();
-        ClassDB::register_class<SourceProbe>();
+        ClassDB::register_class<RemoteSource>();
         ClassDB::register_class<AppLinks>();
     }
 }

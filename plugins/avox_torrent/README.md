@@ -38,23 +38,26 @@ player->open("magnet:?xt=urn:btih:...");     // 或 "D:/xx.torrent"
 | `torrent.cacheMaxGB` | 0(不限) | 缓存目录总量上限(GB), 超限按 LRU 淘汰最久未用种子缓存 |
 | `torrent.deleteOnClose` | false | 关闭时删除已下载数据 |
 
-## 磁力多文件: 文件列表探测 + 选文件播放
+## 磁力多文件: 目录树列出 + 选文件播放
 
-磁力常是多文件种子。先探测元数据列出文件, 用户选择后再播放, 接口统一在
-`AvoxBase.h` 的新类 `ISourceProbe`(不动 IMediaPlayer; swig/godot 自动获得):
+磁力常是多文件种子。先建会话探测元数据, 列目录树选文件后再播放。接口是
+`AvoxBase.h` 的统一远程内容源 `IRemoteSource`(磁力/DAV/SMB/网盘/媒体服务器同一套;
+不动 IMediaPlayer; swig/godot 自动获得):
 
 ```cpp
-avox::ISourceProbe* p = avox::createSourceProbe("torrent");  // 插件未装返回 nullptr
-avox::ISourceProbeOb* ob = ...;                             // onProbeResult(code) 回调
-p->setOb(ob);
-p->start("magnet:?xt=urn:btih:...", /*cacheDir*/"", 45000); // 异步: 只等元数据零下载
-// 回调 code=0 后:
-int n = p->getFileCount();
-p->getFileIndex(i); p->getFilePath(i); p->getFileSize(i); p->isMediaFile(i);
-p->selectFile(3);                                   // 选择(原始文件索引)
-p->applyToOption(player->getOption());              // 写入 torrent.fileIndex
-player->open(同一磁力url);                           // 起播, 元数据缓存秒开
-```
+avox::IRemoteSource* src = avox::createRemoteSource("torrent");  // 插件未装返回 nullptr
+avox::IRemoteSourceOb* ob = ...;  // onOpenResult/onListResult 回调
+src->setOb(ob);
+src->setParam("cacheDir", "");    // 与播放选项 torrent.cacheDir 同值可命中缓存
+src->open("magnet:?xt=urn:btih:...", nullptr, nullptr, nullptr, 45000); // 异步: 只等元数据零下载
+// onOpenResult(0) 后: list("") 列根(目录 token 带尾'/'可继续下钻), 即时返回:
+int n = src->getEntryCount();
+src->getEntryType(i);   // dir/media/file (media 命中视频扩展名)
+src->getEntryName(i); src->getEntryToken(i); src->getEntrySize(i);
+src->getSessionField("name");  // 种子名, 另有 "infoHash"/"totalSize"
+const char* playUrl = src->resolve(3, player->getOption()); // 写入 torrent.fileIndex, 返回播放URL
+player->open(playUrl);         // 起播, 元数据缓存秒开
+src->close();                  // 会话结束(create* 产物记得释放)
 
 实现要点:
 - 探测端 `TorrentEngine::probe()` 用 libtorrent `stop_when_ready`, 元数据一到自动暂停, 全程零下载;
@@ -63,7 +66,7 @@ player->open(同一磁力url);                           // 起播, 元数据缓
 - seek 后旧前向窗口残留片降回低优先级, 带宽不再被旧位置分走;
 - 元数据落盘 `<cacheDir>/<infohash>/metadata.torrent`, 之后 `start()`(播放)命中缓存直接载入, 免 BEP-9 二次等待(冷门种子 45s 级 → 秒开); 另有 itorrents.org HTTP 缓存通道与 BEP-9 竞速;
 - `cacheDir` 与播放选项 `torrent.cacheDir` 传同值才能命中缓存, 传空则两边一致走系统默认;
-- godot 封装: `SourceProbe` 类(`platform/godot/plugin/src/source_probe.h`), `start()` 异步 + `probe_result` 信号 + `get_files()`(视频扩展名排前), tools 播放器 UI "文件→打开磁力/BT…" 已接。
+- godot 封装: `RemoteSource` 类(`platform/godot/plugin/src/remote_source.h`), `open()/list()` 异步 + `open_result/list_result` 信号 + `get_entries()` + `resolve()`, tools 播放器 UI "文件→打开磁力/BT…" 已接。
 
 ## 性能基准(每步优化前后各跑一轮, 分步对比)
 
@@ -116,7 +119,7 @@ libtorrent 独立项目维护, **不在本仓库编译**:
 2. Boost 头文件(仅头文件用法): `D:\Work\github\boost`(官方发布包内的 `boost/` 目录)
 3. 在 libtorrent 目录执行 `python build_windows.py` → 产物安装到 `../avc_library/3rdparty/library/windows/libtorrent/{include,lib}`(静态 /MT; encryption 默认 ON, OpenSSL MT 静态版封进 lib, 无 DLL 依赖)
 4. 本仓库 `cmake/FindLibtorrent.cmake` 自动查找; 找不到时 `AVOX_ENABLE_TORRENT` 自动降级关闭(构建日志可见)
-5. 插件产物: `<输出>/plugins/avox_torrent.dll`, ModuleMgr 懒加载扫描注册(首次 `open` 自动加载, MediaPlayer::cmdOpen 已挂 `ensureStarted` 触发点; `createSourceProbe` 同样触发懒加载)
+5. 插件产物: `<输出>/plugins/avox_torrent.dll`, ModuleMgr 懒加载扫描注册(首次 `open` 自动加载, MediaPlayer::cmdOpen 已挂 `ensureStarted` 触发点; `createRemoteSource` 同样触发懒加载)
 
 重编细节与坑表见 [REBUILD.md](REBUILD.md)。
 
@@ -124,6 +127,6 @@ libtorrent 独立项目维护, **不在本仓库编译**:
 
 - 平台: Windows 已验证; Linux 同套代码理论可用; Android 预编译产物已入库(arm64 开加密 / v7a 暂无预编译 OpenSSL 为加密关), 插件接入待后续静态链方案
 - encryption 已开启(MSE 协议加密, 可连"强制加密" peer); OpenSSL 为 MT 静态封进插件 DLL, 与主程的 OpenSSL DLL 版互不冲突
-- 单文件播放策略: 一个种子选中一个媒体文件播放; 多文件选择经 `torrent.fileIndex` 或 `ISourceProbe`
+- 单文件播放策略: 一个种子选中一个媒体文件播放; 多文件选择经 `torrent.fileIndex` 或 `IRemoteSource::resolve`
 - 起播速度取决于 swarm 健康度(peer 少的冷门种子会先经历元数据等待期, 有界超时报错; 探测过一次后有元数据缓存)
 - 测试建议使用 Blender 官方发布的 Big Buck Bunny / Sintel 种子(web-seed 友好)

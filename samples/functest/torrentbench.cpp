@@ -19,6 +19,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -44,22 +45,35 @@ int64_t millisSince(Clock::time_point t0) {
       .count();
 }
 
-// 探测回调: onProbeResult 后置位并唤醒
-struct ProbeOb : ISourceProbeOb {
+// 会话回调: open/list 完成后置位并唤醒 (open=元数据探测, list=文件树枚举)
+struct SessionOb : IRemoteSourceOb {
   std::mutex mtx;
   std::condition_variable cv;
-  bool done = false;
-  int32_t code = -1;
-  void onProbeResult(int32_t c) override {
+  bool openDone = false;
+  bool listDone = false;
+  int32_t openCode = -1;
+  int32_t listCode = -1;
+  void onOpenResult(int32_t code) override {
     std::lock_guard<std::mutex> lk(mtx);
-    code = c;
-    done = true;
+    openCode = code;
+    openDone = true;
     cv.notify_all();
   }
-  bool wait(int64_t timeoutMs) {
+  void onListResult(int32_t code) override {
+    std::lock_guard<std::mutex> lk(mtx);
+    listCode = code;
+    listDone = true;
+    cv.notify_all();
+  }
+  bool waitOpen(int64_t timeoutMs) {
     std::unique_lock<std::mutex> lk(mtx);
     return cv.wait_for(lk, std::chrono::milliseconds(timeoutMs),
-                       [&] { return done; });
+                       [&] { return openDone; });
+  }
+  bool waitList(int64_t timeoutMs) {
+    std::unique_lock<std::mutex> lk(mtx);
+    return cv.wait_for(lk, std::chrono::milliseconds(timeoutMs),
+                       [&] { return listDone; });
   }
 };
 
@@ -170,37 +184,50 @@ void runOne(const std::string& tag, const std::string& url,
             const std::string& cacheDir, int32_t probeTimeoutMs,
             int32_t playSec, const std::vector<int32_t>& seeks,
             int32_t fileIndex, bool doProbe, bool probeOnly, ResultSink& sink) {
-  // ---- 阶段1: 探测(文件列表) ----
+  // ---- 阶段1: 会话建立(元数据探测) + 根列表 ----
   if (doProbe) {
-    ISourceProbe* probe = createSourceProbe("torrent");
-    if (!probe) {
-      sink.row("error", -1, "createSourceProbe nullptr(插件未加载?)");
+    std::unique_ptr<IRemoteSource> src(createRemoteSource("torrent"));
+    if (!src) {
+      sink.row("error", -1, "createRemoteSource nullptr(插件未加载?)");
       return;
     }
-    ProbeOb pob;
-    probe->setOb(&pob);
+    SessionOb sob;
+    src->setOb(&sob);
+    if (!cacheDir.empty()) {
+      src->setParam("cacheDir", cacheDir.c_str());
+    }
     sink.mark("probe_begin");
     auto t0 = Clock::now();
-    bool started = probe->start(url.c_str(),
-                                cacheDir.empty() ? nullptr : cacheDir.c_str(),
-                                probeTimeoutMs);
+    bool started =
+        src->open(url.c_str(), nullptr, nullptr, nullptr, probeTimeoutMs);
     if (!started) {
-      sink.row("error", -1, "probe start false(上一轮未结束?)");
+      sink.row("error", -1, "open false(有操作在进行或参数非法)");
       return;
     }
-    bool ok = pob.wait((int64_t)probeTimeoutMs * 2 + 10000);
-    int64_t ms = millisSince(t0);
-    sink.mark("probe_end");
-    if (!ok || pob.code != 0) {
-      sink.row("probe_fail", ms, pob.done ? "code!=0" : "wait timeout");
+    // open = 元数据探测(慢, 有界); list(根) = 文件树即时枚举
+    bool openOk = sob.waitOpen((int64_t)probeTimeoutMs * 2 + 10000);
+    if (!openOk || sob.openCode != 0) {
+      std::string note =
+          openOk ? ("open code=" + std::to_string(sob.openCode) + " " +
+                    src->getLastError())
+                 : "open wait timeout";
+      sink.mark("probe_end");
+      sink.row("probe_fail", millisSince(t0), note);
+      if (probeOnly) return;
+    } else if (!src->list("", 0) ||
+               !sob.waitList((int64_t)probeTimeoutMs * 2 + 10000) ||
+               sob.listCode != 0) {
+      sink.mark("probe_end");
+      sink.row("probe_fail", millisSince(t0), "root list failed");
       if (probeOnly) return;
     } else {
-      sink.row("probe_ms", ms,
-               "files=" + std::to_string(probe->getFileCount()) + " name=" +
-                   probe->getName());
+      sink.mark("probe_end");
+      sink.row("probe_ms", millisSince(t0),
+               "files=" + std::to_string(src->getEntryCount()) + " name=" +
+                   src->getSessionField("name"));
       if (probeOnly) return;
     }
-    probe->stop();
+    src->close();
   }
   // ---- 阶段2: 起播(engine start + avformat open) ----
   IMediaPlayer* mp = createMediaPlayer();

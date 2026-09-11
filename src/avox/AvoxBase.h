@@ -121,59 +121,130 @@ class IOption {
   virtual bool getBool(const char* key) = 0;
 };
 
-// ============== 数据源探测 (磁力/BT 文件列表等) ==============
-// 给定一个链接, 异步取其内部文件列表(如磁力多文件), 选择文件后写回播放选项。
+// ============== 远程内容源统一接口 ==============
+// 只读抽象, 统一"入口→目录树→选内容→播放"形态: 磁力/.torrent/WebDAV/SMB/Alist/
+// 网盘/媒体服务器(Emby等)各实现一个。流程: open(入口)建会话 → list(token)异步列
+// 子项(目录token继续下钻) → resolve(条目)产出可直接 IMediaPlayer::open 的规范 URL,
+// 播放走现有协议路由, 播放核心零特判。list/search/listMore 共用同一结果批次。
 // 跨 DLL 安全: 仅 const char* + 原始类型, 不传 STL (同 ITranslator 约束)。
-// 实现: avox_torrent 插件 ("torrent"); 未装插件时 createSourceProbe 返回 nullptr。
-class ISourceProbeOb {
- public:
-  ISourceProbeOb() = default;
-  virtual ~ISourceProbeOb() = default;
-
- public:
-  // 探测结束 (探测工作线程回调, 上层自行切线程; code=0 成功, 非 0 详见 getLastError)
-  virtual void onProbeResult(int32_t code) { (void)code; };
+// 实现: avox_torrent 插件 ("torrent"); 后续 avox_remote ("dav"/"smb"/"alist"/...);
+// 未装对应插件时 createRemoteSource 返回 nullptr。
+// 结果码 (onOpenResult/onListResult 的 code 参数; 0 成功, 负数失败, 同 AVError 风格)
+enum class RemoteCode : int32_t {
+  ok = 0,
+  canceled = -1,    // 被 stopList/close 打断
+  timeout = -2,     // 超时 (磁力元数据等慢源)
+  authFailed = -3,  // 账密/token 错误
+  authExpired = -4, // 会话中途鉴权过期 (UI 重新授权后重建会话)
+  net = -5,         // 网络错误
+  notFound = -6,    // 入口/节点不存在
+  noSupport = -7,   // 协议/功能不支持
+  other = -8,
 };
 
-class ISourceProbe {
+// 条目类型 (dir 可继续下钻; media 命中媒体扩展名可直接 resolve)
+enum class RemoteEntryType : int32_t { dir = 0, media = 1, file = 2, other = 3 };
+
+// 能力位 (getCaps 返回按位或; UI 据此决定缩略图/搜索/断点续播等功能形态)
+enum RemoteCap : uint32_t {
+  kCapThumb = 1 << 0,    // getEntryThumb 有效 (网盘/Alist/媒体服务器)
+  kCapSearch = 1 << 1,   // search 服务端搜索 (Alist/Emby/Jellyfin)
+  kCapProgress = 1 << 2, // onListProgress 慢源进度 (磁力元数据等)
+  kCapState = 1 << 3,    // 播放状态: 断点续播/已看标记 (媒体服务器)
+  kCapMeta = 1 << 4,     // getEntryField 长尾元数据 (媒体服务器)
+};
+
+// 鉴权形态 (open 前声明, UI 据此渲染登录表单; OAuth 流程留在上层, SDK 只收 token)
+enum class RemoteAuthKind : int32_t { none = 0, userPass = 1, token = 2, domain = 3 };
+
+class IRemoteSourceOb {
  public:
-  virtual ~ISourceProbe() = default;
+  IRemoteSourceOb() = default;
+  virtual ~IRemoteSourceOb() = default;
 
  public:
-  // 观察者 (单播, start 前设置)
-  virtual void setOb(ISourceProbeOb* ob) = 0;
-  // 异步探测: 只等元数据不下载(有界 timeoutMs), 完成经 onProbeResult 回调, 本调用立即返回。
-  // url: "magnet:?" 开头 或 本地 .torrent 路径。
-  // cacheDir: 缓存目录, 与播放选项 torrent.cacheDir 传同值可让起播命中元数据缓存, 空用系统默认。
-  // 返回 false = 上一轮探测未结束(先 stop)。
-  virtual bool start(const char* url, const char* cacheDir,
-                     int32_t timeoutMs) = 0;
-  // 中止探测并回收工作线程 (可再次 start)
-  virtual void stop() = 0;
-  // 是否有探测在进行 (start 与 probe_result 之间为 true)
-  virtual bool probing() = 0;
+  // 会话建立结束 (open 工作线程回调, 上层自行切线程)
+  virtual void onOpenResult(int32_t code) { (void)code; };
+  // 一批结果就绪 (list/search/listMore 共用; 结果经 getEntry* 读取)
+  virtual void onListResult(int32_t code) { (void)code; };
+  // 慢源进度 0-100 (仅 kCapProgress 协议回调)
+  virtual void onListProgress(int32_t percent) { (void)percent; };
+};
 
-  // ---- 结果读取 (onProbeResult(0) 后有效; 字符串为内部缓冲, stop/析构前有效) ----
-  virtual int32_t getFileCount() = 0;
-  // 第 i 项在种子内的原始文件索引 (播放选项 torrent.fileIndex 用这个值)
-  virtual int32_t getFileIndex(int32_t i) = 0;
-  // 种子内相对路径
-  virtual const char* getFilePath(int32_t i) = 0;
-  virtual uint64_t getFileSize(int32_t i) = 0;
-  // 是否命中内置媒体扩展名表 (.mp4/.mkv/.ts/...)
-  virtual bool isMediaFile(int32_t i) = 0;
-  // 种子名 / info-hash 十六进制 / 全部文件总字节
-  virtual const char* getName() = 0;
-  virtual const char* getInfoHash() = 0;
-  virtual uint64_t getTotalSize() = 0;
+class IRemoteSource {
+ public:
+  virtual ~IRemoteSource() = default;
+
+ public:
+  // 观察者 (单播, open 前设置)
+  virtual void setOb(IRemoteSourceOb* ob) = 0;
+  // 能力位 (RemoteCap 按位或)
+  virtual uint32_t getCaps() = 0;
+  // 鉴权形态
+  virtual RemoteAuthKind getAuthKind() = 0;
+  // 会话级参数 (open 前设置; 实现自定义键: torrent 用 "cacheDir"/"extraTrackers",
+  // DAV 用 "verifyTls" 等; 通用性差的长尾参数走这里, 避免接口膨胀)
+  virtual void setParam(const char* key, const char* value) { (void)key; (void)value; }
+
+ public:
+  // 建立会话: 磁力=引擎探元数据(慢, 有界 timeoutMs), DAV/SMB=连接, 网盘=验 token。
+  // 完成经 onOpenResult; 返回 false = 有操作在进行(先 close/stopList)或参数非法。
+  // user/pass: 账密形态; token: 网盘/媒体服务器鉴权 (上层完成 OAuth 后传入)。
+  virtual bool open(const char* url, const char* user, const char* pass,
+                    const char* token, int32_t timeoutMs) = 0;
+  // 关闭会话并打断进行中的 list
+  virtual void close() = 0;
+  // 会话是否已建立 (open 成功与 close 之间为 true)
+  virtual bool opened() = 0;
+
+ public:
+  // 列出节点子项: nodeToken 空 = 根。树协议按目录下钻, 磁力根 = 整包探测(慢)。
+  // 完成经 onListResult; 返回 false = 有列表在进行(先 stopList)或会话未建立。
+  // timeoutMs 仅对慢源生效, 快源(本地枚举)忽略。
+  virtual bool list(const char* nodeToken, int32_t timeoutMs) = 0;
+  // 服务端搜索, 结果进同一结果批次 (kCapSearch; 不支持返回 false)
+  virtual bool search(const char* keyword, int32_t timeoutMs) { (void)keyword; (void)timeoutMs; return false; }
+  // 追加下一批 (大目录分页, getEntryCount 增长; 无更多返回 false。
+  // 页态由实现自持或编码进 token, 上层始终不解析 token)
+  virtual bool listMore(int32_t timeoutMs) { (void)timeoutMs; return false; }
+  // 打断进行中的列表/搜索 (结果作废, 不再回调)
+  virtual void stopList() = 0;
+
+ public:
+  // ---- 结果批次 (onListResult(0) 后有效; 字符串为内部缓冲, 下次 list/析构前有效) ----
+  virtual int32_t getEntryCount() = 0;
+  virtual RemoteEntryType getEntryType(int32_t i) = 0;
+  // 显示名 (文件名/目录名/媒体标题)
+  virtual const char* getEntryName(int32_t i) = 0;
+  // 字节数 (目录为子树合计, 未知为 0)
+  virtual uint64_t getEntrySize(int32_t i) = 0;
+  // 不透明节点句柄: 路径(磁力/SMB/DAV)或服务端ID(网盘/媒体服务器), 作 list 下钻凭证
+  virtual const char* getEntryToken(int32_t i) = 0;
+  // 缩略图/海报 URL (kCapThumb; 无则空)
+  virtual const char* getEntryThumb(int32_t i) { (void)i; return ""; }
+  // 协议长尾元数据 (kCapMeta; 键约定见各实现文档: "year"/"rating"/"overview"...)
+  virtual const char* getEntryField(int32_t i, const char* key) { (void)i; (void)key; return ""; }
+  // 会话级信息键值 (如 torrent 的 "name"/"infoHash"/"totalSize"; 无则空)
+  virtual const char* getSessionField(const char* key) { (void)key; return ""; }
+
+ public:
+  // ---- 选择播放 (统一出口; 本接口只读, 不含任何写操作) ----
+  // 把条目解析为可直接 IMediaPlayer::open 的规范 avox URL 并返回 (如 https 直链/
+  // smb://.../磁力原链), 同时把偏好写入 option (协议自读自键, 磁力即 torrent.fileIndex)。
+  // 特殊容器在此翻译: 磁力单文件/蓝光原盘(BDMV)文件夹/剧集聚合, 语义同 Kodi Resolve。
+  // 返回内部缓冲, 下次调用失效; 条目不可播返回 nullptr (原因见 getLastError)。
+  virtual const char* resolve(int32_t entryIndex, IOption* option) = 0;
+  // 解析结果过期重取 (网盘直链有时效; 磁力/SMB 无需, 返回 nullptr)
+  virtual const char* refresh(int32_t entryIndex, IOption* option) { (void)entryIndex; (void)option; return nullptr; }
+
+ public:
+  // ---- 播放状态 (kCapState: 媒体服务器断点续播/已看; 其余默认不支持) ----
+  virtual uint64_t getResumeMs(int32_t entryIndex) { (void)entryIndex; return 0; }
+  virtual bool reportProgress(int32_t entryIndex, uint64_t posMs, uint64_t durMs) { (void)entryIndex; (void)posMs; (void)durMs; return false; }
+  virtual bool markWatched(int32_t entryIndex, bool watched) { (void)entryIndex; (void)watched; return false; }
+
+  // 最后一次错误描述 (内部缓冲, 下次调用失效)
   virtual const char* getLastError() = 0;
-
-  // ---- 文件选择 (播放交互) ----
-  virtual void selectFile(int32_t fileIndex) = 0;
-  virtual int32_t getSelectedIndex() = 0;
-  // 把选择写进播放选项 (torrent.fileIndex), 之后 IMediaPlayer::open(同 url) 即播该文件;
-  // 未选择时 open 走默认规则(自动选最大媒体文件)
-  virtual bool applyToOption(IOption* option) = 0;
 };
 
 extern "C" {
@@ -192,10 +263,10 @@ AVOX_EXPORT void checkModelLoad(const char* modelName);
 // 创建翻译器(后端未注册/none 返回 nullptr)
 AVOX_EXPORT ITranslator* createTranslator(TranslatorType type);
 
-// ============== 数据源探测 ==============
-// 创建数据源探测器 (type: "torrent" 磁力/BT 文件列表; 插件未装/未知类型返回 nullptr)。
-// 返回需释放的内存 (create* 约定)。
-AVOX_EXPORT ISourceProbe* createSourceProbe(const char* type);
+// ============== 远程内容源 ==============
+// 创建远程内容源会话 (type: "torrent" 磁力/BT; 后续 "dav"/"smb"/"alist"...;
+// 插件未装/未知类型返回 nullptr)。返回需释放的内存 (create* 约定)。
+AVOX_EXPORT IRemoteSource* createRemoteSource(const char* type);
 
 // ============== Python 执行器 ==============
 // 拿 Python 执行器全局单例 (static SubprocessRunner, 编进 avox.dll; 首次调用 lazy 创建)

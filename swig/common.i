@@ -8,6 +8,8 @@
 %feature("director") IVideoSourceOb;
 %feature("director") IAudioSourceOb;
 %feature("director") IAVSourceOb;
+// 远程内容源: 磁力/DAV/SMB/网盘/媒体服务器统一会话, 观察者回调
+%feature("director") IRemoteSourceOb;
 // webrtc v2: 信令通道(引擎侧实现)与rtc扩展回调
 %feature("director") IRtcEventOb;
 %feature("director") IAudioSttOb;

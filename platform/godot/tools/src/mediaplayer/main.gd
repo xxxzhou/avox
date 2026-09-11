@@ -74,7 +74,7 @@ var _live_popup: PanelContainer
 var _live_edit: LineEdit
 var _live_combo: OptionButton
 var _file_dialog: FileDialog
-# 磁力/BT 探测(SourceProbe)与文件选择弹窗
+# 磁力/BT 解析(RemoteSource)与文件选择弹窗
 var _magnet_popup: PanelContainer
 var _magnet_edit: LineEdit
 var _magnet_combo: OptionButton
@@ -82,8 +82,8 @@ var _torrent_popup: PanelContainer
 var _torrent_title: Label
 var _torrent_list: ItemList
 var _popup_dragging := {}   # popup -> bool: 左键/手指按住拖动中(软键盘盖住弹窗时可拖开)
-var _probe: SourceProbe
-var _probe_files: Array = []   # get_files() 结果(视频在前), index 为种子内原始索引
+var _remote: RemoteSource
+var _torrent_files: Array = []   # 根列表中的可播媒体条目 {name, token, size, media}
 var _probe_url := ""
 var _autotest_url := ""   # 非空时起播/出错输出 [AVOX][TEST] 判定行, 供 logcat/stdout 自动化回归抓取
 var _autotest_t0 := 0
@@ -228,13 +228,14 @@ func _ready() -> void:
 
 func _open_probe_for(url: String) -> void:
 	_probe_url = url
-	if _probe == null:
-		_probe = SourceProbe.new()
-		_probe.probe_result.connect(_on_torrent_probed)
-	if _probe.is_probing():
+	if _remote == null:
+		_remote = RemoteSource.new()
+		_remote.open_result.connect(_on_torrent_opened)
+		_remote.list_result.connect(_on_torrent_listed)
+	if _remote.is_busy():
 		return
 	_toast_msg("解析磁力元数据中…(最多 %ds)" % (TORRENT_META_TIMEOUT / 1000))
-	_probe.start(url, "", TORRENT_META_TIMEOUT)
+	_remote.open(url, TORRENT_META_TIMEOUT)
 
 # UI 走查入口 (-- --ui=xxx): 启动即开对应弹层, 免键鼠路径截图
 func _open_ui_demo(which: String) -> void:
@@ -730,8 +731,8 @@ func _close_live_popup() -> void:
 	_update_scrim()
 
 # ── 磁力/BT: 元数据探测 → 文件列表 → 选择播放 ──
-# 链路: SourceProbe.start(异步等元数据, 零下载) → probe_result 信号 → 文件列表弹窗
-# → select_file + apply_to_option(写 torrent.fileIndex) → 走常规 _load_url 播放。
+# 链路: RemoteSource.open(异步等元数据, 零下载) → open_result 信号 → list("") 列根
+# → list_result 信号 → 文件列表弹窗 → resolve(写 torrent.fileIndex) → 走常规 _load_url 播放。
 
 func _open_magnet() -> void:
 	_fit_popup(_magnet_popup, 460)
@@ -812,42 +813,55 @@ func _load_magnet() -> void:
 	var url := _magnet_edit.text.strip_edges()
 	if url.is_empty():
 		return
-	if _probe == null:
-		_probe = SourceProbe.new()
-		_probe.probe_result.connect(_on_torrent_probed)
-	if _probe.is_probing():
+	if _remote == null:
+		_remote = RemoteSource.new()
+		_remote.open_result.connect(_on_torrent_opened)
+		_remote.list_result.connect(_on_torrent_listed)
+	if _remote.is_busy():
 		_toast_msg("正在解析上一个磁力…")
 		return
 	_close_magnet_popup()
 	_probe_url = url
 	_toast_msg("解析磁力元数据中…(最多 %ds)" % (TORRENT_META_TIMEOUT / 1000))
 	# cache_dir 传空: 与播放端默认目录一致, 起播可命中元数据缓存免二次等待
-	if not _probe.start(url, "", TORRENT_META_TIMEOUT):
-		_toast_msg("探测启动失败(avox_torrent 插件未加载?)")
+	if not _remote.open(url, TORRENT_META_TIMEOUT):
+		_toast_msg("解析启动失败(avox_torrent 插件未加载?)")
 
-func _on_torrent_probed(code: int) -> void:
+func _on_torrent_opened(code: int) -> void:
 	if code != 0:
-		_toast_msg("磁力解析失败: %s" % _probe.get_last_error())
+		_toast_msg("磁力解析失败: %s" % _remote.get_last_error())
 		return
-	_probe_files = _probe.get_files()
-	if _probe_files.is_empty():
-		_toast_msg("种子内没有可列出的文件")
+	# 元数据就绪: 列根目录 (open 慢源探测, list 即时枚举)
+	if not _remote.list(""):
+		_toast_msg("列表失败: %s" % _remote.get_last_error())
+
+func _on_torrent_listed(code: int) -> void:
+	if code != 0:
+		_toast_msg("磁力解析失败: %s" % _remote.get_last_error())
+		return
+	# 根批次含目录与文件, 播放弹窗只列可播媒体 (树形下钻 UI 留给后续)
+	_torrent_files.clear()
+	for e in _remote.get_entries():
+		if e["media"]:
+			_torrent_files.append(e)
+	if _torrent_files.is_empty():
+		_toast_msg("种子内没有可播的媒体文件")
 		return
 	_rebuild_torrent_list()
 	_fit_torrent_popup()
 	_torrent_popup.visible = true
 	_pop_in(_torrent_popup)
 	_update_scrim()
-	# 探测成功即入历史 (记录种子名, 下拉里直接显示名字而非长 url)
-	_push_magnet(_probe_url, _probe.get_name())
+	# 解析成功即入历史 (记录种子名, 下拉里直接显示名字而非长 url)
+	_push_magnet(_probe_url, _remote.get_session_field("name"))
 
 func _rebuild_torrent_list() -> void:
 	_torrent_list.clear()
-	_torrent_title.text = "%s  (%s)" % [_probe.get_name(), _fmt_size(_probe.get_total_size())]
-	for f in _probe_files:
-		var label := "%s   [%s]" % [f["path"], _fmt_size(f["size"])]
+	_torrent_title.text = "%s  (%s)" % [_remote.get_session_field("name"), _fmt_size(int(_remote.get_session_field("totalSize")))]
+	for f in _torrent_files:
+		var label := "%s   [%s]" % [f["name"], _fmt_size(f["size"])]
 		var idx := _torrent_list.add_item(label)
-		_torrent_list.set_item_tooltip(idx, f["path"])
+		_torrent_list.set_item_tooltip(idx, f["token"])
 		if f["media"]:
 			_torrent_list.set_item_custom_fg_color(idx, ACCENT)
 	_torrent_list.select(0)
@@ -886,18 +900,22 @@ func _on_torrent_pick_pressed() -> void:
 		_pick_torrent_file(sel[0])
 
 func _pick_torrent_file(idx: int) -> void:
-	if idx < 0 or idx >= _probe_files.size():
+	if idx < 0 or idx >= _torrent_files.size():
 		return
-	var f: Dictionary = _probe_files[idx]
-	_probe.select_file(f["index"])
-	# 首次 play 前 avox 播放器还没创建, get_option() 为空;
-	# set_option 暂存于 MediaPlayer, createPlayer 时落库(open 异步必晚于它)
-	player.set_option("torrent.fileIndex", f["index"])
+	# resolve 产出播放 URL(磁力即原链), 同时把 torrent.fileIndex 写入独立 option;
+	# 首次 play 前 avox 播放器还没创建, get_option() 为空, 故转存 MediaPlayer
+	# (set_option 暂存, createPlayer 时落库, open 异步必晚于它)
+	var opt := AvoxOption.new()
+	var play_url: String = _remote.resolve(idx, opt)
+	if play_url.is_empty():
+		_toast_msg("选择失败: %s" % _remote.get_last_error())
+		return
+	player.set_option("torrent.fileIndex", opt.get_int("torrent.fileIndex"))
 	_torrent_popup.visible = false
 	_update_scrim()
-	_load_url(_probe_url)
+	_load_url(play_url)
 	# 标题用种子名+文件名, 比 magnet 原始链接友好
-	_title.text = "%s · %s" % [_probe.get_name(), String(f["path"]).get_file()]
+	_title.text = "%s · %s" % [_remote.get_session_field("name"), String(_torrent_files[idx]["name"]).get_file()]
 
 func _close_torrent_popup() -> void:
 	_torrent_popup.visible = false

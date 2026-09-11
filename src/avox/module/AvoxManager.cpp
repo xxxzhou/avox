@@ -344,13 +344,13 @@ std::string AvoxManager::getObjClassName(jobject obj, JNIEnv* env) {
 }
 #endif
 
-// AvoxBase.h 出口: 创建数据源探测器 (经 sourceProbeHub 工厂表, avox_torrent
+// AvoxBase.h 出口: 创建远程内容源会话 (经 remoteSourceHub 工厂表, avox_torrent
 // loadModule 注册 "torrent"; create 内部触发插件懒加载, 未装插件返回 nullptr)
-ISourceProbe* createSourceProbe(const char* type) {
+IRemoteSource* createRemoteSource(const char* type) {
   if (type == nullptr || *type == '\0') {
     return nullptr;
   }
-  return AvoxManager::Get().sourceProbeHub.create(type);
+  return AvoxManager::Get().remoteSourceHub.create(type);
 }
 
 }
