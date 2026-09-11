@@ -255,11 +255,32 @@ if(_OPENSSL_USE_BUILTIN OR (NOT OPENSSL_LIBRARIES AND NOT OPENSSL_ROOT_DIR))
             endif()
         endforeach()
     else()
-        # 非 Windows: 使用 CMake 内置 FindOpenSSL
-        include(${CMAKE_ROOT}/Modules/FindOpenSSL.cmake RESULT_VARIABLE _BUILTIN_OPENSSL_FOUND)
-        if(_BUILTIN_OPENSSL_FOUND AND OpenSSL_FOUND)
-            if(NOT OPENSSL_INCLUDE_DIRS AND OPENSSL_INCLUDE_DIR)
-                set(OPENSSL_INCLUDE_DIRS "${OPENSSL_INCLUDE_DIR}")
+        # 非 Windows: Apple arm64 先显式找 Homebrew 原生前缀 (/opt/homebrew)。
+        # 机器上常残留 Intel 版 /usr/local/Cellar OpenSSL, CMake 内置 FindOpenSSL
+        # 会选中它 —— arm64 链接时 ld 无法使用 x86_64 dylib, 症状是报一批
+        # "_SSL_xxx undefined symbols for architecture arm64" (Debug 全量首次链接才暴露)。
+        if(APPLE AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "arm64")
+            foreach(_hb_prefix "/opt/homebrew/opt/openssl@3" "/opt/homebrew/opt/openssl")
+                find_library(_OPENSSL_SSL_LIB NAMES ssl PATHS "${_hb_prefix}/lib" NO_DEFAULT_PATH)
+                find_library(_OPENSSL_CRYPTO_LIB NAMES crypto PATHS "${_hb_prefix}/lib" NO_DEFAULT_PATH)
+                if(_OPENSSL_SSL_LIB AND _OPENSSL_CRYPTO_LIB
+                        AND EXISTS "${_hb_prefix}/include/openssl/ssl.h")
+                    set(OPENSSL_INCLUDE_DIRS "${_hb_prefix}/include")
+                    set(OPENSSL_LIBRARIES ${_OPENSSL_SSL_LIB} ${_OPENSSL_CRYPTO_LIB})
+                    message(STATUS "OpenSSL: using Homebrew ARM64 ${_hb_prefix}")
+                    break()
+                endif()
+            endforeach()
+            unset(_OPENSSL_SSL_LIB CACHE)
+            unset(_OPENSSL_CRYPTO_LIB CACHE)
+        endif()
+        # 回退: 使用 CMake 内置 FindOpenSSL
+        if(NOT OPENSSL_LIBRARIES)
+            include(${CMAKE_ROOT}/Modules/FindOpenSSL.cmake RESULT_VARIABLE _BUILTIN_OPENSSL_FOUND)
+            if(_BUILTIN_OPENSSL_FOUND AND OpenSSL_FOUND)
+                if(NOT OPENSSL_INCLUDE_DIRS AND OPENSSL_INCLUDE_DIR)
+                    set(OPENSSL_INCLUDE_DIRS "${OPENSSL_INCLUDE_DIR}")
+                endif()
             endif()
         endif()
     endif()
