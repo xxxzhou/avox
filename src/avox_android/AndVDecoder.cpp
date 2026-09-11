@@ -63,7 +63,14 @@ bool AndVDecoder::onVaild() {
 }
 
 DecodeResult AndVDecoder::onPreDecoder() {
-  const auto& packets = configPackets;
+  auto& packets = configPackets;
+  // csd 必须是AnnexB: mp4/rtmp 的 config 是avcc/hvcc长度前缀, 不转MediaCodec解析不了csd, 静默无输出
+  // (已是AnnexB的包长度对不上, avcc2AnnexbPacket 自动跳过)
+  for (auto& packet : packets) {
+    AvoxPacket view = {};
+    view.data = {packet.buff.data(), packet.size, true};
+    avcc2AnnexbPacket(view);
+  }
   if (codecDesc.vcodecId == VCodecId::h264) {
     if (packets.size() < 2) {
       return DecodeResult::noConfig;
@@ -349,6 +356,13 @@ void AndVDecoder::onFrameRelease(bool bRender, const GpuFrame& frame) {
     // surfaceTexture队列输出到纹理上
     surfaceTexture->updateTexImage();
     bFrameAvailable = false;
+    // EGLDBG 临时诊断
+    static int32_t dbgTex = 0;
+    if (dbgTex < 2) {
+      LOGFLF(LogLevel::info, "EGLDBG updateTexImage done curCtx:",
+             (int32_t)(eglGetCurrentContext() != EGL_NO_CONTEXT));
+      dbgTex++;
+    }
   }
 }
 

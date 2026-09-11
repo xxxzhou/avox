@@ -168,6 +168,14 @@ void EglVideoRender::renderGpuFrame(const GpuFrame& frame) {
   frameRCtx->onFrameRelease(true, frame);
   if (frameRCtx && frameRCtx->getImage() > 0) {
     useProgram(frameRCtx->getImage());
+    // EGLDBG 临时诊断
+    static int32_t dbgDraw = 0;
+    if (dbgDraw < 2) {
+      LOGFLF(LogLevel::info, "EGLDBG drawn oes:", (int32_t)frameRCtx->getImage(),
+             " glErr:", (int32_t)glGetError(), " curCtx:",
+             (int32_t)(eglGetCurrentContext() != EGL_NO_CONTEXT));
+      dbgDraw++;
+    }
   } else {
     LOGFLF(LogLevel::warn, "glesContext is null or image is 0");
     return;
@@ -218,12 +226,15 @@ void EglVideoRender::createProgram() {
 void EglVideoRender::useProgram(uint32_t oesId) {
   // 没有初始化
   if (getContext() == EGL_NO_CONTEXT) {
+    LOGFLF(LogLevel::warn, "EGLDBG useProgram no ctx");
     return;
   }
   if (glProgram == 0) {
+    LOGFLF(LogLevel::warn, "EGLDBG useProgram no program");
     return;
   }
   if (!eglsurface) {
+    LOGFLF(LogLevel::warn, "EGLDBG useProgram no eglsurface");
     return;
   }
   int32_t width = imageFormat.width;
