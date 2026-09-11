@@ -163,26 +163,19 @@ DecodeResult IOSVDecoder::onPreDecoder() {
   // 硬解选项
   // NV12 kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
   // YUV420P  kCVPixelFormatType_420YpCbCr8PlanarVideoRange
-  NSDictionary *attr = nullptr;
-#if TARGET_OS_IPHONE
-  attr = [NSDictionary
+  // 不带 kCVPixelBufferOpenGLESCompatibilityKey: 本解码器恒 Metal 渲染用不到
+  // GLES 兼容, 且 iOS 26 已移除 OpenGL ES, 带 GLES 兼容键建会话会挂在废弃
+  // GL 路径上 (真机实测视频解码线程停在会话创建, 包队列积压零帧)
+  NSDictionary *attr = [NSDictionary
       dictionaryWithObjectsAndKeys:
-          [NSNumber numberWithBool:NO],
-          (id)kCVPixelBufferOpenGLESCompatibilityKey,
-          [NSNumber
-              numberWithInt:kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange],
+          [NSNumber numberWithInt:kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange],
           (id)kCVPixelBufferPixelFormatTypeKey, nil];
-#else
-  // macOS 无 GLES 兼容键, 仅指定 NV12 像素格式
-  attr = [NSDictionary
-      dictionaryWithObjectsAndKeys:
-          [NSNumber
-              numberWithInt:kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange],
-          (id)kCVPixelBufferPixelFormatTypeKey, nil];
-#endif
+  LOGFLF(LogLevel::info, "creating ios vt decompression session");
   status = VTDecompressionSessionCreate(
       kCFAllocatorDefault, videoFormatDescription, nullptr,
       (__bridge CFDictionaryRef)attr, &callback, &decompressionSession);
+  LOGFLF(LogLevel::info, "ios vt decompression session created, status:",
+         (int)status);
   if (status != noErr) {
     LOGFLF(LogLevel::warn,
            "open ios hard decoder open decompressionSession failed");
@@ -236,8 +229,13 @@ DecodeResult IOSVDecoder::decode(const AvoxPacket &packet_) {
   int32_t timeScale = 90000;
   timingInfo.presentationTimeStamp =
       CMTimeMakeWithSeconds(packet.pts, timeScale);
-  // timingInfo.duration = CMTimeMakeWithSeconds(packet->, timeScale);
-  timingInfo.decodeTimeStamp = kCMTimeInvalid;
+  // 喂真实 DTS: kCMTimeInvalid 时 VT 按投递顺序直接输出, B 帧流输出次序乱
+  // (pts 回跳), 同步层逐帧判 jump 丢帧 → 卡顿。dts 无效才回退 kCMTimeInvalid
+  if (packet.dts >= 0) {
+    timingInfo.decodeTimeStamp = CMTimeMake(packet.dts, timeScale);
+  } else {
+    timingInfo.decodeTimeStamp = kCMTimeInvalid;
+  }
   status = CMSampleBufferCreate(kCFAllocatorDefault, videoBlock, true, nullptr,
                                 nullptr, videoFormatDescription, 1, 1,
                                 &timingInfo, 1, sampleSizeArray, &sampleBuffer);

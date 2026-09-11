@@ -583,6 +583,9 @@ static void startLoopback(void* surface) {
   // URL 模式; 无参数 → 默认局域网矩阵 (AVOX_MATRIX=loop 切进程内回环)
   NSString* urlArg = nil;
   for (NSString* arg in [NSProcessInfo processInfo].arguments) {
+    if ([arg isEqualToString:@"--soft"]) {
+      setenv("AVOX_PM_SOFT", "1", 1);  // 全部用例强制软解 (硬解服务楔死逃生门)
+    }
     if ([arg rangeOfString:@"://"].location != NSNotFound) {
       urlArg = arg;
       break;
@@ -628,7 +631,7 @@ static void startLoopback(void* surface) {
 @end
 
 int main(int argc, char* argv[]) {
-  ulog(@"main enter");
+  ulog(@"main enter, build stamp %s %s", __DATE__, __TIME__);
   return UIApplicationMain(argc, argv, nil, NSStringFromClass([AppDelegate class]));
 }
 
@@ -653,6 +656,9 @@ int main(int argc, char* argv[]) {
     NSString* urlArg = nil;
     bool winMode = getenv("AVOX_PM_WIN") != nullptr;
     for (NSString* arg in [NSProcessInfo processInfo].arguments) {
+      if ([arg isEqualToString:@"--soft"]) {
+        setenv("AVOX_PM_SOFT", "1", 1);  // 全部用例强制软解
+      }
       if ([arg rangeOfString:@"://"].location != NSNotFound) {
         urlArg = arg;
         break;

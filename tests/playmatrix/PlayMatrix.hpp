@@ -16,6 +16,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <mutex>
@@ -208,6 +209,15 @@ inline std::vector<PlayCase> buildCases(const Endpoints& ep) {
     c.seconds = 8;
     c.nativeRender = true;
     cases.push_back(c);
+  }
+  // AVOX_PM_SOFT=1 (Apple 宿主启动参数 --soft): 全部用例强制软解。
+  // 逃生门: 真机硬解服务被系统状态楔死时 (iOS 26 实测 VTDecompressionSessionCreate
+  // 挂死不返回), 仍能跑完整矩阵验证 app/判定/日志链路。yuvout-h264 会因
+  // 交付类型变 yuv420P 判 FAIL 属本模式预期 (哨兵语义不改)。
+  if (std::getenv("AVOX_PM_SOFT") != nullptr) {
+    for (auto &c : cases) {
+      c.hardDecode = false;
+    }
   }
   return cases;
 }
