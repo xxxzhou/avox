@@ -59,6 +59,17 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
   set(AVOX_LIBEXT_CODEC "${ZLM_DIR}/release/ios/Release/Release/libext-codec.a" CACHE FILEPATH "ZLM ext-codec")
   add_executable(avoxtest MACOSX_BUNDLE avoxtest.mm)
   avoxtest_include_dirs()
+  # file-*/yuvout 用例的本地源: AVOXTEST_ASSETS 打进 bundle Resources (findMedia 走
+  # mainBundle); 缺省空=不打包, 对应用例会判 FAIL note=source-missing
+  set(AVOXTEST_ASSETS "" CACHE STRING "打包进 bundle 的本地测试源 mp4 (分号分隔)")
+  foreach(asset ${AVOXTEST_ASSETS})
+    if(EXISTS ${asset})
+      target_sources(avoxtest PRIVATE ${asset})
+      set_source_files_properties(${asset} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    else()
+      message(WARNING "AVOXTEST_ASSETS 不存在: ${asset}")
+    endif()
+  endforeach()
   # 摘掉 vulkan INTERFACE 传染来的 -Wl,-ld_classic: 旧链接器在本工程多档案
   # force_load 静态链下会丢 ZLM/ZLToolKit 的 const std::string 事件名初始化
   get_target_property(AVOXTEST_LINK_OPTIONS avoxtest LINK_OPTIONS)
