@@ -134,7 +134,7 @@ hwaccel 那类回归的哨兵: 车道任何一环断了都会从这里先炸)。
 |------|------|------|------|
 | Windows | `platform/windows/playtest/` | console exe, 无头离屏 | 已实测 22/22 |
 | Android | `platform/android/playtest/` | console 可执行, `adb push` + `adb shell` | 待真机验证 |
-| Apple | `platform/ios/avoxtest/` | 同一份用例表, iOS app + macOS 无头 CLI | macOS 已实测 (09-11, M2): file/车道B/shot/rec 全 PASS, LAN 用例因 SSH 进程无本地网络权限未验 |
+| Apple | `platform/ios/avoxtest/` | 同一份用例表, iOS app + macOS 无头 CLI | macOS 已实测 **25/25 全绿** (09-11, M2, 含全协议 LAN/WebRTC/车道B); 注意无头进程必须挂存活会话, 见 [avoxtest README](../../platform/ios/avoxtest/README.md) |
 | Linux | 待建 | console exe | 暂不做 |
 
 Android 不出 APK: 判定行只走 stdout, console 可执行 + `adb shell` 就能拿到, 省掉
@@ -214,5 +214,8 @@ console 宿主**能编出来**, 但**跑起来会在渲染阶段挂**: avox 在 
 - **软解只在 file/rtsp 对照**, 未铺满全协议 —— 控制耗时; 需要时按 `buildCases` 加行即可。
 - **转码录制固定软编** (`setHardEncode(false)`): Windows 硬编 h264_mf 对 profile 敏感, 本矩阵只兜
   "播放 + 录制能出正确产物", 不做编码器矩阵。
+- **macOS 无头跑 LAN 全 FAIL 的新手坑**: `nohup`/脱离会话的进程, macOS 26 静默拒绝其
+  本地网络访问 (errno 65, 无弹窗不进 TCC), 全部 LAN 用例报 *No route to host* ——
+  不是权限没授 (列表里永远找不到它), 把 runner 挂在存活会话里跑即解。
 - **`assets/video/webrtc_pull.mp4` 尾部不完整** (ffmpeg 报 partial file), 但能正常起播, 不影响用例。
 - **保留 `samples/` 的角色不变**: 需要肉眼确认画面/需按键/依赖插件与外网的, 仍留在 samples, 不进门禁。

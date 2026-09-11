@@ -71,8 +71,14 @@ open build-ios/avoxtest.xcodeproj   # 选真机, Run (自动签名)
 
 启动后自动跑矩阵, 判定留在屏幕上。注意:
 
-- **macOS 26 / iOS 对重编译的二进制可能要求重新授予「本地网络」权限**
-  (设置 → 隐私与安全性 → 本地网络), 未授权时局域网连接报 *No route to host*
+- **macOS 无头 CLI 必须挂在存活会话里跑** (前台 ssh / Terminal 窗口 / GUI):
+  `nohup` 脱离会话后, macOS 26 会**静默拒绝**该进程的本地网络访问 —— 报
+  *No route to host*, 但**不弹窗、不进 TCC、设置「本地网络」列表里也不出现**,
+  极易误判成权限没授。判别实验 (09-11, M2): 同一二进制 50s 内会话内 probe=0 /
+  脱离后=-1; nc 恒通属系统二进制豁免, 不能用来证伪。跑法: ssh 前台挂住整个矩阵
+  时长 (~10min), 或在 Terminal 窗口里跑
+- 重编译后 (新 cdhash) 需要重新进一次存活会话; iOS 真机侧才是「本地网络」权限
+  弹窗那套 (设置 → 隐私与安全性 → 本地网络)
 - 首选由 Xcode GUI 点 Run (SSH 下 codesign 访问不了钥匙串)
 - CLI `xcodebuild` 只能做编译验证 (签名阶段会 errSecInternalComponent, 属预期)
 
