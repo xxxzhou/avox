@@ -78,3 +78,15 @@ if(AVOX_ENABLE_TORRENT)
         target_compile_options(torrentbench PRIVATE /utf-8)
     endif()
 endif()
+
+# SMB 远程源链路冒烟 (open/list/resolve/播放/seek), 需 avox_remote 带 libsmb2
+# (库仓 windows/libsmb2 产物存在即定义 AVOX_REMOTE_SMB, 与插件同条件;
+#  本目录作用域重新 find 一次, FindLibsmb2 的结果变量不跨目录传播)
+find_package(Libsmb2 QUIET)
+if(LIBSMB2_FOUND AND FFMPEG_LIBRARIES)
+    generatetest(smbsourcetest)
+    if(MSVC)
+        # 源码含中文提示字面量, 需以 UTF-8 解释源码/执行字符集
+        target_compile_options(smbsourcetest PRIVATE /utf-8)
+    endif()
+endif()

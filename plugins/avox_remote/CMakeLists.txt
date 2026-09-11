@@ -18,11 +18,15 @@ if(WIN32)
 endif()
 
 # "smb" 源依赖: libsmb2 预编译产物(库仓, 依赖方式与 libtorrent 一致, 见 README)
-# 就位时定义 AVOX_REMOTE_SMB 并链接静态库, SmbSource 按此宏条件编译
+# 就位时定义 AVOX_REMOTE_SMB 并链接静态库, SmbSource/IOParseSmb 按此宏条件编译;
+# IOParseSmb(avio_alloc_context+avformat) 与 avox_torrent 同构, 还需源码版 FFmpeg
 find_package(Libsmb2 QUIET)
-if(Libsmb2_FOUND)
+if(Libsmb2_FOUND AND NOT FFMPEG_LIBRARIES)
+  message(STATUS "avox_remote plugin: smb 源需要 ffmpeg(IOParseSmb), 未找到, 关闭 smb")
+endif()
+if(Libsmb2_FOUND AND FFMPEG_LIBRARIES)
   include_directories(${LIBSMB2_INCLUDE_DIRS})
-  list(APPEND _REMOTE_LIBS ${LIBSMB2_LIBRARIES})
+  list(APPEND _REMOTE_LIBS ${LIBSMB2_LIBRARIES} ${FFMPEG_LIBRARIES})
   add_definitions(-DAVOX_REMOTE_SMB=1)
 else()
   message(STATUS "avox_remote plugin: libsmb2 未找到, smb 源不参与编译(见 D:/Work/github/libsmb2)")

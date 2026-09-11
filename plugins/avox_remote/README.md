@@ -8,6 +8,7 @@
 | type | 协议 | 说明 |
 |------|------|------|
 | `"dav"` | WebDAV | PROPFIND 目录树 + Basic 认证; 兼容 Alist/OpenList 的 `/dav` 端点(坚果云/极空间/群晖等标准 WebDAV 同理) |
+| `"smb"` | SMB2/3 | libsmb2(LGPL) 浏览 + 播放; 极空间/群晖/Windows 共享实测通过 |
 
 用法(以 dav 为例):
 
@@ -38,12 +39,33 @@ src->close();                          // 会话结束(create* 产物记得释�
 - godot 封装: `RemoteSource` 类(`platform/godot/plugin/src/remote_source.h`)已接本插件,
   tools 播放器 UI 的磁力流程同一套接口可平移到 WebDAV。
 
-## 规划: "smb" (libsmb2)
+## "smb" (libsmb2)
 
-SMB 走 libsmb2(LGPL, 纯 C 异步 API), 依赖预编译入库方式与 libtorrent 一致
-(源项目独立 `python build_windows.py` → 产物进 `avc_library/3rdparty/library/windows/libsmb2/`,
-本仓库 `cmake/FindLibsmb2.cmake` 查找)。库就位后在 `RemoteModule::loadModule` 注册 `"smb"`,
-实现 `SmbSource`(libsmb2 读字节 → 自定义 avio → 现有解封装管线), 接口零改动。
+SMB 走 libsmb2(LGPL, 纯 C 同步 API 跑在 RunTask 线程), 依赖预编译入库方式与 libtorrent 一致
+(源项目 `D:/Work/github/libsmb2` 独立 `python build_windows.py` → 产物进
+`avc_library/3rdparty/library/windows/libsmb2/`, 本仓库 `cmake/FindLibsmb2.cmake` 查找)。
+
+```cpp
+avox::IRemoteSource* src = avox::createRemoteSource("smb");
+src->setOb(ob);
+src->open("smb://192.168.3.20/share[/子目录]", "user", "pass", nullptr, 10000);
+// onOpenResult(0) 后 list/下钻/resolve 同 dav;
+src->resolve(i, nullptr);  // → smb://user:pass@host[:port]/share/path/文件.mp4
+// 直链交 IMediaPlayer::open: MediaPlayer 按 smb:// 前缀自动路由 IoPlan::smb
+// (IOParseSmb: libsmb2 pread → 自定义 avio → 现有解封装管线, seek 全支持)
+```
+
+要点:
+- **API 陷阱**: `smb2_connect_share(ctx, server, share, user)` 无密码参, 密码须先
+  `smb2_set_password`; `smb2_pread` 带显式 offset(非文件游标); `<smb2/smb2.h>` 须先于
+  `<smb2/libsmb2.h>` 包含;
+- **token 约定**: share 内绝对路径(`'/'`开头, 目录带尾`'/'`); open URL 带 `/子目录` 时
+  顶层 `list("")`/`list("/")` 映射到该子目录;
+- **guest/匿名**: open 不带 user 时以 nullptr 账号连接(游客共享);
+- 中文共享名/文件名全程 UTF-8(libsmb2 与服务端 UTF-16 互转), 测试程序经 wmain 转码;
+- 冒烟: `samples/functest/smbsourcetest.exe -u smb://host/share [-n user] [-p pass]
+  [-m 媒体名子串] [-v]`, 覆盖 open/list 下钻/resolve/播放推进/seek, 8 项全过;
+  实测环境: 极空间 Z4(SMB 服务端, 中文目录树 + 1.1GB mkv 播放/seek)与 Windows 本机共享。
 
 ## 构建
 
