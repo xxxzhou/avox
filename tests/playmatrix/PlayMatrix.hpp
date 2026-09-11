@@ -77,6 +77,7 @@ enum class CaseKind {
   screenShot,       // 离屏截图落 PNG
   recordCopy,       // getMuxer(false) 直通录制 (原流拷贝)
   recordTranscode,  // getMuxer(true) 转码录制 (+ 中途 seek)
+  yuvOut,           // 无vulkan直取: enableYuvOut 帧类型契约 (硬解 nv12 / 软解解码格式)
 };
 
 struct PlayCase {
@@ -91,11 +92,13 @@ struct PlayCase {
   int32_t minBytes = 8192;
   // true = 关掉 vulkan 管线走平台原生渲染 (截图的稳定路线)
   bool nativeRender = false;
+  // yuvOut 用例: 期望的首帧类型 (getYuvTypeStr 口径), 空 = 不判型
+  std::string expectType;
   // false = 默认不跑 (已知未修/环境依赖), 需 --all 显式打开
   bool enabled = true;
 };
 
-// ── 用例表: 21 条, 轴 + 固定交叉 (不做全笛卡尔) ──
+// ── 用例表: 26 条, 轴 + 固定交叉 (不做全笛卡尔) ──
 inline std::vector<PlayCase> buildCases(const Endpoints& ep) {
   std::vector<PlayCase> cases;
   const std::string k264 = ep.h264Key;
@@ -168,6 +171,44 @@ inline std::vector<PlayCase> buildCases(const Endpoints& ep) {
   special("rec-copy-h264", CaseKind::recordCopy, ep.rtsp(k264), 8);
   // 转码录制中途 seek 需要可 seek 的源, 用本地文件
   special("rec-transcode-h264", CaseKind::recordTranscode, ep.fileH264, 8);
+  // F 无vulkan直取 (车道B): 关 vulkan 走平台原生渲染 + enableYuvOut, 严格判交付帧类型。
+  // 硬解应交付解码直出 nv12 (DX11 staging / Metal readback), 类型不对 = 车道断裂或
+  // 硬解回退软解, 都判 FAIL —— 这是"硬解组件被裁/回退"的哨兵 (ffmpeg9 裁 hwaccel 一类
+  // 回归只有它能抓到)。真硬解需 GPU 视频单元, CI 离线子集要排除 (OFFLINE_SKIP)
+  {
+    PlayCase c;
+    c.id = "yuvout-h264";
+    c.kind = CaseKind::yuvOut;
+    c.url = ep.fileH264;
+    c.seconds = 6;
+    c.nativeRender = true;
+    c.expectType = "nv12";
+    cases.push_back(c);
+  }
+  {
+    // 软解 cpuIn: 基类零拷 packed 视图, 交付解码原始格式 (源 webrtc_pull.mp4 为 yuv420p)
+    PlayCase c;
+    c.id = "yuvout-h264-soft";
+    c.kind = CaseKind::yuvOut;
+    c.url = ep.fileH264;
+    c.seconds = 6;
+    c.hardDecode = false;
+    c.nativeRender = true;
+    c.expectType = "yuv420P";
+    cases.push_back(c);
+  }
+  {
+    // 无vulkan转码录制: SurfaceRenderNative::pushFrame 非 vk 分支 (getCpuFrame→muxer),
+    // 该分支在车道 B 之前完全不存在 (没 vulkan 转码录制拿不到帧)。
+    // 注: copy 直通的包走 IO 层 onPacket, 不经渲染层, 测不到本分支, 故用转码
+    PlayCase c;
+    c.id = "rec-transcode-novk";
+    c.kind = CaseKind::recordTranscode;
+    c.url = ep.fileH264;
+    c.seconds = 8;
+    c.nativeRender = true;
+    cases.push_back(c);
+  }
   return cases;
 }
 
@@ -489,6 +530,7 @@ class FrameOb : public ISurfaceRenderOb {
   bool contractOk = true;
   std::string reason;
   std::string firstFmt;
+  std::string firstType;
 
  public:
   void setPrefix(const std::string& p) { prefix = p; }
@@ -502,7 +544,8 @@ class FrameOb : public ISurfaceRenderOb {
     image2YUVFormat(fmt, yuvType, yf);
     std::lock_guard<std::mutex> lock(mtx);
     if (frames == 0) {
-      firstFmt = std::string(getYuvTypeStr(yuvType)) + "-" + std::to_string(yf.width) +
+      firstType = getYuvTypeStr(yuvType);
+      firstFmt = firstType + "-" + std::to_string(yf.width) +
                  "x" + std::to_string(yf.height) + "-pitch" + std::to_string(fmt.rowPitch);
       // 契约: rowPitch 不小于宽, 且缓冲容纳整帧
       if (fmt.rowPitch < yf.width ||
@@ -571,6 +614,10 @@ class FrameOb : public ISurfaceRenderOb {
     std::lock_guard<std::mutex> lock(mtx);
     return firstFmt;
   }
+  std::string firstTypeStr() {
+    std::lock_guard<std::mutex> lock(mtx);
+    return firstType;
+  }
 };
 
 inline Attempt frameContractAttempt(const PlayCase& c, const std::string& prefix) {
@@ -604,6 +651,57 @@ inline Attempt frameContractAttempt(const PlayCase& c, const std::string& prefix
   if (!ok) {
     r.note = (fob.ok() ? "frames-too-few(" + std::to_string(fob.count()) + ") "
                        : fob.why() + " ");
+  }
+  r.note += buf;
+  r.pass = ok;
+  return r;
+}
+
+// ── 无vulkan直取 (车道B): enableYuvOut 帧类型契约 ──
+// 判: 帧数 + packed 契约 + 首帧类型 = expectType; 类型不对即车道断裂/硬解回退
+inline Attempt yuvOutAttempt(const PlayCase& c, const std::string& prefix) {
+  Attempt r;
+  IMediaPlayer* player = createMediaPlayer();
+  if (!player) {
+    r.note = "createMediaPlayer-null";
+    return r;
+  }
+  CaseOb ob;
+  addMediaPlayerOb(player, &ob);
+  ISurfaceRender* sr = player->getSurfaceRender();
+  if (c.nativeRender) {
+    sr->setVulkan(false);
+  }
+  sr->setOffSurface(YuvType::yuv420P);
+  FrameOb fob;
+  fob.setPrefix(prefix);
+  addSurfaceRenderOb(sr, &fob);
+  player->setIoPlan(c.io);
+  player->setHardDecode(c.hardDecode);
+  player->open(c.url.c_str());
+  waitFirstFrames(player, ob, 10000);
+  for (int32_t i = 0; i < c.seconds; ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+  }
+  player->close();
+  removeSurfaceRenderOb(sr, &fob);
+  delete player;
+  bool ok = fob.ok() && fob.count() >= 10;
+  std::string type = fob.firstTypeStr();
+  if (ok && !c.expectType.empty() && type != c.expectType) {
+    ok = false;
+  }
+  char buf[320];
+  std::snprintf(buf, sizeof(buf), "frames=%d dumped=%d type=%s expect=%s", fob.count(),
+                fob.dumpedCount(), type.c_str(), c.expectType.c_str());
+  if (!ok) {
+    if (!fob.ok()) {
+      r.note = fob.why() + " ";
+    } else if (fob.count() < 10) {
+      r.note = "frames-too-few(" + std::to_string(fob.count()) + ") ";
+    } else {
+      r.note = "type-mismatch ";
+    }
   }
   r.note += buf;
   r.pass = ok;
@@ -668,8 +766,12 @@ inline Attempt recordAttempt(const PlayCase& c, bool transcode, const std::strin
   }
   CaseOb ob;
   addMediaPlayerOb(player, &ob);
-  // 录制取帧走离屏路径, 与 yuvouttest 同口径
-  player->getSurfaceRender()->setOffSurface(YuvType::yuv420P);
+  // 录制取帧走离屏路径, 与 yuvouttest 同口径; novk 用例关 vulkan 走 pushFrame 非vk分支
+  ISurfaceRender* sr = player->getSurfaceRender();
+  if (c.nativeRender) {
+    sr->setVulkan(false);
+  }
+  sr->setOffSurface(YuvType::yuv420P);
   player->setIoPlan(c.io);
   player->setHardDecode(c.hardDecode);
   player->open(c.url.c_str());
@@ -809,6 +911,9 @@ inline int runAll(const std::vector<PlayCase>& cases, void* surface, const RunOp
       case CaseKind::recordTranscode:
         r = recordAttempt(c, true, joinPath(opt.outDir, opt.prefix + "trans.mp4"));
         break;
+      case CaseKind::yuvOut:
+        r = yuvOutAttempt(c, joinPath(opt.outDir, opt.prefix));
+        break;
     }
     verdict(c.id, r.pass, r.note);
     if (opt.onCase) {
@@ -843,8 +948,8 @@ inline int runAll(const std::vector<PlayCase>& cases, void* surface, const RunOp
 
 // ── 用例表打印 (--list, 也用于生成文档) ──
 inline void printCases(const std::vector<PlayCase>& cases) {
-  static const char* kKinds[] = {"pull",  "rtc",      "frame",   "shot",
-                                 "rec-copy", "rec-trans"};
+  static const char* kKinds[] = {"pull",     "rtc",      "frame",   "shot",
+                                 "rec-copy", "rec-trans", "yuv-out"};
   for (const PlayCase& c : cases) {
     const char* kind = kKinds[(int)c.kind];
     std::printf("%-20s %-10s io=%-11s dec=%-4s %2ds %s %s\n", c.id.c_str(), kind,

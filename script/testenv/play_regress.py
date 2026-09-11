@@ -34,11 +34,14 @@ ASSETS = ["webrtc_pull.mp4", "avox_electron.mp4"]
 
 # 离线子集: 只吃仓库里的本地 mp4, 不需要 ZLM/局域网 —— CI 上可跑的那部分。
 # 保留: file-h264/h265(硬解) · file-h264/h265-soft(软解) · shot(截图+图像质量) · rec-transcode-h264
+#       · yuvout-h264-soft/rec-transcode-novk(无vulkan直取)。yuvout-h264 不在内:
+#       严格判 nv12, CI 无 GPU 视频单元会软解回退误报, 只在真机/dev 机跑
 OFFLINE_SKIP = [
     "rtsp-h264", "rtsp-h265", "rtmp-h264", "rtmp-h265", "hls-h264", "hls-h265",
     "ts-h264", "ts-h265", "rtsp-h264-zm", "rtsp-h265-zm",
     "rtsp-h264-soft", "rtsp-h265-soft",
     "webrtc-h264", "webrtc-h265", "frame-contract", "rec-copy-h264",
+    "yuvout-h264",
 ]
 
 
@@ -331,6 +334,8 @@ def main() -> int:
     outdir = args.outdir
     if not outdir and not args.android:
         outdir = str(REPO_ROOT / "build" / "playmatrix_out")
+    if outdir and not args.android:
+        # saveImagePath/avio_open2 都不会建目录, 不存在时截图录制会连环失败
         Path(outdir).mkdir(parents=True, exist_ok=True)
     if outdir:
         extra.append(f"--outdir={outdir}")

@@ -18,6 +18,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -122,6 +123,11 @@ int main(int argc, char* argv[]) {
     ep.fileH265 = findAsset("avox_electron.mp4");
   }
   std::vector<PlayCase> cases = buildCases(ep);
+  // 产物目录不存在时截图/录制会连环失败 (saveImagePath/avio_open2 都不建目录)
+  if (!opt.outDir.empty()) {
+    std::error_code ec;
+    std::filesystem::create_directories(opt.outDir, ec);
+  }
   if (listOnly) {
     std::printf("platform=%s host=%s rtsp=%d rtmp=%d http=%d h264=%s h265=%s\n",
                 platformName(), ep.host.c_str(), ep.rtspPort, ep.rtmpPort, ep.httpPort,

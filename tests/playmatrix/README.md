@@ -12,7 +12,7 @@
 
 三者叠加: 改完 → `ctest` 秒级兜逻辑 → **本矩阵兜播放** → 需要看画面再开 samples。
 
-## 用例表 (23 条, 默认跑 22 条)
+## 用例表 (26 条, 默认跑 25 条)
 
 轴: 取流方式 × 编码 × 解码模式 × 帧/录制输出。**不做全笛卡尔**, 用固定交叉控制耗时。
 
@@ -32,6 +32,9 @@
 | | `shot-vk` | ZLM | 截图 (离屏 vulkan 路线) — **已知返回 0, 默认不跑** |
 | | `rec-copy-h264` | ZLM | 直通录制 (原流拷贝) |
 | | `rec-transcode-h264` | 本地 mp4 | 转码录制 + 中途 seek |
+| F 无vulkan直取<br>(车道B) | `yuvout-h264` | 本地 mp4 | 硬解直出 **nv12** 类型契约 (DX11 staging / Metal readback) |
+| | `yuvout-h264-soft` | 本地 mp4 | 软解 cpuIn 零拷 packed 视图 (交付解码格式) |
+| | `rec-transcode-novk` | 本地 mp4 | 无vulkan转码录制 (`pushFrame` 非vk分支, 车道B前该分支不存在) |
 
 `--list` 里带 `(off)` 的即默认不跑的用例, `--all` 打开。
 
@@ -42,6 +45,7 @@
 | `*/h264` `*/h265` 拉流 | 15s 内 `playing && fps>0 && pos>1500ms`, 失败自动重开重试 3 次 |
 | `webrtc-*` | `connected && firstFrame && fps>0` |
 | `frame-contract` | 帧数 ≥10 且 `rowPitch ≥ width`、缓冲容纳整帧, 且抽 2 帧 packed→split→RGBA 的 PNG 非空 |
+| `yuvout-*` | 帧数 ≥10 且 packed 契约过, 且**首帧类型 = 期望值** (`yuvout-h264` 判 `nv12`, `-soft` 判 `yuv420P`); 类型不对 = 车道断裂或硬解回退软解, 都 FAIL |
 | `shot` | 取到图 + PNG 落盘非空 + **不是废图** (见下节): 灰度均值 12~243、标准差 ≥6、最常见颜色占比 ≤95% |
 | `rec-*` | 产物 ≥8KB (空文件/仅文件头判掉); 转码用例额外走一次中途 seek |
 
@@ -113,7 +117,10 @@ playtest --host=127.0.0.1 --skip=webrtc-h265
 ```
 
 `--offline` 已接进 CI: `.github/workflows/release.yml` 的 `Run playback regression
-(Windows, offline subset)` 步骤, 紧跟 ctest 之后, 失败即整体失败。
+(Windows, offline subset)` 步骤, 紧跟 ctest 之后, 失败即整体失败。离线子集含
+`yuvout-h264-soft` / `rec-transcode-novk`; **`yuvout-h264` 不进 CI** —— 它严格判 `nv12`,
+CI 虚机没有 GPU 视频单元会软解回退而误报, 只在真机 / dev 机跑 (它正是ffmpeg9 裁掉
+hwaccel 那类回归的哨兵: 车道任何一环断了都会从这里先炸)。
 
 流源由 `script/testenv/push_streams.py` 提供 (`live/avox264`=H264, `live/avox`=H265);
 局域网真机跑时加 `--lan-ip=<本机 IP>`。
@@ -180,13 +187,21 @@ console 宿主**能编出来**, 但**跑起来会在渲染阶段挂**: avox 在 
 | 改了哪里 | 跑什么 |
 |----------|--------|
 | IO / 网络 / 解封装 | 全跑 (A+B 组是重点) |
-| 解码器 | 全跑 (C 组 + `frame-contract` 是重点) |
-| 帧布局 / 帧契约 | `frame-contract` + `ctest` |
+| 解码器 | 全跑 (C 组 + `frame-contract` 是重点); `yuvout-h264` 兼哨兵: 硬解组件被裁/回退软解时它先炸 |
+| 帧布局 / 帧契约 | `frame-contract` + `yuvout-*` + `ctest` |
+| 无vulkan直取 (车道B) | `yuvout-h264` + `yuvout-h264-soft` + `rec-transcode-novk`; Apple 侧同 id 覆盖 Metal readback |
 | 渲染后端 | 各平台窗口样例 (headless 覆盖不到 GPU 直通) |
-| 录制 / 封装 | `rec-copy-h264` + `rec-transcode-h264` |
+| 录制 / 封装 | `rec-copy-h264` + `rec-transcode-h264` + `rec-transcode-novk` |
 
 ## 已知取舍与悬案
 
+- **`yuvout-h264` 严格判 `nv12`, 无硬解的机器必 FAIL**: 这是故意的哨兵判法 ——
+  类型跌回 `yuv420P` 就是硬解回退/车道断裂 (note 会给 `type=... expect=nv12`)。
+  无 GPU 的 CI/虚机请走 `--offline` (该用例已在 OFFLINE_SKIP 排除)。
+- **本地文件 + copy 直通录制不落盘** (09-11 发现, 待查): 矩阵补用例时对照实验确认
+  vk 开关无关 (`rec-copy` file+vk / file+novk 都 bytes=-1), 是 file+copy 组合自身的
+  预存问题, 与车道 B 无关; `rec-copy-h264` 走 RTSP 不受影响。copy 的包走 IO 层
+  `onPacket`, 不经渲染层, 故车道 B 用转码录制 (`rec-transcode-novk`) 兜非vk分支。
 - **`shot` 的质量阈值是经验值**（均值 12~243 / 标准差 6 / 同色比 95%）：能抓住黑屏、
   纯色、卡帧这类典型坏图，但**没做过对抗性验证** —— 比如"画面对但整体偏暗"的合法场景
   可能被误杀。阈值在 `PlayMatrix.hpp::imageLooksAlive`，按实际误报调。
