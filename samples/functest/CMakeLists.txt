@@ -89,4 +89,7 @@ if(LIBSMB2_FOUND AND FFMPEG_LIBRARIES)
         # 源码含中文提示字面量, 需以 UTF-8 解释源码/执行字符集
         target_compile_options(smbsourcetest PRIVATE /utf-8)
     endif()
+    # SMB 共享媒体播放普查(全量遍历逐个 open/推进/seek)
+    generatetest(smbbatchtest)
+    target_compile_options(smbbatchtest PRIVATE /utf-8)
 endif()

@@ -18,7 +18,7 @@ std::string toLowerCopy(const std::string& s) {
 bool isMediaPath(const std::string& path) {
   static const char* kExts[] = {".mp4", ".mkv", ".ts",  ".flv", ".webm",
                                 ".avi", ".mov", ".m4v", ".mpg", ".mpeg",
-                                ".wmv", ".3gp"};
+                                ".wmv", ".3gp", ".rm",  ".rmvb"};
   size_t dot = path.rfind('.');
   if (dot == std::string::npos) {
     return false;
