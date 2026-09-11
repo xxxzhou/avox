@@ -134,7 +134,7 @@ hwaccel 那类回归的哨兵: 车道任何一环断了都会从这里先炸)。
 |------|------|------|------|
 | Windows | `platform/windows/playtest/` | console exe, 无头离屏 | 已实测 22/22 |
 | Android | `platform/android/playtest/` | console 可执行, `adb push` + `adb shell` | 待真机验证 |
-| Apple | `platform/ios/avoxtest/` | 同一份用例表, iOS app + macOS 无头 CLI | 待 Mac 上编译验证 |
+| Apple | `platform/ios/avoxtest/` | 同一份用例表, iOS app + macOS 无头 CLI | macOS 已实测 (09-11, M2): file/车道B/shot/rec 全 PASS, LAN 用例因 SSH 进程无本地网络权限未验 |
 | Linux | 待建 | console exe | 暂不做 |
 
 Android 不出 APK: 判定行只走 stdout, console 可执行 + `adb shell` 就能拿到, 省掉
