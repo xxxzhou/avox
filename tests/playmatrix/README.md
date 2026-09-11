@@ -133,7 +133,7 @@ hwaccel 那类回归的哨兵: 车道任何一环断了都会从这里先炸)。
 | 平台 | 位置 | 形态 | 状态 |
 |------|------|------|------|
 | Windows | `platform/windows/playtest/` | console exe, 无头离屏 | 已实测 22/22 |
-| Android | `platform/android/playtest/` | console 可执行, `adb push` + `adb shell` | 待真机验证 |
+| Android | `platform/android/playtest/` | console 可执行, `adb push` + `adb shell` | 已实测 21/23 (09-11, 小米 23113RKC6C; 差 `rec-transcode-*`×2, 见下) |
 | Apple | `platform/ios/avoxtest/` | 同一份用例表, iOS app + macOS 无头 CLI | macOS 已实测 **25/25 全绿** (09-11, M2, 含全协议 LAN/WebRTC/车道B); 注意无头进程必须挂存活会话, 见 [avoxtest README](../../platform/ios/avoxtest/README.md) |
 | Linux | 待建 | console exe | 暂不做 |
 
@@ -159,28 +159,27 @@ JNI/Activity/Gradle 一层, 换来与 Windows 完全一致的 runner 契约; 代
 | Windows | `python build_windows.py` → `python script/testenv/play_regress.py` | 无 |
 | macOS | `python build_mac.py` → 按 [avoxtest README](../../platform/ios/avoxtest/README.md) 编 → `python script/testenv/play_regress.py` (darwin 自动识别) | SDK install + `wall_*.mp4` + `AVOX_HOST` |
 | iOS | Xcode 打开 avoxtest 工程点 Run (app 自跑, 判定上屏 + `Documents/avoxlog.txt`) | 签名 + 本地网络权限 |
-| Android | `python build_android.py` → `python script/testenv/play_regress.py --android` | 见下「Android 未通」 |
+| Android | `python build_android.py` → `python script/testenv/play_regress.py --android` | 真机 + 本机 ZLM |
 
-### Android 目前跑不通 (需先定方案)
+### Android 现状 (09-11 实测 21/23, 小米 23113RKC6C / Android 16)
 
-console 宿主**能编出来**, 但**跑起来会在渲染阶段挂**: avox 在 Android 把 shader/资源
-全走 JNI 的 `AAssetManager`, 而控制台进程拿不到它, 三处都没有回退:
+console 宿主已跑通: 全部拉流用例 (协议×编码×硬软解×IO方案)、`frame-contract`、
+`shot`、`rec-copy-h264`、`yuvout-h264`/`-soft` 全过。console 进程无 JNI env / 无
+`AAssetManager`, 为此 SDK 侧补了 console 分支 (均不影响 APK 路径):
 
-| 位置 | 现状 | 后果 |
-|------|------|------|
-| `VkShader::loadShaderModule` (`__ANDROID__`) | `assert(assetManager != nullptr)` 后直接 `loadShader(assetManager,…)` | assetManager 恒 null → 断言/空指针, shader 取不到 |
-| `VkHelper::loadShader(AAssetManager*,…)` | 只判了 `!asset`, 没判 `!assetManager` | `AAssetManager_open(nullptr,…)` 属未定义行为 |
-| `getAvoxPath()` (`__ANDROID__`) | 直接 `return ""` | 即便加了文件回退, 路径会变成 `/assets/glsl/x.spv`, 不存在 |
+| 位置 | 改动 |
+|------|------|
+| `HostMain.cpp` | 进程无 `JNI_OnLoad`, 启动时手动 `AvoxManager::init()` 注册模块; 退出前 `clean()` (否则 libmk_api 静态析构序倒挂, 退出必 SIGABRT) |
+| `Avox.cpp getAvoxPath()` | Android 分支改 `/proc/self/exe` 所在目录 |
+| `VkShader` / `VkHelper::loadShader` | assetManager 为 null 时回退文件系统 + 空指针保护 |
+| `AndVDecoder::onPreDecoder` | **csd 补 AVCC→AnnexB 转换**: mp4/rtmp 的 config 是长度前缀格式, MediaCodec 解析不了 csd 会静默零输出 (rtsp/hls/ts 带内参数集天然 AnnexB 所以之前能过) |
+| `AndVDecoder::onPreDecoder` | console 无 JNI 时 `JniSurfaceTexture` 建不出来, `bOpenglRender` 以 nativeWindow 实际取到为准; byte-buffer 模式请求 NV12(0x15) 并按 KEY_STRIDE/slice-height 补全三平面 (只填 data[0] 会令下游 memcpy(null) 段错误) |
+| `AndVEncoder::encode` | 输入按行拷适配 codec 紧凑 buffer (原按对齐 stride 整块 memcpy 必拒收) |
 
-两条路可选:
-
-- **A 改 SDK (3 处小改)**: `getAvoxPath()` 返回 `/proc/self/exe` 所在目录;
-  `VkShader` 在 assetManager 为空时回退文件系统; `VkHelper::loadShader` 补空指针保护。
-  改动只在 assetManager 为 null 时生效 (APK 路径行为不变), 但**需真机验证**。
-- **B 走 APK**: 复用现有 Godot 工具箱 + `avox://` 深链 (见功能测试矩阵 W2), 不碰 SDK,
-  但 runner 契约与其它平台不一致 (判定行来自 logcat)。
-
-另: Android 侧 `libavox_webrtc.so` 未编, `webrtc-*` 用例驱动里已自动跳过并告警。
+**剩余 2 条**: `rec-transcode-h264`/`rec-transcode-novk` —— AndVEncoder CPU 输入路径
+configure/queueInput 全成功但编码器零输出 (c2.qti byte-buffer 输入), 需专门调试;
+Android commercial 构建 (LGPL 无 libx264) 没有注册任何 FF 软编, 转码只能走 AndVEncoder。
+另 `libavox_webrtc.so` 未编, `webrtc-*` 用例驱动里已自动跳过并告警。
 
 ## 按改动选跑
 
