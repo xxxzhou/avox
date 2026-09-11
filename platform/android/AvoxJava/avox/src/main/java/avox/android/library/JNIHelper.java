@@ -37,6 +37,21 @@ public class JNIHelper {
         setRenderSurface(ISurfaceRender.getCPtr(wRender),surface);
     }
 
+    // 播放回归矩阵 (tests/playmatrix) 的 APK 宿主入口, native 实现在
+    // src/avox_android/PlayMatrixJni.cpp: SurfaceView 出画面, 判定行逐行回调,
+    // 同时落盘 outDir/pm_log.txt 供事后(大模型)复判。跑在调用线程, 阻塞至矩阵结束,
+    // 返回 0=全过
+    public interface PmCallback {
+        void onLine(String line);
+        void onDone(int code);
+    }
+    private static native int pmRunMatrix(Surface surface, String host, String outDir,
+            String fileH264, String fileH265, String skip, PmCallback callback);
+    public static int runPlayMatrix(Surface surface, String host, String outDir,
+            String fileH264, String fileH265, String skip, PmCallback callback) {
+        return pmRunMatrix(surface, host, outDir, fileH264, fileH265, skip, callback);
+    }
+
     private static class AndLog extends ILogOb {
         private static final String TAG = "avox native";
         @Override

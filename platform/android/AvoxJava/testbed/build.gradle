@@ -28,6 +28,12 @@ android {
         sourceCompatibility = 11
         targetCompatibility = 11
     }
+    sourceSets {
+        main {
+            // 矩阵本地源直接引用仓库 assets/video, 不拷贝入库 (与 assets/video 单一来源)
+            assets.srcDirs += ['../../../../assets/video']
+        }
+    }
 }
 
 dependencies {

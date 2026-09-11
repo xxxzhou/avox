@@ -53,6 +53,12 @@
                 android:layout_height="match_parent"
                 android:layout_weight="1"
                 android:text="WebRTC"></Button>
+            <Button
+                android:id="@+id/btnMatrix"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:text="播放矩阵"></Button>
         </LinearLayout>
         <!-- 硬解开关 -->
         <LinearLayout

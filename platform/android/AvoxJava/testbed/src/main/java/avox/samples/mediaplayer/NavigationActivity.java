@@ -31,6 +31,8 @@ public class NavigationActivity extends AppCompatActivity {
                 startActivity(new Intent(this, AVSource.class)));
         findViewById(R.id.btnRTC).setOnClickListener(v ->
                 startActivity(new Intent(this, RtcActivity.class)));
+        findViewById(R.id.btnMatrix).setOnClickListener(v ->
+                startActivity(new Intent(this, PlayMatrixActivity.class)));
         // 硬解码开关
         SwitchCompat switchHardwareDecode = findViewById(R.id.switch_hardware_decode);
         switchHardwareDecode.setOnCheckedChangeListener((buttonView, isChecked) -> {

@@ -136,14 +136,32 @@ hwaccel 那类回归的哨兵: 车道任何一环断了都会从这里先炸)。
 
 | 平台 | 位置 | 形态 | 状态 |
 |------|------|------|------|
-| Windows | `platform/windows/playtest/` | console exe, 无头离屏 | 已实测 22/22 |
+| Windows | `platform/windows/playtest/` | console exe, 无头离屏; `--win` 出窗口看画面 | 已实测 22/22 + `--win` |
 | Android | `platform/android/playtest/` | console 可执行, `adb push` + `adb shell` | 已实测 21/23 (09-11, 小米 23113RKC6C; 差 `rec-transcode-*`×2, 见下) |
+| Android APK | `platform/android/AvoxJava` testbed 的 `PlayMatrixActivity` | SurfaceView 出画面 + 判定横幅上屏 + `pm_log.txt` | 待真机验证 |
 | Apple | `platform/ios/avoxtest/` | 同一份用例表, iOS app + macOS 无头 CLI | macOS 已实测 **25/25 全绿** (09-11, M2, 含全协议 LAN/WebRTC/车道B); 注意无头进程必须挂存活会话, 见 [avoxtest README](../../platform/ios/avoxtest/README.md) |
 | Linux | 待建 | console exe | 暂不做 |
 
-Android 不出 APK: 判定行只走 stdout, console 可执行 + `adb shell` 就能拿到, 省掉
-JNI/Activity/Gradle 一层, 换来与 Windows 完全一致的 runner 契约; 代价是不覆盖 Java
-绑定层 (那层由 `platform/android/AvoxJava` testbed 与 Godot 工具箱覆盖)。
+Android 双形态互补: console 判定行只走 stdout, 与 Windows 完全一致的 runner 契约,
+测的是**数据通路** (byte-buffer 硬解 NV12 直出 CPU, 即 yuvout 车道); 要看画面用
+testbed APK (导航页「播放矩阵」按钮), JNI 入口 `pmRunMatrix` 在
+`src/avox_android/PlayMatrixJni.cpp`, 走真实上屏路径 (MediaCodec→Surface), 日志同样
+落盘 `Android/data/avox.samples.mediaplayer/files/pm_log.txt` 可 `adb pull` 复判。
+宿主进程 stdout 镜像日志 (`pm_log.txt`, `--log=` 覆盖) 三平台 console 通用。
+
+APK 构建 (gradle Debug 变体):
+
+```bash
+cd platform/android/AvoxJava
+gradle :testbed:assembleDebug       # local.properties 指向本机 SDK; Debug 变体要求 ZLM Debug 产物
+```
+
+- Debug 变体下 `FindZLMediaKit` 查 `release/android/Debug`, 缺了会整链编不过
+  (`RtcPlayerApi.cpp` 无条件 include ZLM 头) —— 用 `AVOX_BUILD_TYPE=Debug` 跑一次
+  `build_common.build_module('ZLMediaKit', …)` 补齐, Release 目录同理。
+- gradle 侧 cmake 参数与 `build_android.py` 对齐: `AVOX_ENABLE_WEBRTC/GODOT/TESTS=OFF`。
+- 用法: 手机与开发机同网段, 开发机 `push_streams.py` 在推流; 打开 app 点「播放矩阵」,
+  判定横幅上屏; 换 ZLM 主机 `adb shell am start -n avox.samples.mediaplayer/.PlayMatrixActivity --es host <ip>`。
 
 ## 上机清单 (换一台机器跑)
 

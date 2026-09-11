@@ -1,4 +1,5 @@
 build/
+build-ios/
 build_*.log
 build_*.txt
 __pycache__
@@ -147,3 +148,4 @@ assets/video/hls*
 3rdparty/library/windows/ffmpeg/bin-gpl-backup*/
 .workbuddy
 .githooks
+platform/android/AvoxJava/testbed/src/main/assets/
