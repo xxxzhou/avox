@@ -76,7 +76,9 @@ def push_source(duration_s, stream):
     proc = subprocess.Popen([
         ffmpeg, "-hide_banner", "-loglevel", "warning",
         "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", "1280x720", "-r", "30", "-i", "-",
-        # H265: 本机 Intel 驱动上 ff_h264_dx11 解码必崩(见矩阵 W0), 用 H265 走 ff_hevc_dx11;
+        # H265 源: 沿用首次测量口径。当初怕的 W0「ff_h264_dx11 解码必崩」09-10 已定界为
+        # 帧布局重构的中间构建态 (矩阵 W0 已标解决), 09-11 复测 RTSP/RTMP H264 -hard
+        # 全链 nv12 直出 PASS; 换 H264 会动延迟数字口径, 故源保持 H265
         # 显式 yuv420p: x265 对 rgb24 默认编 4:4:4, 播放器 offSurface 要 420 会导致 0 帧
         "-c:v", "libx265", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
         "-x265-params", "keyint=30:min-keyint=30:scenecut=0:bframes=0:rc-lookahead=10",
