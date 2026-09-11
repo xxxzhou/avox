@@ -94,7 +94,11 @@ static void refreshResultLabel(void) {
   dispatch_async(dispatch_get_main_queue(), ^{
     if (!g_resultLabel) return;
     @synchronized(g_results) {
-      g_resultLabel.text = [g_results componentsJoinedByString:@"\n"];
+      // 只显最近 5 条: 横幅要矮, 别挡底下 Metal 层正在渲染的画面
+      NSUInteger n = [g_results count];
+      NSRange tail = n <= 5 ? NSMakeRange(0, n) : NSMakeRange(n - 5, 5);
+      g_resultLabel.text = [[g_results subarrayWithRange:tail]
+          componentsJoinedByString:@"\n"];
     }
   });
 }
@@ -542,13 +546,13 @@ static void startLoopback(void* surface) {
   ulog(@"creating metal device");
   CAMetalLayer* layer = (CAMetalLayer*)view.layer;
   layer.device = MTLCreateSystemDefaultDevice();
-  // 判定结果浮层 (左上, 累积列表)
+  // 判定横幅 (顶部紧凑, 半透明): 底下全屏 Metal 层正在渲染当前用例画面, 别挡住
   g_results = [NSMutableArray array];
-  g_resultLabel = [[UILabel alloc] initWithFrame:CGRectInset(self.window.bounds, 16, 60)];
+  g_resultLabel = [[UILabel alloc] initWithFrame:CGRectMake(8, 44, self.window.bounds.size.width - 16, 130)];
   g_resultLabel.textColor = [UIColor whiteColor];
-  g_resultLabel.backgroundColor = [UIColor colorWithWhite:0 alpha:0.75];
-  g_resultLabel.font = [UIFont boldSystemFontOfSize:26];
-  g_resultLabel.numberOfLines = 0;
+  g_resultLabel.backgroundColor = [UIColor colorWithWhite:0 alpha:0.55];
+  g_resultLabel.font = [UIFont boldSystemFontOfSize:15];
+  g_resultLabel.numberOfLines = 5;
   g_resultLabel.hidden = YES;
   [self.window addSubview:g_resultLabel];
 
@@ -607,19 +611,54 @@ int main(int argc, char* argv[]) {
 
 #else  // macOS 无头验证
 
+#import <AppKit/AppKit.h>
+
+// 窗口 Metal 层 view (--win 用)
+@interface AvoxMacView : NSView
+@end
+@implementation AvoxMacView
++ (Class)layerClass {
+  return [CAMetalLayer class];
+}
+@end
+
 int main(int argc, char* argv[]) {
   @autoreleasepool {
     g_results = [NSMutableArray array];  // addResult 依赖
     g_exitWhenDone = true;
     NSString* urlArg = nil;
+    bool winMode = getenv("AVOX_PM_WIN") != nullptr;
     for (NSString* arg in [NSProcessInfo processInfo].arguments) {
       if ([arg rangeOfString:@"://"].location != NSNotFound) {
         urlArg = arg;
         break;
       }
+      if ([arg isEqualToString:@"--win"]) {
+        winMode = true;
+      }
     }
     const char* mtx = getenv("AVOX_MATRIX");
     bool loopMode = getenv("AVOX_LOOP") || (mtx && strcmp(mtx, "loop") == 0);
+    // --win: 出窗口渲染画面, 判定行仍走 stdout; 缺省无头离屏 (CI 口径)
+    void* surface = nullptr;
+    if (winMode) {
+      [NSApplication sharedApplication];
+      [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+      NSWindow* win = [[NSWindow alloc]
+          initWithContentRect:NSMakeRect(80, 80, 1280, 720)
+                      styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
+                        backing:NSBackingStoreBuffered defer:NO];
+      win.title = @"avoxtest play matrix";
+      AvoxMacView* view = [[AvoxMacView alloc] initWithFrame:win.contentView.bounds];
+      view.wantsLayer = YES;
+      win.contentView = view;
+      [win center];
+      [win makeKeyAndOrderFront:nil];
+      [NSApp activateIgnoringOtherApps:YES];
+      CAMetalLayer* layer = (CAMetalLayer*)view.layer;
+      layer.device = MTLCreateSystemDefaultDevice();
+      surface = (__bridge void*)layer;
+    }
     if (urlArg) {
       // 单 URL 模式
       bool rtcMode = [urlArg rangeOfString:@"webrtc?"].location != NSNotFound ||
@@ -641,7 +680,7 @@ int main(int argc, char* argv[]) {
     } else if (loopMode) {
       startLoopback(nullptr);
     } else {
-      startLanMatrix(nullptr);
+      startLanMatrix(surface);
     }
     [[NSRunLoop mainRunLoop] run];
   }

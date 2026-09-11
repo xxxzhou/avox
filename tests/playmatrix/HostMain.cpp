@@ -12,6 +12,7 @@
 //   playtest --host=192.168.68.245            # 拉局域网另一台 ZLM
 //   playtest --skip=webrtc-h265,shot          # 跳过指定用例
 //   playtest --all                            # 连 enabled=false 的用例一起跑
+//   playtest --win                            # 出窗口渲染画面 (仅 Windows), 判定行仍走 stdout
 //   playtest --list                           # 只列用例表
 // 环境变量: AVOX_PM_HOST / AVOX_PM_OUT / AVOX_PM_ASSET_DIR
 
@@ -20,7 +21,13 @@
 #include <cstring>
 #include <filesystem>
 #include <string>
+#include <thread>
 #include <vector>
+
+#if defined(_WIN32)
+#define NOMINMAX  // windows.h 的 min/max 宏会打断 std::max/std::min
+#include <windows.h>
+#endif
 
 #include "avox/module/AvoxManager.hpp"
 
@@ -96,6 +103,7 @@ int main(int argc, char* argv[]) {
   Endpoints ep;
   RunOptions opt;
   bool listOnly = false;
+  bool winMode = false;
   if (const char* v = getenv("AVOX_PM_HOST")) ep.host = v;
   if (const char* v = getenv("AVOX_PM_OUT")) opt.outDir = v;
   for (int i = 1; i < argc; ++i) {
@@ -114,6 +122,7 @@ int main(int argc, char* argv[]) {
     else if (!(v = argValue(a, "--retries=")).empty()) opt.retries = std::atoi(v.c_str());
     else if (!(v = argValue(a, "--skip=")).empty()) opt.skip = splitComma(v);
     else if (a == "--all") opt.includeDisabled = true;
+    else if (a == "--win") winMode = true;
     else if (a == "--list") listOnly = true;
     else std::printf("[warn] unknown arg: %s\n", a.c_str());
   }
@@ -144,6 +153,47 @@ int main(int argc, char* argv[]) {
   std::printf("[AVOX][TEST] case=play-matrix-start result=PASS platform=%s host=%s "
               "cases=%d\n",
               platformName(), ep.host.c_str(), (int)cases.size());
+#if defined(_WIN32)
+  // --win: 出窗口顺序渲染各拉流用例画面; 矩阵跑后台线程, 主线程泵消息防 Not Responding
+  if (winMode) {
+    WNDCLASSW wc = {};
+    wc.lpfnWndProc = [](HWND h, UINT m, WPARAM w, LPARAM l) -> LRESULT {
+      if (m == WM_DESTROY) {
+        PostQuitMessage(0);
+        return 0;
+      }
+      return DefWindowProcW(h, m, w, l);
+    };
+    wc.hInstance = GetModuleHandleW(nullptr);
+    wc.lpszClassName = L"avoxtest_play";
+    wc.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));  // IDC_ARROW (非UNICODE构建无W宏)
+    RegisterClassW(&wc);
+    HWND hwnd = CreateWindowW(wc.lpszClassName, L"avoxtest play matrix",
+                              WS_OVERLAPPEDWINDOW | WS_VISIBLE, 60, 60, 960, 540,
+                              nullptr, nullptr, wc.hInstance, nullptr);
+    if (!hwnd) {
+      std::printf("[warn] create window failed, fallback offscreen\n");
+      winMode = false;
+    } else {
+      int code = 0;
+      std::thread runner([&] {
+        code = runAll(cases, (void*)hwnd, opt);
+        // 矩阵跑完投递关闭: WM_CLOSE→DestroyWindow→WM_DESTROY→PostQuitMessage
+        PostMessageW(hwnd, WM_CLOSE, 0, 0);
+      });
+      MSG msg;
+      while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
+        TranslateMessage(&msg);
+        DispatchMessageW(&msg);
+      }
+      runner.join();
+      DestroyWindow(hwnd);
+      AvoxManager::clean();
+      return code;
+    }
+  }
+#endif
+  (void)winMode;
   int code = runAll(cases, nullptr, opt);
   // Android console 没有 DllMain(DETACH) 兜底, 退出前显式有序清理
   // (mk_env_release 等 cleanFuncs), 否则 libmk_api 静态析构序倒挂退出必崩
