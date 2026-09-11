@@ -1,4 +1,4 @@
-/build/
+build/
 build_*.log
 build_*.txt
 __pycache__
@@ -68,15 +68,12 @@ platform/android/AvoxJava/**/.cxx
 platform/android/AvoxJava/gradlew
 platform/android/AvoxJava/gradlew.bat
 platform/android/AvoxJava/local.properties
-platform/android/AvoxJava/avox/build
 # platform/android/AvoxJava/avox/libs
 platform/android/AvoxJava/avox/assets
-platform/android/AvoxJava/**/build/
 platform/android/AvoxJava/avox/libs/arm64-v8a
 
 # wasm
 /platform/wasm/**/*.*
-/platform/wasm/**/build
 !/platform/wasm/**/*.py
 !/platform/wasm/**/*.cpp
 !/platform/wasm/**/CMakeLists.txt
@@ -138,7 +135,6 @@ build_log.txt
 samples/pythontest/
 swig/nodejs/screenshots/
 swig/nodejs/logs/
-swig/nodejs/build/
 build_log_torrent.txt
 
 results/torrent_bench/
