@@ -17,6 +17,10 @@ set(WEBRTC_PLATFORM_LIBS "")
 if(WIN32)
   list(APPEND WEBRTC_PLATFORM_LIBS winmm wmcodecdspuuid mfplat dmoguids msdmo iphlpapi)
 endif()
+if(ANDROID)
+  # webrtc android 侧依赖的系统库 (log/native window/audio/图形)
+  list(APPEND WEBRTC_PLATFORM_LIBS log android EGL GLESv2 OpenSLES)
+endif()
 
 register_plugin(avox_webrtc
   DYNAMIC

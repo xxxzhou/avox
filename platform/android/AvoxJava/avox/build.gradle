@@ -13,9 +13,7 @@ android {
                 cppFlags "-std=c++17"
                 arguments "-DANDROID_STL=c++_shared",
                         "-DAVOX_ENABLE_FAAC=OFF",
-                        // 与 build_android.py 对齐: webrtc 不进 android SDK (历史坑: webrtc
-                        // ninja 与 android ninja 混合, libavox.so 链接 webrtc::InitAndroid 失败)
-                        "-DAVOX_ENABLE_WEBRTC=OFF",
+                        // webrtc 默认编入 (默认 ON): 需 avc_library/build/android/release/libwebrtc_nosym.a
                         // godot-cpp 的 math(EXPR) 在 gradle 配置阶段拿不到指针宽度, APK 也用不到 godot 插件
                         "-DAVOX_ENABLE_GODOT=OFF",
                         // 单测 exe 在 android 链不过 (GLESContext 未编入), APK 不需要

@@ -45,6 +45,11 @@ public class JNIHelper {
         void onLine(String line);
         void onDone(int code);
     }
+    private static native void pmSetPluginsDir(String dir);
+    // 动态插件 (libavox_webrtc.so 等) 的扫描目录, 须在首次工厂调用前设置
+    public static void setPluginsDir(String dir) {
+        pmSetPluginsDir(dir);
+    }
     private static native int pmRunMatrix(Surface surface, String host, String outDir,
             String fileH264, String fileH265, String skip, PmCallback callback);
     public static int runPlayMatrix(Surface surface, String host, String outDir,

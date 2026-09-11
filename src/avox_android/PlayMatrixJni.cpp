@@ -13,6 +13,7 @@
 #include "../../../tests/playmatrix/PlayMatrix.hpp"
 #include "../../../tests/playmatrix/PlayTee.hpp"
 #include "avox/module/AvoxManager.hpp"
+#include "avox/module/ModuleMgr.hpp"
 
 using namespace avox;
 using namespace avox::playmatrix;
@@ -132,4 +133,15 @@ Java_avox_android_library_JNIHelper_pmRunMatrix(
     env->DeleteGlobalRef(cbGlobal);
   }
   return code;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_avox_android_library_JNIHelper_pmSetPluginsDir(
+    JNIEnv* env, jclass, jstring jDir) {
+  const char* dir = env->GetStringUTFChars(jDir, nullptr);
+  if (dir) {
+    // 插件扫描目录 (必须在 startup/ensureStarted 之前设置)
+    ModuleMgr::Get().setPluginsDir(dir);
+    env->ReleaseStringUTFChars(jDir, dir);
+  }
 }

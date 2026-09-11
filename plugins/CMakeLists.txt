@@ -14,6 +14,9 @@ if(ANDROID)
   # 运行期由 avox_godot 解压到 filesDir 并 setPluginsDir 动态加载。
   # 其余插件在 Android 无预编译依赖(opencv 等)或链接不完整(sherpa 等), 一并排除。
   set(PLUGINS_DYNAMIC avox_torrent)
+  # webrtc 插件: 宿主把 libavox_webrtc.so 复制到可写目录后 setPluginsDir 动态加载
+  # (依赖 avc_library/build/android/release/libwebrtc_nosym.a; console 无 JVM 用不了 webrtc)
+  list(APPEND PLUGINS_DYNAMIC avox_webrtc)
 endif()
 if(WIN32)
   # DeckLink(Blackmagic)采集卡, 仅Windows

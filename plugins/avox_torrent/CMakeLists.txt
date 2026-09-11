@@ -22,8 +22,13 @@ endif()
 # 元数据 HTTP 缓存通道(httplib https, itorrents.org)需要 OpenSSL;
 # Windows 下 httplib 基础 socket 还要 ws2_32/crypt32
 set(_TORRENT_LIBS ${LIBTORRENT_LIBRARIES} ${FFMPEG_LIBRARIES})
-if(OPENSSL_FOUND)
-  list(APPEND _TORRENT_LIBS ${OPENSSL_LIBRARIES})
+# android: webrtc(BoringSSL) 已静态编入 avox, 且经 LINK_ONLY 传播到本链接行,
+# 再链 OpenSSL 必撞 SSL_* 符号(duplicate symbol 实测); libtorrent 的 SSL 引用
+# 由 avox 内的 BoringSSL 解析。android 无 webrtc 时仍需 OpenSSL 兜底
+if(NOT ANDROID OR NOT AVOX_AGENT_USE_BORINGSSL)
+  if(OPENSSL_FOUND)
+    list(APPEND _TORRENT_LIBS ${OPENSSL_LIBRARIES})
+  endif()
 endif()
 if(WIN32)
   list(APPEND _TORRENT_LIBS ws2_32 crypt32)

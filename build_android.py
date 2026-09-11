@@ -71,11 +71,14 @@ if __name__ == "__main__":
     godot_flag = "OFF" if os.environ.get("AVOX_GODOT_ANDROID", "1") == "0" else "ON"
     unity_flag = "OFF" if os.environ.get("AVOX_UNITY_ANDROID", "1") == "0" else "ON"
     sherpa_flag = os.environ.get("AVOX_ENABLE_SHERPA", "ON")
+    # webrtc 静态编入 libavox (avc_library/build/android/release/libwebrtc_nosym.a);
+    # console 无 JVM webrtc 仍不可用, 驱动会按 libavox_webrtc.so 缺失自动跳过用例
+    webrtc_flag = "OFF" if os.environ.get("AVOX_WEBRTC_ANDROID", "1") == "0" else "ON"
     flavor_args = f" -DAVOX_DIST_FLAVOR={DIST_FLAVOR}"
     extra_args = ("-DAVOX_ENABLE_AGENT=ON -DAVOX_ENABLE_CLI=OFF "
                   f"-DAVOX_ENABLE_GODOT={godot_flag} -DAVOX_ENABLE_UNITY={unity_flag} "
                   f"-DAVOX_ENABLE_SHERPA={sherpa_flag} "
-                  f"-DAVOX_ENABLE_WEBRTC=OFF -DAVOX_ENABLE_SWIG={swig_flag}"
+                  f"-DAVOX_ENABLE_WEBRTC={webrtc_flag} -DAVOX_ENABLE_SWIG={swig_flag}"
                   f"{flavor_args}")
     build_common.build_self(extra_args)
 

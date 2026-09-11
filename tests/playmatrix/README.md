@@ -177,6 +177,22 @@ gradle :testbed:assembleDebug       # local.properties 指向本机 SDK; Debug �
 为空致 vk shader assert 自杀; `Window::close` release 宿主借出的 ANativeWindow 后,
 下条用例 `initVkSurface` 拿已解绑窗口崩溃 —— `Window::initSurface` 已补对称 acquire。
 
+## webrtc on Android (插件化接入, 运行链未通)
+
+矩阵默认本地源与推流已全换 `assets/video/test/` 标准测试源。webrtc 走 **插件模型**
+(Windows 同款): `AVOX_ENABLE_WEBRTC=ON` (build_android 默认 ON, env
+`AVOX_WEBRTC_ANDROID=0` 关) → `plugins/avox_webrtc` 编出 `libavox_webrtc.so` 打进
+APK; 宿主把插件 .so 从 nativeLibraryDir 复制到 filesDir/plugins 后
+`JNIHelper.setPluginsDir` 交插件扫描加载; `webrtc::InitAndroid`(JVM) 也随之移入
+`WebrtcModule::loadModule`, 核心 libavox 不再引任何 webrtc 符号 (AndHelper 只留
+纯 JNI 的 ContextUtils.initialize)。
+
+**剩余卡点**: 插件 loadModule 里 `webrtc::InitAndroid` 触发
+`Check failed: !g_jvm (InitGlobalJniVariables!)` abort —— g_jvm 已被先行初始化
+(疑似 dlopen 链上其它 JNI OnLoad/Init 路径或重复调用), 待定位去重;
+修复前 webrtc-* 两用例在 android 仍 FAIL。console 形态 (无 JVM) 继续由驱动按
+libavox_webrtc.so 缺失规则跳过。
+
 ## 上机清单 (换一台机器跑)
 
 公共前置三件:

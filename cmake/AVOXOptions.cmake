@@ -342,8 +342,10 @@ endif()
 # SSL 来源: 优先 WebRTC 自带 BoringSSL, 否则 OpenSSL (二者由上方统一决策)
 if(AVOX_ENABLE_AGENT)
   if(AVOX_AGENT_USE_BORINGSSL)
-    include_directories(${AVOX_TRDPARTY}/cpp-httplib)
-    add_definitions(-DAVOX_ENABLE_AGENT)
+    # BoringSSL 头全局提供: 除 Agent 外, avox_torrent 等其它引用 httplib 的模块同样
+    # 需要 openssl/ 头; 符号由 webrtc 库静态提供, 不得再链顶层 OpenSSL
+    include_directories(${AVOX_TRDPARTY}/cpp-httplib ${WEBRTC_BORINGSSL_INCLUDE_DIR})
+    add_definitions(-DAVOX_ENABLE_AGENT -DOPENSSL_IS_BORINGSSL)
     add_definitions(-DCPPHTTPLIB_OPENSSL_SUPPORT)
     message(STATUS "Agent module enabled with cpp-httplib + BoringSSL (WebRTC)")
   elseif(OpenSSL_FOUND)

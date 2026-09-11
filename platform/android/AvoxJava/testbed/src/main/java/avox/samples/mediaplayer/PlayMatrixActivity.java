@@ -113,9 +113,33 @@ public class PlayMatrixActivity extends Activity {
         return dst.getAbsolutePath();
     }
 
+    // 动态插件 (libavox_webrtc.so) 在 APK 里平铺于 nativeLibraryDir, 不可枚举;
+    // 复制到 filesDir/plugins 后 setPluginsDir, 插件扫描即可发现并 dlopen
+    private String preparePlugins() {
+        java.io.File dstDir = new java.io.File(getFilesDir(), "plugins");
+        dstDir.mkdirs();
+        String nativeDir = getApplicationInfo().nativeLibraryDir;
+        for (String name : new String[]{"libavox_webrtc.so"}) {
+            try (java.io.InputStream in = new java.io.FileInputStream(
+                    new java.io.File(nativeDir, name));
+                 java.io.OutputStream out = new java.io.FileOutputStream(
+                         new java.io.File(dstDir, name))) {
+                byte[] buf = new byte[1 << 16];
+                int n;
+                while ((n = in.read(buf)) > 0) {
+                    out.write(buf, 0, n);
+                }
+            } catch (Exception e) {
+                banner("插件复制失败: " + name);
+            }
+        }
+        return dstDir.getAbsolutePath();
+    }
+
     private void startMatrix(SurfaceHolder holder) {
         String outDir = getExternalFilesDir(null) != null
                 ? getExternalFilesDir(null).getAbsolutePath() : getFilesDir().getAbsolutePath();
+        JNIHelper.setPluginsDir(preparePlugins());
         banner("日志: " + outDir + "/pm_log.txt");
         new Thread(() -> {
             int code = JNIHelper.runPlayMatrix(holder.getSurface(), host(), outDir,

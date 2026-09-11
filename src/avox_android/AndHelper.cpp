@@ -90,9 +90,9 @@ JNIEXPORT void JNICALL Java_avox_android_library_JNIHelper_jniSetup(
       env->CallStaticVoidMethod(context_utils_class, init_method,
                                 genv.application);
       if (!env->ExceptionCheck()) {
-        log(LogLevel::info, "Calling webrtc::InitAndroid...");
-        webrtc::InitAndroid(genv.vm);
-        log(LogLevel::info, "webrtc init success");
+        // webrtc::InitAndroid(genv.vm) 移至 avox_webrtc 插件 WebrtcModule::loadModule:
+        // 核心不引 webrtc 符号, JVM 指针经 AndroidEnv 传给插件自行初始化
+        log(LogLevel::info, "webrtc java context ready (native init in plugin)");
       } else {
         log(LogLevel::warn, "ContextUtils.initialize threw an exception");
         env->ExceptionDescribe();
