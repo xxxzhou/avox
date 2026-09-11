@@ -66,6 +66,18 @@ src->resolve(i, nullptr);  // → smb://user:pass@host[:port]/share/path/文件.
 - 冒烟: `samples/functest/smbsourcetest.exe -u smb://host/share [-n user] [-p pass]
   [-m 媒体名子串] [-v]`, 覆盖 open/list 下钻/resolve/播放推进/seek, 8 项全过;
   实测环境: 极空间 Z4(SMB 服务端, 中文目录树 + 1.1GB mkv 播放/seek)与 Windows 本机共享。
+- 全盘普查: `smbbatchtest` 同参 + `--stride N`(每 N 个媒体测 1 个, 10k+ 文件盘用)。
+  极空间实测: 10679 媒体抽样 534, 通过 470(92%), seek 266/266 零卡死,
+  **传输层(SMB 连接/读/seek)零失败**; 失败均为非传输因素:
+  - 15 例 WMV(VC-1/WMA)/RMVB(RealVideo): 核心编码表(VCodecId/ACodecId)未覆盖,
+    与 IOParseFF/torrent 同口径, 属引擎编码边界非 SMB 问题;
+  - 18 例 audio-only AVI(video 流不支持降级纯音频)小文件位置冻结:
+    sync=no 时引擎时钟不更新, getPosition 退回 demux 位置, IO 冲到 EOF 后冻结在尾部,
+    音频本身正常播; 改进点在 MediaPlayer 核心时钟;
+  - 5 例 8.3 改名目录(真实名含非法字符, 服务端 `_IXXXX~X` 形态返回):
+    极空间服务端对按改名 open 回查报 OBJECT_NAME_INVALID(Windows 客户端可开),
+    服务端 quirk;
+  - 2 例 .mpg avformat_open_input Invalid data: 文件本体损坏。
 
 ## 构建
 
