@@ -17,4 +17,15 @@ if(WIN32)
   list(APPEND _REMOTE_LIBS ws2_32 crypt32)
 endif()
 
+# "smb" 源依赖: libsmb2 预编译产物(库仓, 依赖方式与 libtorrent 一致, 见 README)
+# 就位时定义 AVOX_REMOTE_SMB 并链接静态库, SmbSource 按此宏条件编译
+find_package(Libsmb2 QUIET)
+if(Libsmb2_FOUND)
+  include_directories(${LIBSMB2_INCLUDE_DIRS})
+  list(APPEND _REMOTE_LIBS ${LIBSMB2_LIBRARIES})
+  add_definitions(-DAVOX_REMOTE_SMB=1)
+else()
+  message(STATUS "avox_remote plugin: libsmb2 未找到, smb 源不参与编译(见 D:/Work/github/libsmb2)")
+endif()
+
 register_plugin(avox_remote DYNAMIC LIBS ${_REMOTE_LIBS})
