@@ -79,24 +79,36 @@ void logApple(const char *time, const char *level, const char *msg) {
 }
 
 const char* getBundlePath(NSString* bundleName, NSString* resourceName){
+  // 布局回退链:
+  //  a) mainBundle 枚举到 <bundleName> 包装目录 (iOS app/裸可执行) → NSBundle 内查
+  //  b) macOS 26 的 NSBundle 会漏枚举 .bundle 包目录: .app 内是平铺
+  //     <Resources>/<resourceName> 或 <Resources>/<bundleName>/... 直查文件系统
+  //  c) CWD (命令行裸跑)
+  NSFileManager *fm = [NSFileManager defaultManager];
   NSString *avoxBundlePath = [[NSBundle mainBundle] pathForResource:bundleName
                                                             ofType:nil];
-  if (!avoxBundlePath) {
-    return nullptr;
+  if (avoxBundlePath) {
+    NSBundle *avoxBundle = [NSBundle bundleWithPath:avoxBundlePath];
+    if (avoxBundle) {
+      NSString *hit = [avoxBundle pathForResource:resourceName ofType:nil];
+      if (hit) return [hit UTF8String];
+    }
+    // 包装目录存在但 NSBundle 不认 (平铺内容): 目录内直查
+    NSString *flat = [avoxBundlePath stringByAppendingPathComponent:resourceName];
+    if ([fm fileExistsAtPath:flat]) return [flat UTF8String];
   }
-  // 创建 avox.bundle 的 NSBundle 实例
-  NSBundle *avoxBundle = [NSBundle bundleWithPath:avoxBundlePath];
-  if (!avoxBundle) {
-    return nullptr;
+  NSArray<NSString*>* roots = @[
+    [[[NSBundle mainBundle] bundlePath] stringByAppendingPathComponent:@"Contents/Resources"],
+    [[NSFileManager defaultManager] currentDirectoryPath],
+  ];
+  for (NSString* root in roots) {
+    NSString *flat = [[root stringByAppendingPathComponent:bundleName]
+        stringByAppendingPathComponent:resourceName];
+    if ([fm fileExistsAtPath:flat]) return [flat UTF8String];
+    NSString *direct = [root stringByAppendingPathComponent:resourceName];
+    if ([fm fileExistsAtPath:direct]) return [direct UTF8String];
   }
-  // 从 avox.bundle 中查找资源
-  NSString *bundlePath = [avoxBundle pathForResource:resourceName ofType:nil];
-  if (bundlePath) {
-    const char *fullPath = [bundlePath UTF8String];
-    return fullPath;
-  } else {
-    return nullptr;
-  }
+  return nullptr;
 }
 
 const char *getShaderPath(const char *spvPath) {

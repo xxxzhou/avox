@@ -306,6 +306,8 @@ if(AVOX_ENABLE_PLAYTEST)
         add_subdirectory(platform/windows/playtest)
     elseif(ANDROID)
         add_subdirectory(platform/android/playtest)
+    elseif(APPLE)
+        add_subdirectory(platform/macos/playtest)
     endif()
 endif()
 

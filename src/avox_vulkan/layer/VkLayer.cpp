@@ -201,6 +201,16 @@ void VkLayer::onInitGraph() {
 }
 
 void VkLayer::onInitPipe() {
+  // glsl 没编进 avox.bundle / 资源定位失败时降级: 该层跳过, 不拿空 module
+  // 去建管线 (MoltenVK 对 VK_NULL_HANDLE module 直接段错误)
+  if (shader && shader->shaderStage.module == VK_NULL_HANDLE) {
+    // glslPath 为空或资源定位失败都会走到这; 空 module 进 vkCreateComputePipelines
+    // 在 MoltenVK 上直接段错误, 降级为跳过本层
+    LOGFLF(LogLevel::error, "glsl module null, layer disabled, glslPath:", glslPath,
+           " layer:", getName());
+    bShaderMissing = true;
+    return;
+  }
   std::vector<void*> bufferInfos;
   for (int i = 0; i < inCount; i++) {
     inTexs[i]->descInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
@@ -239,6 +249,9 @@ void VkLayer::onPreFrame() {
 }
 
 void VkLayer::onCommand() {
+  if (bShaderMissing) {
+    return;
+  }
   assert(computerPipeline);
   VkCommandBuffer cmd = getCurrentCmdBuffer();
   for (int i = 0; i < inCount; i++) {

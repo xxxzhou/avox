@@ -54,6 +54,7 @@ protected:
 
   class VkPipeGraph *vkPipeGraph = nullptr;
   VkPipeline computerPipeline = VK_NULL_HANDLE;
+  bool bShaderMissing = false;  // glsl 缺失降级: onCommand 跳过本层
   std::vector<VulkanTexturePtr> inTexs;
   std::vector<VulkanTexturePtr> outTexs;
   // VkCommandBuffer cmd = VK_NULL_HANDLE;
