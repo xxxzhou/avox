@@ -99,7 +99,7 @@ class MediaPlayer : public IMediaPlayer,
   // 直播模式下，是否开启低延迟，数据太多会自动快播
   bool bLowLatency = false;
   // 低延迟播放时，队列数据多了,自动快速播放速度
-  double autoSpeed = 1.2;
+  double autoSpeed = 1.1;
   // IO状态
   PBIOStatus ioStatus = {};
   // 音频或视频的队列状态
