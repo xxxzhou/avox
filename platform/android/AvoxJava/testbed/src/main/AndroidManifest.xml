@@ -36,7 +36,7 @@
         <activity android:name=".VkActivity"></activity>
         <activity android:name=".Vk2GLActivity"></activity>
         <activity android:name=".RtcActivity"></activity>
-        <activity android:name=".PlayMatrixActivity"></activity>
+        <activity android:name=".PlayMatrixActivity" android:exported="true"></activity>
     </application>
 
 </manifest>

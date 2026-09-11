@@ -138,7 +138,7 @@ hwaccel 那类回归的哨兵: 车道任何一环断了都会从这里先炸)。
 |------|------|------|------|
 | Windows | `platform/windows/playtest/` | console exe, 无头离屏; `--win` 出窗口看画面 | 已实测 22/22 + `--win` |
 | Android | `platform/android/playtest/` | console 可执行, `adb push` + `adb shell` | 已实测 21/23 (09-11, 小米 23113RKC6C; 差 `rec-transcode-*`×2, 见下) |
-| Android APK | `platform/android/AvoxJava` testbed 的 `PlayMatrixActivity` | SurfaceView 出画面 + 判定横幅上屏 + `pm_log.txt` | 待真机验证 |
+| Android APK | `platform/android/AvoxJava` testbed 的 `PlayMatrixActivity` | SurfaceView 出画面 + 判定横幅上屏 + `pm_log.txt` | 已实测 20/25 (09-11, 小米 23113RKC6C; 5 条均为构建形态所致, 见下) |
 | Apple | `platform/ios/avoxtest/` | 同一份用例表, iOS app + macOS 无头 CLI | macOS 已实测 **25/25 全绿** (09-11, M2, 含全协议 LAN/WebRTC/车道B); 注意无头进程必须挂存活会话, 见 [avoxtest README](../../platform/ios/avoxtest/README.md) |
 | Linux | 待建 | console exe | 暂不做 |
 
@@ -162,6 +162,18 @@ gradle :testbed:assembleDebug       # local.properties 指向本机 SDK; Debug �
 - gradle 侧 cmake 参数与 `build_android.py` 对齐: `AVOX_ENABLE_WEBRTC/GODOT/TESTS=OFF`。
 - 用法: 手机与开发机同网段, 开发机 `push_streams.py` 在推流; 打开 app 点「播放矩阵」,
   判定横幅上屏; 换 ZLM 主机 `adb shell am start -n avox.samples.mediaplayer/.PlayMatrixActivity --es host <ip>`。
+
+09-11 真机首跑 (小米 23113RKC6C) 20/25, 5 条 FAIL 均为形态所致非回归:
+
+| 用例 | 原因 |
+|------|------|
+| `webrtc-*`×2 | 本构建 `AVOX_ENABLE_WEBRTC=OFF` (与 build_android.py 对齐), `createWebRtcPlayer-null` |
+| `rec-transcode-*`×2 | 与 console 相同的已知问题: AndVEncoder CPU 输入零输出 (见上节) |
+| `yuvout-h264` | APK 硬解走 Surface 上屏路径, 无 CPU NV12 输出, `frames=0` 属预期; 该用例只对 console (byte-buffer 车道) 有意义 |
+
+真机排查两坑 (均已修): 深链直进 Activity 时没人调 `JNIHelper.initJNI`, assetManager
+为空致 vk shader assert 自杀; `Window::close` release 宿主借出的 ANativeWindow 后,
+下条用例 `initVkSurface` 拿已解绑窗口崩溃 —— `Window::initSurface` 已补对称 acquire。
 
 ## 上机清单 (换一台机器跑)
 

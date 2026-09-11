@@ -1,5 +1,6 @@
 package avox.samples.mediaplayer;
 
+import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -12,15 +13,14 @@ import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
-import androidx.appcompat.app.AppCompatActivity;
-
 import avox.android.library.JNIHelper;
 
 // 播放回归矩阵的带画面宿主 (对齐 iOS avoxtest): SurfaceView 渲染各拉流用例,
 // 顶部半透明横幅滚动最近判定行, 日志落盘 app 外部 files 目录 pm_log.txt。
 // 用法: 默认拉 192.168.68.245 的 ZLM; adb shell am start ... --es host <ip> 可换。
 // 本地源 (file-* 用例) 首次启动从 assets/video 拷到 filesDir; 缺了会 FAIL 对应用例
-public class PlayMatrixActivity extends AppCompatActivity {
+// app 全局主题是非 AppCompat 全屏主题, 故继承普通 Activity
+public class PlayMatrixActivity extends Activity {
 
     // 开发机 ZLM (推流: script/testenv/push_streams.py), intent --es host 覆盖
     private static final String DEFAULT_HOST = "192.168.68.245";
@@ -32,6 +32,9 @@ public class PlayMatrixActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // 深链直进本页时导航页不会先跑, 必须先注册 activity: SDK 据此拿 AAssetManager,
+        // 否则 vk shader 回退文件系统找不到, loadShaderModule assert 自杀 (SIGABRT)
+        JNIHelper.initJNI(this);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         FrameLayout root = new FrameLayout(this);
         SurfaceView surfaceView = new SurfaceView(this);
@@ -67,8 +70,21 @@ public class PlayMatrixActivity extends AppCompatActivity {
 
             @Override
             public void surfaceDestroyed(SurfaceHolder holder) {
+                android.util.Log.i("pmdbg", "surfaceDestroyed");
             }
         });
+    }
+
+    @Override
+    protected void onPause() {
+        android.util.Log.i("pmdbg", "onPause");
+        super.onPause();
+    }
+
+    @Override
+    protected void onResume() {
+        android.util.Log.i("pmdbg", "onResume");
+        super.onResume();
     }
 
     private String host() {

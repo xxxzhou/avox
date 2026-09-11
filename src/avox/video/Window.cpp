@@ -51,6 +51,14 @@ void Window::initSurface(void* surface_) {
   }
 #else
   surface = getNativeSurface(surface_);
+#ifdef __ANDROID__
+  // 宿主传入的是借出的 ANativeWindow (fromSurface), close() 会 release;
+  // 这里 acquire 配平, 否则 close 后引用计数归零解绑窗口, 下一个持有同指针的
+  // 播放器 initVkSurface 时 loader 空指针崩溃 (矩阵 APK 连续用例实测)
+  if (surface) {
+    ANativeWindow_acquire(surface);
+  }
+#endif
 #endif
   // windows平台会由hwnd创建surface
   // 后面渲染统一使用surface
