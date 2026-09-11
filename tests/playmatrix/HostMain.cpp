@@ -101,6 +101,17 @@ const char* platformName() {
 
 }  // namespace
 
+#if defined(__APPLE__)
+namespace avox {
+namespace playmatrix {
+// macOS 窗口宿主 (platform/macos/playtest/WinHost.mm): AppKit 窗口出画面,
+// tee.onLine 喂判定横幅; 返回矩阵退出码
+int runAppleWindowHost(const std::vector<PlayCase>& cases, const RunOptions& opt,
+                       StdoutTee* tee);
+}
+}
+#endif
+
 int main(int argc, char* argv[]) {
   Endpoints ep;
   RunOptions opt;
@@ -204,6 +215,16 @@ int main(int argc, char* argv[]) {
       tee.stop();
       return code;
     }
+  }
+#endif
+#if defined(__APPLE__)
+  // --win: AppKit 窗口 (CAMetalLayer 画面 + 判定横幅), 与 Windows 宿主同参数;
+  // 宿主内部泵主线程 runloop, 跑完返回退出码
+  if (winMode) {
+    int code = runAppleWindowHost(cases, opt, &tee);
+    AvoxManager::clean();
+    tee.stop();
+    return code;
   }
 #endif
   (void)winMode;

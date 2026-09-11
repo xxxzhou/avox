@@ -3,7 +3,8 @@
 同一份 `avoxtest.mm` 编出两种形态:
 
 - **iOS 真机 app**: 全屏 Metal 渲染, 启动即自动跑矩阵, 判定逐条上屏
-- **macOS 无头 CLI**: 离屏解码, 跑完退出, **退出码 0=全过** (可接 CI)
+- **macOS CLI**: `--win` 出窗口 (CAMetalLayer 画面 + 判定横幅, 同 iOS 口径), 缺省
+  离屏, 跑完退出, **退出码 0=全过** (可接 CI)
 
 ## 测试矩阵 (默认: LAN 模式)
 
@@ -35,8 +36,10 @@ webrtc 为 `connected && firstFrame && fps>0`。
 注: 回环模式仍走自己那套精简用例 (h264 协议子集 + webrtc), **未接共享用例表** —— 它有
 独立的端口/推流节奏; 做每次改动的门禁请用默认 LAN 模式。
 
-日志: iOS 写 `Documents/avoxlog.txt` (devicectl 取) + UDP 直发 192.168.68.219:9999;
-macOS 全走 stdout。
+日志: 判定行与 **SDK 日志** (经 `setLogAction` 桥入) 全部落
+`Documents/avoxlog.txt` (devicectl 取; macOS 在 `~/Documents`), 口径对齐桌面宿主的
+`pm_log.txt` —— 人或大模型只读这一个文件即可复判, 无需盯屏幕。另 UDP 直发
+192.168.68.219:9999 (无监听属正常)。`--win` 时判定行同时滚动在窗口横幅上。
 
 ```bash
 # 测试源生成 (仅 loop 模式需要)
@@ -52,6 +55,7 @@ cmake -B build \
   -DAVOX_WEBRTC_LIB=<avc_library>/build/darwin/release/libwebrtc_nosym.a
 cmake --build build
 ./build/avoxtest            # LAN 矩阵, echo $? 看结果
+./build/avoxtest --win      # 出窗口: 画面 + 判定横幅
 AVOX_MATRIX=loop ./build/avoxtest   # 进程内回环
 ```
 

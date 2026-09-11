@@ -59,6 +59,12 @@ static void ulog(NSString* fmt, ...) {
   close(fd);
 }
 
+// SDK 日志桥进 ulog (→ NSLog + Documents/avoxlog.txt): 判定行之外补齐 SDK 上下文,
+// 只读这一个文件即可复判 (对齐桌面宿主 pm_log.txt 的全量镜像口径)
+static void sdkLogToUlog(int32_t level, const char* msg) {
+  ulog(@"[sdk][%d] %s", level, msg ? msg : "");
+}
+
 using namespace avox;
 using namespace avox::playmatrix;
 
@@ -103,7 +109,23 @@ static void refreshResultLabel(void) {
   });
 }
 #else
-static void refreshResultLabel(void) {}
+#import <AppKit/AppKit.h>
+static NSTextView* g_resultField = nil;
+
+static void refreshResultLabel(void) {
+  // AppKit 只能主线程碰 (同 iOS label 的踩堆教训)
+  dispatch_async(dispatch_get_main_queue(), ^{
+    if (!g_resultField) return;
+    NSString* joined = nil;
+    @synchronized(g_results) {
+      // 只显最近 6 条: 横幅要矮, 别挡底下 Metal 层正在渲染的画面
+      NSUInteger n = [g_results count];
+      NSRange tail = n <= 6 ? NSMakeRange(0, n) : NSMakeRange(n - 6, 6);
+      joined = [[g_results subarrayWithRange:tail] componentsJoinedByString:@"\n"];
+    }
+    g_resultField.string = joined;
+  });
+}
 #endif
 static void addResult(NSString* name, bool pass, NSString* note) {
   NSString* line =
@@ -525,6 +547,7 @@ static void startLoopback(void* surface) {
 
 @implementation AppDelegate
 - (BOOL)application:(UIApplication*)application didFinishLaunchingWithOptions:(NSDictionary*)options {
+  setLogAction(sdkLogToUlog);  // SDK 日志一并落 avoxlog.txt
   ulog(@"didFinishLaunching enter");
   ulog(@"[chk-main] mediaChanged=[%s] len=%d logEvent=[%s] len=%d",
        mediakit::Broadcast::kBroadcastMediaChanged.c_str(),
@@ -626,6 +649,7 @@ int main(int argc, char* argv[]) {
   @autoreleasepool {
     g_results = [NSMutableArray array];  // addResult 依赖
     g_exitWhenDone = true;
+    setLogAction(sdkLogToUlog);  // SDK 日志一并落 Documents/avoxlog.txt
     NSString* urlArg = nil;
     bool winMode = getenv("AVOX_PM_WIN") != nullptr;
     for (NSString* arg in [NSProcessInfo processInfo].arguments) {
@@ -650,13 +674,31 @@ int main(int argc, char* argv[]) {
                         backing:NSBackingStoreBuffered defer:NO];
       win.title = @"avoxtest play matrix";
       AvoxMacView* view = [[AvoxMacView alloc] initWithFrame:win.contentView.bounds];
+      // 显式建 CAMetalLayer 挂给 view: 窗口显示前 view.layer 是 NSViewBackingLayer,
+      // 对它 setDevice: 会 unrecognized selector 崩
+      CAMetalLayer* layer = [CAMetalLayer layer];
+      layer.frame = win.contentView.bounds;
+      [view setLayer:layer];
       view.wantsLayer = YES;
       win.contentView = view;
       [win center];
       [win makeKeyAndOrderFront:nil];
       [NSApp activateIgnoringOtherApps:YES];
-      CAMetalLayer* layer = (CAMetalLayer*)view.layer;
       layer.device = MTLCreateSystemDefaultDevice();
+      // 判定横幅 (顶部半透明 monospace, 最近6行, 同 WinHost.mm): 底下 Metal 层出画面
+      CGFloat bh = 96;
+      NSTextView* banner = [[NSTextView alloc]
+          initWithFrame:NSMakeRect(8, view.bounds.size.height - bh - 8,
+                                   view.bounds.size.width - 16, bh)];
+      banner.editable = NO;
+      banner.drawsBackground = YES;
+      banner.backgroundColor = [NSColor colorWithWhite:0 alpha:0.55];
+      banner.textColor = [NSColor whiteColor];
+      banner.font = [NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightRegular];
+      banner.textContainerInset = NSMakeSize(6, 4);
+      banner.autoresizingMask = NSViewWidthSizable | NSViewMinYMargin;
+      [view addSubview:banner];
+      g_resultField = banner;
       surface = (__bridge void*)layer;
     }
     if (urlArg) {

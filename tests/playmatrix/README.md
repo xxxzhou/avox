@@ -118,6 +118,7 @@ python script/testenv/play_regress.py --list
 
 # 直接跑 runner (Windows 产物在 build/.../install/*/Release/)
 playtest --host=127.0.0.1 --skip=webrtc-h265
+playtest --host=127.0.0.1 --win        # 出窗口看画面; macOS 同样支持 (判定横幅上屏)
 ```
 
 `--offline` 已接进 CI: `.github/workflows/release.yml` 的 `Run playback regression
@@ -139,7 +140,8 @@ hwaccel 那类回归的哨兵: 车道任何一环断了都会从这里先炸)。
 | Windows | `platform/windows/playtest/` | console exe, 无头离屏; `--win` 出窗口看画面 | 已实测 22/22 + `--win` |
 | Android | `platform/android/playtest/` | console 可执行, `adb push` + `adb shell` | 已实测 21/23 (09-11, 小米 23113RKC6C; 差 `rec-transcode-*`×2, 见下) |
 | Android APK | `platform/android/AvoxJava` testbed 的 `PlayMatrixActivity` | SurfaceView 出画面 + 判定横幅上屏 + `pm_log.txt` | 已实测 20/25 (09-11, 小米 23113RKC6C; 5 条均为构建形态所致, 见下) |
-| Apple | `platform/ios/avoxtest/` | 同一份用例表, iOS app + macOS 无头 CLI | macOS 已实测 **25/25 全绿** (09-11, M2, 含全协议 LAN/WebRTC/车道B); 注意无头进程必须挂存活会话, 见 [avoxtest README](../../platform/ios/avoxtest/README.md) |
+| macOS | `platform/macos/playtest/` | console exe, 无头离屏; `--win` 出窗口 (CAMetalLayer 画面 + 判定横幅, `WinHost.mm`) | 已实测 **25/25 + `--win`** (09-11, M2) |
+| Apple app | `platform/ios/avoxtest/` | 同一份用例表, iOS app (画面+判定大字上屏) + macOS CLI (`--win` 同样出画面+横幅) | macOS 已实测 **25/25 全绿** (09-11, M2, 含全协议 LAN/WebRTC/车道B); 注意无头进程必须挂存活会话, 见 [avoxtest README](../../platform/ios/avoxtest/README.md) |
 | Linux | 待建 | console exe | 暂不做 |
 
 Android 双形态互补: console 判定行只走 stdout, 与 Windows 完全一致的 runner 契约,
