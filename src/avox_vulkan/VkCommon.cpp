@@ -77,6 +77,8 @@ VkInstanceArgs VkInstanceArgs::defArgs(bool bDebug) {
       {VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME},
 #elif defined(__APPLE__)
       {VK_EXT_METAL_SURFACE_EXTENSION_NAME},
+#elif defined(__ONLY_LINUX__)
+      {VK_KHR_XLIB_SURFACE_EXTENSION_NAME},
 #endif
   };
   if (bDebug) {

@@ -27,9 +27,12 @@ VkShareHandle::~VkShareHandle() {
   if (type == VkShareHandleType::opaqueFd && handle != nullptr) {
     close((int)(intptr_t)handle);
   }
+#ifdef __ANDROID__
+  // androidHwBuffer 是 AHardwareBuffer, 桌面 Linux 无此类型
   if (type == VkShareHandleType::androidHwBuffer && handle != nullptr) {
     AHardwareBuffer_release(reinterpret_cast<AHardwareBuffer*>(handle));
   }
+#endif
 #endif
   type = VkShareHandleType::none;
   handle = nullptr;

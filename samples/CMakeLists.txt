@@ -46,10 +46,11 @@ function(avox_bundle_resources target)
     )
 endfunction()
 
-# macOS 跳过整套 functest (一堆 Windows 专属依赖: agent/cli/录制等), 只出跨平台帧契约运行时验证
-if(NOT APPLE)
+# Windows 之外跳过整套 functest (一堆 Windows 专属依赖: agent/cli/录制等),
+# macOS 只出跨平台帧契约运行时验证 (yuvouttest), Linux 走 vulkantest/linuxtest + playtest
+if(WIN32)
     add_subdirectory(functest)
-else()
+elseif(APPLE)
     add_executable(yuvouttest functest/yuvouttest.cpp)
     target_link_libraries(yuvouttest "$<LINK_LIBRARY:WHOLE_ARCHIVE,avox>")
     avox_output(yuvouttest)

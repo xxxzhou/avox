@@ -20,6 +20,7 @@ struct android_app;
 #elif defined(__ONLY_LINUX__)
 #include <X11/Xlib.h>
 #include <vulkan/vulkan_xlib.h>
+#include "avox_linux/LinuxHelper.h"
 #endif
 
 
@@ -49,6 +50,11 @@ private:
   VkClearValue clearValues[2];
   bool focused = false;
   bool vsync = false;
+#ifdef __ONLY_LINUX__
+  // 宿主未传窗口时SDK自建的X11窗口(对齐win32的createWin32Window行为),
+  // 生命周期归本类, onPreTick 里代为泵事件
+  ILinuxSurface* hostSurface = nullptr;
+#endif
 
 public:
   // int32_t graphicsQueueIndex = UINT32_MAX;

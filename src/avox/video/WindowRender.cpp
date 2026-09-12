@@ -137,7 +137,10 @@ void WindowRender::render(const avox::VideoFrame& frame) {
   }
   // 如果由vulkan渲染到窗口，把上面GPU结果渲染到vulkan管线中
   if (bVulkan && vkVideoRender) {
-    vkVideoRender->renderFrame(frame, pVideoRender->getGpuContext());
+    // linux等无原生渲染器平台pVideoRender为空,传null上下文
+    vkVideoRender->renderFrame(frame,
+                               pVideoRender ? pVideoRender->getGpuContext()
+                                            : nullptr);
   }
   onRenderOut();
 }

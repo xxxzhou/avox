@@ -1,5 +1,6 @@
 #include "SubprocessRunner.hpp"
 
+#include <cstring>
 #include <string>
 #include <vector>
 

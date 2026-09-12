@@ -112,8 +112,14 @@ void VkWindow::onInitWin() {
 #endif
 #ifdef __ONLY_LINUX__
   if (!surface) {
-    log(LogLevel::warn, "linux vk init surface is null");
-    return;
+    // 宿主未传窗口: SDK自建X11窗口(对齐win32的createWin32Window行为)
+    hostSurface = createLinuxSurface(wdWidth, wdHeight, wdTitle.c_str());
+    if (!hostSurface) {
+      log(LogLevel::warn, "linux create host surface failed");
+      return;
+    }
+    surface = hostSurface;
+    log(LogLevel::info, "linux create host window:", wdWidth, "x", wdHeight);
   }
   initVkSurface((ILinuxSurface*)surface);
 #endif
@@ -130,6 +136,15 @@ bool VkWindow::onValidWin() {
 
 bool VkWindow::onPreTick() {
   bool quit = false;
+#ifdef __ONLY_LINUX__
+  // SDK自建窗口无人泵事件,这里代为处理(resize跟踪/关闭消息)
+  if (hostSurface) {
+    hostSurface->pollEvents();
+    if (hostSurface->shouldClose()) {
+      quit = true;
+    }
+  }
+#endif
 #ifdef WIN32
   MSG msg;
   // log(LogLevel::info, "msg.message begin");
@@ -300,6 +315,16 @@ void VkWindow::onCloseWin() {
     vkDestroySurfaceKHR(vkInstance, vkSurface, nullptr);
     vkSurface = VK_NULL_HANDLE;
   }
+#ifdef __ONLY_LINUX__
+  // SDK自建的X11窗口归本类管理; 宿主传入的不释放
+  if (hostSurface) {
+    if (surface == hostSurface) {
+      surface = nullptr;
+    }
+    delete hostSurface;
+    hostSurface = nullptr;
+  }
+#endif
 }
 
 void VkWindow::onChangeSize() {

@@ -160,6 +160,15 @@ void getSurfaceSize(AvoxSurfaceType surface, int32_t& width, int32_t& height) {
   width = ANativeWindow_getWidth(surface);
   height = ANativeWindow_getHeight(surface);
 #endif
+#ifdef __ONLY_LINUX__
+  if (surface) {
+    width = surface->getWidth();
+    height = surface->getHeight();
+  } else {
+    width = 0;
+    height = 0;
+  }
+#endif
 #ifdef __APPLE__
   // iOS 使用 CAMetalLayer
   if (surface != nil) {
