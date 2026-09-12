@@ -398,7 +398,8 @@ def build_windows(cmake_args):
 
 def build_linux(cmake_args):
     print(f"liunx cmake_args: {cmake_args}")
-    cmake_args += ["-G", "Unix Makefiles"]     
+    # os.system 按空格拼串, 生成器名带空格必须内嵌引号, 否则 Makefiles 被当成路径
+    cmake_args += ["-G", "\"Unix Makefiles\""]
 
 # 获取各系统生成库库后缀名
 def get_system_lib_suffix():
