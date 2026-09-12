@@ -10,7 +10,7 @@ build_common.AVOX_TARGET_SYSTEM = "windows"
 build_common.AVOX_TARGET_ARCH = "x64"
 # 为true会从cmake重新构建; 环境变量可覆盖(与android/mac/ios一致), 默认False增量构建
 build_common.AVOX_FORCE_REBUILD = os.environ.get("AVOX_FORCE_REBUILD", "False") == "True"
-# "Release" or "Debug" "RelWithDebInfo" - 优先使用环境变量
+# "Release" or "Debug" "RelWithDebInfo" - 优先使用环境变量, 默认 Release 不带符号(MSVC Release 不生成 .pdb)
 build_common.AVOX_BUILD_TYPE = os.environ.get("AVOX_BUILD_TYPE", "Release")
 # 默认全部启用, CMake 各 plugin 的 find_package 找不到库会自动跳过
 # 环境变量 AVOX_CMAKE_ARGS 透传额外 cmake 参数 (如 -DAVOX_ENABLE_OPENVINO=ON -DAVOX_ENABLE_SWIG=OFF)

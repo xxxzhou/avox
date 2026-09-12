@@ -14,7 +14,7 @@ build_common.AVOX_TARGET_SYSTEM = "android"
 build_common.AVOX_TARGET_ARCH = "arm64-v8a"
 # vscode里改C++代码，在脚本里编译，需要强制重新编译才能应用改动代码；CI 缓存场景可置 AVOX_FORCE_REBUILD=False 复用已编译模块
 build_common.AVOX_FORCE_REBUILD = os.environ.get("AVOX_FORCE_REBUILD", "True") == "True"
-# "Release" or "Debug" - 优先使用环境变量
+# "Release" or "Debug" - 优先使用环境变量, 默认 Release 不带符号(链接 -s 剥符号)
 build_common.AVOX_BUILD_TYPE = os.environ.get("AVOX_BUILD_TYPE", "Release")
 # 是否只构建项目，不编译
 onlyMake = False

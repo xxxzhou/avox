@@ -12,8 +12,8 @@ if sys.stdout.encoding != 'utf-8':
         pass
 
 # 支持环境变量覆盖
-# 可设置为 Debug/Release
-_default_build_type = os.environ.get("AVOX_BUILD_TYPE", "Debug")
+# 可设置为 Debug/Release; 默认 Release 不带符号(产物体积小, 见 doc/build/构建.md), 需要调试时置 Debug
+_default_build_type = os.environ.get("AVOX_BUILD_TYPE", "Release")
 AVOX_BUILD_TYPE = _default_build_type   
 # windows下可编译android,一个是host,一个是target
 # windows/android/linux/ios/macos
@@ -293,6 +293,8 @@ def build_android(cmake_args):
         ninja_path = "ninja"  
     # 16KB 对齐支持; 模块自带 CMAKE_EXE_LINKER_FLAGS 时(如 sentencepiece 的 -llog)合并而非覆盖(同名 -D 后者生效)
     page_align = "-Wl,-z,max-page-size=16384"
+    # Release 默认不带符号: -s 剥掉 .symtab 与调试段(保留 .dynsym 导出符号, 不影响运行), .so 体积大幅减小
+    strip_flags = " -s" if AVOX_BUILD_TYPE == "Release" else ""
     exe_linker_flags = page_align
     for _arg in cmake_args:
         if isinstance(_arg, str) and _arg.startswith("-DCMAKE_EXE_LINKER_FLAGS="):
@@ -308,8 +310,8 @@ def build_android(cmake_args):
         f"-DCMAKE_ANDROID_ARCH_ABI={AVOX_TARGET_ARCH}",
         f"-DANDROID_PLATFORM={AVOX_NDK_PLATFORM}",
         f"-DCMAKE_MAKE_PROGRAM={ninja_path}",
-        f"-DCMAKE_SHARED_LINKER_FLAGS={page_align}",
-        f"-DCMAKE_EXE_LINKER_FLAGS={exe_linker_flags}",
+        f"-DCMAKE_SHARED_LINKER_FLAGS={page_align}{strip_flags}",
+        f"-DCMAKE_EXE_LINKER_FLAGS={exe_linker_flags}{strip_flags}",
         "-G", "Ninja"
     ]   
 

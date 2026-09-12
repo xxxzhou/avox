@@ -211,7 +211,7 @@ python build_linux.py     # Linux x64
 ctest --test-dir build/windows/avox --output-on-failure -C Release
 ```
 
-编译脚本支持自定义构建类型（Debug/Release）和目标架构，详见 [doc/build/构建.md](doc/build/构建.md) 及各脚本内的配置项。
+编译脚本支持自定义构建类型（Debug/Release）和目标架构，**默认 Release 且产物不带调试符号**（各平台产物体积过大，Debug 请用环境变量 `AVOX_BUILD_TYPE=Debug` 显式开启），详见 [doc/build/构建.md](doc/build/构建.md) 及各脚本内的配置项。
 
 ## 目录结构
 

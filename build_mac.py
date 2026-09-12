@@ -10,8 +10,8 @@ import build_common
 build_common.AVOX_TARGET_SYSTEM = "macos"
 # 指定架构（arm64 为 Apple Silicon，x64 为 Intel，universal 为通用二进制）
 build_common.AVOX_TARGET_ARCH = "arm64"
-# 指定构建类型（Debug 或 Release; CI 大链接内存吃紧可置 Release）
-build_common.AVOX_BUILD_TYPE = os.environ.get("AVOX_BUILD_TYPE", "Debug")
+# 指定构建类型（默认 Release 不带符号, 产物体积小; 需要调试时置 Debug）
+build_common.AVOX_BUILD_TYPE = os.environ.get("AVOX_BUILD_TYPE", "Release")
 # vscode里改C++代码，在脚本里编译，需要强制重新编译才能应用改动代码；CI 缓存场景可置 AVOX_FORCE_REBUILD=False 复用已编译模块
 build_common.AVOX_FORCE_REBUILD = os.environ.get("AVOX_FORCE_REBUILD", "True") == "True"
 # 是否只构建项目，不编译

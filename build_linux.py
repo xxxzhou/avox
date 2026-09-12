@@ -9,7 +9,7 @@ build_common.AVOX_TARGET_SYSTEM = "linux"
 build_common.AVOX_TARGET_ARCH = "x64"
 # 为true会从cmake重新构建
 build_common.AVOX_FORCE_REBUILD = False
-# "Release" or "Debug" "RelWithDebInfo" - 优先使用环境变量
+# "Release" or "Debug" "RelWithDebInfo" - 优先使用环境变量, 默认 Release 不带符号
 build_common.AVOX_BUILD_TYPE = os.environ.get("AVOX_BUILD_TYPE", "Release")
 # 给WEB使用,AI相关的功能不需要
 AVOX_WEB_CMAKE_ARGS = "-DAVOX_ENABLE_SHERPA=OFF -DAVOX_ENABLE_TRANSLATION=OFF -DAVOX_ENABLE_CV=OFF -DAVOX_ENABLE_ONNX=OFF -DAVOX_ENABLE_OPENCV=OFF"
