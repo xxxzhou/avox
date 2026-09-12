@@ -36,6 +36,10 @@ class AVOX_EXPORT VideoDecoder : public AVDecoder, public Observer<IVideoDecoder
   bool bHaveBFrame = false;
   // 检查是否annexb/avcc
   bool bCheckAcc = false;
+  // 配置帧内容刚变化(add/update/updateSize)。pushConfig 会就地覆盖
+  // configPackets,导致解码器侧"内容是否已存过"的判断恒为真;此标志把
+  // "变化过"这件事独立记下来,供子类决定是否必须把该参数集喂进解码器
+  bool bConfigChanged = false;
   // 是否是avcc/hvcc包
   bool bvcc = false;
   // MAC原生编码需要avcc/hvcc格式

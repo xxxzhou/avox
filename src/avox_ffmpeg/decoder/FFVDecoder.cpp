@@ -117,6 +117,9 @@ static bool hasSameConfig(const std::vector<PacketBuf>& configs,
 
 DecodeResult FFVDecoder::decode(const AvoxPacket& packet) {
   AVCodecID codecId = (AVCodecID)codecDesc.codecId;
+  // 本次调用对应的参数集是否刚被 pushConfig 更新过(消费掉,只对当前包生效)
+  bool bChanged = bConfigChanged;
+  bConfigChanged = false;
   if ((codecId == AV_CODEC_ID_H264 && configPackets.size() < 2) ||
       (codecId == AV_CODEC_ID_H265 && configPackets.size() < 3)) {
     return DecodeResult::noConfig;
@@ -126,8 +129,12 @@ DecodeResult FFVDecoder::decode(const AvoxPacket& packet) {
   }
   // 纯参数集包(SPS/PPS/VPS)无slice NAL, 喂avcodec会持续报"no frame!":
   // 内容与已存配置相同才跳过, 变化过的仍要喂, 让ffmpeg更新流内参数集
+  // 注意: pushConfig 是就地覆盖 configPackets 的, 对刚更新的参数集来说
+  // hasSameConfig 必然为真, 所以必须用 bChanged 把它排除掉, 否则seek跨段
+  // (同分辨率但SPS/PPS不同)时新参数集永远喂不进解码器, 解码器会拿旧PPS
+  // 解新段切片 -> 切片头字段乱值 / hardware accelerator failed to decode
   if (naluConfigFrame(this->codecId, getNalUnit(this->codecId, packet)) &&
-      hasSameConfig(configPackets, packet)) {
+      hasSameConfig(configPackets, packet) && !bChanged) {
     return DecodeResult::success;
   }
   // VC-1/WMV3/RV30/RV40等: extradata已按vconfig消费进codecCtx,

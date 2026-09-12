@@ -46,6 +46,12 @@ ConfigAddType VideoDecoder::pushConfig(const PacketBuf& data) {
       ctype = ConfigAddType::updateSize;
     }
   }
+  // 配置帧发生了实质变化: 该参数集对解码器而言是新的,必须喂进去。
+  // 注意此时 configPackets 已被覆盖,解码器侧再做"内容是否相同"的比对
+  // 只会得到"相同"的结论,所以这里要单独记下,否则新参数集永远进不了解码器。
+  bConfigChanged = ctype == ConfigAddType::add ||
+                   ctype == ConfigAddType::update ||
+                   ctype == ConfigAddType::updateSize;
   return ctype;
 }
 
