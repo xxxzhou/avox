@@ -45,6 +45,14 @@ SurfaceRenderNative::~SurfaceRenderNative() {}
 
 void SurfaceRenderNative::setVulkan(bool bVulkan_) {
 #ifdef AVOX_ENABLE_VULKAN
+#ifdef __ONLY_LINUX__
+  // linux 无原生渲染器, 关 vulkan 等于无路出图, 保持 vulkan (仅告警)
+  if (!bVulkan_) {
+    LOGFLF(LogLevel::warn,
+           "linux has no native renderer, keep vulkan (setVulkan(false) ignored)");
+    return;
+  }
+#endif
   if (!canVulkan() && bVulkan_) {
     bVulkan_ = false;
     LOGFLF(LogLevel::warn, "not support vulkan");
