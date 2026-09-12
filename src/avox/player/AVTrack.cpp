@@ -117,6 +117,18 @@ void AVTrack::renderFirst() {
   }
 }
 
+bool AVTrack::hasVaildVideoTrack() {
+  if (!mediaPlayer) {
+    return false;
+  }
+  for (const auto& vtrack : mediaPlayer->getVideoTracks()) {
+    if (vtrack && vtrack->vaild()) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void AVTrack::updateClock(int64_t pts) {
   // LOGFLF(LogLevel::info, "pts:", pts, " type:", getTrackTypeStr(trackType));
   // 更新自身时钟
@@ -125,7 +137,11 @@ void AVTrack::updateClock(int64_t pts) {
   // 如果没同步,用视频的渲染值给播放器
   if ((syncType == SyncType::video && trackType == TrackType::video) ||
       (syncType == SyncType::none && trackType == TrackType::video) ||
-      (syncType == SyncType::audio && trackType == TrackType::audio)) {
+      (syncType == SyncType::audio && trackType == TrackType::audio) ||
+      // 纯音频源(sync=no): 音频渲染也要喂主时钟, 否则时钟一直无效,
+      // getPosition 退回 demux 位置(快源冲到EOF后冻结在文件尾, 进度跳到结尾)
+      (syncType == SyncType::none && trackType == TrackType::audio &&
+       !hasVaildVideoTrack())) {
     // 同步给播放器时钟
     mediaPlayer->getExtClock()->sync(clock.get());
   }

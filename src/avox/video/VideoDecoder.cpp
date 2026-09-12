@@ -55,6 +55,11 @@ bool VideoDecoder::parseConfigs() {
   params.height = srcDesc.height;
   params.yuvType = srcDesc.type;
   params.fps = srcDesc.fps;
+  if (codecId != VCodecId::h264 && codecId != VCodecId::h265) {
+    // wmv3/vc1/rv/mpeg4等无参数集可解析: 直接采信容器侧srcDesc宽高
+    // (IOParse 层已从 codecpar 填充), 否则codecCtx尺寸为0解码全拒
+    return params.width > 0 && params.height > 0;
+  }
   if (codecId == VCodecId::h264) {
     if (configPackets.size() < 2) {
       return false;

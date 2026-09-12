@@ -143,6 +143,20 @@ bool IOParseTorrent::parseStream(int32_t streamId,
         codecpar->codec_id == AV_CODEC_ID_H265) {
       parseH26xConfig(streamId, codecpar->extradata, codecpar->extradata_size,
                       codecpar->codec_id);
+    } else if (codecpar->extradata_size > 0) {
+      // VC-1/WMV3/RV30/RV40等: 无nalu结构, 容器extradata原样作为vconfig
+      // 透传(解码器初始化必需, FFVDecoder 侧按原样组装)
+      AvoxPacket vpack = {};
+      vpack.data.bRef = true;
+      vpack.data.data = codecpar->extradata;
+      vpack.data.size = codecpar->extradata_size;
+      vpack.prefixSize = 0;
+      vpack.packtype = (int32_t)PackType::vconfig;
+      vpack.index = vIndexMaps[streamId];
+      vpack.pts = 0;
+      vpack.dts = 0;
+      dispatch(&IAVSourceOb::onPacket, vpack);
+      updateConfig(vpack);
     }
   }
   if (!bDisableAudio && codecpar->codec_type == AVMEDIA_TYPE_AUDIO &&
@@ -293,7 +307,7 @@ void IOParseTorrent::onRunTask() {
       vdesc.trackId = st->index;
       vdesc.desc.width = st->codecpar->width;
       vdesc.desc.height = st->codecpar->height;
-      vdesc.desc.fps = av_q2d(st->codecpar->framerate);
+      vdesc.desc.fps = ffFps(st);
       vdesc.desc.type = ffYuvType((AVPixelFormat)st->codecpar->format);
       addVideoDesc(vdesc);
     } else if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO &&
@@ -310,6 +324,7 @@ void IOParseTorrent::onRunTask() {
       adesc.desc.sampleRate = st->codecpar->sample_rate;
       adesc.desc.format = ffAudioFromat((int32_t)st->codecpar->format);
       adesc.desc.channels = st->codecpar->ch_layout.nb_channels;
+      adesc.desc.blockAlign = st->codecpar->block_align;
       addAudioDesc(adesc);
       audioDesc = adesc.desc;
     }

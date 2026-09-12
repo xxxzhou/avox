@@ -118,6 +118,10 @@ class AVTrack : public IPlayerContext, public PtsUpdater {
   void updateClock(int64_t pts);
   // 设置播放速度，需要记录当前pts
   void setSpeed(double speed);
+
+ protected:
+  // 播放器是否存在有效视频轨(决定纯音频时音频是否喂主时钟)
+  bool hasVaildVideoTrack();
 };
 
 template <typename T>

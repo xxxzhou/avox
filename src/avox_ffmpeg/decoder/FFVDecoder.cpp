@@ -78,6 +78,18 @@ DecodeResult FFVDecoder::onPreDecoder() {
     memcpy(codecCtx->extradata, extradata.data(), extradata.size());
     // 别的一些设置
     codecCtx->thread_count = 1;
+  } else if (!configPackets.empty()) {
+    // VC-1/WMV3/RV30/RV40等: 无nalu结构, 容器extradata原样透传
+    // (ASF的sequence header/RM的codec数据, 解码器初始化必需)
+    std::vector<uint8_t> extradata;
+    for (auto& p : configPackets) {
+      extradata.insert(extradata.end(), p.buff.begin(),
+                       p.buff.begin() + p.size);
+    }
+    codecCtx->extradata_size = (int32_t)extradata.size();
+    codecCtx->extradata =
+        (uint8_t*)av_malloc(extradata.size() + AV_INPUT_BUFFER_PADDING_SIZE);
+    memcpy(codecCtx->extradata, extradata.data(), extradata.size());
   }
   int32_t ret = avcodec_open2(codecCtx.get(), codec, nullptr);
   AVOX_FFMEPG_LOG(ret, "avcodec_open2 failed");
@@ -115,6 +127,12 @@ DecodeResult FFVDecoder::decode(const AvoxPacket& packet) {
   // 纯参数集包(SPS/PPS/VPS)无slice NAL, 喂avcodec会持续报"no frame!":
   // 内容与已存配置相同才跳过, 变化过的仍要喂, 让ffmpeg更新流内参数集
   if (naluConfigFrame(this->codecId, getNalUnit(this->codecId, packet)) &&
+      hasSameConfig(configPackets, packet)) {
+    return DecodeResult::success;
+  }
+  // VC-1/WMV3/RV30/RV40等: extradata已按vconfig消费进codecCtx,
+  // 原样再喂一次只会报无效帧
+  if (codecId != AV_CODEC_ID_H264 && codecId != AV_CODEC_ID_H265 &&
       hasSameConfig(configPackets, packet)) {
     return DecodeResult::success;
   }

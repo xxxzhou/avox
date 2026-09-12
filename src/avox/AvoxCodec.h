@@ -7,19 +7,41 @@
 
 namespace avox {
 
-#define AVOX_MAP_ACODEC(XX)    \
-  XX(aac, 0, "aac")           \
-  XX(g711a, 1, "PCMA")        \
-  XX(g711u, 2, "PCMU")        \
-  XX(opus, 3, "opus")         \
-  XX(pcms16le, 4, "pcmS16LE") \
-  XX(pcms24le, 6, "pcmS24LE") \
-  XX(mp3, 7, "mp3")           \
-  XX(ac3, 8, "ac3")
+// 音频编解码器类型(值导出给引擎插件, 只增不改不删)
+#define AVOX_MAP_ACODEC(XX)     \
+  XX(aac, 0, "aac")            \
+  XX(g711a, 1, "PCMA")         \
+  XX(g711u, 2, "PCMU")         \
+  XX(opus, 3, "opus")          \
+  XX(pcms16le, 4, "pcmS16LE")  \
+  XX(pcms24le, 6, "pcmS24LE")  \
+  XX(mp3, 7, "mp3")            \
+  XX(ac3, 8, "ac3")            \
+  XX(wmav1, 9, "wma1")         \
+  XX(wmav2, 10, "wma2")        \
+  XX(wmapro, 11, "wmapro")     \
+  XX(cook, 12, "cook")         \
+  XX(sipr, 13, "sipr")         \
+  XX(atrac3, 14, "atrac3")     \
+  XX(pcms16be, 15, "pcmS16BE")
 
-#define AVOX_MAP_VCODEC(XX) \
-  XX(h264, 1, "h264")      \
-  XX(h265, 2, "h265")
+// 视频编解码器类型(值导出给引擎插件, 只增不改不删)
+#define AVOX_MAP_VCODEC(XX)  \
+  XX(h264, 1, "h264")       \
+  XX(h265, 2, "h265")       \
+  XX(mpeg1, 3, "mpeg1")     \
+  XX(mpeg2, 4, "mpeg2")     \
+  XX(mpeg4, 5, "mpeg4")     \
+  XX(h263, 6, "h263")       \
+  XX(flv1, 7, "flv1")       \
+  XX(wmv1, 8, "wmv1")       \
+  XX(wmv2, 9, "wmv2")       \
+  XX(wmv3, 10, "wmv3")      \
+  XX(vc1, 11, "vc1")        \
+  XX(rv10, 12, "rv10")      \
+  XX(rv20, 13, "rv20")      \
+  XX(rv30, 14, "rv30")      \
+  XX(rv40, 15, "rv40")
 
 enum class ACodecId : int32_t {
   none = -1,

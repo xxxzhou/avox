@@ -47,6 +47,9 @@ struct TrackInfo {
   // invalid pts修正后的值, 同一帧的多个NAL共享(连续invalid pts包)
   // 正常帧时重置为AVOX_NOVALID_PTS, 表示不在同一帧内
   int64_t lastRevisedPts = AVOX_NOVALID_PTS;
+  // 连续invalid包计数: 前几个包按"同帧NAL"复用时间戳(h264参数集组),
+  // 之后视为新帧按帧时长递推合成(全NOPTS流如VCD时代的mpeg-ps)
+  int32_t revisedCount = 0;
 };
 
 // 音频，视频，字幕信息
@@ -57,10 +60,12 @@ struct TrackInfos {
   int32_t trackSize = 0;
   // 记录流的基准时间
   int64_t basePts = AVOX_NOVALID_PTS;
+  // 视频流连续无关键帧标志的包数(容器缺关键帧信息时兜底用)
+  int32_t noKeyPackets = 0;
   TrackType type = TrackType::none;
   std::vector<TrackInfo> tracks;
 
-  void reset() { basePts = AVOX_NOVALID_PTS; }
+  void reset() { basePts = AVOX_NOVALID_PTS; noKeyPackets = 0; }
   int64_t getPrePts() const {
     if (tracks.empty()) {
       return AVOX_NOVALID_PTS;

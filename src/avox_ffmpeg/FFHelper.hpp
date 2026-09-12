@@ -35,6 +35,9 @@ AVOX_EXPORT YuvType ffYuvType(AVPixelFormat format);
 // 流色彩空间(矩阵标准+量程): 容器/VUI 标记优先, 未标记按分辨率(>=720p=709)与编码族(H264/H265/MPEG=limited)惯例推断
 AVOX_EXPORT ColorSpaceDesc ffColorSpace(AVCodecParameters* par);
 AVOX_EXPORT AudioFormat ffAudioFromat(int32_t audioFormat);
+// 流帧率: codecpar->framerate 对mpeg4-in-AVI等常给脏值(如6000+),
+// 越界(>480)时退 avg_frame_rate, 仍非法返回0(未知)
+AVOX_EXPORT double ffFps(const AVStream* st);
 AVOX_EXPORT AvoxPacket ffAvoxPacket(AVPacket *packet);
 AVOX_EXPORT AVPixelFormat getFFVideoFormat(YuvType type);
 

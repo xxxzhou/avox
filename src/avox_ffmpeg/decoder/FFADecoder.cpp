@@ -17,11 +17,23 @@ bool FFADecoder::onVaild() {
   return true;
 }
 
+namespace {
+
+// 这些编码的容器extradata是解码器初始化必需
+// (asf的wma格式块/rm的cook、atrac3描述), 没有就等配置帧而不是裸开
+bool needExtradata(AVCodecID codecId) {
+  return codecId == AV_CODEC_ID_WMAV1 || codecId == AV_CODEC_ID_WMAV2 ||
+         codecId == AV_CODEC_ID_WMAPRO || codecId == AV_CODEC_ID_COOK ||
+         codecId == AV_CODEC_ID_ATRAC3;
+}
+
+}  // namespace
+
 DecodeResult FFADecoder::onPreDecoder() {
   // 等待配置帧来
   AVCodecID codecId = (AVCodecID)codecDesc.codecId;
   // aac需要配置帧填充extradata
-  if (codecId == AV_CODEC_ID_AAC && !confPkt) {
+  if ((codecId == AV_CODEC_ID_AAC || needExtradata(codecId)) && !confPkt) {
     return DecodeResult::noConfig;
   }
   auto codec = avcodec_find_decoder(codecId);
@@ -33,6 +45,8 @@ DecodeResult FFADecoder::onPreDecoder() {
   codecCtx->sample_rate = outDesc.sampleRate;
   codecCtx->ch_layout = in_ch_layout;
   codecCtx->sample_fmt = (AVSampleFormat)getFFAudioFormat(outDesc.format);
+  // 容器块对齐: wma1/2要求非0, cook靠它解析extradata子包(为0报PatchWELCOME)
+  codecCtx->block_align = outDesc.blockAlign;
   if (codecId == AV_CODEC_ID_AAC) {
     AacSC aacsc = {};
     splitAAConfig(*confPkt, aacsc, bAdts);
@@ -52,6 +66,12 @@ DecodeResult FFADecoder::onPreDecoder() {
           (uint8_t*)av_malloc(confPkt->size + AV_INPUT_BUFFER_PADDING_SIZE);
       memcpy(codecCtx->extradata, confPkt->buff.data(), confPkt->size);
     }
+  } else if (needExtradata(codecId) && confPkt) {
+    // wma/cook/atrac3: 容器extradata原样透传(无解析, 解码器按声明格式读)
+    codecCtx->extradata_size = confPkt->size;
+    codecCtx->extradata =
+        (uint8_t*)av_malloc(confPkt->size + AV_INPUT_BUFFER_PADDING_SIZE);
+    memcpy(codecCtx->extradata, confPkt->buff.data(), confPkt->size);
   }
   int32_t ret = avcodec_open2(codecCtx.get(), codec, nullptr);
   AVOX_FFMEPG_LOG(ret, "avcodec_open2 failed");
@@ -68,7 +88,7 @@ DecodeResult FFADecoder::onPreDecoder() {
 
 DecodeResult FFADecoder::decode(const AvoxPacket& packet) {
   AVCodecID codecId = (AVCodecID)codecDesc.codecId;
-  if (codecId == AV_CODEC_ID_AAC && !confPkt) {
+  if ((codecId == AV_CODEC_ID_AAC || needExtradata(codecId)) && !confPkt) {
     return DecodeResult::noConfig;
   }
   if (!codecCtx) {

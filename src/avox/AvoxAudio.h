@@ -37,6 +37,8 @@ struct AudioDesc {
   uint16_t channels = 0;
   AudioFormat format = AudioFormat::other;
   int32_t sampleRate = 0;
+  // 容器声明的块对齐(字节): wma/cook等解码器初始化必需, 其余编码忽略
+  int32_t blockAlign = 0;
   inline bool operator==(const AudioDesc& right) const {
     return channels == right.channels && format == right.format &&
            sampleRate == right.sampleRate;

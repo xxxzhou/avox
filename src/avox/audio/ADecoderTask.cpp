@@ -51,6 +51,12 @@ bool ADecoderTask::start(AudioTrack* context) {
     }
   }
   auto& aDecode = decodes[sIndex];
+  // 回退链: 首选之后的注册解码器(如 fdk-aac失败后 ffmpeg_aac)
+  fallbacks.clear();
+  configPkts.clear();
+  for (size_t i = sIndex + 1; i < decodes.size(); ++i) {
+    fallbacks.emplace_back(decodes[i].desc, decodes[i].initFunc);
+  }
   decode = std::unique_ptr<AudioDecoder>(aDecode.initFunc());
   if (!decode) {
     pb.result = ActionResult::fail;
@@ -104,9 +110,31 @@ void ADecoderTask::onRunTask() {
       if (tempPtr->configType()) {
         ConfigAddType type = decode->pushConfig(*tempPtr);
         addConfigRecord(type);
+        // 缓存配置包, 解码器回退时重放(共享拷贝, tempPtr 会被复用)
+        configPkts.push_back(std::make_shared<PacketBuf>(*tempPtr));
       }
       // 子类实际解码操作实现,视频解码本身就是一个耗时操作
       result = decode->decoder(tempPtr);
+    }
+    // 首选解码器初始化失败(如fdk-aac遇到不支持的AAC profile):
+    // 换下一个注册解码器重放配置继续, 而不是直接杀音频轨
+    if (result == DecodeResult::openFailed && !fallbacks.empty()) {
+      auto next = std::move(fallbacks.front());
+      fallbacks.erase(fallbacks.begin());
+      decode = std::unique_ptr<AudioDecoder>(next.second());
+      if (decode) {
+        decode->linkOption(trackContext->getMediaPlayer());
+        decode->setObserver(trackContext);
+        decode->setContext(next.first, srcDesc);
+        for (auto& cp : configPkts) {
+          decode->pushConfig(*cp);
+        }
+        LOGFLF(LogLevel::warn, "audio decoder fallback to:", next.first.name);
+        bOpenDecode = false;
+        check.reset();
+        result = DecodeResult::dataNoReady;
+        continue;
+      }
     }
     if (result == DecodeResult::success && !bOpenDecode) {      
       // 记录编码音频信息

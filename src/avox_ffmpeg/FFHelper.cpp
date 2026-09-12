@@ -112,6 +112,32 @@ VCodecId ffVCodec(AVCodecID codecId) {
       return VCodecId::h264;
     case AV_CODEC_ID_H265:
       return VCodecId::h265;
+    case AV_CODEC_ID_MPEG1VIDEO:
+      return VCodecId::mpeg1;
+    case AV_CODEC_ID_MPEG2VIDEO:
+      return VCodecId::mpeg2;
+    case AV_CODEC_ID_MPEG4:
+      return VCodecId::mpeg4;
+    case AV_CODEC_ID_H263:
+      return VCodecId::h263;
+    case AV_CODEC_ID_FLV1:
+      return VCodecId::flv1;
+    case AV_CODEC_ID_WMV1:
+      return VCodecId::wmv1;
+    case AV_CODEC_ID_WMV2:
+      return VCodecId::wmv2;
+    case AV_CODEC_ID_WMV3:
+      return VCodecId::wmv3;
+    case AV_CODEC_ID_VC1:
+      return VCodecId::vc1;
+    case AV_CODEC_ID_RV10:
+      return VCodecId::rv10;
+    case AV_CODEC_ID_RV20:
+      return VCodecId::rv20;
+    case AV_CODEC_ID_RV30:
+      return VCodecId::rv30;
+    case AV_CODEC_ID_RV40:
+      return VCodecId::rv40;
     default:
       return VCodecId::none;
   }
@@ -135,6 +161,20 @@ ACodecId ffACodec(AVCodecID codecId) {
       return ACodecId::mp3;
     case AV_CODEC_ID_AC3:
       return ACodecId::ac3;
+    case AV_CODEC_ID_WMAV1:
+      return ACodecId::wmav1;
+    case AV_CODEC_ID_WMAV2:
+      return ACodecId::wmav2;
+    case AV_CODEC_ID_WMAPRO:
+      return ACodecId::wmapro;
+    case AV_CODEC_ID_COOK:
+      return ACodecId::cook;
+    case AV_CODEC_ID_SIPR:
+      return ACodecId::sipr;
+    case AV_CODEC_ID_ATRAC3:
+      return ACodecId::atrac3;
+    case AV_CODEC_ID_PCM_S16BE:
+      return ACodecId::pcms16be;
     default:
       return ACodecId::none;
   }
@@ -146,6 +186,32 @@ AVCodecID getFFCodecId(VCodecId codecId) {
       return AV_CODEC_ID_H264;
     case VCodecId::h265:
       return AV_CODEC_ID_H265;
+    case VCodecId::mpeg1:
+      return AV_CODEC_ID_MPEG1VIDEO;
+    case VCodecId::mpeg2:
+      return AV_CODEC_ID_MPEG2VIDEO;
+    case VCodecId::mpeg4:
+      return AV_CODEC_ID_MPEG4;
+    case VCodecId::h263:
+      return AV_CODEC_ID_H263;
+    case VCodecId::flv1:
+      return AV_CODEC_ID_FLV1;
+    case VCodecId::wmv1:
+      return AV_CODEC_ID_WMV1;
+    case VCodecId::wmv2:
+      return AV_CODEC_ID_WMV2;
+    case VCodecId::wmv3:
+      return AV_CODEC_ID_WMV3;
+    case VCodecId::vc1:
+      return AV_CODEC_ID_VC1;
+    case VCodecId::rv10:
+      return AV_CODEC_ID_RV10;
+    case VCodecId::rv20:
+      return AV_CODEC_ID_RV20;
+    case VCodecId::rv30:
+      return AV_CODEC_ID_RV30;
+    case VCodecId::rv40:
+      return AV_CODEC_ID_RV40;
     default:
       return AV_CODEC_ID_NONE;
   }
@@ -168,6 +234,20 @@ AVCodecID getFFCodecId(ACodecId codecId) {
       return AV_CODEC_ID_MP3;
     case ACodecId::ac3:
       return AV_CODEC_ID_AC3;
+    case ACodecId::wmav1:
+      return AV_CODEC_ID_WMAV1;
+    case ACodecId::wmav2:
+      return AV_CODEC_ID_WMAV2;
+    case ACodecId::wmapro:
+      return AV_CODEC_ID_WMAPRO;
+    case ACodecId::cook:
+      return AV_CODEC_ID_COOK;
+    case ACodecId::sipr:
+      return AV_CODEC_ID_SIPR;
+    case ACodecId::atrac3:
+      return AV_CODEC_ID_ATRAC3;
+    case ACodecId::pcms16be:
+      return AV_CODEC_ID_PCM_S16BE;
     default:
       return AV_CODEC_ID_NONE;
   }
@@ -266,13 +346,23 @@ AudioFormat ffAudioFromat(int32_t audioFormat) {
   return AudioFormat::other;
 }
 
+double ffFps(const AVStream* st) {
+  double fps = av_q2d(st->codecpar->framerate);
+  if (fps <= 0 || fps > 480) {
+    fps = av_q2d(st->avg_frame_rate);
+  }
+  if (fps <= 0 || fps > 480) {
+    return 0;
+  }
+  return fps;
+}
+
 AvoxPacket ffAvoxPacket(AVPacket* ffpacket) {
   AvoxPacket packet = {};
   packet.index = ffpacket->stream_index;
   packet.pts = ffpacket->pts;
   packet.dts = ffpacket->dts;
-  packet.duration = ffpacket->duration;
-  packet.frameType = ffpacket->flags & AV_PKT_FLAG_KEY;
+  packet.duration = ffpacket->duration;  packet.frameType = ffpacket->flags & AV_PKT_FLAG_KEY;
   // 数据,在进入队列前,引用都在,所以不用复制
   packet.data.bRef = true;
   packet.data.size = ffpacket->size;

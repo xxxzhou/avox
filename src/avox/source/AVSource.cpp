@@ -226,8 +226,17 @@ void AVSource::singleVideo(AvoxPacket& packet) {
   } else {
     packet.packtype = (int32_t)PackType::video;
   }
-  bool bKeyFrame = naluKeyFrame(vcodecId, nalu);
-  packet.frameType = bKeyFrame ? 1 : 0;
+  // 关键帧: h264/h265按NALU类型判定; 其余编码(wmv3/vc1/rv/mpeg4等)无nalu
+  // 结构, naluKeyFrame恒false会覆盖成0导致基准pts永不设定, 保持容器
+  // AV_PKT_FLAG_KEY标记(ffAvoxPacket已带入)。
+  // 注意容器标志只用于基准pts对齐: 下游I帧模式检测与muxer配置重发仍按
+  // nalu语义(非h26x恒false) — mpegts类容器可能全包标KEY, 直接采用会误入
+  // I帧模式且无法退出(P/B帧也是"key")
+  bool bKeyFrame = false;
+  if (vcodecId == VCodecId::h264 || vcodecId == VCodecId::h265) {
+    bKeyFrame = naluKeyFrame(vcodecId, nalu);
+    packet.frameType = bKeyFrame ? 1 : 0;
+  }
   // I帧模式检测：连续不同PTS的I帧数据包，说明只有I帧没有P/B帧
   if (!bConfig) {
     if (bKeyFrame) {
@@ -306,17 +315,34 @@ bool AVSource::reviseInvalidPts(AvoxPacket& packet, TrackInfos& info) {
     int64_t invalidDts = packet.dts;
     if (!info.tracks.empty()) {
       auto& track = info.tracks[packet.index];
-      if (track.lastRevisedPts != AVOX_NOVALID_PTS) {
-        // 同一帧的后续NAL, 复用上一次修正的PTS
+      // 合成帧时长: 视频按轨道fps, 无fps信息/音频给40ms保底
+      int64_t frameDur = 40;
+      // 同帧共享包数上限: h264/h265一帧可拆出参数集组(SPS/PPS/IDR=3包);
+      // 无nalu结构编码(mpeg1/2/4,wmv,rv)每包即整帧, 共享会造成时间戳翻倍
+      int32_t shareWindow = 1;
+      if (&info == &videoInfo && packet.index >= 0 &&
+          videoTracks.size() > (size_t)packet.index) {
+        const auto& vt = videoTracks[packet.index];
+        if (vt.desc.fps > 1.0) {
+          frameDur = (int64_t)(1000.0 / vt.desc.fps);
+        }
+        if (vt.codecId == VCodecId::h264 || vt.codecId == VCodecId::h265) {
+          // h264组SPS/PPS/IDR=3包; h265组VPS/SPS/PPS/SEI/IDR可达5包
+          shareWindow = vt.codecId == VCodecId::h264 ? 3 : 5;
+        }
+      }
+      if (track.lastRevisedPts != AVOX_NOVALID_PTS &&
+          track.revisedCount < shareWindow) {
+        // 同帧的后续包, 复用上一次修正的PTS
         packet.pts = track.lastRevisedPts;
-      } else if (track.prePts != AVOX_NOVALID_PTS && track.prePts >= 0) {
-        // 新帧的第一个NAL, 用prePts+1
-        packet.pts = track.prePts + 1;
-        track.lastRevisedPts = packet.pts;
+        ++track.revisedCount;
       } else {
-        // 首帧就垃圾, 兜底reset 0
-        packet.pts = 0;
-        track.lastRevisedPts = 0;
+        // 新帧: prePts+帧时长递推; 首帧就垃圾兜底reset 0
+        packet.pts = (track.prePts != AVOX_NOVALID_PTS && track.prePts >= 0)
+                         ? track.prePts + frameDur
+                         : 0;
+        track.lastRevisedPts = packet.pts;
+        track.revisedCount = 1;
       }
     } else {
       packet.pts = 0;
@@ -332,6 +358,7 @@ bool AVSource::reviseInvalidPts(AvoxPacket& packet, TrackInfos& info) {
   // 正常帧: 清除lastRevisedPts, 标记不在同一invalid帧内
   if (!info.tracks.empty()) {
     info.tracks[packet.index].lastRevisedPts = AVOX_NOVALID_PTS;
+    info.tracks[packet.index].revisedCount = 0;
   }
   return false;
 }
@@ -356,8 +383,22 @@ void AVSource::alignPacketPts(AvoxPacket& packet) {
     if (packet.frameType == 1) {
       videoInfo.basePts = packet.pts;
       baseTimeMS = videoInfo.basePts;
+      videoInfo.noKeyPackets = 0;
       LOGFLF(LogLevel::info, "first video pts:", videoInfo.basePts,
              " base time:", baseTimeMS);
+    } else if (packet.index >= 0 &&
+               videoTracks.size() > (size_t)packet.index &&
+               videoTracks[packet.index].codecId != VCodecId::h264 &&
+               videoTracks[packet.index].codecId != VCodecId::h265 &&
+               ++videoInfo.noKeyPackets == 50) {
+      // 兜底(仅无nalu结构的编码): MPEG-PS/无索引AVI等容器不标关键帧,
+      // 等不到I帧标志基准时间永不设定(进度恒0); 连续50包无标志采信当前包。
+      // h264/h265不适用: 位流内可判定关键帧, 长GOP无I帧包是正常现象
+      videoInfo.basePts = packet.pts;
+      baseTimeMS = videoInfo.basePts;
+      LOGFLF(LogLevel::warn,
+             "no keyframe flag in 50 packets, use first pts as base:",
+             videoInfo.basePts);
     }
   } else if (type == PackType::audio && audioInfo.basePts == AVOX_NOVALID_PTS) {
     // 音频如果在有视频的情况下，以视频关键帧后包为基准

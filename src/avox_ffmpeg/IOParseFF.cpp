@@ -102,6 +102,20 @@ bool IOParseFF::parseStream(int32_t streamId, AVCodecParameters* codecpar) {
       // 得到SPS/PPS/VPS信息
       parseH26xConfig(streamId, codecpar->extradata, codecpar->extradata_size,
                       codecpar->codec_id);
+    } else if (codecpar->extradata_size > 0) {
+      // VC-1/WMV3/RV30/RV40等: 无nalu结构, 容器extradata原样作为vconfig
+      // 透传(解码器初始化必需, FFVDecoder 侧按原样组装)
+      AvoxPacket vpack = {};
+      vpack.data.bRef = true;
+      vpack.data.data = codecpar->extradata;
+      vpack.data.size = codecpar->extradata_size;
+      vpack.prefixSize = 0;
+      vpack.packtype = (int32_t)PackType::vconfig;
+      vpack.index = vIndexMaps[streamId];
+      vpack.pts = 0;
+      vpack.dts = 0;
+      dispatch(&IAVSourceOb::onPacket, vpack);
+      updateConfig(vpack);
     }
   }
   if (!bDisableAudio && codecpar->codec_type == AVMEDIA_TYPE_AUDIO &&
@@ -277,7 +291,7 @@ void IOParseFF::onRunTask() {
       // vdesc.timeBase = {st->time_base.num, st->time_base.den};
       vdesc.desc.width = st->codecpar->width;
       vdesc.desc.height = st->codecpar->height;
-      vdesc.desc.fps = av_q2d(st->codecpar->framerate);
+      vdesc.desc.fps = ffFps(st);
       vdesc.desc.type = ffYuvType((AVPixelFormat)st->codecpar->format);
       vdesc.desc.colorSpace = ffColorSpace(st->codecpar);
       addVideoDesc(vdesc);
@@ -297,6 +311,7 @@ void IOParseFF::onRunTask() {
       adesc.desc.sampleRate = st->codecpar->sample_rate;
       adesc.desc.format = ffAudioFromat(st->codecpar->format);
       adesc.desc.channels = st->codecpar->ch_layout.nb_channels;
+      adesc.desc.blockAlign = st->codecpar->block_align;
       addAudioDesc(adesc);
       // 单独给AAC配置头文件使用
       audioDesc = adesc.desc;
