@@ -1,13 +1,17 @@
 #include "FFVADecoder.hpp"
+
 #include "avox/module/AvoxManager.hpp"
+// AVOX_FFVAAPI_H264/H265_DECODER 常量
 #include "avox/player/AVTrack.hpp"
+
+#if defined(__ONLY_LINUX__) && defined(AVOX_ENABLE_FFMPEG)
+
+#include <libavutil/hwcontext.h>
+#include <libavutil/pixdesc.h>
 
 namespace avox {
 
-#if defined(__linux1__) && !defined(__ANDROID__)
-#if AVOX_ENABLE_VULKAN
-
-void regFFDx11Decoder() {
+void regFFVADecoder() {
   RegFunc regFunc = {"ffmpeg vaapi video decoder init", []() {
                        // H264
                        VCodecDesc codecDesc = {};
@@ -16,9 +20,8 @@ void regFFDx11Decoder() {
                        codecDesc.bHardware = true;
                        codecDesc.vcodecId = VCodecId::h264;
                        AvoxManager::Get().vDecoders.regInitFunc(
-                           VCodecId::h264, codecDesc, []() -> VideoDecoder * {
-                             return new FFVADecoder();
-                           });
+                           VCodecId::h264, codecDesc,
+                           []() -> VideoDecoder* { return new FFVADecoder(); });
                        // H265
                        codecDesc = {};
                        codecDesc.name = AVOX_FFVAAPI_H265_DECODER;
@@ -26,130 +29,97 @@ void regFFDx11Decoder() {
                        codecDesc.bHardware = true;
                        codecDesc.vcodecId = VCodecId::h265;
                        AvoxManager::Get().vDecoders.regInitFunc(
-                           VCodecId::h265, codecDesc, []() -> VideoDecoder * {
-                             return new FFVADecoder();
-                           });
+                           VCodecId::h265, codecDesc,
+                           []() -> VideoDecoder* { return new FFVADecoder(); });
                      }};
   AvoxManager::Get().initFuncs.push_back(regFunc);
 }
 
 FFVADecoder::FFVADecoder() {
-  // 如果是Debug模式，添加Debug信息
-  AVDictionary *opts = NULL;
-  // 创建 VAAPI 硬件设备上下文
-  int32_t ret =
-      av_hwdevice_ctx_create(&hwBuffer, AV_HWDEVICE_TYPE_VAAPI, NULL, opts, 0);
-  av_dict_free(&opts);
-  if (ret < 0) {
-    LOGFLF(LogLevel::error, "av_hwdevice_ctx_create failed, ret:", ret);
-    return;
-  }
-  AVHWFramesContext *hwCtx = (AVHWFramesContext *)hwBuffer->data;
-  AVVAAPIDeviceContext *va_device_ctx = (AVVAAPIDeviceContext *)hwCtx->hwctx;
-  VADisplay va_display = va_device_ctx->display;
+  codecTH = VCodecTh::cpu;
+  // 构造时探测 VAAPI 设备, onVaild 据此决定是否可用(无设备时降级软解)
+  av_hwdevice_ctx_create(&hwBuffer, AV_HWDEVICE_TYPE_VAAPI, NULL, NULL, 0);
 }
 
-FFVADecoder::~FFVADecoder() {}
+FFVADecoder::~FFVADecoder() { onDetachContext(); }
 
 bool FFVADecoder::onVaild() {
   if (codecDesc.codecId <= 0) {
     LOGFLF(LogLevel::warn, "codecId:", codecDesc.codecId);
     return false;
   }
+  // WSL/无VAAPI设备时 hwdevice 创建失败, 这里返回 false 降级软解
   if (!hwBuffer) {
-    LOGFLF(LogLevel::error, "hwBuffer is null");
+    LOGFLF(LogLevel::warn, "vaapi hwBuffer is null, fallback to soft decode");
     return false;
   }
   return true;
 }
 
-void FFVADecoder::onFrame(AVFrame *avFrame, bool bDrop) {
-  AVPixelFormat vaFormat = (AVPixelFormat)avFrame->format;
-  if (vaFormat != AV_PIX_FMT_VAAPI) {
+void FFVADecoder::onAttachContext() {
+  // 重新生成,释放老的,可能分辨率变化后重置解码器了
+  if (hwBuffer) {
+    av_buffer_unref(&hwBuffer);
+    hwBuffer = nullptr;
+  }
+  // NULL = 按默认次序探测 DRM render node (i915/iHD/radeonsi); 构造时已探过,
+  // 失败这里重试一次, 仍失败则 hw_device_ctx 为空, get_format 自动回退软解
+  int32_t ret = av_hwdevice_ctx_create(&hwBuffer, AV_HWDEVICE_TYPE_VAAPI,
+                                       NULL, NULL, 0);
+  if (ret < 0) {
+    LOGFLF(LogLevel::warn, "vaapi av_hwdevice_ctx_create failed, ret:", ret,
+           " (无VAAPI设备时自动降级软解)");
+    return;
+  }
+  codecCtx->hw_device_ctx = av_buffer_ref(hwBuffer);
+  // 显式选择 VAAPI 像素格式, 不在候选里则回退默认(软解)
+  codecCtx->get_format = [](AVCodecContext* ctx,
+                            const enum AVPixelFormat* fmt)
+      -> enum AVPixelFormat {
+    for (const enum AVPixelFormat* p = fmt; *p != AV_PIX_FMT_NONE; ++p) {
+      if (*p == AV_PIX_FMT_VAAPI) {
+        return AV_PIX_FMT_VAAPI;
+      }
+    }
+    return avcodec_default_get_format(ctx, fmt);
+  };
+  LOGFLF(LogLevel::info, "vaapi onAttachContext hwBuffer:", hwBuffer);
+}
+
+void FFVADecoder::onDetachContext() {
+  if (hwBuffer) {
+    av_buffer_unref(&hwBuffer);
+    hwBuffer = nullptr;
+  }
+}
+
+void FFVADecoder::onFrame(AVFrame* avFrame, bool bDrop) {
+  // 非VAAPI帧(如降级软解)直接走软解链路
+  if (avFrame->format != AV_PIX_FMT_VAAPI) {
     FFVDecoder::onFrame(avFrame, bDrop);
     return;
   }
-  AVHWFramesContext *hw_frames_ctx =
-      (AVHWFramesContext *)avFrame->hw_frames_ctx->data;
-  AVVAAPIDeviceContext *va_device_ctx = hw_device_ctx->hwctx;
-  VADisplay va_display = va_device_ctx->display;
-  // 获取 VAAPI 表面
-  VASurfaceID surface = (VASurfaceID)(uintptr_t)avFrame->data[3];
-  if (!surface) {
-    // 无效表面处理
+  // VAAPI surface -> CPU NV12 (ffmpeg 内部走 vaDeriveImage/vaMapBuffer)
+  AVFrame* swFrame = av_frame_alloc();
+  if (!swFrame) {
+    LOGFLF(LogLevel::warn, "vaapi av_frame_alloc failed");
     return;
   }
+  int32_t ret = av_hwframe_transfer_data(swFrame, avFrame, 0);
+  if (ret < 0) {
+    LOGFLF(LogLevel::warn, "av_hwframe_transfer_data failed, ret:", ret);
+    av_frame_free(&swFrame);
+    return;
+  }
+  // transfer_data 只搬像素, 元数据手动带上; onFrame 的 dispatch 是同步的,
+  // 帧数据在消费方返回前持续有效(与软解 onFrame 的生命周期契约一致)
+  swFrame->best_effort_timestamp = avFrame->best_effort_timestamp;
+  swFrame->pkt_dts = avFrame->pkt_dts;
+  swFrame->pict_type = avFrame->pict_type;
+  FFVDecoder::onFrame(swFrame, bDrop);
+  av_frame_free(&swFrame);
 }
 
-void FFVADecoder::bindVk() {
-  // 获取 VAAPI 表面
-  VASurfaceID surface = (VASurfaceID)(uintptr_t)avFrame->data[3];
-  // 获取 VAAPI 表面的 DMA-BUF 文件描述符
-  int dmaBufFd = -1;
-  VAStatus status =
-      vaExportSurfaceHandle(vaDisplay,                          // VA 显示句柄
-                            vaSurface,                          // VASurfaceID
-                            VA_SURFACE_ATTRIB_MEM_TYPE_DMA_BUF, // 内存类型
-                            VA_EXPORT_SURFACE_READ_ONLY,        // 权限
-                            &dmaBufFd // 输出文件描述符
-      );
-  if (status != VA_STATUS_SUCCESS) {
-    // 错误处理
-  }
-  VkImageCreateInfo imageInfo = {};
-  imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-  imageInfo.pNext = nullptr;
-  imageInfo.imageType = VK_IMAGE_TYPE_2D;
-  imageInfo.format = VK_FORMAT_R8G8B8A8_UNORM; // 根据实际格式调整
-  imageInfo.extent = {width, height, 1};
-  imageInfo.mipLevels = 1;
-  imageInfo.arrayLayers = 1;
-  imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-  imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-  imageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
-  imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-  imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-
-  // 指定外部内存
-  VkExternalMemoryImageCreateInfo externalInfo = {};
-  externalInfo.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
-  externalInfo.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
-  imageInfo.pNext = &externalInfo;
-
-  VkImage vkImage;
-  VkResult result = vkCreateImage(vkDevice, &imageInfo, nullptr, &vkImage);
-  if (result != VK_SUCCESS) {
-    // 错误处理
-  }
-  VkMemoryRequirements memRequirements;
-  vkGetImageMemoryRequirements(vkDevice, vkImage, &memRequirements);
-
-  VkMemoryAllocateInfo allocInfo = {};
-  allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-  allocInfo.allocationSize = memRequirements.size;
-  allocInfo.memoryTypeIndex = // 选择合适的内存类型索引
-
-      // 指定外部内存
-      VkImportMemoryFdInfoKHR importInfo = {};
-  importInfo.sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR;
-  importInfo.fd = dmaBufFd;
-  importInfo.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
-  allocInfo.pNext = &importInfo;
-
-  VkDeviceMemory vkMemory;
-  result = vkAllocateMemory(vkDevice, &allocInfo, nullptr, &vkMemory);
-  if (result != VK_SUCCESS) {
-    // 错误处理
-  }
-  result = vkBindImageMemory(vkDevice, vkImage, vkMemory, 0);
-  if (result != VK_SUCCESS) {
-    // 错误处理
-  }
 }
-
-void FFVADecoder::onAttachContext() {}
 
 #endif
-#endif
-
-}

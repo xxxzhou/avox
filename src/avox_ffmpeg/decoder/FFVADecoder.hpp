@@ -2,46 +2,37 @@
 
 #include "FFVDecoder.hpp"
 #include "avox/video/VideoDecoder.hpp"
-#if AVOX_ENABLE_VULKAN
-#include "avox_vulkan/VkContext.hpp"
-#endif
-// 必须引入的核心头文件
-#if defined(__linux1__) && !defined(__ANDROID__)
-#include <va/va.h>
-// Linux 平台扩展
-#include <va/va_drm.h>
-#endif
+
+#if defined(__ONLY_LINUX__) && defined(AVOX_ENABLE_FFMPEG)
 
 namespace avox {
 
-#if defined(__linux1__) && !defined(__ANDROID__)
-#if AVOX_ENABLE_VULKAN
-
-class FFVADecoder : public FFVDecoder, public VkContext {
-public:
+// Linux VAAPI 硬解: 解码落在 VAAPI surface, 经 av_hwframe_transfer_data
+// 映射回 CPU NV12 后复用软解 YUVFrame 链路 (解码省CPU, 拷贝开销小;
+// VAAPI->Vulkan 零拷贝导入留待真机验证后迭代)
+// 注: WSL 无 /dev/dri, av_hwdevice_ctx_create 会失败, onVaild 返回 false
+// 自动降级软解
+class FFVADecoder : public FFVDecoder {
+ public:
   FFVADecoder();
   virtual ~FFVADecoder();
 
-public:
+ public:
   // 初始化
   virtual bool onVaild() override;
 
-public:
-  void bindVk();
-
-protected:
+ protected:
   // 解码完成，子类具体实现
-  virtual void onFrame(AVFrame *avFrame, bool bDrop) override;
+  virtual void onFrame(AVFrame* avFrame, bool bDrop) override;
 
-protected:
+ protected:
   virtual void onAttachContext() override;
+  virtual void onDetachContext() override;
 
-protected:
-  AVBufferRef *hwBuffer = nullptr;
-  VADisplay va_display = nullptr;
+ protected:
+  AVBufferRef* hwBuffer = nullptr;
 };
 
-#endif
-#endif
-
 }
+
+#endif
