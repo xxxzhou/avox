@@ -44,6 +44,13 @@ OFFLINE_SKIP = [
     "yuvout-h264",
 ]
 
+# Linux(WSL/桌面) 在离线子集上再跳过的结构性用例 (非 bug, 是平台能力缺口):
+#   shot/yuvout-h264-soft: 车道B依赖平台原生渲染器(DX11/Metal), Linux 尚未实现
+#   rec-transcode-*: LGPL FFmpeg 白名单无视频编码器(Windows 有 h264_mf), Linux 无兜底
+LINUX_OFFLINE_SKIP = [
+    "shot", "yuvout-h264-soft", "rec-transcode-h264", "rec-transcode-novk",
+]
+
 
 def local_env() -> dict:
     """去掉代理变量: 流源与 runner 全在本机/局域网, 走代理会把 127.0.0.1 请求打飞。"""
@@ -296,6 +303,8 @@ def main() -> int:
     if args.offline:
         args.no_push = True
         merged = [s for s in args.skip.split(",") if s] + OFFLINE_SKIP
+        if sys.platform.startswith("linux"):
+            merged += LINUX_OFFLINE_SKIP
         args.skip = ",".join(dict.fromkeys(merged))
         print(f"[offline] 跳过 {len(OFFLINE_SKIP)} 条网络用例, 只跑本地文件子集")
 

@@ -82,6 +82,16 @@ extern void regIOSAudioRender();
 // IOS平台音频设备
 extern void regIOSAudioSource();
 #endif
+#ifdef __ONLY_LINUX__
+#ifdef AVOX_ENABLE_PULSE
+// Linux平台PulseAudio音频渲染
+extern void regPulseAudioRender();
+#endif
+#ifdef AVOX_ENABLE_FFMPEG
+// Linux平台FFmpeg VAAPI硬解(输出CPU NV12帧, 走软解链路)
+extern void regFFVADecoder();
+#endif
+#endif
 
 AvoxManager* AvoxManager::instance = nullptr;
 
@@ -178,6 +188,14 @@ void AvoxManager::init() {
   regIOSCameraSource();
   regIOSAudioRender();
   regIOSAudioSource();
+#endif
+#ifdef __ONLY_LINUX__
+#ifdef AVOX_ENABLE_FFMPEG
+  regFFVADecoder();
+#endif
+#ifdef AVOX_ENABLE_PULSE
+  regPulseAudioRender();
+#endif
 #endif
   // 初始化所有注册的模块
   for (const auto& regFunc : initFuncs) {

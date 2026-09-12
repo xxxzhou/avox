@@ -299,7 +299,7 @@ if(AVOX_ENABLE_SAMPLES)
 endif()
 
 # 播放回归矩阵 runner (每平台一个, 用例表与判定复用 tests/playmatrix)
-# iOS 不建 (无窗口宿主, 走 platform/ios/avoxtest 工程), Linux 待建
+# iOS 不建 (无窗口宿主, 走 platform/ios/avoxtest 工程)
 option(AVOX_ENABLE_PLAYTEST "build play regression matrix runner (每平台一个)" ON)
 if(AVOX_ENABLE_PLAYTEST)
     if(WIN32)
@@ -308,6 +308,8 @@ if(AVOX_ENABLE_PLAYTEST)
         add_subdirectory(platform/android/playtest)
     elseif(APPLE AND NOT CMAKE_SYSTEM_NAME MATCHES "iOS")
         add_subdirectory(platform/macos/playtest)
+    elseif(UNIX AND NOT APPLE)
+        add_subdirectory(platform/linux/playtest)
     endif()
 endif()
 
