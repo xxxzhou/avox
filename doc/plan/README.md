@@ -36,6 +36,7 @@ avox 各模块的计划、设计与调研文档索引。已完成的方案随功
 |------|------|
 | [VkDevice-VkDevice交互](gpu/VkDevice-VkDevice交互.md) | Vulkan 设备间纹理交互 |
 | [颜色空间矩阵统一设计](gpu/颜色空间矩阵统一设计.md) | 颜色空间/矩阵统一 |
+| [HDR管线改造计划](gpu/HDR管线改造计划.md) | HDR/10bit 端到端现状调查与分期改造 |
 
 ## player/ — 播放器与架构
 
