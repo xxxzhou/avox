@@ -69,7 +69,8 @@ enum class DecodeResult {
   XX(none, 0, "none")                 \
   XX(wasapi, 1, "wasapi")             \
   XX(androidAT, 2, "androidAT")       \
-  XX(iosAU, 3, "iosAU")
+  XX(iosAU, 3, "iosAU")               \
+  XX(pulse, 4, "pulse")
 
 enum class ARenderType {
 #define XX(name, value, str) name = value,

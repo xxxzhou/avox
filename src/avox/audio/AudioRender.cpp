@@ -136,6 +136,9 @@ ARenderType getDefaultAudioType() {
   return ARenderType::androidAT;
 #elif __APPLE__
   return ARenderType::iosAU;
+#elif defined(__ONLY_LINUX__)
+  // libpulse 缺失时未注册, getDefaultAudioOutput 会降级并告警
+  return ARenderType::pulse;
 #endif
   return ARenderType::none;
 }

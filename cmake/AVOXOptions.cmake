@@ -408,6 +408,18 @@ if(ONLY_LINUX)
   find_package(X11 REQUIRED)
   find_package(ZLIB REQUIRED)
 
+  # PulseAudio音频输出(WSLg/桌面发行版通用, PipeWire兼容pulse协议); 缺失时禁用音频输出
+  pkg_check_modules(PULSE QUIET libpulse)
+  if(PULSE_FOUND)
+    message(STATUS "PulseAudio found: ${PULSE_LIBRARIES}")
+    include_directories(${PULSE_INCLUDE_DIRS})
+    link_directories(${PULSE_LIBRARY_DIRS})
+    avox_update_cached_list(AVOX_LINK_LIBRARIES ${PULSE_LIBRARIES})
+    add_definitions(-DAVOX_ENABLE_PULSE)
+  else()
+    message(WARNING "libpulse not found, linux audio output disabled (apt install libpulse-dev)")
+  endif()
+
   # 添加包含路径
   include_directories(${X11_INCLUDE_DIRS})
   message(STATUS "X11 include:" ${X11_INCLUDE_DIRS})
