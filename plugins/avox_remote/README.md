@@ -42,7 +42,8 @@ src->close();                          // 会话结束(create* 产物记得释�
 ## "smb" (libsmb2)
 
 SMB 走 libsmb2(LGPL, 纯 C 同步 API 跑在 RunTask 线程), 依赖预编译入库方式与 libtorrent 一致
-(源项目 `D:/Work/github/libsmb2` 独立 `python build_windows.py` → 产物进
+(构建: 本仓 `script/smb2/build_windows.py --src <libsmb2源码目录>`, 源码仓 clone
+sahlberg/libsmb2 后 checkout libsmb2-6.2; 产物进
 `avc_library/3rdparty/library/windows/libsmb2/`, 本仓库 `cmake/FindLibsmb2.cmake` 查找)。
 
 ```cpp

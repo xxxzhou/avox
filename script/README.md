@@ -10,7 +10,8 @@
 |------|------|
 | `godot/` | Godot 离线工具（`idle_bake.py` avatar 待机微动烘焙 → `../platform/godot/tools/src/avatar/idle_bake.json`） |
 | `torrent/` | torrent 播放分步基准（`torrent_bench.py`，驱动 `../samples/functest/torrentbench.cpp`；见 `../plugins/avox_torrent/README.md`） |
-| `ffmpeg/` | 从源码构建 FFmpeg（`build_ffmpeg.py`） |
+| `ffmpeg/` | 从源码构建 FFmpeg（`build_ffmpeg.py`，多 flavor 白名单，`--deploy` 换库进 3rdparty） |
+| `smb2/` | 构建 libsmb2 预编译库（`build_windows.py`，静态 /MT，产物进 avc_library） |
 | `webrtc/` | 构建 WebRTC（`.bat`/`.sh`/`.ps1`，Windows/Android/iOS） |
 | `onnx/` | 下载 ONNX Runtime 开发库（各平台，含 `.lib`） |
 | `opencv/` | 下载 OpenCV 开发包 |
