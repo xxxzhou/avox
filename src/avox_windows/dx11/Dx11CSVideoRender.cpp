@@ -255,15 +255,26 @@ bool Dx11CSVideoRender::mapStagingFrame() {
            (int32_t)desc.Format);
     return false;
   }
+  // 解码 surface 是按对齐扩过的(如 1280x720 -> 1280x768),padding 行解码器
+  // 从不写入(Y/U/V=0,转RGB呈绿带)。CPU 交付必须按显示尺寸裁剪。
+  const int32_t outW = gpuFrame.format.width;
+  const int32_t outH = gpuFrame.format.height;
+  if (outW <= 0 || outH <= 0 || outW > (int32_t)desc.Width ||
+      outH > (int32_t)desc.Height) {
+    LOGFLF(LogLevel::warn, "cpu yuv out bad display size:", outW, "x", outH,
+           " surface:", (int32_t)desc.Width, "x", (int32_t)desc.Height);
+    return false;
+  }
   // 解上一帧映射(发布指针随Unmap失效,消费者须在当帧窗口内使用)
   if (bStagingMapped) {
     d3dcontext->Unmap(stagingTexture.Get(), 0);
     bStagingMapped = false;
   }
-  if (!stagingTexture || stagingWidth != (int32_t)desc.Width ||
-      stagingHeight != (int32_t)desc.Height) {
+  if (!stagingTexture || stagingWidth != outW || stagingHeight != outH) {
     stagingTexture.Reset();
     D3D11_TEXTURE2D_DESC sdesc = desc;
+    sdesc.Width = (UINT)outW;
+    sdesc.Height = (UINT)outH;
     sdesc.MipLevels = 1;
     sdesc.ArraySize = 1;
     sdesc.Usage = D3D11_USAGE_STAGING;
@@ -275,17 +286,18 @@ bool Dx11CSVideoRender::mapStagingFrame() {
       LOGFLF(LogLevel::warn, "create nv12 staging texture failed");
       return false;
     }
-    stagingWidth = (int32_t)desc.Width;
-    stagingHeight = (int32_t)desc.Height;
+    stagingWidth = outW;
+    stagingHeight = outH;
   }
-  if (desc.ArraySize > 1) {
-    d3dcontext->CopySubresourceRegion(
-        stagingTexture.Get(), 0, 0, 0, 0, src,
-        D3D11CalcSubresource(0, (UINT)gpuFrame.queueIndex, desc.MipLevels),
-        nullptr);
-  } else {
-    d3dcontext->CopyResource(stagingTexture.Get(), src);
-  }
+  const UINT srcSub =
+      D3D11CalcSubresource(0, (UINT)gpuFrame.queueIndex, desc.MipLevels);
+  // 平面格式用 box 的 z 选平面: z=0 Y面(outH行), z=1 UV面(outH/2行)
+  D3D11_BOX yBox = {0, 0, 0, (UINT)outW, (UINT)outH, 1};
+  D3D11_BOX uvBox = {0, 0, 1, (UINT)outW / 2, (UINT)outH / 2, 2};
+  d3dcontext->CopySubresourceRegion(stagingTexture.Get(), 0, 0, 0, 0, src,
+                                    srcSub, &yBox);
+  d3dcontext->CopySubresourceRegion(stagingTexture.Get(), 0, 0, 0, 1, src,
+                                    srcSub, &uvBox);
   D3D11_MAPPED_SUBRESOURCE mapped = {};
   if (FAILED(d3dcontext->Map(stagingTexture.Get(), 0, D3D11_MAP_READ, 0,
                              &mapped))) {
@@ -295,8 +307,8 @@ bool Dx11CSVideoRender::mapStagingFrame() {
   bStagingMapped = true;
   // nv12 packed布局约定: r8 + height*3/2 + rowPitch(字节), UV起始=rowPitch*height
   ImageFormat fmt = {};
-  fmt.width = (int32_t)desc.Width;
-  fmt.height = (int32_t)desc.Height * 3 / 2;
+  fmt.width = outW;
+  fmt.height = outH * 3 / 2;
   fmt.imageType = ImageType::r8;
   fmt.rowPitch = (int32_t)mapped.RowPitch;
   stagingBuffer.setData((uint8_t*)mapped.pData, fmt, false);
