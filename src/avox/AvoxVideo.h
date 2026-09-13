@@ -21,6 +21,7 @@ namespace avox {
   XX(uyvyI, 7, 2, 4, "uyvyI")             \
   XX(uyvy422_10B, 8, 2, 5, "uyvy422_10B") \
   XX(yuv420P10, 9, 4, 12, "yuv420P10")    \
+  XX(p010, 11, 4, 12, "p010")             \
   XX(yuyv422A, 10, 2, 4, "yuyv422A")
 
 enum class YuvType : int32_t {

@@ -275,6 +275,10 @@ YuvType ffYuvType(AVPixelFormat format) {
     case AV_PIX_FMT_YUV420P10LE:
     case AV_PIX_FMT_YUV420P10BE:
       return YuvType::yuv420P10;
+    case AV_PIX_FMT_P010LE:
+    case AV_PIX_FMT_P010BE:
+      // 硬解 10bit(VAAPI 下载后/D3D11)的半平面格式
+      return YuvType::p010;
     case AV_PIX_FMT_NV12:
       return YuvType::nv12;
   }

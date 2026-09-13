@@ -71,7 +71,7 @@ bool bVPlaneFormat(YuvType yuvType) {
   // NV12是半平面,YUV420的变种,UV是交叉
   if (yuvType == YuvType::yuv420P || yuvType == YuvType::yuv422P ||
       yuvType == YuvType::yuv444P || yuvType == YuvType::nv12 ||
-      yuvType == YuvType::yuv420P10) {
+      yuvType == YuvType::yuv420P10 || yuvType == YuvType::p010) {
     return true;
   }
   return false;
@@ -96,8 +96,9 @@ void yuv2ImageFormat(const YUVFrame& yuvFrame, ImageFormat& format) {
   bool bPlane = bVPlaneFormat(yuvFormat.type);
   if (bPlane) {
     // 高度变高
-    // yuv420P10使用r16,其他使用r8
-    if (yuvFormat.type == YuvType::yuv420P10) {
+    // yuv420P10/p010使用r16,其他使用r8
+    if (yuvFormat.type == YuvType::yuv420P10 ||
+        yuvFormat.type == YuvType::p010) {
       format.imageType = ImageType::r16;
       format.height = yuvFormat.height * 3 / 2;
     } else {
@@ -136,8 +137,8 @@ void image2YUVFormat(const ImageFormat& imFormat, YuvType yuvType,
     AVOX_MAP_YUV(XX)
 #undef XX
   }
-  if (yuvType == YuvType::yuv420P10) {
-    // yuv420P10: ImageFormat height = 1620, 需要转换回 YUVFormat height = 1080
+  if (yuvType == YuvType::yuv420P10 || yuvType == YuvType::p010) {
+    // yuv420P10/p010: ImageFormat height = 1620, 需要转换回 YUVFormat height = 1080
     // height * 2/3 = 1620 * 2/3 = 1080
     format.height = imFormat.height * 2 / 3;
   } else if (bVPlaneFormat(yuvType)) {
@@ -149,6 +150,10 @@ void image2YUVFormat(const ImageFormat& imFormat, YuvType yuvType,
 }
 
 bool bTightlyPacked(const YUVFrame& frame) {
+  // P010 高位对齐+UV交错与 shader 读布局不一致, 恒走归一化打包
+  if (frame.format.type == YuvType::p010) {
+    return false;
+  }
   // 1. 获取 Y 平面的基准步长
   int32_t yRowPitch = frame.stride[0];
   int32_t height = frame.format.height;
@@ -199,7 +204,32 @@ void copyPlaneYUV2TightlyBuffer(const YUVFrame& frame, uint8_t* bfdata) {
   // 复制Y平面,直接以Y平面的rowpitch做的基准, Y是可以直接memcpy 的
   memcpy(bfdata, frame.data[0], y_logic_size);
   // 2. 复制 UV 平面
-  if (frame.format.type == YuvType::yuv420P10) {
+  if (frame.format.type == YuvType::p010) {
+    // P010: 10bit 在高 10 位(右移对齐低 10 位), UV 交错双平面(拆分为独立 U/V),
+    // 归一化成与 yuv420P10 相同的紧排布局, shader 读函数零改动
+    int32_t width = frame.format.width;
+    int32_t uv_height = height / 2;
+    uint64_t uv_plane_size = (uint64_t)(yrowpitch / 2) * uv_height;
+    auto* ydst = (uint16_t*)bfdata;
+    for (int32_t h = 0; h < height; ++h) {
+      auto* src = (const uint16_t*)(frame.data[0] + (uint64_t)h * frame.stride[0]);
+      uint16_t* dst = ydst + (uint64_t)h * (yrowpitch / 2);
+      for (int32_t i = 0; i < width; ++i) {
+        dst[i] = (uint16_t)(src[i] >> 6);
+      }
+    }
+    auto* udst = (uint16_t*)(bfdata + y_logic_size);
+    auto* vdst = (uint16_t*)(bfdata + y_logic_size + uv_plane_size);
+    for (int32_t h = 0; h < uv_height; ++h) {
+      auto* src = (const uint16_t*)(frame.data[1] + (uint64_t)h * frame.stride[1]);
+      uint16_t* u = udst + (uint64_t)h * (yrowpitch / 4);
+      uint16_t* v = vdst + (uint64_t)h * (yrowpitch / 4);
+      for (int32_t i = 0; i < width / 2; ++i) {
+        u[i] = (uint16_t)(src[2 * i] >> 6);
+        v[i] = (uint16_t)(src[2 * i + 1] >> 6);
+      }
+    }
+  } else if (frame.format.type == YuvType::yuv420P10) {
     int32_t uv_pitch = yrowpitch / 2;
     int32_t uv_height = height / 2;
     uint64_t uv_size_dst = (uint64_t)uv_pitch * uv_height;

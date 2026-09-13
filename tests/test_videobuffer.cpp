@@ -201,3 +201,43 @@ TEST_CASE("to: nv12带padding零拷贝视图") {
 }
 
 }  // namespace avox
+
+// P010 打包归一化契约: 高位对齐(>>6) + UV 交错拆分, 产出与 yuv420P10 相同的紧排布局
+// (shader 读函数零改动的前提; 硬解 10bit 的 CPU 下载帧即此格式)
+namespace avox {
+
+TEST_CASE("p010: 归一化打包 — 右移对齐低10位 + UV拆分, bTightlyPacked恒false") {
+  const int w = 4, h = 4, uvH = 2;
+  std::vector<uint16_t> ySrc(w * h), uvSrc(uvH * w);
+  for (int i = 0; i < w * h; ++i) {
+    ySrc[i] = (uint16_t)(((i * 97) % 1024) << 6 | ((i * 41) % 63));  // 高位10bit+低6位噪声
+  }
+  for (int i = 0; i < uvH * w / 2; ++i) {
+    uvSrc[2 * i] = (uint16_t)(((i * 53) % 1024) << 6 | 17);          // U
+    uvSrc[2 * i + 1] = (uint16_t)(((i * 71) % 1024) << 6 | 42);      // V
+  }
+  YUVFrame frame = {};
+  frame.format = {w, h, YuvType::p010};
+  frame.data[0] = reinterpret_cast<uint8_t*>(ySrc.data());
+  frame.data[1] = reinterpret_cast<uint8_t*>(uvSrc.data());
+  frame.data[2] = nullptr;
+  frame.stride[0] = w * 2;
+  frame.stride[1] = w * 2;
+  CHECK_FALSE(bTightlyPacked(frame));  // p010 恒走归一化打包
+  std::vector<uint8_t> buf(getYuvFrameSize(frame.format, w * 2));
+  copyPlaneYUV2TightlyBuffer(frame, buf.data());
+  auto* words = reinterpret_cast<const uint16_t*>(buf.data());
+  // Y: 右移对齐低 10 位
+  for (int i = 0; i < w * h; ++i) {
+    CHECK(words[i] == (uint16_t)(ySrc[i] >> 6));
+  }
+  // UV: 拆分为独立 U/V 平面(U 在前), 同样右移对齐
+  const int uvWords = w * h / 4;
+  const uint16_t* u = words + w * h;
+  const uint16_t* v = u + uvWords;
+  for (int i = 0; i < uvH * w / 2; ++i) {
+    CHECK(u[i] == (uint16_t)(uvSrc[2 * i] >> 6));
+    CHECK(v[i] == (uint16_t)(uvSrc[2 * i + 1] >> 6));
+  }
+}
+}  // namespace avox

@@ -47,8 +47,8 @@ void VkYUV2RGBALayer::onInitLayer() {
   if (yuvType == YuvType::uyvy422_10B) {
     path = "glsl/yuv2rgbaV3.comp.spv";
   }
-  if (yuvType == YuvType::yuv420P10) {
-    // V5 通吃 10bit: transfer 为运行时 UBO 分支, SDR 直通零改动
+  if (yuvType == YuvType::yuv420P10 || yuvType == YuvType::p010) {
+    // V5 通吃 10bit(含 p010 上传归一化): transfer 为运行时 UBO 分支, SDR 直通零改动
     path = "glsl/yuv2rgbaV5.comp.spv";
   }
   shader->loadShaderModule(path);
@@ -61,8 +61,8 @@ void VkYUV2RGBALayer::onInitLayer() {
     // 一个线程处理四个点
     sizeX = divUp(outFormats[0].width, 2 * groupX);
     sizeY = divUp(outFormats[0].height, 2 * groupY);
-  } else if (paramet == YuvType::yuv420P10) {
-    // yuv420P10是平面格式,使用r16,高度是1.5倍
+  } else if (paramet == YuvType::yuv420P10 || paramet == YuvType::p010) {
+    // yuv420P10/p010是平面格式,使用r16,高度是1.5倍
     inFormats[0].imageType = ImageType::r16;
     outFormats[0].height = inFormats[0].height * 2 / 3;
     // 一个线程处理四个点
