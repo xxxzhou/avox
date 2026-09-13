@@ -72,7 +72,8 @@ void applyLimitedForward(Mat4x4f& m) {
 }
 
 // limited 反向: 输入先做 limited->full (Y*(255/219)-16/219, UV*(255/224)-16/224), 再 full 反向
-// in' = in * d, 结果 = d.multiply(mFull) (行向量约定)
+// 本体系行=输出通道(out_j = Σ_i x_i·M[j][i]), 先应用的变换乘在右边: 组合 = mFull·d,
+// 用 d.multiply(mFull) 会把通道缩放错加到输出行上(limited 往返最大偏 0.013, 单测覆盖)
 Mat4x4f applyLimitedInverse(const Mat4x4f& mFull) {
   const float yK = 255.0f / 219.0f;
   const float cK = 255.0f / 224.0f;
@@ -81,7 +82,7 @@ Mat4x4f applyLimitedInverse(const Mat4x4f& mFull) {
   d.row1 = vec4f(0.0f, cK, 0.0f, -16.0f / 224.0f);
   d.row2 = vec4f(0.0f, 0.0f, cK, -16.0f / 224.0f);
   d.row3 = vec4f(0.0f, 0.0f, 0.0f, 1.0f);
-  return d.multiply(mFull);
+  return mFull.multiply(d);
 }
 }  // namespace
 
@@ -99,6 +100,16 @@ Mat4x4f buildYuvToRgb(const ColorSpaceDesc& cs) {
     m = applyLimitedInverse(m);
   }
   return m;
+}
+
+uint32_t hdrPeakNits(const HdrMeta& meta) {
+  if (meta.maxCLL > 0) {
+    return meta.maxCLL;
+  }
+  if (meta.maxLuminance > 0) {
+    return meta.maxLuminance;
+  }
+  return 1000;
 }
 
 }

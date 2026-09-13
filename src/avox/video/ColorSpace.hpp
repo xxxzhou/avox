@@ -12,6 +12,9 @@ Mat4x4f buildRgbToYuv(const ColorSpaceDesc& cs);
 // 反向: vec4(Y,U,V,1) * M -> (R,G,B,_), UV 的 -0.5 已折叠进偏移列, shader 无需再减
 Mat4x4f buildYuvToRgb(const ColorSpaceDesc& cs);
 
+// tone map 峰值亮度选取(nits): MaxCLL 优先, 退 mastering 峰值, 再退默认 1000
+uint32_t hdrPeakNits(const HdrMeta& meta);
+
 // RGBA<->YUV shader 的 UBO 布局(std140, 96B), 与 rgba2yuvV*/yuv2rgbaV*.comp 对齐
 // transfer 占 3 个 int 后的槽位(旧 shader 视作隐式 padding, mat4 仍 offset 16);
 // HDR 参数追加在 mat4 后(offset 80), 仅 yuv2rgbaV5.comp 声明, 旧 shader 块 80B 不受影响

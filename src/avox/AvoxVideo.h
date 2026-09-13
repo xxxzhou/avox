@@ -59,6 +59,17 @@ struct ColorSpaceDesc {
   YuvTransfer transfer = YuvTransfer::gamma;
 };
 
+// HDR 静态元数据(ST2086/CTA-861.3): 解码器从 side data 解出, 无标记全零不生效
+struct HdrMeta {
+  uint32_t maxLuminance = 0;  // nits, mastering display 峰值亮度
+  uint32_t minLuminance = 0;  // 1/10000 nits, mastering display 最小亮度
+  uint32_t maxCLL = 0;        // nits, 内容单像素峰值
+  uint32_t maxFALL = 0;       // nits, 帧平均光强
+  float primaries[6] = {};    // RGB 三基色 xy(0..1), 行优先
+  float whitePoint[2] = {};   // 白点 xy(0..1)
+  bool valid = false;
+};
+
 struct VideoDesc {
   int32_t width = 0;
   int32_t height = 0;

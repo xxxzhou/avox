@@ -83,6 +83,15 @@ TEST_CASE("rgbToYuv->yuvToRgb: 全制式 full/limited 往返一致") {
   }
 }
 
+TEST_CASE("hdrPeakNits: CLL 优先, 退 mastering, 再退默认") {
+  HdrMeta meta{};
+  CHECK(hdrPeakNits(meta) == 1000);  // 无标记默认
+  meta.maxLuminance = 4000;
+  CHECK(hdrPeakNits(meta) == 4000);  // 仅 mastering
+  meta.maxCLL = 1000;
+  CHECK(hdrPeakNits(meta) == 1000);  // CLL 覆盖 mastering
+}
+
 TEST_CASE("UBO 布局: transfer 槽位与 96B 尺寸 (3a 定稿契约)") {
   // offset 12 的 transfer 不得挤动 colorMat(offset 16), 追加区 offset 80 起
   CHECK(sizeof(ColorYuvUBO) == 96);
@@ -95,3 +104,4 @@ TEST_CASE("UBO 布局: transfer 槽位与 96B 尺寸 (3a 定稿契约)") {
   CHECK((int32_t)YuvTransfer::pq == 2);
   CHECK((int32_t)YuvTransfer::hlg == 3);
 }
+}  // namespace avox
