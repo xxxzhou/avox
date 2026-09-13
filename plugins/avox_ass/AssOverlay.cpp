@@ -208,6 +208,11 @@ const AssCanvas* AssOverlay::render(int64_t ptsMs) {
     if (it->dst_x + it->w > x1) x1 = it->dst_x + it->w;
     if (it->dst_y + it->h > y1) y1 = it->dst_y + it->h;
   }
+  // \pos/\frz 等定位样式允许图像越出画面, bbox 必须裁到画面内(越界写会崩)
+  if (x0 < 0) x0 = 0;
+  if (y0 < 0) y0 = 0;
+  if (x1 > storageW) x1 = storageW;
+  if (y1 > storageH) y1 = storageH;
   const int32_t back = frontIdx ^ 1;
   AssCanvas& out = canvas[back];
   if (x1 <= x0 || y1 <= y0) {
@@ -221,19 +226,25 @@ const AssCanvas* AssOverlay::render(int64_t ptsMs) {
   }
   const int32_t w = x1 - x0, h = y1 - y0;
   std::string& buf = canvasBuf[back];
-  buf.assign(size_t(w) * h * 4, 0);  for (auto* it = img; it; it = it->next) {
+  buf.assign(size_t(w) * h * 4, 0);
+  for (auto* it = img; it; it = it->next) {
     if (it->w <= 0 || it->h <= 0) continue;
     // ASS_Image: bitmap 为 8bit 覆盖度; color 打包为 RGBA(R 高字节,
     // alpha 低字节且 0x00=不透明), 有效覆盖度 = bitmap × 颜色不透明度
     const uint32_t col = uint32_t(it->color);
     const uint8_t cr = uint8_t(col >> 24), cg = uint8_t(col >> 16),
                   cb = uint8_t(col >> 8), ca = uint8_t(col);
-    const int32_t bx = it->dst_x - x0, by = it->dst_y - y0;
-    for (int32_t y = 0; y < it->h; ++y) {
-      const uint8_t* src = it->bitmap + size_t(y) * it->stride;
+    // 每个 image 与 bbox 求交(越出画面的部分丢弃)
+    const int32_t sx = it->dst_x < x0 ? x0 : it->dst_x;
+    const int32_t sy = it->dst_y < y0 ? y0 : it->dst_y;
+    const int32_t ex = it->dst_x + it->w > x1 ? x1 : it->dst_x + it->w;
+    const int32_t ey = it->dst_y + it->h > y1 ? y1 : it->dst_y + it->h;
+    for (int32_t y = sy; y < ey; ++y) {
+      const uint8_t* src = it->bitmap + size_t(y - it->dst_y) * it->stride +
+                           size_t(sx - it->dst_x);
       uint8_t* dst = reinterpret_cast<uint8_t*>(buf.data()) +
-                     size_t(by + y) * w * 4 + size_t(bx) * 4;
-      for (int32_t x = 0; x < it->w; ++x) {
+                     size_t(y - y0) * w * 4 + size_t(sx - x0) * 4;
+      for (int32_t x = 0; x < ex - sx; ++x) {
         const uint32_t cov = src[x];
         if (!cov) continue;
         const uint32_t a = cov * (255 - ca) / 255;
