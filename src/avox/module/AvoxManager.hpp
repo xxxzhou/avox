@@ -23,6 +23,7 @@
 #include "../vision/OnnxSessionCache.hpp"
 #include "../video/IImageProc.hpp"
 #include "../subtitle/BaseTranslator.hpp"
+#include "../subtitle/IAssOverlay.hpp"
 #include "../source/AVSource.hpp"
 #include "../source/DeviceManager.hpp"
 #include "../source/RawSource.hpp"
@@ -153,6 +154,10 @@ class AVOX_EXPORT AvoxManager {
   // 手眼/内参图优化工厂 (avox_calib 且 g2o 可用时 reg "g2o"; 无 g2o 时 create 返 nullptr 走 OpenCV 路径)
   RegeditFactory<ICameraTrackOptimizer> cameraTrackOptimizerHub;
   RegeditFactory<ICalibrationOptimizer> calibrationOptimizerHub;
+  // ASS/PGS 字幕 overlay 工厂 (plugins/avox_ass loadModule 时 reg "libass"; 接口
+  // IAssOverlay 见 subtitle/IAssOverlay.hpp)。未装插件 create 返 nullptr → 调用方
+  // 降级为不渲染内封特效字幕轨。必须追加在全部成员末尾 (ABI 约束同上)。
+  RegeditFactory<IAssOverlay> assOverlayHub;
 
  private:
   bool bInit = false;

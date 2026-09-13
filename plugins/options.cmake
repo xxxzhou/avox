@@ -29,3 +29,8 @@ option(AVOX_ENABLE_FBX "build avox_fbx FBX scene import plugin (ufbx, no externa
 # g2o 图优化: 虚拟制片标定 M2 (弧形幕墙内参 BA/手眼再优化; 需 3rdparty/g2o,eigen submodule
 # 且 build_windows.py 构建过 g2o, 否则 avox_calib 自动降级 M1 OpenCV 路径)
 option(AVOX_ENABLE_G2O "build avox_calib g2o graph optimizers (needs 3rdparty/g2o+eigen built)" ON)
+# avox_ass: ASS/SSA(后续含 PGS)字幕 overlay 渲染 (libass 在独立仓 avox-ass-deps 预编译;
+# 未指 AVOX_ASS_DEPS_DIR 时只编骨架, AssOverlay::init() 返 false 运行期降级)
+option(AVOX_ENABLE_ASS "build avox_ass ASS/PGS subtitle overlay plugin (real rendering needs avox-ass-deps prebuilt libs)" ON)
+# avox-ass-deps 产物目录(布局: include/ + lib/ + bin/); 空 = 骨架模式
+set(AVOX_ASS_DEPS_DIR "" CACHE PATH "avox-ass-deps dist dir (libass prebuilt); empty = skeleton only")

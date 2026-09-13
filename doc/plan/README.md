@@ -48,6 +48,7 @@ avox 各模块的计划、设计与调研文档索引。已完成的方案随功
 | [输入控制设计](player/输入控制设计.md) | 输入控制 |
 | [音频外部读取设计](player/音频外部读取设计.md) | 音频外部读取 |
 | [TranscodeRecorder设计](player/TranscodeRecorder设计.md) | 转码录制 |
+| [ASS字幕渲染计划](player/ASS字幕渲染计划.md) | ASS/SSA(含 PGS 位图)字幕 avox_ass 磁力模块方案 |
 
 ## virtualproduction/ — 虚拟制片
 
