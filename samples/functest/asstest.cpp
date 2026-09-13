@@ -64,6 +64,23 @@ int main() {
       if (c && c->rgba && c->width > 0 && c->height > 0 && c->seq > 0) {
         std::printf("[asstest] render OK: canvas %dx%d @(%d,%d) seq=%u\n", c->width,
                     c->height, c->x, c->y, unsigned(c->seq));
+        // 像素证据: 合成到黑底导出 PPM, 供人眼验收字形/描边
+        FILE* dump = std::fopen("asstest_canvas.ppm", "wb");
+        if (dump) {
+          std::fprintf(dump, "P6\n%d %d\n255\n", c->width, c->height);
+          for (int32_t y = 0; y < c->height; ++y) {
+            const uint8_t* row = c->rgba + size_t(y) * c->stride;
+            for (int32_t x = 0; x < c->width; ++x) {
+              const uint8_t* px = row + size_t(x) * 4;
+              uint8_t rgb[3] = {uint8_t(px[0] * px[3] / 255),
+                                uint8_t(px[1] * px[3] / 255),
+                                uint8_t(px[2] * px[3] / 255)};
+              std::fwrite(rgb, 1, 3, dump);
+            }
+          }
+          std::fclose(dump);
+          std::printf("[asstest] canvas 已导出 asstest_canvas.ppm\n");
+        }
       } else {
         std::printf("[asstest] FAIL: render 应返回非空 canvas\n");
         failed++;

@@ -223,22 +223,26 @@ const AssCanvas* AssOverlay::render(int64_t ptsMs) {
   std::string& buf = canvasBuf[back];
   buf.assign(size_t(w) * h * 4, 0);  for (auto* it = img; it; it = it->next) {
     if (it->w <= 0 || it->h <= 0) continue;
-    // ASS_Image 颜色 = A<<24 | R<<16 | G<<8 | B; bitmap 为 8bit 覆盖度
+    // ASS_Image: bitmap 为 8bit 覆盖度; color 打包为 RGBA(R 高字节,
+    // alpha 低字节且 0x00=不透明), 有效覆盖度 = bitmap × 颜色不透明度
     const uint32_t col = uint32_t(it->color);
-    const uint8_t cr = uint8_t(col >> 16), cg = uint8_t(col >> 8), cb = uint8_t(col);
+    const uint8_t cr = uint8_t(col >> 24), cg = uint8_t(col >> 16),
+                  cb = uint8_t(col >> 8), ca = uint8_t(col);
     const int32_t bx = it->dst_x - x0, by = it->dst_y - y0;
     for (int32_t y = 0; y < it->h; ++y) {
       const uint8_t* src = it->bitmap + size_t(y) * it->stride;
       uint8_t* dst = reinterpret_cast<uint8_t*>(buf.data()) +
                      size_t(by + y) * w * 4 + size_t(bx) * 4;
       for (int32_t x = 0; x < it->w; ++x) {
-        const uint32_t a = src[x];
+        const uint32_t cov = src[x];
+        if (!cov) continue;
+        const uint32_t a = cov * (255 - ca) / 255;
         if (!a) continue;
         uint8_t* px = dst + size_t(x) * 4;
-        // src-over 预乘合成: out = src*a + out*(255-a)/255
-        px[0] = uint8_t((cb * a + px[0] * (255 - a)) / 255);
+        // src-over 合成: out = color*a + out*(1-a)
+        px[0] = uint8_t((cr * a + px[0] * (255 - a)) / 255);
         px[1] = uint8_t((cg * a + px[1] * (255 - a)) / 255);
-        px[2] = uint8_t((cr * a + px[2] * (255 - a)) / 255);
+        px[2] = uint8_t((cb * a + px[2] * (255 - a)) / 255);
         px[3] = uint8_t(a + px[3] * (255 - a) / 255);
       }
     }
