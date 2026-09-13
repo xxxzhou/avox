@@ -5,6 +5,41 @@ if("${CMAKE_SYSTEM_NAME}" STREQUAL "Emscripten")
   set(ACV_BUILD_WASM ON)
 endif()
 
+# Linux Wayland 检测 (需在 LinkVulkan 平台宏之前, 提供 AVOX_ENABLE_WAYLAND)
+# 注: 不用 find_* (个别环境下对系统路径失灵), 直接 EXISTS 探测 + 链接器自搜
+if(ONLY_LINUX)
+  set(WL_XML "")
+  foreach(_c /usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml
+             /usr/local/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml)
+    if(EXISTS ${_c})
+      set(WL_XML ${_c})
+      break()
+    endif()
+  endforeach()
+  find_program(WAYLAND_SCANNER NAMES wayland-scanner)
+  if(WL_XML AND WAYLAND_SCANNER)
+    # 配置期直接生成协议头/码 (消费方 include 二进制目录)
+    execute_process(COMMAND ${WAYLAND_SCANNER} client-header
+      ${WL_XML} ${CMAKE_BINARY_DIR}/xdg-shell-client-protocol.h
+      RESULT_VARIABLE WL_R1 OUTPUT_QUIET ERROR_QUIET)
+    execute_process(COMMAND ${WAYLAND_SCANNER} private-code
+      ${WL_XML} ${CMAKE_BINARY_DIR}/xdg-shell-client-code.c
+      RESULT_VARIABLE WL_R2 OUTPUT_QUIET ERROR_QUIET)
+    if(WL_R1 EQUAL 0 AND WL_R2 EQUAL 0)
+      message(STATUS "Wayland enabled")
+      # 变量供 LinkVulkan 追加平台宏, 宏供源码条件编译, 二者都要
+      set(AVOX_ENABLE_WAYLAND ON)
+      add_definitions(-DAVOX_ENABLE_WAYLAND)
+      set(AVOX_WAYLAND_LINK wayland-client)
+      include_directories(${CMAKE_BINARY_DIR})
+    else()
+      message(WARNING "wayland-scanner 生成协议文件失败, Wayland 禁用")
+    endif()
+  else()
+    message(STATUS "Wayland disabled (need libwayland-dev, wayland-protocols, wayland-scanner)")
+  endif()
+endif()
+
 set(KHRONOS_DIR ${AVOX_TRDPARTY}/khronos)
 
 include_directories(${KHRONOS_DIR})
@@ -407,6 +442,11 @@ if(ONLY_LINUX)
   find_package(PkgConfig REQUIRED)
   find_package(X11 REQUIRED)
   find_package(ZLIB REQUIRED)
+
+  # Wayland 链接 (检测/协议生成在文件头部, 需在 LinkVulkan 平台宏之前)
+  if(AVOX_ENABLE_WAYLAND)
+    avox_update_cached_list(AVOX_LINK_LIBRARIES ${AVOX_WAYLAND_LINK})
+  endif()
 
   # PulseAudio音频输出(WSLg/桌面发行版通用, PipeWire兼容pulse协议); 缺失时禁用音频输出
   pkg_check_modules(PULSE QUIET libpulse)

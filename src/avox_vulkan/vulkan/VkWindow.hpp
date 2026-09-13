@@ -20,6 +20,9 @@ struct android_app;
 #elif defined(__ONLY_LINUX__)
 #include <X11/Xlib.h>
 #include <vulkan/vulkan_xlib.h>
+#ifdef AVOX_ENABLE_WAYLAND
+#include <vulkan/vulkan_wayland.h>
+#endif
 #include "avox_linux/LinuxHelper.h"
 #endif
 

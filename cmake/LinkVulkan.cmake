@@ -78,6 +78,10 @@ elseif(APPLE)
 elseif(ONLY_LINUX)
     # X11
     target_compile_definitions(vulkan INTERFACE VK_USE_PLATFORM_XLIB_KHR)
+    # Wayland (AVOX_ENABLE_WAYLAND 由 AVOXOptions 头部检测定义)
+    if(AVOX_ENABLE_WAYLAND)
+        target_compile_definitions(vulkan INTERFACE VK_USE_PLATFORM_WAYLAND_KHR)
+    endif()
 endif()
 
 # volk

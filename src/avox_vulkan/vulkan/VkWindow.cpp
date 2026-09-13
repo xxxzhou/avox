@@ -1,6 +1,7 @@
 #include "VkWindow.hpp"
 
 #include <array>
+#include <cstring>
 
 #include "avox/module/AvoxManager.hpp"
 
@@ -375,12 +376,29 @@ void VkWindow::initVkSurface(ILinuxSurface* x11Surface)
   ret = vkCreateMetalSurfaceEXT(vkInstance, &surfaceCreateInfo, nullptr,
                                 &vkSurface);
 #elif defined(__ONLY_LINUX__)
-  VkXlibSurfaceCreateInfoKHR x11SurfaceCreateInfo = {};
-  x11SurfaceCreateInfo.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
-  x11SurfaceCreateInfo.dpy = (Display*)x11Surface->getDisplay();
-  x11SurfaceCreateInfo.window = (::Window)(uintptr_t)x11Surface->getWindow();
-  ret = vkCreateXlibSurfaceKHR(vkInstance, &x11SurfaceCreateInfo, nullptr,
-                               &vkSurface);
+  // 按显示后端分流: x11 走 Xlib, wayland 走 Wayland (ILinuxSurface::getDisplayType)
+  if (strcmp(x11Surface->getDisplayType(), "wayland") == 0) {
+#ifdef AVOX_ENABLE_WAYLAND
+    VkWaylandSurfaceCreateInfoKHR waylandCreateInfo = {};
+    waylandCreateInfo.sType =
+        VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
+    waylandCreateInfo.display =
+        (wl_display*)x11Surface->getDisplay();
+    waylandCreateInfo.surface = (wl_surface*)x11Surface->getWindow();
+    ret = vkCreateWaylandSurfaceKHR(vkInstance, &waylandCreateInfo, nullptr,
+                                    &vkSurface);
+#else
+    LOGFLF(LogLevel::error, "wayland surface requested but built without wayland");
+    ret = VK_ERROR_EXTENSION_NOT_PRESENT;
+#endif
+  } else {
+    VkXlibSurfaceCreateInfoKHR x11SurfaceCreateInfo = {};
+    x11SurfaceCreateInfo.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
+    x11SurfaceCreateInfo.dpy = (Display*)x11Surface->getDisplay();
+    x11SurfaceCreateInfo.window = (::Window)(uintptr_t)x11Surface->getWindow();
+    ret = vkCreateXlibSurfaceKHR(vkInstance, &x11SurfaceCreateInfo, nullptr,
+                                 &vkSurface);
+  }
 #endif
   if (ret != VK_SUCCESS) {
     LOGFLF(LogLevel::error, "failed to create surface");

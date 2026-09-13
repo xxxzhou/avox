@@ -79,6 +79,9 @@ VkInstanceArgs VkInstanceArgs::defArgs(bool bDebug) {
       {VK_EXT_METAL_SURFACE_EXTENSION_NAME},
 #elif defined(__ONLY_LINUX__)
       {VK_KHR_XLIB_SURFACE_EXTENSION_NAME},
+#ifdef AVOX_ENABLE_WAYLAND
+      {VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME},
+#endif
 #endif
   };
   if (bDebug) {
