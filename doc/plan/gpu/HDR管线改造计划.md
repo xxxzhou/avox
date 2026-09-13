@@ -190,6 +190,14 @@ YUV→RGB 与 tone map 数学在各渲染后端为独立实现,Vulkan 先做,其
 - E2E 缺口:本机 PATH 无带 x265 的 ffmpeg,阶段 0 的 HDR10 测试素材尚未生成;素材到位后再接 playmatrix 10bit 用例。
 - 「录制路径覆写 {601,full}」复核(2026-09-14 深夜,未动):该覆写与 FFVEncoder 硬编码 709 标签在往返上互相抵消——709 片源录制后 YUV 原值保留 + 709 标签,结果恰好正确;实际误差仅落在 601 标签源(录后按 709 解出轻微色偏)与 cs≠709 的其他制式。修法须成片:录制 cs 取流 cs(transfer 强制 gamma,V5 已 tone map)+ FFVEncoder 标签改由 cs 驱动,单独改任意一侧都会打破现有巧合一致,归入阶段 1 余项连同编码标注一起做。
 
+### 6.8 深夜推进落地(2026-09-14 凌晨,commits 12bd367/8321943/49b265d)
+
+- **存量 bug 修复**:`applyLimitedInverse` 组合顺序反了(`d.multiply(mFull)` → `mFull.multiply(d)`)。本体系行=输出通道,先应用的变换须乘在右边;旧行为 limited 往返最大偏 0.013。此前全链默认 full 未触发——播放按流下发激活 limited 路径前被单测拦截。
+- **播放链路贯通**(V5 真正生效的前提):`VideoTrack::onVideoDesc` 按流下发 colorSpace(此前普通播放无人调 setColorSpace,全链默认 601/full);`VkVideoRender::setColorSpace` 变化检测补 transfer 维度。
+- **HdrMeta 贯通**:结构体(AvoxVideo.h)+ `FFVDecoder` 读 mastering display/CLL side data + `IVideoDecoderOb::onHdrMeta`(新增默认空回调)→ VideoTrack 一次下发 → 级联至 yuv2rgba UBO `maxLuminance`(hdrPeakNits: CLL 优先→mastering→1000 默认)。硬解下载帧不带 side data,hw 路径暂走默认兜底。
+- **P010 CPU 路径闭环**(§6.7 约束的原子落地):`YuvType::p010` + `ffYuvType` 映射 P010LE/BE + `copyPlaneYUV2TightlyBuffer` 归一化(高 10 位右移对齐 + UV 交错拆分,产出与 yuv420P10 相同紧排布局,**shader 零改动**)+ yuv2rgba 层同配置走 V5 + 打包契约单测。比 §6.7 原设想更优:shader 不需要第二个读函数。
+- 余项不变:GPU 导入路径(FFDx11Decoder/getDxFormat)待真机;HDR10 素材待带 x265 的 ffmpeg;`setHdrMode` 公共 API 与 SEI 裸流兜底待拍板;Android AndCommon 0x36 错映射修复随阶段 3(当前解码端只出 NV12,错映射休眠)。
+
 ### 6.7 阶段 2 断点备注(P010 硬解,待真机验证后实施)
 
 - 落点分层:`YuvType` 加 `p010`(AVOX_MAP_YUV,group=4/groupsize=12,与 yuv420P10 同构×2B)→ `ffYuvType` 加 `AV_PIX_FMT_P010LE/BE`(hwdownload 后 sw_format 即 P010)→ V5 加 p010 读函数(高 10 位 `>>6`;UV 交错双平面按 2i/2i+1 寻址,UV 平面宽=width)→ FFVDecoder/r16 上传路径核对 P010 行对齐 stride。
