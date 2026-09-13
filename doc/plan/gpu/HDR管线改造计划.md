@@ -188,6 +188,7 @@ YUV→RGB 与 tone map 数学在各渲染后端为独立实现,Vulkan 先做,其
 - tone map 算子定为 **ACES 近似(Narkowicz)**,`maxLuminance` 峰值映射到 1;输出编码用 **BT.709 OETF**(替代本文早前「sRGB 输出」措辞——与 SDR 直通路径同一 gamma 域,下游特效零适配)。数值验证:PQ 解码 100/203/1000/10000nit 四参考点命中;灰阶 tone 点 0→0.00、100→0.80、203→0.91、1000→1.00;HLG 0.75 码值→203nit 漫反射白。
 - `maxLuminance`/`sdrWhiteNits` 暂用 UBO 默认值(1000/100);MaxCLL 接入随阶段 1 余项(`HdrMeta` 结构、`FFVDecoder` side data、SEI 兜底、`setHdrMode` 公共 API)。
 - E2E 缺口:本机 PATH 无带 x265 的 ffmpeg,阶段 0 的 HDR10 测试素材尚未生成;素材到位后再接 playmatrix 10bit 用例。
+- 「录制路径覆写 {601,full}」复核(2026-09-14 深夜,未动):该覆写与 FFVEncoder 硬编码 709 标签在往返上互相抵消——709 片源录制后 YUV 原值保留 + 709 标签,结果恰好正确;实际误差仅落在 601 标签源(录后按 709 解出轻微色偏)与 cs≠709 的其他制式。修法须成片:录制 cs 取流 cs(transfer 强制 gamma,V5 已 tone map)+ FFVEncoder 标签改由 cs 驱动,单独改任意一侧都会打破现有巧合一致,归入阶段 1 余项连同编码标注一起做。
 
 ### 6.7 阶段 2 断点备注(P010 硬解,待真机验证后实施)
 
