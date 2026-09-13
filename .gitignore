@@ -149,3 +149,5 @@ assets/video/hls*
 .workbuddy
 .githooks
 platform/android/AvoxJava/testbed/src/main/assets/
+script/ass/_cache/
+script/ass/_step.cmd

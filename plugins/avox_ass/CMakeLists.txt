@@ -1,11 +1,19 @@
 # avox_ass 插件: ASS/SSA(后续含 PGS 位图)字幕 overlay 渲染
-# 依赖策略: libass/fribidi/harfbuzz 在独立仓 avox-ass-deps 预编译(三平台产物)。
-# AVOX_ASS_DEPS_DIR 指向产物目录时链接 libass 并定义 AVOX_ASS_HAVE_LIBASS=1
-# (真实渲染);否则只编骨架 —— AssOverlay::init() 返回 false, 调用方运行期降级,
-# 核心构建零污染。设计见 doc/plan/player/ASS字幕渲染计划.md
+# 依赖策略: libass/fribidi/harfbuzz 在 3rdparty/library/ass/ 预编译(构建脚本
+# script/ass/build_windows.py)。默认探测仓内产物, 找到即链接 libass 并定义
+# AVOX_ASS_HAVE_LIBASS=1(真实渲染);否则只编骨架 —— AssOverlay::init() 返回
+# false, 调用方运行期降级, 核心构建零污染。设计见 doc/plan/player/ASS字幕渲染计划.md
 if(NOT AVOX_ENABLE_ASS)
   message(STATUS "avox_ass plugin: 未启用, 跳过")
   return()
+endif()
+
+# 默认探测 avc_library 仓的预编译产物(与 script/webrtc 同模式: 脚本在
+# avox/script/ass, 产物在 sibling avc_library; avc_library 惯例平台在前;
+# 可用 AVOX_ASS_DEPS_DIR 显式覆盖)
+if(NOT AVOX_ASS_DEPS_DIR
+   AND EXISTS "${CMAKE_SOURCE_DIR}/../avc_library/3rdparty/library/windows/ass/lib/ass.lib")
+  set(AVOX_ASS_DEPS_DIR "${CMAKE_SOURCE_DIR}/../avc_library/3rdparty/library/windows/ass")
 endif()
 
 set(_ass_sources

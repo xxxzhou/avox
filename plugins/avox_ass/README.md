@@ -6,15 +6,12 @@ RGBA canvas(联合 bbox 裁剪), 由核心 VK PipeGraph 混合层(sourceOver)合
 
 ## 依赖
 
-libass + FriBidi + HarfBuzz(+FreeType)在独立仓 **avox-ass-deps** 预编译:
+libass + FriBidi + HarfBuzz(+FreeType)预编译在 **avc_library** 仓
+`3rdparty/library/windows/ass/`(avc_library 惯例平台在前; 重编:
+`python script/ass/build_windows.py`, 脚本在 avox 仓, 版本 pin 见脚本头注释):
 
-```bash
-# 构建时指向产物目录(布局: include/ + lib/ + bin/)
-cmake ... -DAVOX_ASS_DEPS_DIR=/path/to/avox-ass-deps/dist/windows-x64
-```
-
-- 指向产物 → 链接 libass, 定义 `AVOX_ASS_HAVE_LIBASS=1`, 真实渲染;
-- 未指向 → 只编骨架, `AssOverlay::init()` 返回 false, 运行期降级不崩。
+- 产物在位(sibling 目录) → CMake 自动探测链接, 定义 `AVOX_ASS_HAVE_LIBASS=1`, 真实渲染;
+- 产物缺失 → 只编骨架, `AssOverlay::init()` 返回 false, 运行期降级不崩。
 
 ## 链路
 
