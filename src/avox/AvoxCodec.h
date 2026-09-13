@@ -23,7 +23,8 @@ namespace avox {
   XX(cook, 12, "cook")         \
   XX(sipr, 13, "sipr")         \
   XX(atrac3, 14, "atrac3")     \
-  XX(pcms16be, 15, "pcmS16BE")
+  XX(pcms16be, 15, "pcmS16BE") \
+  XX(vorbis, 16, "vorbis")
 
 // 视频编解码器类型(值导出给引擎插件, 只增不改不删)
 #define AVOX_MAP_VCODEC(XX)  \
@@ -41,7 +42,8 @@ namespace avox {
   XX(rv10, 12, "rv10")      \
   XX(rv20, 13, "rv20")      \
   XX(rv30, 14, "rv30")      \
-  XX(rv40, 15, "rv40")
+  XX(rv40, 15, "rv40")      \
+  XX(vp9, 16, "vp9")
 
 enum class ACodecId : int32_t {
   none = -1,

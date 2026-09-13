@@ -1,7 +1,9 @@
 #!/bin/bash
 # FFmpeg 9.x Android arm64-v8a 白名单交叉构建 (NDK)
-# 白名单与 Windows minsize 同源; 差异: 无 MediaFoundation 软编(硬编走 avox 自己的 MediaCodec 模块),
-# 无 vulkan 硬解(走 avox_vulkan), TLS 无系统后端(https/rtmps 需另接 mbedtls/openssl, 暂缺)
+# 白名单与 Windows build_ffmpeg.py minsize 同源(2026-09: NAS 老媒体扩展 + webm/无损
+# 等常用 LGPL 软解, 组件名已对照 FFmpeg 9.0.1 源码核实); 差异: 无 MediaFoundation
+# 软编(硬编走 avox 自己的 MediaCodec 模块), 无 vulkan 硬解(走 avox_vulkan),
+# TLS 无系统后端(https/rtmps 需另接 mbedtls/openssl, 暂缺)
 # 用法 (在 MSYS2 bash 或 Git Bash 里):
 #   ./build_ffmpeg_android.sh <NDK路径-msys风格> [源码目录] [输出目录]
 # 例:
@@ -37,11 +39,11 @@ cd "$BUILD_DIR"
   --enable-zlib \
   --disable-everything \
   --enable-protocol=file,http,https,tcp,udp,rtp,rtmp,rtmps,rtsp,srtp,crypto,data,pipe \
-  --enable-demuxer=mov,matroska,flv,live_flv,mpegts,hls,avi,asf,aac,mp3,ogg,wav,rtsp,sdp,ac3 \
+  --enable-demuxer=mov,matroska,flv,live_flv,mpegts,hls,avi,asf,aac,mp3,ogg,wav,rtsp,sdp,ac3,rm,mpegps,mpegvideo,flac,ape,amr,dsf \
   --enable-muxer=mp4,mov,flv,mpegts,matroska,adts \
-  --enable-decoder=h264,hevc,aac,mp3,opus,ac3,pcm_alaw,pcm_mulaw,pcm_s16le,pcm_s24le \
+  --enable-decoder=h264,hevc,aac,mp3,opus,ac3,pcm_alaw,pcm_mulaw,pcm_s16le,pcm_s24le,mpeg1video,mpeg2video,mpeg4,h263,flv1,wmv1,wmv2,wmv3,vc1,rv10,rv20,rv30,rv40,cook,sipr,atrac3,wmav1,wmav2,wmapro,pcm_s16be,vp8,vp9,av1,theora,mjpeg,mjpegb,dvvideo,prores,msmpeg4v1,msmpeg4v2,msmpeg4v3,vorbis,flac,dca,eac3,mp2,amrnb,amrwb,adpcm_ms,adpcm_ima_wav,adpcm_g726,adpcm_g726le,alac,ape,aac_latm,pcm_dvd,pcm_bluray,dsd_lsbf,dsd_msbf \
   --enable-encoder=aac \
-  --enable-parser=h264,hevc,aac,mp3,opus,ac3,mpegaudio \
+  --enable-parser=h264,hevc,aac,mp3,opus,ac3,mpegaudio,mpeg4video,vc1,vp8,vp9,av1,vorbis,flac,dca,aac_latm,amr,mjpeg \
   --enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,aac_adtstoasc,extract_extradata
 
 echo "== make -j$JOBS (android arm64-v8a) =="

@@ -138,6 +138,8 @@ VCodecId ffVCodec(AVCodecID codecId) {
       return VCodecId::rv30;
     case AV_CODEC_ID_RV40:
       return VCodecId::rv40;
+    case AV_CODEC_ID_VP9:
+      return VCodecId::vp9;
     default:
       return VCodecId::none;
   }
@@ -175,6 +177,8 @@ ACodecId ffACodec(AVCodecID codecId) {
       return ACodecId::atrac3;
     case AV_CODEC_ID_PCM_S16BE:
       return ACodecId::pcms16be;
+    case AV_CODEC_ID_VORBIS:
+      return ACodecId::vorbis;
     default:
       return ACodecId::none;
   }
@@ -212,6 +216,8 @@ AVCodecID getFFCodecId(VCodecId codecId) {
       return AV_CODEC_ID_RV30;
     case VCodecId::rv40:
       return AV_CODEC_ID_RV40;
+    case VCodecId::vp9:
+      return AV_CODEC_ID_VP9;
     default:
       return AV_CODEC_ID_NONE;
   }
@@ -248,6 +254,8 @@ AVCodecID getFFCodecId(ACodecId codecId) {
       return AV_CODEC_ID_ATRAC3;
     case ACodecId::pcms16be:
       return AV_CODEC_ID_PCM_S16BE;
+    case ACodecId::vorbis:
+      return AV_CODEC_ID_VORBIS;
     default:
       return AV_CODEC_ID_NONE;
   }

@@ -16,6 +16,17 @@ import sys
 #   demuxer +rm/mpegps/mpegvideo, decoder +mpeg1/2/4,h263,wmv1/2/3,vc1,flv1,rv10-40,
 #   cook,sipr,atrac3,wmav1/2,wmapro,pcm_s16be, parser +mpeg4video,vc1; 全部 LGPL, 许可不变。
 #
+# 2026-09 常用扩展(四平台脚本同步): 补齐 webm/无损音乐/相机与监控素材的常见 LGPL
+#   软解, 缩图管线(pvx_thumb 强制软解, 不走硬解)直接受益。全部 native 组件(LGPL),
+#   avcodec 预计 +~2MB:
+#   video: vp8/vp9(webm), av1(仅硬解分发壳, 软解无 dav1d), theora, mjpeg/mjpegb
+#          (相机AVI/MOV), dvvideo(DV带机), prores(Apple剪辑), msmpeg4v1-3(DivX3.11老AVI)
+#   audio: vorbis(webm/ogg), flac, dca(DTS/蓝光), eac3, mp2, amrnb/amrwb(录音/3GP),
+#          adpcm_ms/adpcm_ima_wav(相机WAV/AVI), adpcm_g726(+le, 监控DVR), alac, ape,
+#          aac_latm(DVB/TS), pcm_dvd/pcm_bluray(VOB/M2TS原盘LPCM), dsd_lsbf/dsd_msbf(DSD)
+#   demuxer +flac/ape/amr/dsf, parser +vp8/vp9/av1/vorbis/flac/dca/aac_latm/amr/mjpeg
+#   hwaccel(win) +vp9/av1 的 d3d11va(+2) — 播放硬解用; 软解白名单照加(缩图/兜底)
+#
 # 环境变量:
 #   MSYS2_INSTALL_DIR  MSYS2 根目录 (默认 C:\msys64)
 #   FFMPEG_PREFIX      安装树绝对路径 (默认 ../build/windows/ffmpeg-<flavor>)
@@ -73,6 +84,14 @@ MINIMUM_DECODERS = ("h264,hevc,aac,mp3,opus,ac3,pcm_alaw,pcm_mulaw,pcm_s16le,pcm
                     "cook,sipr,atrac3,"                            # RealAudio
                     "wmav1,wmav2,wmapro,"                          # WMA
                     "pcm_s16be")                                   # MOV LPCM
+# 2026-09 常用扩展(与 android/apple/linux 脚本同步维护), 见文件头说明; 组件名已对照
+# FFmpeg 9.0.1 源码逐一核实(amrnb/amrwb 非 amr_nb/amr_wb, g726 走 adpcm_g726)
+MINIMUM_DECODERS += ("vp8,vp9,av1,theora,mjpeg,mjpegb,dvvideo,prores,"
+                     "msmpeg4v1,msmpeg4v2,msmpeg4v3,"               # webm/相机/DV/ProRes/DivX3
+                     "vorbis,flac,dca,eac3,mp2,amrnb,amrwb,"        # 常用音频
+                     "adpcm_ms,adpcm_ima_wav,adpcm_g726,adpcm_g726le,"
+                     "alac,ape,aac_latm,"                           # 无损音乐/TS LATM
+                     "pcm_dvd,pcm_bluray,dsd_lsbf,dsd_msbf")        # 原盘LPCM/DSD
 # hwaccel 是 avcodec 独立组件, --disable-everything 会连它一起裁掉;
 # 不显式加回则 ff_get_format 拿不到 D3D11 配置, 硬解逐帧静默回退软解 (09-10 排查结论)。
 # 注意 FFmpeg9 拆了新旧两个组件: d3d11va(legacy, D3D11VA_VLD, 不支持 hw_device_ctx)
@@ -80,9 +99,12 @@ MINIMUM_DECODERS = ("h264,hevc,aac,mp3,opus,ac3,pcm_alaw,pcm_mulaw,pcm_s16le,pcm
 # legacy 必须同开: 9.0.1 的 Makefile 只在 legacy/dxva2 配置下才编 dxva2_h264.o
 # (d3d11va2 的符号也在这个文件里), 只开 d3d11va2 会链接失败 (09-10 实测)。
 # legacy 运行时无害: 无 HW_DEVICE_CTX 方法, 默认选择器会自动跳过
-MINIMUM_HWACCELS = "h264_d3d11va,h264_d3d11va2,hevc_d3d11va,hevc_d3d11va2"
+MINIMUM_HWACCELS = ("h264_d3d11va,h264_d3d11va2,hevc_d3d11va,hevc_d3d11va2,"
+                    # 常用扩展: webm/AV1 硬解(av1 decoder 为硬解分发壳, 无软解 dav1d)
+                    "vp9_d3d11va,vp9_d3d11va2,av1_d3d11va,av1_d3d11va2")
 MINIMUM_ENCODERS = "h264_mf,hevc_mf,aac"   # 商业渠道; h264_mf/hevc_mf 为系统自带 MFT
-MINIMUM_PARSERS = "h264,hevc,aac,mp3,opus,ac3,mpegaudio,mpeg4video,vc1"  # 后两项为老媒体扩展(wmv3/vc1/mpeg4 帧内解析需要)
+MINIMUM_PARSERS = ("h264,hevc,aac,mp3,opus,ac3,mpegaudio,mpeg4video,vc1"  # 后两项为老媒体扩展(wmv3/vc1/mpeg4 帧内解析需要)
+                   ",vp8,vp9,av1,vorbis,flac,dca,aac_latm,amr,mjpeg")     # 常用扩展(eac3 无独立 parser, 勿加)
 MINIMUM_BSF = "h264_mp4toannexb,hevc_mp4toannexb,aac_adtstoasc,extract_extradata"
 # 直播/点播/文件: rtmp 系 + rtsp 系 + http(s) 系 + hls(crypto=AES 解密) + file
 # 后续需要 SRT: 装 libsrt + --enable-libsrt --enable-protocol=srt
@@ -91,7 +113,8 @@ MINIMUM_PROTOCOLS = "file,http,https,tcp,udp,rtp,rtmp,rtmps,rtsp,tls,srtp,crypto
 # configure 名是 mpegps(旧名 mpeg 已废弃, 传 mpeg 会被 configure 静默忽略不报错);
 # mpegvideo 是裸 MPEG-1/2 ES 流(.mpg 探测失败时靠它兜底)
 MINIMUM_DEMUXERS = ("mov,matroska,flv,live_flv,mpegts,hls,avi,asf,aac,mp3,ogg,wav,rtsp,sdp,ac3,"
-                    "rm,mpegps,mpegvideo")
+                    "rm,mpegps,mpegvideo,"
+                    "flac,ape,amr,dsf")   # 常用扩展: 无损音乐/录音/DSD 裸文件
 MINIMUM_MUXERS = "mp4,mov,flv,mpegts,matroska,adts"
 
 FLAVORS = ("gpl", "lgpl", "minsize", "minsize-gpl")

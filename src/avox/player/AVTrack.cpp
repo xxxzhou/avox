@@ -292,6 +292,9 @@ const char* getDefaultDecoderName(VCodecId codecId, bool bHard) {
     // AVOX_FFDX11_H265_DECODER
     return bHard ? AVOX_FFDX11_H265_DECODER : AVOX_FF_H265_DECODER;
 #endif
+  } else if (codecId == VCodecId::vp9) {
+    // webm/VP9: 暂无硬解注册, 走 ffmpeg 软解 (注册名来自 regFFCodec 的 codec->name)
+    return AVOX_FF_VP9_DECODER;
   }
   return AVOX_FF_H264_DECODER;
 }
