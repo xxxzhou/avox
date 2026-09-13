@@ -49,10 +49,14 @@ struct YUVFrame {
 enum class YuvStandard { bt601, bt709, bt2020 };
 // 量程: full=JPEG 0~255(屏幕/UI), limited=MPEG 16~235(广播/硬编兼容)
 enum class YuvRange { full, limited };
+// 传递函数: gamma=SDR 常规, linear=线性光, pq=HDR10(ST2084), hlg=直播 HDR
+// 声明序即 ColorYuvUBO.transfer 的 int 值, 勿调整
+enum class YuvTransfer { gamma, linear, pq, hlg };
 // 颜色空间描述: shader 矩阵与 encoder tag 的共同真相源
 struct ColorSpaceDesc {
   YuvStandard standard = YuvStandard::bt601;
   YuvRange range = YuvRange::full;
+  YuvTransfer transfer = YuvTransfer::gamma;
 };
 
 struct VideoDesc {

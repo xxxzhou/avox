@@ -1,0 +1,159 @@
+#version 450
+
+// yuv420P10 HDR 通吃: SDR 直通(与 V4 行为一致), PQ/HLG 解码 + tone map + 色域压缩
+// 读函数与色彩尾段分离: 接入新格式(如 p010)只加读函数, 色彩尾段共用
+
+layout (local_size_x = 16, local_size_y = 16) in;
+layout (binding = 0, r16ui) uniform readonly uimage2D inTex;
+layout (binding = 1, rgba8) uniform image2D outTex;
+// std140: 与 ColorYuvUBO(96B) 对齐 — transfer 占 offset 12(旧 shader 的隐式 padding),
+// mat4 落 offset 16, HDR 参数追加 offset 80(仅本 shader 声明)
+layout (std140, binding = 2) uniform UBO
+{
+	int width;
+	int height;
+	int yuvType;
+	int transfer;       // 0=gamma 1=linear 2=pq 3=hlg
+	mat4 colorMat;      // 行优先 YUV->RGB, UV 的 -0.5 已折进偏移列, 用法 vec4(yuv,1)*colorMat
+	float maxLuminance; // 内容峰值亮度 nits
+	float sdrWhiteNits; // SDR 白点 nits
+} ubo;
+
+// ---------- 读函数: 内存布局 -> 归一化 [0,1], 与色彩处理无关 ----------
+
+// yuv420p10: 平面格式, 10-bit 小端, 低 10 位有效
+float read10bit(ivec2 pos) {
+	return float(imageLoad(inTex, pos).r & 1023u) / 1023.f;
+}
+
+// UV 值(归一化 [0,1], 含 +0.5 偏移), 不再减 0.5(折进 colorMat 偏移列)
+float read10bitUV(ivec2 pos) {
+	return read10bit(pos);
+}
+
+// ---------- 色彩尾段: 输入 gamma 域 RGB, 输出 SDR 编码值 ----------
+
+// PQ EOTF (SMPTE ST2084): 编码值 -> 线性光, 1.0 = 10000 nits
+vec3 pqToLinear(vec3 n) {
+	const float m1 = 0.1593017578125;
+	const float m2 = 78.84375;
+	const float c1 = 0.8359375;
+	const float c2 = 18.8515625;
+	const float c3 = 18.6875;
+	vec3 p = pow(clamp(n, vec3(0.0), vec3(1.0)), vec3(1.0 / m2));
+	vec3 num = max(p - c1, vec3(0.0));
+	return pow(num / (c2 - c3 * p), vec3(1.0 / m1));
+}
+
+// HLG 解码(BT.2100): OETF^-1 得场景线性, 再逆 OOTF(1.2, 1000nit 参考屏)
+// 输出线性光 1.0 = 1000 nits
+vec3 hlgToLinear(vec3 e) {
+	vec3 t = clamp(e, vec3(0.0), vec3(1.0));
+	vec3 lo = t * t / 3.0;
+	vec3 hi = (exp((t - 0.55991073) / 0.17883277) + 0.28466892) / 12.0;
+	vec3 scene = mix(lo, hi, step(vec3(0.5), t));
+	float ys = dot(scene, vec3(0.2627, 0.6780, 0.0593));
+	return scene * pow(max(ys, 1e-6), 0.2);
+}
+
+// tone map: 线性光(10000nit 归一) -> 显示线性 [0,1]
+// ACES 近似(Narkowicz), 峰值亮度映射到 1: sdrWhite 定标, maxLuminance 定肩
+vec3 toneMap(vec3 lin) {
+	float xScale = 10000.0 / ubo.sdrWhiteNits;
+	vec3 x = max(lin * xScale, vec3(0.0));      // x 域 = nits / sdrWhite
+	vec3 a = (x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14);
+	float peakX = max(ubo.maxLuminance, ubo.sdrWhiteNits) / ubo.sdrWhiteNits;
+	float peak = (peakX * (2.51 * peakX + 0.03)) / (peakX * (2.43 * peakX + 0.59) + 0.14);
+	return clamp(a / peak, vec3(0.0), vec3(1.0));
+}
+
+// BT.2020 -> BT.709 线性域 primaries 转换, 越界分量截断
+vec3 bt2020ToBt709(vec3 c) {
+	// mat3 构造按列, 三列即目标矩阵的三行
+	return max(mat3(
+		1.6605, -0.1246, -0.0182,
+		-0.5876, 1.1329, -0.1006,
+		-0.0728, -0.0083, 1.1187) * c, vec3(0.0));
+}
+
+// 线性光 -> BT.709 OETF 编码(与 SDR 直通路径的 gamma 域一致, 下游特效按 gamma 域消费)
+vec3 linearToBt709(vec3 c) {
+	vec3 lo = c * 4.5;
+	vec3 hi = 1.099 * pow(max(c, vec3(0.0)), vec3(0.45)) - 0.099;
+	return mix(lo, hi, step(vec3(0.018), c));
+}
+
+// 色彩处理总入口: 仅 PQ/HLG 做变换, SDR 原样透传(零改动)
+vec3 processColor(vec3 rgb) {
+	if (ubo.transfer == 2) {          // pq (HDR10)
+		vec3 lin = pqToLinear(rgb);
+		lin = toneMap(lin);
+		lin = bt2020ToBt709(lin);
+		return linearToBt709(lin);
+	}
+	if (ubo.transfer == 3) {          // hlg
+		vec3 lin = hlgToLinear(rgb) * 0.1;  // 1000nit 归一 -> 10000nit 归一
+		lin = toneMap(lin);
+		lin = bt2020ToBt709(lin);
+		return linearToBt709(lin);
+	}
+	return rgb;
+}
+
+// yuv420p10: 数据在内存中紧密排列: Y平面(width*height) + U平面(w/2*h/2) + V平面(w/2*h/2)
+// 输入图像宽度=width, 高度=height*1.5 (以R16像素为单位), 一个线程处理 2x2 四个点
+void yuv420p10(){
+    ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 outSize = imageSize(outTex);
+    if(uv.x >= outSize.x/2 || uv.y >= outSize.y/2){
+        return;
+    }
+	// 输出图像尺寸
+	int width = outSize.x;
+	int height = outSize.y;
+	// UV平面尺寸
+	int uvWidth = width / 2;
+	int uvHeight = height / 2;
+	// Y平面大小(像素数)
+	int yPlaneSize = width * height;
+	// U平面大小(像素数)
+	int uvPlaneSize = uvWidth * uvHeight;
+
+	// U和V的线性索引
+	int uvIndex = uv.y * uvWidth + uv.x;
+	// U和V在整个图像中的线性位置
+	int uLinearPos = yPlaneSize + uvIndex;
+	int vLinearPos = yPlaneSize + uvPlaneSize + uvIndex;
+
+	// 转换为2D坐标 (基于输入图像宽度)
+	ivec2 uPos = ivec2(uLinearPos % width, uLinearPos / width);
+	ivec2 vPos = ivec2(vLinearPos % width, vLinearPos / width);
+
+	// 读取4个Y值 (2x2块)
+	float y1 = read10bit(ivec2(uv.x*2, uv.y*2));
+	float y2 = read10bit(ivec2(uv.x*2+1, uv.y*2));
+	float y3 = read10bit(ivec2(uv.x*2, uv.y*2+1));
+	float y4 = read10bit(ivec2(uv.x*2+1, uv.y*2+1));
+	// 读取U和V
+	float u = read10bitUV(uPos);
+	float v = read10bitUV(vPos);
+
+	vec4 rgba1 = vec4(y1, u, v, 1.0) * ubo.colorMat;
+	vec4 rgba2 = vec4(y2, u, v, 1.0) * ubo.colorMat;
+	vec4 rgba3 = vec4(y3, u, v, 1.0) * ubo.colorMat;
+	vec4 rgba4 = vec4(y4, u, v, 1.0) * ubo.colorMat;
+	// 仅 HDR 流走色彩处理, SDR 直通(processColor 内部按 transfer 分支)
+	rgba1.rgb = processColor(rgba1.rgb);
+	rgba2.rgb = processColor(rgba2.rgb);
+	rgba3.rgb = processColor(rgba3.rgb);
+	rgba4.rgb = processColor(rgba4.rgb);
+
+	imageStore(outTex, ivec2(uv.x*2, uv.y*2), rgba1);
+	imageStore(outTex, ivec2(uv.x*2+1, uv.y*2), rgba2);
+	imageStore(outTex, ivec2(uv.x*2, uv.y*2+1), rgba3);
+	imageStore(outTex, ivec2(uv.x*2+1, uv.y*2+1), rgba4);
+}
+
+void main(){
+	yuv420p10();
+}

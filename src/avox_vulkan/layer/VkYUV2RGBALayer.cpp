@@ -16,6 +16,8 @@ void VkYUV2RGBALayer::onUpdateParamet() {
 
 void VkYUV2RGBALayer::refreshColorMat() {
   uboData.colorMat = buildYuvToRgb(cs);
+  // transfer 随 cs 运行时更新: setColorSpace 只走本函数, 只写 onInitLayer 会丢晚到的标志
+  uboData.transfer = (int32_t)cs.transfer;
   updateUBO(&uboData);
 }
 
@@ -38,7 +40,8 @@ void VkYUV2RGBALayer::onInitLayer() {
     path = "glsl/yuv2rgbaV3.comp.spv";
   }
   if (yuvType == YuvType::yuv420P10) {
-    path = "glsl/yuv2rgbaV4.comp.spv";
+    // V5 通吃 10bit: transfer 为运行时 UBO 分支, SDR 直通零改动
+    path = "glsl/yuv2rgbaV5.comp.spv";
   }
   shader->loadShaderModule(path);
   assert(shader->shaderStage.module != VK_NULL_HANDLE);
@@ -84,7 +87,6 @@ void VkYUV2RGBALayer::onInitLayer() {
   uboData.width = outFormats[0].width;
   uboData.height = outFormats[0].height;
   uboData.yuvType = (int32_t)yuvType;
-  uboData._pad = 0;
   refreshColorMat();
 }
 

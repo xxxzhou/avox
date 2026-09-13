@@ -321,6 +321,21 @@ ColorSpaceDesc ffColorSpace(AVCodecParameters* par) {
                      : YuvRange::full;
       break;
   }
+  // 传递函数: 未标记一律按 SDR, 只有流里显式标 PQ/HLG 才进 HDR 路径
+  switch (par->color_trc) {
+    case AVCOL_TRC_SMPTE2084:
+      cs.transfer = YuvTransfer::pq;
+      break;
+    case AVCOL_TRC_ARIB_STD_B67:
+      cs.transfer = YuvTransfer::hlg;
+      break;
+    case AVCOL_TRC_LINEAR:
+      cs.transfer = YuvTransfer::linear;
+      break;
+    default:
+      cs.transfer = YuvTransfer::gamma;
+      break;
+  }
   return cs;
 }
 

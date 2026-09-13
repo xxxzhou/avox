@@ -16,6 +16,7 @@ set(AVOX_AGENT ${CMAKE_SOURCE_DIR}/src/avox_agent)
 add_executable(avox_tests
   ${AVOX_TESTS_SRC}/test_main.cpp
   ${AVOX_TESTS_SRC}/test_math.cpp
+  ${AVOX_TESTS_SRC}/test_colorspace.cpp
   ${AVOX_TESTS_SRC}/test_h26x.cpp
   ${AVOX_TESTS_SRC}/test_videobuffer.cpp
   ${AVOX_TESTS_SRC}/test_json.cpp
@@ -37,6 +38,8 @@ add_executable(avox_tests
   ${AVOX_SRC}/video/Video.cpp
   ${AVOX_SRC}/video/VideoBuffer.cpp
   ${AVOX_SRC}/video/ImageBuffer.cpp
+  # 被测 TU (601/709/2020 矩阵与 UBO 布局契约)
+  ${AVOX_SRC}/video/ColorSpace.cpp
   ${AVOX_SRC}/module/Json.cpp   # parserJson
   ${AVOX_SRC}/module/Time.cpp   # timeStampMS / localTimeStampMS / timeTick
 )

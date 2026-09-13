@@ -84,7 +84,7 @@ void VkRGBA2YUVLayer::onInitLayer() {
   uboData.width = outFormats[0].width;
   uboData.height = outFormats[0].height;
   uboData.yuvType = (int32_t)yuvType;
-  uboData._pad = 0;
+  uboData.transfer = 0;  // 编码侧输入为 gamma 域 RGBA, 输出恒为 SDR
   refreshColorMat();
 }
 
