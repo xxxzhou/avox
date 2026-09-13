@@ -1,11 +1,44 @@
 #include <cstdio>
 #include <cstring>
+#include <windows.h>
 
 #include "avox/module/AvoxManager.hpp"
 #include "avox/module/ModuleMgr.hpp"
 #include "avox/subtitle/IAssOverlay.hpp"
 
 using namespace avox;
+
+// 首轮异常即打印: 出错指令所在模块 + 访问的目标地址 (定位跨模块崩点)
+static LONG WINAPI crashReporter(EXCEPTION_POINTERS* e) {
+  if (e->ExceptionRecord->ExceptionCode == 0xC0000005) {
+    HMODULE m = nullptr;
+    char mod[MAX_PATH] = "(unknown)";
+    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                           GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                       (LPCSTR)e->ExceptionRecord->ExceptionAddress, &m);
+    GetModuleFileNameA(m, mod, MAX_PATH);
+    HMODULE base = nullptr;
+    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                           GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                       (LPCSTR)e->ExceptionRecord->ExceptionAddress, &m);
+    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, mod, &base);
+    std::fprintf(stderr, "[veh] ACCESS_VIOLATION op=%llu ip=%p mod=%s base=%p "
+                 "access-addr=%p\n",
+                 (unsigned long long)e->ExceptionRecord->ExceptionInformation[0],
+                 e->ExceptionRecord->ExceptionAddress, mod, (void*)base,
+                 (void*)(e->ExceptionRecord->ExceptionInformation[1]));
+    // 崩溃地址归属诊断: 打印所在分配区
+    MEMORY_BASIC_INFORMATION mbi{};
+    if (VirtualQuery((LPCVOID)e->ExceptionRecord->ExceptionInformation[1], &mbi,
+                     sizeof(mbi))) {
+      std::fprintf(stderr, "[veh] fault region: alloc-base=%p state=0x%lx "
+                   "type=0x%lx size=%zu\n",
+                   mbi.AllocationBase, mbi.State, mbi.Type, mbi.RegionSize);
+    }
+    std::fflush(stderr);
+  }
+  return EXCEPTION_CONTINUE_SEARCH;
+}
 
 // ASS 字幕叠加演示: 读取 base.raw 背景帧(由 assdemo_genbase.py 生成),
 // 经 avox_ass 插件(libass)逐帧渲染 demo.ass, src-over 合成后写 comp.raw,
@@ -32,22 +65,24 @@ static const char* kDemoAss =
     "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     "Dialogue: 0,0:00:00.00,0:00:10.00,Title,,0,0,0,,"
     "{\\fad(600,600)\\move(640,150,640,90,0,600)}ASS \\N特效字幕\n"
-    "Dialogue: 0,0:00:00.40,0:00:10.00,Dialog,,0,0,0,,"
+    "Dialogue: 0,0:00:00.40,0:00:05.00,Dialog,,0,0,0,,"
     "{\\fad(400,400)}这是 libass 在本地完整渲染的双语字幕\n"
-    "Dialogue: 0,0:00:00.40,0:00:10.00,Dialog,,0,0,0,,"
+    "Dialogue: 0,0:00:00.40,0:00:05.00,Dialog,,0,0,0,,"
     "{\\fad(400,400)\\fs44}No more subtitle hunting — rendered on device\n"
     "Dialogue: 0,0:00:00.80,0:00:05.00,Dialog,,0,0,0,,"
     "{\\kf45}卡{\kf45}拉{\kf45}O{\kf45}K{\kf45}逐{\kf45}字{\kf45}高{\kf45}亮\n"
-    "Dialogue: 0,0:00:05.00,0:00:10.00,Dialog,,0,0,0,,"
-    "{\\c&H00E1FF&\\t(0,800,\\fscx112\\fscy112)\\t(800,1600,\\fscx100\\fscy100)}"
+    "Dialogue: 0,0:00:05.20,0:00:10.00,Dialog,,0,0,0,,"
+    "{\\fad(300,300)\\c&H00E1FF&\\t(0,800,\\fscx112\\fscy112)\\t(800,1600,\\fscx100\\fscy100)}"
     "任意{\\b1}颜色{\b0}、动画与{\\i1}样式{\i0}按 VSFilter 规范还原\n"
     "Dialogue: 0,0:00:01.50,0:00:08.50,Note,,0,0,0,,"
     "{\\pos(1180,150)\\fad(400,400)\\frz-6}avox_ass\n"
     "自研引擎本地渲染\n";
 
 int main(int argc, char** argv) {
+  AddVectoredExceptionHandler(1, crashReporter);
   const int W = 1280, H = 720, FPS = 30;
   const int frameBytes = W * H * 3;
+  const int rowBytes = W * 3;
   const char* inPath = argc > 1 ? argv[1] : "base.raw";
   const char* outPath = argc > 2 ? argv[2] : "comp.raw";
 
@@ -94,32 +129,11 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "[dbg] f%d t=%lld read\n", frames, (long long)tMs);
     std::fflush(stderr);
     const AssCanvas* c = overlay->render(tMs);
-    std::fprintf(stderr, "[dbg] f%d rendered c=%p\n", frames, (void*)c);
-    std::fflush(stderr);
-    // 把 canvas 拷进本地缓冲: 隔离插件堆生命周期, 排查悬垂指针
-    static std::string localBuf;
-    static AssCanvas localCanvas;
-    if (c && c->rgba) {
-      localBuf.assign(reinterpret_cast<const char*>(c->rgba),
-                      size_t(c->height) * c->stride);
-      localCanvas = *c;
-      localCanvas.rgba = reinterpret_cast<const uint8_t*>(localBuf.data());
-      c = &localCanvas;
-    }
     uint8_t* frame = reinterpret_cast<uint8_t*>(bg.data());
-    if (c && c->rgba) {
-      std::fprintf(stderr, "[dbg] canvas x=%d y=%d w=%d h=%d stride=%d\n",
-                   c->x, c->y, c->width, c->height, c->stride);
-      std::fflush(stderr);
-      if (c->x < 0 || c->y < 0 || c->x + c->width > W || c->y + c->height > H) {
-        std::fprintf(stderr, "[dbg] canvas 越界, 跳过\n");
-        c = nullptr;
-      }
-    }
     if (c && c->rgba) {
       for (int32_t y = 0; y < c->height; ++y) {
         const uint8_t* src = c->rgba + size_t(y) * c->stride;
-        uint8_t* dst = frame + size_t(c->y + y) * frameBytes + size_t(c->x) * 3;
+        uint8_t* dst = frame + size_t(c->y + y) * rowBytes + size_t(c->x) * 3;
         for (int32_t x = 0; x < c->width; ++x) {
           const uint32_t a = src[size_t(x) * 4 + 3];
           if (!a) continue;
