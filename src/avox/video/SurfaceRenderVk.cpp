@@ -244,6 +244,16 @@ void SurfaceRenderVk::setColorSpace(const ColorSpaceDesc& c) {
 #endif
 }
 
+void SurfaceRenderVk::setHdrMeta(const HdrMeta& meta) {
+#ifdef AVOX_ENABLE_VULKAN
+  if (vkVideoRender) {
+    vkVideoRender->setHdrMeta(meta);
+  }
+#else
+  (void)meta;
+#endif
+}
+
 void SurfaceRenderVk::setAutoAspect(bool bEnable) {
   if (!vkVideoRender) {
     return;

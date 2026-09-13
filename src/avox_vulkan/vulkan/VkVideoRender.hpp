@@ -89,6 +89,8 @@ class VkVideoRender : public VideoRender, public IVOutputLayerOb {
   std::unique_ptr<ImageBuffer> splitBuffer;
   // 录制/播放颜色空间, 驱动 rgba2YUV/yuv2RGBA 的转换矩阵(与 encoder tag 同源)
   ColorSpaceDesc colorSpace{YuvStandard::bt601, YuvRange::full};
+  // HDR 静态元数据, 驱动 yuv2RGBA tone map 峰值
+  HdrMeta hdrMeta = {};
 
 #ifdef AVOX_ENABLE_FREETYPE
   std::unique_ptr<FontRender> fontRender = nullptr;
@@ -140,6 +142,8 @@ class VkVideoRender : public VideoRender, public IVOutputLayerOb {
   void disableSharpen();
   // 颜色空间(矩阵), 运行时重传, 不重建 graph
   void setColorSpace(const ColorSpaceDesc& c);
+  // HDR 静态元数据(峰值亮度), 运行时重传, 不重建 graph
+  void setHdrMeta(const HdrMeta& meta);
 #ifdef AVOX_ENABLE_FREETYPE
   // 获取字体层
   FontRender* enableRenderFont();

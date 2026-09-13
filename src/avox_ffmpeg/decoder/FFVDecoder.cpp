@@ -1,5 +1,7 @@
 #include "FFVDecoder.hpp"
 
+#include <libavutil/mastering_display_metadata.h>
+
 #include "avox/codec/H26XHelper.hpp"
 #include "avox/player/MediaPlayer.hpp"
 
@@ -172,6 +174,51 @@ void FFVDecoder::onFrame(AVFrame* avFrame, bool bDrop) {
   frame.stride[1] = avFrame->linesize[1];
   frame.stride[2] = avFrame->linesize[2];
   frame.keyFrame = avFrame->pict_type == AV_PICTURE_TYPE_I;
+  // HDR 静态元数据: ST2086 + CLL, 有标记才解析, 峰值相关字段变化才回调
+  HdrMeta meta = {};
+  for (int32_t i = 0; i < avFrame->nb_side_data; ++i) {
+    AVFrameSideData* sd = avFrame->side_data[i];
+    if (sd->type == AV_FRAME_DATA_MASTERING_DISPLAY_METADATA &&
+        sd->size >= sizeof(AVMasteringDisplayMetadata)) {
+      auto* md = (AVMasteringDisplayMetadata*)sd->data;
+      if (md->has_luminance && md->max_luminance.den > 0) {
+        meta.maxLuminance = (uint32_t)(av_q2d(md->max_luminance) + 0.5);
+      }
+      if (md->has_luminance && md->min_luminance.den > 0) {
+        meta.minLuminance = (uint32_t)(av_q2d(md->min_luminance) + 0.5);
+      }
+      // 色度坐标按 0.00002 增量编码, 归一化到 0..1
+      if (md->has_primaries) {
+        for (int32_t g = 0; g < 3; ++g) {
+          for (int32_t c = 0; c < 2; ++c) {
+            if (md->display_primaries[g][c].den > 0) {
+              meta.primaries[g * 2 + c] =
+                  (float)(av_q2d(md->display_primaries[g][c]) / 50000.0);
+            }
+          }
+        }
+        for (int32_t c = 0; c < 2; ++c) {
+          if (md->white_point[c].den > 0) {
+            meta.whitePoint[c] =
+                (float)(av_q2d(md->white_point[c]) / 50000.0);
+          }
+        }
+      }
+      meta.valid = true;
+    } else if (sd->type == AV_FRAME_DATA_CONTENT_LIGHT_LEVEL &&
+               sd->size >= sizeof(AVContentLightMetadata)) {
+      auto* cl = (AVContentLightMetadata*)sd->data;
+      meta.maxCLL = cl->MaxCLL;
+      meta.maxFALL = cl->MaxFALL;
+      meta.valid = true;
+    }
+  }
+  if (meta.valid && (meta.maxCLL != hdrMeta.maxCLL ||
+                     meta.maxLuminance != hdrMeta.maxLuminance ||
+                     meta.maxFALL != hdrMeta.maxFALL)) {
+    hdrMeta = meta;
+    dispatch(&IVideoDecoderOb::onHdrMeta, meta);
+  }
   dispatch(&IVideoDecoderOb::onDecode, frame);
   // log(LogLevel::info, "ffmpeg decoder frame pts:", frame.pts);
   // if (avFrame->pict_type == AV_PICTURE_TYPE_I) {

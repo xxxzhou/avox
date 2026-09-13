@@ -106,7 +106,8 @@ void VkVideoRender::disableSharpen() {
 
 // 颜色空间: 仅在变化时下发, 运行时重传矩阵, 不重建 graph
 void VkVideoRender::setColorSpace(const ColorSpaceDesc& c) {
-  if (c.standard == colorSpace.standard && c.range == colorSpace.range) {
+  if (c.standard == colorSpace.standard && c.range == colorSpace.range &&
+      c.transfer == colorSpace.transfer) {
     return;
   }
   colorSpace = c;
@@ -115,6 +116,18 @@ void VkVideoRender::setColorSpace(const ColorSpaceDesc& c) {
   }
   if (yuv2RGBA) {
     yuv2RGBA->get()->setColorSpace(c);
+  }
+}
+
+// HDR 静态元数据: 峰值亮度变化才重传
+void VkVideoRender::setHdrMeta(const HdrMeta& meta) {
+  if (hdrMeta.valid == meta.valid && hdrMeta.maxCLL == meta.maxCLL &&
+      hdrMeta.maxLuminance == meta.maxLuminance) {
+    return;
+  }
+  hdrMeta = meta;
+  if (yuv2RGBA) {
+    yuv2RGBA->get()->setHdrMeta(meta);
   }
 }
 
@@ -236,6 +249,9 @@ bool VkVideoRender::vaildAndInitGraph() {
   inputLayer = graph->addNode<VkInputLayer>();
   yuv2RGBA = graph->addNode<VkYUV2RGBALayer>();
   yuv2RGBA->get()->setColorSpace(colorSpace);
+  if (hdrMeta.valid) {
+    yuv2RGBA->get()->setHdrMeta(hdrMeta);
+  }
   outputLayer = graph->addNode<VkOutputLayer>();
   resizeLayer = graph->addNode<VkResizeLayer>();
   if (bEnableBlend && blendImage) {

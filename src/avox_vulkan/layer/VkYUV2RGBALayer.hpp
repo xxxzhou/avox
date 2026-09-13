@@ -12,6 +12,8 @@ class VkYUV2RGBALayer : public VkLayer, public IYUVLayer {
   virtual ~VkYUV2RGBALayer();
   // 设置颜色空间(矩阵), 运行时重传 UBO, 不重建 graph
   void setColorSpace(const ColorSpaceDesc& c);
+  // HDR 静态元数据(峰值亮度), 运行时重传 UBO, 不重建 graph
+  void setHdrMeta(const HdrMeta& meta);
 
  protected:
   virtual void onUpdateParamet() override;

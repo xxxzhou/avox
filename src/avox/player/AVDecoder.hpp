@@ -28,6 +28,8 @@ class IVideoDecoderOb {
   virtual void onDecodeGpu(const GpuFrame& frame) {};
   // 视频解码结束信号
   virtual void onVideoComplete() {}
+  // HDR 静态元数据(side data 解出, 值变化才回调)
+  virtual void onHdrMeta(const HdrMeta& hdrMeta) {}
 };
 
 // IAudioEncoder解码后的回调

@@ -66,6 +66,8 @@ void VideoTrack::onVideoDesc() {
   }
   windowRender->setFPS(dparams.fps);
   dropDuration = (int32_t)(1000.0 / windowRender->getFPS()) * 2;
+  // 按流下发颜色空间(矩阵+量程+transfer): 图未建时 VkVideoRender 存成员, 建图时应用
+  windowRender->setColorSpace(srcDesc.colorSpace);
   // 记录track里的渲染器创建
   PBMediaAction pb = {};
   pb.mediaObject = MediaObject::render;
@@ -75,6 +77,15 @@ void VideoTrack::onVideoDesc() {
 }
 
 void VideoTrack::onPacket(PacketBufPtr packet) { pullPacket(packet); }
+
+void VideoTrack::onHdrMeta(const HdrMeta& hdrMeta) {
+  // 静态元数据只发一次, 驱动 tone map 峰值亮度
+  if (bHdrMetaSent) {
+    return;
+  }
+  bHdrMetaSent = true;
+  windowRender->setHdrMeta(hdrMeta);
+}
 
 void VideoTrack::onDecode(const YUVFrame& frame) {
   // 压入Frame队列,这里队列如果满了，会一直阻塞解码线程

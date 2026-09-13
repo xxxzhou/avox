@@ -31,6 +31,8 @@ protected:
 protected:
   virtual void onAttachContext();
   virtual void onDetachContext();
+  // HDR 静态元数据缓存(变化才下发)
+  HdrMeta hdrMeta = {};
 };
 
 }

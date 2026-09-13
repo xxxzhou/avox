@@ -28,6 +28,14 @@ void VkYUV2RGBALayer::setColorSpace(const ColorSpaceDesc& c) {
   bParametChange = true;
 }
 
+void VkYUV2RGBALayer::setHdrMeta(const HdrMeta& meta) {
+  if (!meta.valid) {
+    return;
+  }
+  uboData.maxLuminance = (float)hdrPeakNits(meta);
+  updateUBO(&uboData);
+}
+
 void VkYUV2RGBALayer::onInitLayer() {
   YuvType yuvType = paramet;
   // nv12/yuv420P/yuy2P

@@ -74,6 +74,8 @@ class AVOX_EXPORT SurfaceRenderVk : public ISurfaceRender,
   virtual void disableSharpen() override;
   // 颜色空间(矩阵), 转发 VkVideoRender, 不重建 graph
   void setColorSpace(const ColorSpaceDesc& c);
+  // HDR 静态元数据(峰值亮度), 转发 VkVideoRender, 不重建 graph
+  void setHdrMeta(const HdrMeta& meta);
   virtual void setAutoAspect(bool bEnable) override;
 
   // 获取底层 VideoRender
