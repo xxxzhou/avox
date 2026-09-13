@@ -34,6 +34,9 @@ namespace avox {
 #define AVOX_MP_IO_RTSP_SPEED_DOUBLE "io.rtsp.speed"
 // Track ready等待超时，毫秒，默认3000ms(只有1个Track时等第二个Track来的超时)
 #define AVOX_MP_IO_TRACK_READY_MS_INT "io.trackready.ms"
+// HTTP 连接复用(keep-alive): 0=关(默认, 每次 range 读新建连接, 半开故障自然隔离)
+// 1=开(seek 密集的旁路转录场景必开, 否则每次 seek 一次 TCP+TLS 握手)
+#define AVOX_MP_IO_HTTP_PERSISTENT_INT "io.http.persistent"
 // 转码录制器是否硬解(仅TranscodeRecorder消费)
 #define AVOX_REC_HARD_DECODE_BOOL "rec.hard.decode"
 // 转码录制器是否硬编(默认true; 设 false 走 FFmpeg 软编, windows软编文件更小, 仅TranscodeRecorder消费)

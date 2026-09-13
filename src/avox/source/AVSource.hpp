@@ -167,6 +167,8 @@ class AVOX_EXPORT AVSource : public BaseSource,
   // Track ready等待超时，毫秒(只有1个Track时等第二个Track来的超时)
   int32_t trackReadyMs = 3000;
   std::string rtspTransport = "tcp";
+  // HTTP 连接复用(keep-alive), 默认关; io.http.persistent 配置
+  int32_t httpPersistent = 0;
   bool bLogPacket = false;
 
  public:

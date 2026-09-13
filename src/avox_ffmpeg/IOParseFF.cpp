@@ -257,7 +257,10 @@ void IOParseFF::onRunTask() {
   // 关闭 http 连接复用(keep-alive): 半开死连接(对端静默丢弃)若被复用, 重连
   // 后仍走死连接拿不到数据; 关闭后每次读取新建连接, 半开故障自然隔离.
   // fmp4 本就多 range 短连接, 性能影响可忽略
-  av_dict_set(&dict, "http_persistent", "0", 0);
+  // 仅音频转录等 seek 密集场景经 io.http.persistent 开 keep-alive:
+  // discard 视频后音频采样在文件里被视频数据隔开, 每 seek 一次 range 请求,
+  // 短连接下就是一次 TCP+TLS 握手, 公网上开销不可忽略
+  av_dict_set(&dict, "http_persistent", httpPersistent ? "1" : "0", 0);
   // 强制重复发送 SPS/PPS
   // av_dict_set(&dict, "repeat_headers", "1", 0);
   int ret = avformat_open_input(&temp, url.c_str(), nullptr, &dict);
@@ -315,6 +318,23 @@ void IOParseFF::onRunTask() {
       addAudioDesc(adesc);
       // 单独给AAC配置头文件使用
       audioDesc = adesc.desc;
+    }
+  }
+  // 禁用的流打 AVDISCARD_ALL: 带采样索引的 demuxer(mov/mp4) 对 discard 流不再
+  // seek/读字节, 配合可 seek 的 IO(HTTP Range/SMB/本地) 后网络量从整文件降到
+  // 所选轨——仅音频转录场景视频字节根本不过网; 顺序读型 demuxer(matroska/mpegts)
+  // 只是跳过投递, 不省流量但也无害。必须在 trackReady() 之前(它会把空轨补置禁用)。
+  if (bDisableVideo || bDisableAudio) {
+    for (int32_t i = 0; i < fmtCtx->nb_streams; i++) {
+      auto& st = fmtCtx->streams[i];
+      // 封面图流即使不禁用视频也一并 discard: 不是可播放轨, 字节没必要过网
+      if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
+          (bDisableVideo || (st->disposition & AV_DISPOSITION_ATTACHED_PIC))) {
+        st->discard = AVDISCARD_ALL;
+      } else if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO &&
+                 bDisableAudio) {
+        st->discard = AVDISCARD_ALL;
+      }
     }
   }
   SeekType stype = seekType();

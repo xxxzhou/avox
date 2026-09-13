@@ -103,6 +103,9 @@ void AVSource::onOptionChange(const char* key, ArgType type) {
   } else if (equalsIgnoreCase(key, AVOX_MP_IO_TRACK_READY_MS_INT)) {
     trackReadyMs = option->getInt(key);
     LOGFLF(LogLevel::info, "option:", key, " change:", trackReadyMs);
+  } else if (equalsIgnoreCase(key, AVOX_MP_IO_HTTP_PERSISTENT_INT)) {
+    httpPersistent = option->getInt(key);
+    LOGFLF(LogLevel::info, "option:", key, " change:", httpPersistent);
   } else if (equalsIgnoreCase(key, AVOX_LOG_SOURCE_INPACKET_BOOL)) {
     bLogPacket = option->getBool(key);
     LOGFLF(LogLevel::info, "option:", key, " change:", bLogPacket);
