@@ -181,3 +181,16 @@ YUV→RGB 与 tone map 数学在各渲染后端为独立实现,Vulkan 先做,其
 ### 6.5 新 shader 注册
 
 `compileglsl.py` 实际读取 `glsl/glslindexcurrent.txt`(**不是** `glslindex.txt`);V5 需在该文件加行并重跑编译,改错文件会静默不生效。
+
+### 6.6 阶段 1 核心落地记录(2026-09-14)
+
+- 已落地 commit `9304cdc`:`YuvTransfer` 贯通(`ffColorSpace` 读 `color_trc`,default 落 gamma)、BT.2020 正反向真矩阵、`ColorYuvUBO` 3a(96B)、`yuv2rgbaV5.comp` 通吃 10bit(V4 退役)、transfer 经 `refreshColorMat` 运行时更新。`tests/test_colorspace.cpp` 锚定矩阵已知系数/往返一致/UBO 布局契约,ctest 全绿,play_regress 离线子集 8/8 通过。
+- tone map 算子定为 **ACES 近似(Narkowicz)**,`maxLuminance` 峰值映射到 1;输出编码用 **BT.709 OETF**(替代本文早前「sRGB 输出」措辞——与 SDR 直通路径同一 gamma 域,下游特效零适配)。数值验证:PQ 解码 100/203/1000/10000nit 四参考点命中;灰阶 tone 点 0→0.00、100→0.80、203→0.91、1000→1.00;HLG 0.75 码值→203nit 漫反射白。
+- `maxLuminance`/`sdrWhiteNits` 暂用 UBO 默认值(1000/100);MaxCLL 接入随阶段 1 余项(`HdrMeta` 结构、`FFVDecoder` side data、SEI 兜底、`setHdrMode` 公共 API)。
+- E2E 缺口:本机 PATH 无带 x265 的 ffmpeg,阶段 0 的 HDR10 测试素材尚未生成;素材到位后再接 playmatrix 10bit 用例。
+
+### 6.7 阶段 2 断点备注(P010 硬解,待真机验证后实施)
+
+- 落点分层:`YuvType` 加 `p010`(AVOX_MAP_YUV,group=4/groupsize=12,与 yuv420P10 同构×2B)→ `ffYuvType` 加 `AV_PIX_FMT_P010LE/BE`(hwdownload 后 sw_format 即 P010)→ V5 加 p010 读函数(高 10 位 `>>6`;UV 交错双平面按 2i/2i+1 寻址,UV 平面宽=width)→ FFVDecoder/r16 上传路径核对 P010 行对齐 stride。
+- **枚举、shader 分支、上传路径必须同一提交闭环**:只加枚举会让 p010 流落到 layer 不支持的默认分支出花屏,比现在落 `other` 更糟。
+- GPU 导入路径(`FFDx11Decoder::get_format` 主动选 P010、`getDxFormat` 映射、手工建 hw_frames_ctx)依赖真机调试,与 CPU 下载路径分开推进。
