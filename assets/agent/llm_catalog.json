@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "updated": "2026-09-13",
+  "_说明": "Panvox AI 字幕翻译厂商目录 (llm_settings.dart 联网热更新源)。字段: label/apiUrl/apiPath/keyUrl/models[{id,name,free,note}]。更新本文件推送到 main 后, 客户端 10 分钟内自动生效 (启动与打开配置对话框时拉取)。收费档排在免费档前。",
+  "vendors": [
+    {
+      "label": "智谱 GLM",
+      "apiUrl": "https://open.bigmodel.cn/api/paas/v4",
+      "apiPath": "/chat/completions",
+      "keyUrl": "https://open.bigmodel.cn/usercenter/apikeys",
+      "models": [
+        { "id": "glm-5.3", "name": "GLM-5.3", "free": false, "note": "旗舰" },
+        { "id": "glm-5.3-flash", "name": "GLM-5.3-Flash", "free": false, "note": "低价" },
+        { "id": "glm-4.7-flash", "name": "GLM-4.7-Flash", "free": true, "note": "完全免费" },
+        { "id": "glm-4.5-flash", "name": "GLM-4.5-Flash", "free": true, "note": "免费" }
+      ]
+    },
+    {
+      "label": "DeepSeek",
+      "apiUrl": "https://api.deepseek.com/v1",
+      "apiPath": "/chat/completions",
+      "keyUrl": "https://platform.deepseek.com/api_keys",
+      "models": [
+        { "id": "deepseek-v4-pro", "name": "DeepSeek-V4-Pro", "free": false, "note": "旗舰" },
+        { "id": "deepseek-v4-flash", "name": "DeepSeek-V4-Flash", "free": false, "note": "低价" }
+      ]
+    },
+    {
+      "label": "硅基流动",
+      "apiUrl": "https://api.siliconflow.cn/v1",
+      "apiPath": "/chat/completions",
+      "keyUrl": "https://cloud.siliconflow.cn/account/ak",
+      "models": [
+        { "id": "deepseek-ai/DeepSeek-V3", "name": "DeepSeek-V3", "free": false, "note": "旗舰" },
+        { "id": "Qwen/Qwen3-32B", "name": "Qwen3-32B", "free": false, "note": "中档" },
+        { "id": "Qwen/Qwen2.5-7B-Instruct", "name": "Qwen2.5-7B", "free": true, "note": "免费档" },
+        { "id": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", "name": "R1-Distill-7B", "free": true, "note": "免费推理" }
+      ]
+    },
+    {
+      "label": "Kimi 月之暗面",
+      "apiUrl": "https://api.moonshot.cn/v1",
+      "apiPath": "/chat/completions",
+      "keyUrl": "https://platform.moonshot.cn/console/api-keys",
+      "models": [
+        { "id": "kimi-k2.6", "name": "Kimi-K2.6", "free": false, "note": "旗舰" },
+        { "id": "kimi-k2.5", "name": "Kimi-K2.5", "free": false, "note": "多模态" }
+      ]
+    },
+    {
+      "label": "阿里百炼 Qwen",
+      "apiUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "apiPath": "/chat/completions",
+      "keyUrl": "https://bailian.console.aliyun.com/?apiKey=1",
+      "models": [
+        { "id": "qwen-max", "name": "Qwen-Max", "free": false, "note": "旗舰" },
+        { "id": "qwen-plus", "name": "Qwen-Plus", "free": false, "note": "均衡" },
+        { "id": "qwen-turbo", "name": "Qwen-Turbo", "free": false, "note": "低价" }
+      ]
+    },
+    {
+      "label": "火山方舟 豆包",
+      "apiUrl": "https://ark.cn-beijing.volces.com/api/v3",
+      "apiPath": "/chat/completions",
+      "keyUrl": "https://console.volcengine.com/ark",
+      "models": [
+        { "id": "doubao-seed-1.6", "name": "Doubao-Seed-1.6", "free": false, "note": "旗舰" },
+        { "id": "doubao-1.5-pro-32k", "name": "Doubao-Pro-32k", "free": false, "note": "低价" }
+      ]
+    },
+    {
+      "label": "OpenRouter",
+      "apiUrl": "https://openrouter.ai/api/v1",
+      "apiPath": "/chat/completions",
+      "keyUrl": "https://openrouter.ai/settings/keys",
+      "models": [
+        { "id": "openai/gpt-4o-mini", "name": "GPT-4o-mini", "free": false, "note": "OpenAI 低价" },
+        { "id": "moonshotai/kimi-k2.5", "name": "Kimi-K2.5", "free": false, "note": "Kimi 官方上架" },
+        { "id": "deepseek/deepseek-chat-v3.1:free", "name": "DeepSeek-V3.1", "free": true, "note": ":free 免费档" }
+      ]
+    },
+    {
+      "label": "Google Gemini",
+      "apiUrl": "https://generativelanguage.googleapis.com/v1beta",
+      "apiPath": "/chat/completions",
+      "keyUrl": "https://aistudio.google.com/apikey",
+      "models": [
+        { "id": "gemini-2.5-pro", "name": "Gemini-2.5-Pro", "free": false, "note": "旗舰" },
+        { "id": "gemini-2.5-flash", "name": "Gemini-2.5-Flash", "free": true, "note": "AI Studio 免费额度(限流)" },
+        { "id": "gemini-2.5-flash-lite", "name": "Flash-Lite", "free": true, "note": "免费限流更宽" }
+      ]
+    },
+    {
+      "label": "OpenAI",
+      "apiUrl": "https://api.openai.com/v1",
+      "apiPath": "/chat/completions",
+      "keyUrl": "https://platform.openai.com/api-keys",
+      "models": [
+        { "id": "gpt-4o-mini", "name": "GPT-4o-mini", "free": false, "note": "低价稳定" }
+      ]
+    }
+  ]
+}
