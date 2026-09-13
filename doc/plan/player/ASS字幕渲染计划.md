@@ -99,8 +99,9 @@ libass + FriBidi + HarfBuzz(+ 各自依赖)多平台产物——
 
 - 版本 pin 死(脚本头注释),升级 = 改 tag 重出;产物随 avc_library 仓分发,
   插件 CMake 默认探测 sibling 目录,找到即真实链接。
-- FreeType:依赖栈自带一份给 libass;核心 avox_freetype 的既有副本不动。
-  Windows DYNAMIC 模式进程内两份 FreeType——无全局单例冲突,已知 tradeoff。
+- FreeType:核心 avox_freetype 静态链一份、依赖栈原本再带一份——**Windows 已消除**:
+  freetype/harfbuzz 静态链入 ass-9.dll(FTL/MIT 许可允许; fribidi LGPL 保持动态),
+  插件目录只剩 ass-9.dll + fribidi-0.dll。跨平台 FT 共存策略见 §3.8。
 - 字体(实施修正):libass 公开 API 无字体回调(fontselect.h 为内部头),
   用 AUTODETECT(Win=DirectWrite/mac=CoreText/linux=fontconfig)+
   setFontsDir/setDefaultFont 兜底,比原设计更简单。
@@ -187,6 +188,29 @@ remux 原盘片源的主流字幕轨(海外收藏党/Emby 资源,含外语片 fo
 
 - AI 字幕继续走 Flutter 渲染(SRT);ASS/PGS overlay 服务片源自带字幕轨。
 - 互斥规则:overlay 激活时 Flutter 字幕层隐藏,避免双字幕。
+
+### 3.8 跨平台落地注意(Android / iOS / macOS)
+
+| | Windows | Android | iOS/macOS |
+|---|---|---|---|
+| 插件模式 | DYNAMIC dll ✅ 已验 | STATIC(静态注册) | STATIC(App Store 禁三方动态代码) |
+| 依赖形态 | ass-9.dll(FT/HB 静态链入)+ fribidi-0.dll | 四库静态 .a 连同插件源码编进 libavox.so | 同 Android |
+| 字体提供器(AUTODETECT) | DirectWrite ✅ 已验(asstest) | **无** → setFontsDir + 随包内置 CJK 字体 | CoreText,开箱即用 |
+
+- **字体**:Android 是唯一没有系统字体提供器的平台——panvox 需随包内置一款
+  CJK 字体(MiSans 常规 ~10MB,可子集化压缩),经 setFontsDir 指向 assets 解压
+  目录;这是产品资产事项,不是引擎阻塞。
+- **FreeType 共存(Android/iOS/macOS 静态模式)**:插件源码与核心同链一个二进制,
+  ass 栈若再静态链自己的 FT,会与核心 avox_freetype 的 FT 形成**同符号双版本
+  ODR 风险**(链接器取先见定义,可能混链)。策略:这些平台的 ass 栈**复用核心
+  3rdparty/freetype 该平台产物**链接 libass(单一 FT);harfbuzz 全仓仅 ass 栈
+  使用,无冲突;Windows 动态模式已用「FT/HB 静态链入 ass-9.dll」消除交集。
+- **fribidi LGPL 静态链(Android/iOS)**:按 LGPL 提供再链义务(对应平台对象
+  文件)或改动态 so 随包;记入 third-party-notices,上架前复核一次。
+- **meson 交叉编译(M5 落地时)**:Android 需 NDK cross file(arm64-v8a,
+  android-24 起),libass setup 用 --pkg-config-path 指目标机前缀;iOS/macOS 用
+  xcrun clang(CC/CXX)+ 相应 -isysroot,macOS universal 出两架构后 lipo 合并;
+  产物目录按 avc_library 惯例 3rdparty/library/{android,darwin,ios}/ass。
 
 ## 4. 里程碑(单人 1.5~2 周)
 

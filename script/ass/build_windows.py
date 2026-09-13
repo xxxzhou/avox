@@ -23,8 +23,10 @@ import urllib.request
 
 TARGET = "windows"
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-AVC_LIBRARY = os.environ.get(
-    "ASS_DEPS_AVC_LIBRARY", os.path.join(os.path.dirname(ROOT), "avc_library"))
+# avc_library 位置与根 CMake 同优先级: ASS_DEPS_AVC_LIBRARY > AVOX_EXTERNAL_LIBRARY_DIR > ../avc_library
+AVC_LIBRARY = (os.environ.get("ASS_DEPS_AVC_LIBRARY")
+               or os.environ.get("AVOX_EXTERNAL_LIBRARY_DIR")
+               or os.path.join(os.path.dirname(ROOT), "avc_library"))
 # avc_library 惯例: 平台在前 → 3rdparty/library/<platform>/<lib>
 PREFIX = os.environ.get(
     "ASS_DEPS_PREFIX", os.path.join(AVC_LIBRARY, "3rdparty", "library", TARGET, "ass"))
@@ -217,6 +219,9 @@ def cmake_dep(name, src, extra):
          "-G", VS_GENERATOR, "-A", VS_ARCH,
          f"-DCMAKE_INSTALL_PREFIX={PREFIX}",
          "-DBUILD_SHARED_LIBS=ON",
+         # CMP0091=NEW: 让 CMAKE_MSVC_RUNTIME_LIBRARY 真正生效
+         # (harfbuzz 等老 min_required 工程默认 OLD, /MD 烧进 flags 致静态链 __imp_ 悬空)
+         "-DCMAKE_POLICY_DEFAULT_CMP0091=NEW",
          "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded",
          *extra])
     run(["cmake", "--build", b, "--config", "Release"])
@@ -236,19 +241,23 @@ def main():
     meson_setup(fb, srcs["fribidi"], extra=["-Ddocs=false"])
     meson_install(fb)
 
-    # 2. freetype(CMake, 最小配置: 关 zlib/png/bzip2/brotli/harfbuzz 集成)
+    # 2. freetype(CMake, 静态链入 ass-9.dll: 关 zlib/png/bzip2/brotli/harfbuzz 集成。
+    #    FT 无进程级全局状态, 但为避免与核心 avox_freetype 的静态 FT 共存产生
+    #    双副本/版本漂移, 干脆静态链进 libass —— 许可 FTL 允许)
     cmake_dep("freetype", srcs["freetype"],
-              ["-DFT_DISABLE_ZLIB=TRUE", "-DFT_DISABLE_BZIP2=TRUE",
+              ["-DBUILD_SHARED_LIBS=OFF",
+               "-DFT_DISABLE_ZLIB=TRUE", "-DFT_DISABLE_BZIP2=TRUE",
                "-DFT_DISABLE_PNG=TRUE", "-DFT_DISABLE_HARFBUZZ=TRUE",
                "-DFT_DISABLE_BROTLI=TRUE"])
 
-    # 3. harfbuzz(CMake, 关 glib/freetype 集成)
+    # 3. harfbuzz(CMake, 同样静态链入 —— MIT 允许)
     cmake_dep("harfbuzz", srcs["harfbuzz"],
-              ["-DHB_BUILD_SUBSET=OFF", "-DHB_BUILD_UTILS=OFF",
+              ["-DBUILD_SHARED_LIBS=OFF",
+               "-DHB_BUILD_SUBSET=OFF", "-DHB_BUILD_UTILS=OFF",
                "-DHB_BUILD_TESTS=OFF", "-DHB_HAVE_GLIB=OFF",
                "-DHB_HAVE_FREETYPE=OFF"])
 
-    # 4. libass(meson, pkg-config 找上面三个 .pc)
+    # 4. libass(meson, 出 dll; freetype/harfbuzz 静态链入, fribidi 保持动态 LGPL)
     la = os.path.join(build_root, "libass")
     meson_setup(la, srcs["libass"], pkg_path=pc_dir)
     meson_install(la)
