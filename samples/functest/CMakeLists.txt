@@ -28,6 +28,12 @@ endif()
 # avox_ass 插件 M1 冒烟: assOverlayHub 加载/查表/骨架降级/缺插件降级
 if(AVOX_ENABLE_ASS)
     generatetest(asstest)
+    # ASS 字幕叠加视频演示: base.raw(assdemo_genbase.py 生成)→逐帧合成→comp.raw
+    generatetest(assdemo)
+    if(MSVC)
+        # 源码含中文字面量(demo.ass 剧本), 需 UTF-8 执行字符集
+        target_compile_options(assdemo PRIVATE /utf-8)
+    endif()
 endif()
 if(AVOX_ENABLE_CV)
     generatetest(inpainttest)
