@@ -203,3 +203,16 @@ YUV→RGB 与 tone map 数学在各渲染后端为独立实现,Vulkan 先做,其
 - 落点分层:`YuvType` 加 `p010`(AVOX_MAP_YUV,group=4/groupsize=12,与 yuv420P10 同构×2B)→ `ffYuvType` 加 `AV_PIX_FMT_P010LE/BE`(hwdownload 后 sw_format 即 P010)→ V5 加 p010 读函数(高 10 位 `>>6`;UV 交错双平面按 2i/2i+1 寻址,UV 平面宽=width)→ FFVDecoder/r16 上传路径核对 P010 行对齐 stride。
 - **枚举、shader 分支、上传路径必须同一提交闭环**:只加枚举会让 p010 流落到 layer 不支持的默认分支出花屏,比现在落 `other` 更糟。
 - GPU 导入路径(`FFDx11Decoder::get_format` 主动选 P010、`getDxFormat` 映射、手工建 hw_frames_ctx)依赖真机调试,与 CPU 下载路径分开推进。
+
+### 6.9 首次真实 E2E 验证(2026-09-14 下午,补真素材打通)
+
+阶段 0 的「无 x265 ffmpeg」缺口已破:PATH 上的 ffmpeg 7.0.2 full build 自带 QSV,`hevc_qsv -profile:v main10` 在本机 UHD 770 实测可用(注意:只吃 `p010le` 直喂,带滤镜图的上传路径报 -22;zscale 在 7.0.2 各组合均 no path,libplacebo 需 Vulkan 设备本机不可用)。素材内容保持 SDR 采样值,靠 VUI+SEI 标签声明 PQ/BT.2020——SDR 值按 PQ 解码中间调仍在 SDR 白附近,高光(码值 1.0)落 10000nit,足以触发/验证 tone map。生成器:`script/testenv/gen_hdr10_asset.py`(QSV 编码 → Python 手注 SEI 137/144 NAL(带 emulation prevention,插首个 IRAP 前)→ remux;ffmpeg<7.1 的 hevc_metadata BSF 无 master_display 选项)。产出 `assets/video/test/test_h265_hdr10_pq_640x360.mp4`(Main 10/PQ/BT.2020/bt2020nc + mastering SEI + CLL)与 SDR 参考伴生文件。
+
+**E2E 首跑即揪出两个存量断点:**
+
+1. **`getYuvFrameSize` 10bit 高估 2 倍(已修)**:AVOX_MAP_YUV 里 yuv420P10/p010 的 groupsize 写 12(把 2B 像素重复计入),按字节 rowPitch 算出 1382400,而 r16 紧排实际 691200 → `SwVideoBuffer::to()` 的 bufferSize 契约恒 false → **静默 return → 渲染侧零消费、解码队列积压、全链黑屏**。这正是「软解 10bit 闭环从未跑过真实文件」藏住的雷;修复为 groupsize=6(系数=2B×1.5 平面/字节),§6.7 里「groupsize=12」的记录同步作废。`VideoRender::renderFrame` 的 to() 失败补了 warn 日志(静默黑屏必须留痕)。
+2. **ffmpeg 9 不再从帧级 side data 给 MDCV/CLL(半修)**:SDK 链 ffmpeg 9.0.1(avcodec-63),解码帧 `nb_side_data`、`codecCtx->decoded_side_data`、`nb_coded_side_data` 三处实测全 0——新版把 HDR10 MDCV/CLL 归为静态元数据,但带内 SEI 并未落进 decoded_side_data。`FFVDecoder` 已改为「ctx 静态 side data 优先,帧级兜底」(对老版 ffmpeg 仍正确),**但 9.0.1 下元数据链仍未通,SEI 裸流兜底从「待拍板」升级为「必须做」**——自研 H265 SEI 解析器(137/144)已具备,接进 FFVDecoder/VideoDecoder 即可。
+
+**探针与硬解雷区实测**:`samples/functest/hdrtest.cpp`(软解 HDR vs SDR 参考对比 Y 均值,PQ 路径中灰应显著抬升;`-hard` 档观察雷区)。修复 1 之后软解链路全通(解码→r16 上传→V5→rgba2yuv→CPU 帧,PNG 出图正常),但 **tone map 端到端输出仍 ≈SDR 直通**(hdrMean≈128.7 vs sdrMean≈125.2),与 shader 逐段验证矛盾:分 shader 插桩证实 V5 在跑、GPU 上 `ubo.transfer==2`/`width==640` 读出正确、pqToLinear 解码数学正确(灰 0.49→103nit 命中),但整图亮度不抬。疑点收窄到「图重建 pass 之间 UBO 浮点区(maxLuminance/sdrWhiteNits 读回 ≈908/91,非写入的 1000/100)或管线/描述符陈旧」,待续查。另:Vulkan 离屏(空 surface)模式下 `screenShot` 的 checkShot 无人调用恒超时,onFrame(enableYuvOut) 通道不受影响;`-hard` 档 DX11VA 10bit 实测**黑屏**(meanY=16=limited 黑),比 §2.2 预判的花屏更早死,坐实 P010 硬解须按 §6.7 整层闭环。play_regress 离线子集 8/8 通过,ctest 全绿。可观察性补强:`VkVideoRender::setColorSpace`(transfer 变化)/`setHdrMeta`(元数据值)/FFVDecoder 前 3 帧 side data 计数/`VkYUV2RGBALayer::refreshColorMat`(UBO 内容)四处一次性日志。
+
+**API 面现状(探针源码注释固化)**:`setHdrMode` 全仓无实现;`ISurfaceRender` 仅 `setColorSpace` 无 `setHdrMeta`;`IMediaPlayerOb`/`ISurfaceRenderOb` 无 onHdrMeta 回调——宿主既拿不到元数据也无法强制 SDR,公开 API 仍欠阶段 3 落地。
