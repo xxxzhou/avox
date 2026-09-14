@@ -122,6 +122,7 @@ void AssOverlayView::setPgsCanvas(const AssCanvas& canvas) {
     hasPgs = true;
   }
   lastPgsSeq = canvas.seq;
+  lastSeq = 0;  // 源切换(ASS↔PGS 的 seq 域不同), 强制下一帧重传
 }
 
 void AssOverlayView::resetEvents() {
@@ -154,24 +155,24 @@ void AssOverlayView::onRender() {
   }
   const int64_t pts = clock.clock();
   const AssCanvas* canvas = nullptr;
-  {
-    std::lock_guard<std::mutex> lock(mtx);
-    if (trackLoaded.load()) {
-      // ASS 轨: 播放时钟前的小窗口预喂(补偿帧间隔与渲染延迟)
-      while (!chunks.empty() && chunks.front().ptsMs <= pts + 120) {
-        SubChunk& c = chunks.front();
-        // FFmpeg 的 MKV ASS packet 自带 ReadOrder 头("0,0,Default,..."),
-        // 恰好是 ass_process_chunk 要的格式, 原样直喂
-        overlay->processChunk(c.data.data(), (int32_t)c.data.size(), c.ptsMs,
-                              c.durationMs);
-        chunks.pop_front();
-      }
-      canvas = overlay->render(pts);
-    } else if (hasPgs) {
-      // PGS 轨: 画布由呈现集驱动(包序即语义), seq 变化即上屏
-      pgsSnapshot = pgsCanvas;
-      canvas = &pgsSnapshot;
+  // 上屏也在锁内: PGS 画布像素归 pgsBuf(IO 线程 setPgsCanvas 会重排),
+  // 锁外读会与拷贝竞争
+  std::lock_guard<std::mutex> lock(mtx);
+  if (trackLoaded.load()) {
+    // ASS 轨: 播放时钟前的小窗口预喂(补偿帧间隔与渲染延迟)
+    while (!chunks.empty() && chunks.front().ptsMs <= pts + 120) {
+      SubChunk& c = chunks.front();
+      // FFmpeg 的 MKV ASS packet 自带 ReadOrder 头("0,0,Default,..."),
+      // 恰好是 ass_process_chunk 要的格式, 原样直喂
+      overlay->processChunk(c.data.data(), (int32_t)c.data.size(), c.ptsMs,
+                            c.durationMs);
+      chunks.pop_front();
     }
+    canvas = overlay->render(pts);
+  } else if (hasPgs) {
+    // PGS 轨: 画布由呈现集驱动(包序即语义), seq 变化即上屏
+    pgsSnapshot = pgsCanvas;
+    canvas = &pgsSnapshot;
   }
   if (canvas && canvas->seq == lastSeq) {
     return;  // 内容未变, 零上传
