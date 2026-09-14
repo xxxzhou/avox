@@ -12,7 +12,19 @@
 > render 出 396×60 canvas @底部居中,detect_change 稳定段零开销)。
 > 字体设计修正:libass 公开 API 无字体回调,AUTODETECT(Win=DirectWrite) +
 > setFontsDir/setDefaultFont 兜底。
-> 剩余:M2 解封装选轨 → §3.4 VK 图层合成 → panvox shim → PGS。
+>
+> **2026-09-15:M2/M2b/§3.4/§3.5/shim 全部完成,PGS 已实现待样片验收。**
+> 端到端像素验收 PASS(MKV 内封 ASS 轨 → 选轨 → libass → VkCanvasLayer 合成
+> → 输出帧可见,assmkvtest/asspostest/asstest 三绿;明细见 panvox 仓
+> docs/reports/2026-09-15-ass-pgs-chain.md)。关键落地修正:
+> ①命令缓冲一次录制模型 —— 拷贝区域必须录制期常量(固定全帧上传),
+> 无内容帧也必须 dispatch(opacity=0 直通),UBO 常备每帧提交;
+> ②FFmpeg 的 MKV ASS packet 自带 ReadOrder 头,原样直喂 ass_process_chunk;
+> ③竞态三修:选轨早于 parseStream(sconfig 到达补喂)/字幕包早于选轨
+> (pendingSubs 按轨排队回放)/轨未加载 chunk 不入队;seek 清队列+flush。
+> 剩余:M4 字体回调接 FontMap(现 AUTODETECT+setFontsDir 兜底可用)、
+> Android/iOS STATIC 编译、人工验收(mpv 对帧/seek 残留/性能 <3ms)、
+> PGS e2e(待真实 PGS 样片,ffmpeg 无 pgssub 编码器)、MKV 内嵌字体(二期)。
 > 修订史:①三方库不走 3rdparty 直连,
 > 按 [动态加载组件设计](../player/动态加载组件设计.md) 以 `plugins/avox_ass`
 > 磁力模块接入,libass/FriBidi/HarfBuzz 独立仓预编译,核心零依赖;②上屏复用
