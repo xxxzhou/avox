@@ -104,6 +104,26 @@ void AssOverlayView::pushChunk(const char* data, int32_t size, int64_t ptsMs,
   c.durationMs = durationMs;
 }
 
+void AssOverlayView::setPgsCanvas(const AssCanvas& canvas) {
+  if (canvas.seq == lastPgsSeq) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(mtx);
+  if (canvas.rgba && canvas.width > 0 && canvas.height > 0) {
+    pgsBuf.assign(canvas.rgba,
+                  canvas.rgba + (size_t)canvas.stride * canvas.height);
+    pgsCanvas = canvas;
+    pgsCanvas.rgba = pgsBuf.data();
+    hasPgs = true;
+  } else {
+    pgsBuf.clear();
+    pgsCanvas = AssCanvas{};
+    pgsCanvas.seq = canvas.seq;
+    hasPgs = true;
+  }
+  lastPgsSeq = canvas.seq;
+}
+
 void AssOverlayView::resetEvents() {
   std::lock_guard<std::mutex> lock(mtx);
   chunks.clear();
@@ -136,24 +156,29 @@ void AssOverlayView::onRender() {
   const AssCanvas* canvas = nullptr;
   {
     std::lock_guard<std::mutex> lock(mtx);
-    // 播放时钟前的小窗口预喂: 补偿帧间隔与渲染延迟, 字幕不至于晚一拍
-    while (!chunks.empty() && chunks.front().ptsMs <= pts + 120) {
-      SubChunk& c = chunks.front();
-      // FFmpeg 的 MKV ASS packet 自带 ReadOrder 头("0,0,Default,..."),
-      // 恰好是 ass_process_chunk 要的格式, 原样直喂
-      overlay->processChunk(c.data.data(), (int32_t)c.data.size(), c.ptsMs,
-                            c.durationMs);
-      chunks.pop_front();
+    if (trackLoaded.load()) {
+      // ASS 轨: 播放时钟前的小窗口预喂(补偿帧间隔与渲染延迟)
+      while (!chunks.empty() && chunks.front().ptsMs <= pts + 120) {
+        SubChunk& c = chunks.front();
+        // FFmpeg 的 MKV ASS packet 自带 ReadOrder 头("0,0,Default,..."),
+        // 恰好是 ass_process_chunk 要的格式, 原样直喂
+        overlay->processChunk(c.data.data(), (int32_t)c.data.size(), c.ptsMs,
+                              c.durationMs);
+        chunks.pop_front();
+      }
+      canvas = overlay->render(pts);
+    } else if (hasPgs) {
+      // PGS 轨: 画布由呈现集驱动(包序即语义), seq 变化即上屏
+      pgsSnapshot = pgsCanvas;
+      canvas = &pgsSnapshot;
     }
-    canvas = overlay->render(pts);
   }
-  if (!canvas) {
-    return;
-  }
-  if (canvas->seq == lastSeq) {
+  if (canvas && canvas->seq == lastSeq) {
     return;  // 内容未变, 零上传
   }
-  lastSeq = canvas->seq;
+  if (canvas) {
+    lastSeq = canvas->seq;
+  }
   if (canvas->rgba) {
     canvasLayer->updateCanvas(canvas->rgba, canvas->width, canvas->height,
                               canvas->stride, canvas->x, canvas->y);

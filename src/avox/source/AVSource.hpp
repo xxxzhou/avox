@@ -1,8 +1,10 @@
 #pragma once
 
+#include <atomic>
 #include <deque>
 #include <utility>
 
+#include "../subtitle/IAssOverlay.hpp"
 #include "BaseSource.hpp"
 
 namespace avox {
@@ -94,6 +96,8 @@ class IAVSourceOb {
   virtual void onPacket(const AvoxPacket& frame) {};
   // I帧模式变化，只有I帧没有P/B帧时为true
   virtual void onIFrameMode(bool bIFrameMode) {};
+  // PGS 位图画布就绪(解码在 IO 线程, rgba 归源所有, 回调返回后失效需拷贝)
+  virtual void onPgsFrame(const AssCanvas& canvas) {};
 };
 
 // IAVSource是给外部项目用的，这是项目内部基类
@@ -136,6 +140,8 @@ class AVOX_EXPORT AVSource : public BaseSource,
   std::vector<int32_t> aIndexMaps;
   // 字幕索引映射表(streamId → 字幕轨局部索引): MKV 可带多条字幕轨, 容量给足
   std::vector<int32_t> sIndexMaps;
+  // 当前选中的字幕轨(局部索引, -1=未选): IO 线程据此决定 PGS 解码与包路由
+  std::atomic<int32_t> selSubTrack{-1};
   // 分拆包
   std::vector<AvoxPacket> spiltBufs;
   // I帧/P帧合并包
@@ -176,6 +182,8 @@ class AVOX_EXPORT AVSource : public BaseSource,
  public:
   // 源类型
   AVSourceMode getSourceMode() const { return sourceMode; }
+  // 选中字幕轨(局部索引, -1=未选): PGS 解码与字幕包路由的开关, IO 线程读
+  void setSelectedSubtitle(int32_t localIndex) { selSubTrack = localIndex; }
   // 如果是服务器变速，可能要在open之前通知服务器
   void setSpeed(double speed);
   // 启用快速读取模式(录制场景)，speed>1时IO层非阻塞读取尽快消费数据

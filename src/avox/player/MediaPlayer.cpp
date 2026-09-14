@@ -420,6 +420,14 @@ void MediaPlayer::onPacket(const AvoxPacket& packet) {
   }
 }
 
+void MediaPlayer::onPgsFrame(const AssCanvas& canvas) {
+  // PGS 解码在 IO 线程, 画布内存归源所有: 拷贝进视图(线程安全)
+  if (!assOverlayView || !assOverlayView->opened()) {
+    return;
+  }
+  assOverlayView->setPgsCanvas(canvas);
+}
+
 IOption* MediaPlayer::getOption() { return this; }
 
 void MediaPlayer::setPingbackOb(IPingbackOb* ob) {
@@ -539,6 +547,9 @@ void MediaPlayer::cmdSetSubtitleTrack(int32_t index) {
     return;
   }
   subTrackIndex = index;
+  if (ioSource) {
+    ioSource->setSelectedSubtitle(index);  // PGS 解码/旁路路由开关
+  }
   if (index < 0) {
     if (assOverlayView) {
       assOverlayView->close();

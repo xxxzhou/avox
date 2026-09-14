@@ -1,5 +1,7 @@
 #include "IOParseFF.hpp"
 
+#include "PgsDecoder.hpp"
+
 #include <libavutil/intreadwrite.h>
 #include <libavutil/log.h>
 
@@ -123,6 +125,21 @@ bool IOParseFF::parseStream(int32_t streamId, AVCodecParameters* codecpar) {
   // sconfig 包旁路下发, MediaPlayer 侧留存, 选轨时喂 libass(计划 §3.2)。
   // index 与 subtitles 包一致走局部轨索引(与选轨号同域)
   if (codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE) {
+    if (codecpar->codec_id == AV_CODEC_ID_HDMV_PGS_SUBTITLE &&
+        (int32_t)sIndexMaps.size() > streamId && streamId >= 0 &&
+        sIndexMaps[streamId] == pgsTrackLocal) {
+      // 首个 PGS 轨: 建解码器, 记局部轨索引
+      pgsDec = std::make_unique<PgsDecoder>();
+      if (!pgsDec->open(codecpar)) {
+        pgsDec.reset();
+        pgsTrackLocal = -1;
+        LOGFLF(LogLevel::warn, "pgs decoder open failed");
+      } else {
+        pgsTrackLocal = sIndexMaps[streamId];
+        LOGFLF(LogLevel::info, "pgs decoder ready, local track:",
+               pgsTrackLocal);
+      }
+    }
     if (ffSCodec(codecpar->codec_id) == SCodecId::ass &&
         codecpar->extradata_size > 0 && streamId >= 0 &&
         streamId < (int32_t)sIndexMaps.size()) {
@@ -234,6 +251,21 @@ void IOParseFF::parseAACConfig(int32_t streamId, const uint8_t* extradata,
     // updateConfig(asc);
     bAACExtradata = true;
   }
+}
+
+bool IOParseFF::parsePgsFrame(int32_t streamId, const AVPacket* pkt,
+                              int64_t ptsMs) {
+  (void)streamId;
+  if (!pgsDec) {
+    return false;
+  }
+  const auto result = pgsDec->feed(pkt->data, pkt->size, ptsMs);
+  if (result == PgsDecoder::FeedResult::none) {
+    return false;
+  }
+  // 画布内存归解码器所有, 观察者同步拷贝(onPgsFrame 约定)
+  dispatch(&IAVSourceOb::onPgsFrame, pgsDec->canvas());
+  return true;
 }
 
 void IOParseFF::onRunTask() {
@@ -349,6 +381,9 @@ void IOParseFF::onRunTask() {
                st->codecpar->codec_id);
         continue;
       }
+      if (sdesc.codecId == SCodecId::pgs && !pgsDec) {
+        pgsTrackLocal = st->index;  // 暂存 streamId, parseStream 时换局部索引
+      }
       sdesc.trackId = st->index;
       if (auto* e = av_dict_get(st->metadata, "language", nullptr, 0)) {
         sdesc.lang = e->value ? e->value : "";
@@ -462,6 +497,15 @@ void IOParseFF::onRunTask() {
         continue;
       }
     } else if (st->codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE) {
+      // PGS: 选中轨的包进解码器出画布, 不再作为原始包旁路下发
+      if (pgsDec && sIndexMaps.size() > (size_t)streamId &&
+          sIndexMaps[streamId] == selSubTrack.load() &&
+          sIndexMaps[streamId] == pgsTrackLocal && pkt->pts != AV_NOPTS_VALUE) {
+        const int64_t pgsPts =
+            av_rescale_q(pkt->pts, st->time_base, {1, 1000});
+        parsePgsFrame(streamId, pkt.get(), pgsPts);
+        continue;
+      }
       packType = PackType::subtitles;
       // 旁路数据量极小(每条对白几十字节), 不按 a/v 的禁用开关丢弃;
       // 无消费者时 MediaPlayer 侧自然忽略
@@ -618,6 +662,9 @@ bool IOParseFF::seekTo(int64_t pos) {
   }
   // 恢复IO线程
   resumeTask();
+  if (pgsDec) {
+    pgsDec->flush();
+  }
   return bSeek;
 }
 

@@ -45,6 +45,8 @@ class AssOverlayView : public ISurfaceRenderOb {
   // IO 线程: 字幕包入队(拷贝, 有界, 溢出丢最旧)
   void pushChunk(const char* data, int32_t size, int64_t ptsMs,
                  int64_t durationMs);
+  // PGS 位图画布(拷贝持有; 与 libass 通道互斥, 选中 PGS 轨时到达)
+  void setPgsCanvas(const AssCanvas& canvas);
   // 播放器线程(seek/换轨): 清队列 + flush libass 事件
   void resetEvents();
 
@@ -70,6 +72,13 @@ class AssOverlayView : public ISurfaceRenderOb {
     int64_t durationMs = 0;
   };
   std::deque<SubChunk> chunks;
+
+  // PGS 画布(视图持有拷贝): seq 变化即上屏, 呈现集语义由包序决定
+  std::vector<uint8_t> pgsBuf;
+  AssCanvas pgsCanvas = {};
+  AssCanvas pgsSnapshot = {};  // onRender 锁内取快照用
+  int32_t lastPgsSeq = 0;
+  bool hasPgs = false;
 };
 
 }

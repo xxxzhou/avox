@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include "FFHelper.hpp"
 #include "avox/module/Json.hpp"
 #include "avox/module/JsonOption.hpp"
@@ -7,6 +9,8 @@
 #include "avox/source/AVSource.hpp"
 
 namespace avox {
+
+class PgsDecoder;
 
 class IOParseFF : public AVSource, public RunTask {
 public:
@@ -27,10 +31,15 @@ protected:
   std::atomic<bool> bStopIo{false};
   // IO 线程已退出 av_read_frame 的确认 (seekTo 等它再操作 fmtCtx)
   std::atomic<bool> bIoPausedAck{false};
+  // PGS 解码器(选中该轨时建): 局部轨索引 → 解码器
+  std::unique_ptr<PgsDecoder> pgsDec = nullptr;
+  int32_t pgsTrackLocal = -1;  // 解码器对应的局部轨索引
 
 private:
   // 解析IO流媒体格式
   bool parseStream(int32_t streamId, AVCodecParameters *codecpar);
+  // PGS 位图字幕解码(§3.6): 选中该轨时 IO 循环喂包, 出 RGBA 画布
+  bool parsePgsFrame(int32_t streamId, const AVPacket* pkt, int64_t ptsMs);
   bool parseH26xConfig(int32_t streamId, const uint8_t *extradata, int32_t size,
                        AVCodecID codeId);
   void parseAACConfig(int32_t streamId, const uint8_t *extradata, int32_t size);

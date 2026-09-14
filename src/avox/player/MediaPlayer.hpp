@@ -191,6 +191,7 @@ class MediaPlayer : public IMediaPlayer,
   virtual void onComplete() override;
   virtual void onError(AVError error, const char* msg) override;
   virtual void onPacket(const AvoxPacket& packet) override;
+  virtual void onPgsFrame(const AssCanvas& canvas) override;
   virtual void onIFrameMode(bool bIFrameMode) override;
 
   // JsonOption
