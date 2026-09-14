@@ -221,8 +221,14 @@ void VDecoderTask::onRunTask() {
     if (speed > 2 && speed <= 4) {
       // 超过2倍,快速解码
       sleepTask(true);
+    } else if (!bGet || result == DecodeResult::noConfig) {
+      // 没取到包 / 参数集还没齐: 阻塞等待下一轮, 避免空转
+      sleepTask(false, 10);
     } else {
-      sleepTask(result == DecodeResult::noConfig, 10);
+      // 正常处理了数据: 必须全速继续, 不能睡。
+      // 原写法 sleepTask(result == noConfig, 10) 语义反了 —— 解出数据反而 sleep 10ms,
+      // 单包耗时被抬到 10ms+, 50fps 源实测只能出 ~33fps(帧间隔 28ms)。
+      sleepTask(true);
     }
   }
   // 如果是因为重置Flag关闭的，需要让Track再重置打开编码器

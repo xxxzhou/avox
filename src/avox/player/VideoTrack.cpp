@@ -269,7 +269,11 @@ SyncResult VideoTrack::syncVideo() {
   //     " queue size:", packetQueue.size(), " frame size:", frameQueue.size());
   // 渲染时间慢了，需要丢帧
   // I帧模式下帧少,不丢帧
-  if (!bIFrameMode && now > renderTime + sduration * 1.5 && sduration > 0) {
+  // delay>0 才丢帧: delay==0 表示视频已落后主时钟、本就该立刻渲染,
+  // 此时再丢就等于"每帧都过期" —— 加上刷新周期(~30ms)与阈值(sduration*1.5)
+  // 同量级, 判据几乎恒成立, 会造成 ~77% 的帧被丢弃、画面卡顿/停滞。
+  if (!bIFrameMode && delay > 0 && now > renderTime + sduration * 1.5 &&
+      sduration > 0) {
     int64_t dropPts = 0;
     // GPU数据丢弃需要通知frame好做后续处理
     frameQueue.pop([&](const VideoFramePtr& frame) {
@@ -281,6 +285,11 @@ SyncResult VideoTrack::syncVideo() {
     //     " speed duration:", sduration, " pts:", pts, " pre pts:", tPts,
     //     " queue size:", packetQueue.size(),
     //     " frame size:", frameQueue.size());
+    // 修正: 丢帧追赶时必须同步推进渲染基准, 否则 delay==0(视频落后主时钟)时
+    // renderTime 既不推进、也过不了上方的纠正(纠正条件是 delay>0), 于是 now
+    // 越走越远, 该 if 永久成立 —— 每一帧都被丢弃, 画面彻底静止
+    // (seek 重置时钟后才短暂恢复)。
+    renderTime = now;
     return SyncResult::slow;
   }
   // 视频慢了，让窗口快速刷新，不要sleep了
