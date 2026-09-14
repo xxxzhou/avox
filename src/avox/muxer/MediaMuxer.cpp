@@ -47,6 +47,7 @@ bool MediaMuxer::open(const char* url_) {
   bCheckAcc = false;
   bvcc = false;
   bStartPacket = false;
+  bFirstKey = false;
   if (muxerType == MuxerType::none) {
     muxerType = MuxerType::zlmediakit;
   }
@@ -181,6 +182,13 @@ void MediaMuxer::singleVideo(AvoxPacket& packet) {
   }
   if (!bStartPacket) {
     return;
+  }
+  // 配置帧放行(要进extradata), 之后丢到首个关键帧才开始写视频
+  if (!bFirstKey && !bConfig) {
+    if (!bKey) {
+      return;
+    }
+    bFirstKey = true;
   }
   if (bConfig) {
     packet.packtype = (int32_t)PackType::vconfig;

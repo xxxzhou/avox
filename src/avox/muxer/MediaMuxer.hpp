@@ -51,6 +51,8 @@ class MediaMuxer : public IMediaMuxer, public Observer<IRecorderOb> {
   std::vector<AvoxPacket> combineBufs;
   // 配置帧之前都不要
   bool bStartPacket = false;
+  // 首个关键帧之前视频都不要: 回放下载从GOP中途起流, IDR前的P帧无参考, 写进文件即灰屏
+  bool bFirstKey = false;
 
  public:
   void setRecState(RecorderState newState);
