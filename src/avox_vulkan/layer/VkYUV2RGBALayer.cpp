@@ -18,6 +18,8 @@ void VkYUV2RGBALayer::refreshColorMat() {
   uboData.colorMat = buildYuvToRgb(cs);
   // transfer 随 cs 运行时更新: setColorSpace 只走本函数, 只写 onInitLayer 会丢晚到的标志
   uboData.transfer = (int32_t)cs.transfer;
+  LOGFLF(LogLevel::info, "[yuv2rgba] ubo transfer:", uboData.transfer,
+         " peak:", uboData.maxLuminance, " sdrWhite:", uboData.sdrWhiteNits);
   updateUBO(&uboData);
 }
 

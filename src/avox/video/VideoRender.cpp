@@ -138,6 +138,9 @@ void VideoRender::renderFrame(const avox::VideoFrame& frame) {
       splitBuffer = std::make_unique<ImageBuffer>();
     }
     if (!vbuffer->to(yuvFrame, splitBuffer.get())) {
+      // 静默失败会表现为无日志黑屏, 必须留痕
+      LOGFLF(LogLevel::warn, "renderFrame buffer to yuvframe failed, yuvType:",
+             (int32_t)vbuffer->getYuvType());
       return;
     }
     yuvFrame.pts = frame.pts;

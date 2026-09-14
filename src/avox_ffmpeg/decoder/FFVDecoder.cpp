@@ -166,7 +166,53 @@ void FFVDecoder::onClose() {
   }
 }
 
+// 解析单条 HDR side data (ST2086 mastering / CLL) 进 meta
+static void parseHdrSideData(AVFrameSideData* sd, HdrMeta& meta) {
+  if (sd->type == AV_FRAME_DATA_MASTERING_DISPLAY_METADATA &&
+      sd->size >= sizeof(AVMasteringDisplayMetadata)) {
+    auto* md = (AVMasteringDisplayMetadata*)sd->data;
+    if (md->has_luminance && md->max_luminance.den > 0) {
+      meta.maxLuminance = (uint32_t)(av_q2d(md->max_luminance) + 0.5);
+    }
+    if (md->has_luminance && md->min_luminance.den > 0) {
+      meta.minLuminance = (uint32_t)(av_q2d(md->min_luminance) + 0.5);
+    }
+    // 色度坐标按 0.00002 增量编码, 归一化到 0..1
+    if (md->has_primaries) {
+      for (int32_t g = 0; g < 3; ++g) {
+        for (int32_t c = 0; c < 2; ++c) {
+          if (md->display_primaries[g][c].den > 0) {
+            meta.primaries[g * 2 + c] =
+                (float)(av_q2d(md->display_primaries[g][c]) / 50000.0);
+          }
+        }
+      }
+      for (int32_t c = 0; c < 2; ++c) {
+        if (md->white_point[c].den > 0) {
+          meta.whitePoint[c] = (float)(av_q2d(md->white_point[c]) / 50000.0);
+        }
+      }
+    }
+    meta.valid = true;
+  } else if (sd->type == AV_FRAME_DATA_CONTENT_LIGHT_LEVEL &&
+             sd->size >= sizeof(AVContentLightMetadata)) {
+    auto* cl = (AVContentLightMetadata*)sd->data;
+    meta.maxCLL = cl->MaxCLL;
+    meta.maxFALL = cl->MaxFALL;
+    meta.valid = true;
+  }
+}
+
 void FFVDecoder::onFrame(AVFrame* avFrame, bool bDrop) {
+  // E2E 诊断: HDR 元数据缺失的第一现场 (仅前 3 帧打印)
+  static int32_t sideDataLogs = 0;
+  if (sideDataLogs < 3) {
+    sideDataLogs++;
+    LOGFLF(LogLevel::info, "[hdrmeta] frame sd:", avFrame->nb_side_data,
+           " ctx decoded sd:",
+           codecCtx ? codecCtx->nb_decoded_side_data : -1,
+           " ctx coded sd:", codecCtx ? codecCtx->nb_coded_side_data : -1);
+  }
   YUVFrame frame = {};
   frame.pts = avFrame->best_effort_timestamp;
   frame.dts = avFrame->pkt_dts;
@@ -180,43 +226,21 @@ void FFVDecoder::onFrame(AVFrame* avFrame, bool bDrop) {
   frame.stride[1] = avFrame->linesize[1];
   frame.stride[2] = avFrame->linesize[2];
   frame.keyFrame = avFrame->pict_type == AV_PICTURE_TYPE_I;
-  // HDR 静态元数据: ST2086 + CLL, 有标记才解析, 峰值相关字段变化才回调
+  // HDR 静态元数据: ST2086 + CLL, 有标记才解析, 峰值相关字段变化才回调。
+  // ffmpeg>=7.1(avcodec>=62) 把 MDCV/CLL 归为静态元数据收进
+  // codecCtx->decoded_side_data, 帧级 side_data 恒空; 旧版才挂 AVFrame。
+  // 两处都查: 上下文有取上下文, 否则退回帧级。
   HdrMeta meta = {};
-  for (int32_t i = 0; i < avFrame->nb_side_data; ++i) {
-    AVFrameSideData* sd = avFrame->side_data[i];
-    if (sd->type == AV_FRAME_DATA_MASTERING_DISPLAY_METADATA &&
-        sd->size >= sizeof(AVMasteringDisplayMetadata)) {
-      auto* md = (AVMasteringDisplayMetadata*)sd->data;
-      if (md->has_luminance && md->max_luminance.den > 0) {
-        meta.maxLuminance = (uint32_t)(av_q2d(md->max_luminance) + 0.5);
-      }
-      if (md->has_luminance && md->min_luminance.den > 0) {
-        meta.minLuminance = (uint32_t)(av_q2d(md->min_luminance) + 0.5);
-      }
-      // 色度坐标按 0.00002 增量编码, 归一化到 0..1
-      if (md->has_primaries) {
-        for (int32_t g = 0; g < 3; ++g) {
-          for (int32_t c = 0; c < 2; ++c) {
-            if (md->display_primaries[g][c].den > 0) {
-              meta.primaries[g * 2 + c] =
-                  (float)(av_q2d(md->display_primaries[g][c]) / 50000.0);
-            }
-          }
-        }
-        for (int32_t c = 0; c < 2; ++c) {
-          if (md->white_point[c].den > 0) {
-            meta.whitePoint[c] =
-                (float)(av_q2d(md->white_point[c]) / 50000.0);
-          }
-        }
-      }
-      meta.valid = true;
-    } else if (sd->type == AV_FRAME_DATA_CONTENT_LIGHT_LEVEL &&
-               sd->size >= sizeof(AVContentLightMetadata)) {
-      auto* cl = (AVContentLightMetadata*)sd->data;
-      meta.maxCLL = cl->MaxCLL;
-      meta.maxFALL = cl->MaxFALL;
-      meta.valid = true;
+  bool fromCtx = false;
+  if (codecCtx && codecCtx->nb_decoded_side_data > 0) {
+    for (int32_t i = 0; i < codecCtx->nb_decoded_side_data; ++i) {
+      parseHdrSideData(codecCtx->decoded_side_data[i], meta);
+    }
+    fromCtx = meta.valid;
+  }
+  if (!fromCtx) {
+    for (int32_t i = 0; i < avFrame->nb_side_data; ++i) {
+      parseHdrSideData(avFrame->side_data[i], meta);
     }
   }
   if (meta.valid && (meta.maxCLL != hdrMeta.maxCLL ||

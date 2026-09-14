@@ -110,6 +110,10 @@ void VkVideoRender::setColorSpace(const ColorSpaceDesc& c) {
       c.transfer == colorSpace.transfer) {
     return;
   }
+  if (c.transfer != colorSpace.transfer) {
+    LOGFLF(LogLevel::info, "colorspace transfer:", (int32_t)c.transfer,
+           " (0=gamma 1=linear 2=pq 3=hlg)");
+  }
   colorSpace = c;
   if (rgba2YUV) {
     rgba2YUV->get()->setColorSpace(c);
@@ -125,6 +129,9 @@ void VkVideoRender::setHdrMeta(const HdrMeta& meta) {
       hdrMeta.maxLuminance == meta.maxLuminance) {
     return;
   }
+  LOGFLF(LogLevel::info, "hdr meta maxLum:", meta.maxLuminance,
+         " minLum:", meta.minLuminance, " cll:", meta.maxCLL,
+         " fall:", meta.maxFALL);
   hdrMeta = meta;
   if (yuv2RGBA) {
     yuv2RGBA->get()->setHdrMeta(meta);
