@@ -90,7 +90,16 @@ function(register_plugin name)
   file(GLOB _hdr "${CMAKE_CURRENT_SOURCE_DIR}/*.h" "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp")
   add_library(${name} SHARED ${_src} ${_hdr})
   # 链 avox(import lib, 拿 IModule/IOption 等导出) + 第三方库
-  target_link_libraries(${name} PRIVATE avox ${_libs})
+  if(APPLE AND NOT CMAKE_SYSTEM_NAME MATCHES "iOS")
+    # mac 静态核特例: 插件若链静态 avox.a 会把 core 嵌进每个 dylib ——
+    # AvoxManager 等单例随之分裂(插件注册进自己的副本, 宿主 hub 看不到)。
+    # 改走 mac 常规插件形态: core 符号保持 undefined, dlopen 时从宿主
+    # 导出表回绑(宿主 exe 需 -Wl,-export_dynamic, 见 generatetest/playtest)。
+    target_link_libraries(${name} PRIVATE ${_libs})
+    target_link_options(${name} PRIVATE -Wl,-undefined,dynamic_lookup)
+  else()
+    target_link_libraries(${name} PRIVATE avox ${_libs})
+  endif()
   target_include_directories(${name} PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/plugins)
   # 铁律: 只传 AVOX_PLUGIN_BUILDING(导出 NewModule/GetModuleABI), 绝不传 AVOX_EXPORT_DEFINE
   # (否则 IModule 被当 dllexport, 跨 dll 虚表错乱)

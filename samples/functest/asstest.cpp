@@ -39,15 +39,19 @@ int main() {
 
   if (initOk) {
     // 场景 C: 真实渲染 → 非空 canvas
-    const char* fonts[] = {"C:\\Windows\\Fonts\\msyh.ttc",
-                           "C:\\Windows\\Fonts\\arial.ttf",
-                           "C:\\Windows\\Fonts\\segoeui.ttf"};
+    // 字体文件与默认字体族成对给(libass 按族名兜底系统字体时也用它)
+    const char* fonts[][2] = {{"C:\\Windows\\Fonts\\msyh.ttc", "Microsoft YaHei"},
+                              {"C:\\Windows\\Fonts\\arial.ttf", "Arial"},
+                              {"C:\\Windows\\Fonts\\segoeui.ttf", "Segoe UI"},
+                              {"/System/Library/Fonts/Supplemental/Arial.ttf", "Arial"},
+                              {"/System/Library/Fonts/Helvetica.ttc", "Helvetica"},
+                              {"/System/Library/Fonts/PingFang.ttc", "PingFang SC"}};
     bool haveFont = false;
-    for (const char* f : fonts) {
-      FILE* t = std::fopen(f, "rb");
+    for (const auto& f : fonts) {
+      FILE* t = std::fopen(f[0], "rb");
       if (t) {
         std::fclose(t);
-        overlay->setDefaultFont(f, "Arial");
+        overlay->setDefaultFont(f[0], f[1]);
         haveFont = true;
         break;
       }
