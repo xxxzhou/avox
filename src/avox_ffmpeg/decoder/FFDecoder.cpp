@@ -28,6 +28,10 @@ DecodeResult FFDecoder::decodePacket(const AvoxPacket &packet) {
                             "avcodec_send_packet failed");
     }
   }
+  // 本次调用是否解出过帧。EAGAIN只代表"当前没有更多帧", 上层(VDecoderTask
+  // 的bOpenDecode看门狗)以success作为"解码器已打开"的唯一凭证, 吐过帧却返回
+  // dataNoReady 会让看门狗在 delayMs(5s) 后误杀正常播放中的解码器。
+  bool gotFrame = false;
   while (true) {
     ret = avcodec_receive_frame(codecCtx.get(), avFrame.get());
     if (ret < 0) {
@@ -36,7 +40,7 @@ DecodeResult FFDecoder::decodePacket(const AvoxPacket &packet) {
         return DecodeResult::complete;
       }
       if (ret == AVERROR(EAGAIN)) {
-        return DecodeResult::dataNoReady;
+        return gotFrame ? DecodeResult::success : DecodeResult::dataNoReady;
       } else {
         AVOX_FFMEPG_LOG(ret, "avcodec_receive_frame failed");
         break;
@@ -51,8 +55,9 @@ DecodeResult FFDecoder::decodePacket(const AvoxPacket &packet) {
     preVPts = avFrame->pts;
     // 释放 AVFrame 引用
     av_frame_unref(avFrame.get());
+    gotFrame = true;
   }
-  return DecodeResult::success;
+  return gotFrame ? DecodeResult::success : DecodeResult::dataNoReady;
 }
 
 void FFDecoder::flushContext() {
