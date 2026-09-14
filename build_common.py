@@ -158,7 +158,9 @@ def build_module(module_name, bOnlyMake=False,build_args="",bself=False):
             cmake_cmd = ["cmake","../../../"] + cmake_args
         else:
             cmake_cmd = ["cmake","../../../3rdparty/"+ module_name] + cmake_args
-        cmake_cmd_str = " ".join(cmake_cmd)
+        # os.system 按空格拼串: -D 值含空格(链接器 flags 及其 -s 剥符号旗标)必须
+        # 内嵌引号, 否则被 shell 拆成独立参数报 Unknown argument(2448df9 同类修法)
+        cmake_cmd_str = " ".join(f'"{a}"' if (" " in a) else a for a in cmake_cmd)
         print(f"生成 CMake 项目:\n{cmake_cmd_str}")
         cmake_ret = os.system(cmake_cmd_str)
         if cmake_ret != 0:
