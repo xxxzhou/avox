@@ -30,7 +30,20 @@
   --force             强制重新下载 (忽略已存在)
   --dry-run           只打印将做什么, 不实际执行
   --hf-mirror         把 huggingface.co 替换为 hf-mirror.com (国内访问)
+  --gh-mirror PREFIX  GitHub 镜像前缀 (如 https://gh-proxy.com/), 最优先试;
+                      也可用环境变量 AVOX_GH_MIRROR
   --no-color          关闭彩色输出
+
+多源回退 (两层):
+  组间: item "files" = 主源组, "fallback_files" = 备用源组 (可选, 如 stt 的
+       release zip 主源组 -> HuggingFace 散件备用组); 主源组任一文件最终失败,
+       整组切到备用源组重下。
+  组内: 每个文件按 "gh-mirror 前缀源 → 主源 url → 逐项 mirrors (显式备用 URL,
+       如 HuggingFace/hf-mirror/media.githubusercontent 直连) → 清单顶层
+       github_mirrors 前缀源" 顺序下载; 某源连不上/HTTP 错误, 或下载后
+       sha256 不匹配, 自动换下一源; 全部源失败才判失败。sha256 是换源安全的
+       唯一凭据, 必填。清单顶层 "github_mirrors": ["https://gh-proxy.com/", ...]
+       对所有 github.com 主源自动派生前缀备用源。
 
 退出码: 0=全部成功 (或仅查询), 1=有项失败, 2=参数/输入错误
 仅依赖 Python 标准库。
@@ -45,6 +58,7 @@ import subprocess
 import sys
 import tarfile
 import time
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -158,6 +172,35 @@ def _apply_mirror(url, hf_mirror):
     return url
 
 
+def _norm_prefix(p):
+    p = (p or "").strip()
+    if p and not p.endswith("/"):
+        p += "/"
+    return p
+
+
+def file_sources(f, github_mirrors=None, gh_mirror=None):
+    """files[] 单项的候选下载源, 有序去重:
+    1) --gh-mirror/AVOX_GH_MIRROR 指定的镜像前缀源 (用户明确说直连不行, 最优先试)
+    2) 原始 url (主源)
+    3) 逐项 mirrors 里的显式备用 URL (完整地址, 可为任意外域; 与主源字节一致, sha256 把关)
+    4) 清单顶层 github_mirrors 前缀源 (仅对 https://github.com/ 开头的主源, 通用兜底)"""
+    primary = f["url"]
+    out = []
+    gm = _norm_prefix(gh_mirror)
+    if gm and primary.startswith("https://github.com/"):
+        out.append(gm + primary)
+    out.append(primary)
+    for m in f.get("mirrors", []):
+        if m not in out:
+            out.append(m)
+    for p in github_mirrors or []:
+        pp = _norm_prefix(p)
+        if primary.startswith("https://github.com/") and (pp + primary) not in out:
+            out.append(pp + primary)
+    return out
+
+
 def _write_progress(path, obj):
     """把进度事件以 JSONL 追加写入 path (供外部程序轮询, 如 Godot AssetManager); 失败静默。"""
     if not path:
@@ -170,9 +213,26 @@ def _write_progress(path, obj):
         pass
 
 
+def _open_follow_redirects(url, timeout, max_hops=5):
+    """打开 URL 并手动跟随 308 (Python<3.11 的 urllib 不处理 308; hf-mirror 等会返回)。"""
+    last = None
+    for _ in range(max_hops):
+        req = urllib.request.Request(url, headers={"User-Agent": "fetch_assets/1.0"})
+        try:
+            return urllib.request.urlopen(req, timeout=timeout)
+        except urllib.error.HTTPError as e:
+            last = e
+            if e.code == 308 and e.headers.get("Location"):
+                url = urllib.request.urljoin(url, e.headers["Location"])
+                continue
+            raise
+    raise last
+
+
 def download_file(url, dest_file, c, retries=3, progress_file=None):
     """带进度下载单个文件到 dest_file (Path)。进度写 stderr; 若给 progress_file 则同时
-    追加 JSONL 事件 (start/prog/file_done) 供外部程序轮询。失败返回 False。"""
+    追加 JSONL 事件 (start/prog/file_done) 供外部程序轮询。失败返回 False。
+    单 URL 内部重试 retries 次; 多源回退由调用方 (process_download) 编排。"""
     dest_file.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest_file.with_suffix(dest_file.suffix + ".part")
     label = dest_file.name
@@ -207,12 +267,11 @@ def download_file(url, dest_file, c, retries=3, progress_file=None):
                 last_t = now
                 emit("prog", pct=0.0, got=downloaded, total=0)
 
-    req = urllib.request.Request(url, headers={"User-Agent": "fetch_assets/1.0"})
     for attempt in range(1, retries + 1):
         try:
-            with urllib.request.urlopen(req, timeout=60) as resp, open(tmp, "wb") as out:
+            with _open_follow_redirects(url, timeout=60) as resp, open(tmp, "wb") as out:
                 total = int(resp.getheader("Content-Length") or 0)
-                emit("start", total=total)
+                emit("start", total=total, url=url)
                 while True:
                     chunk = resp.read(1024 * 64)
                     if not chunk:
@@ -294,26 +353,35 @@ def filename_from_url(url):
 
 
 # ---------- 各 method 处理 ----------
-def process_download(item, root, force, hf_mirror, dry, c, progress_file=None):
-    """返回 (ok, msg)。进度/状态写 stderr; progress_file 透传给 download_file。"""
-    if verify_ok(item, root) and not force:
-        return True, "已就绪, 跳过"
-    if dry:
-        urls = [f["url"] for f in item.get("files", [])]
-        return True, "将下载: " + ", ".join(urls)
+def _fetch_file_set(item, root, files, archive, hf_mirror, c, progress_file=None,
+                    github_mirrors=None, gh_mirror=None):
+    """按给定 files 列表逐个下载 (archive 非空时先下压缩包再解压), 每个文件按
+    file_sources() 多源回退; 任一文件最终失败返回 (False, msg)。"""
     dest = dest_path(item, root)
     dest.mkdir(parents=True, exist_ok=True)
-    archive = item.get("archive")
-    for f in item.get("files", []):
-        url = _apply_mirror(f["url"], hf_mirror)
+    for f in files:
+        sources = file_sources(f, github_mirrors, gh_mirror)
         if archive:
-            archive_name = filename_from_url(url)
+            archive_name = filename_from_url(f["url"])
             archive_file = dest / archive_name
-            print(f"  下载压缩包 {archive_name}", file=sys.stderr)
-            if not download_file(url, archive_file, c, progress_file=progress_file):
-                return False, f"下载失败: {archive_name}"
-            if not check_sha256(archive_file, f.get("sha256"), c):
-                return False, f"sha256 校验失败: {archive_name}"
+            ok = False
+            for si, url in enumerate(sources):
+                url = _apply_mirror(url, hf_mirror)
+                tag = "主源" if si == 0 else f"备用源{si}/{len(sources) - 1}"
+                print(f"  下载压缩包 {archive_name} [{tag}]", file=sys.stderr)
+                print(f"  {c.DIM}{url}{c.W}", file=sys.stderr)
+                # 主源给 3 次重试容忍抖动, 备用源 2 次快速换路
+                if not download_file(url, archive_file, c,
+                                     retries=3 if si == 0 else 2,
+                                     progress_file=progress_file):
+                    continue
+                if not check_sha256(archive_file, f.get("sha256"), c):
+                    print(f"  {c.Y}该源内容校验不过, 换下一源{c.W}", file=sys.stderr)
+                    continue
+                ok = True
+                break
+            if not ok:
+                return False, f"下载失败 (已试 {len(sources)} 源): {archive_name}"
             print(f"  解压 ({archive['format']}, flatten={archive.get('flatten', False)})", file=sys.stderr)
             if not extract_archive(archive_file, dest, archive["format"],
                                    archive.get("flatten", False), c,
@@ -321,17 +389,64 @@ def process_download(item, root, force, hf_mirror, dry, c, progress_file=None):
                 return False, f"解压失败: {archive_name}"
             archive_file.unlink(missing_ok=True)
         else:
-            name = f.get("name") or filename_from_url(url)
+            name = f.get("name") or filename_from_url(f["url"])
             target = dest / name
-            print(f"  下载 {name}", file=sys.stderr)
-            if not download_file(url, target, c, progress_file=progress_file):
-                return False, f"下载失败: {name}"
-            if not check_sha256(target, f.get("sha256"), c):
-                return False, f"sha256 校验失败: {name}"
+            ok = False
+            for si, url in enumerate(sources):
+                url = _apply_mirror(url, hf_mirror)
+                tag = "主源" if si == 0 else f"备用源{si}/{len(sources) - 1}"
+                print(f"  下载 {name} [{tag}]", file=sys.stderr)
+                print(f"  {c.DIM}{url}{c.W}", file=sys.stderr)
+                if not download_file(url, target, c,
+                                     retries=3 if si == 0 else 2,
+                                     progress_file=progress_file):
+                    continue
+                if not check_sha256(target, f.get("sha256"), c):
+                    print(f"  {c.Y}该源内容校验不过, 换下一源{c.W}", file=sys.stderr)
+                    continue
+                ok = True
+                break
+            if not ok:
+                return False, f"下载失败 (已试 {len(sources)} 源): {name}"
     final = verify_ok(item, root)
     if final is None:
         return True, "完成 (无 verify_files)"
     return final, ("完成" if final else "完成但 verify_files 未全")
+
+
+def process_download(item, root, force, hf_mirror, dry, c, progress_file=None,
+                     github_mirrors=None, gh_mirror=None):
+    """返回 (ok, msg)。进度/状态写 stderr; progress_file 透传给 download_file。
+    源分两层: item.files = 主源组, item.fallback_files = 备用源组 (可选, 整组切换,
+    如 stt: release zip 主源组 -> HuggingFace 散件备用组)。组内每个文件再按
+    file_sources() 多源回退: 主源失败 (网络/HTTP 错误) 或下载后 sha256 不匹配
+    都自动换下一源; 主源组任一文件最终失败, 才整组切到备用源组。"""
+    if verify_ok(item, root) and not force:
+        return True, "已就绪, 跳过"
+    plans = []
+    if item.get("files"):
+        plans.append(("主源组", item["files"], item.get("archive")))
+    if item.get("fallback_files"):
+        plans.append(("备用源组", item["fallback_files"], None))
+    if not plans:
+        return False, "item 无 files/fallback_files"
+    if dry:
+        lines = []
+        for label, files, _archive in plans:
+            for f in files:
+                srcs = file_sources(f, github_mirrors, gh_mirror)
+                lines.append(f"[{label}] " + " | ".join(srcs))
+        return True, "将下载:\n    " + "\n    ".join(lines)
+    last = (False, "无可用源")
+    for pi, (label, files, archive) in enumerate(plans):
+        if pi:
+            print(f"  {c.Y}主源组失败, 切换{label}重试{c.W}", file=sys.stderr)
+        ok, msg = _fetch_file_set(item, root, files, archive, hf_mirror, c,
+                                  progress_file, github_mirrors, gh_mirror)
+        last = (ok, msg if pi == 0 else f"{msg} [来自{label}]")
+        if ok:
+            return True, last[1]
+    return last
 
 
 def process_script(item, dry, c):
@@ -368,7 +483,8 @@ def process_build(item, c):
     return True, "编译产物, 随 build 流程产出"
 
 
-def process_item(item, root, platform, force, hf_mirror, dry, c, progress_file=None):
+def process_item(item, root, platform, force, hf_mirror, dry, c, progress_file=None,
+                 github_mirrors=None, gh_mirror=None):
     """按 method 分派, 返回 dict(id, action, ok, msg)。先按平台 resolve。"""
     eff = resolve_platform(item, platform)
     if eff is None:
@@ -382,7 +498,8 @@ def process_item(item, root, platform, force, hf_mirror, dry, c, progress_file=N
     print(f"\n{c.BOLD}[{eff['id']}] {eff['name']}{c.W}  "
           f"({method_tag(method, c)} · {eff['plugin']} · {platform})", file=sys.stderr)
     if method == "download":
-        ok, msg = process_download(eff, root, force, hf_mirror, dry, c, progress_file)
+        ok, msg = process_download(eff, root, force, hf_mirror, dry, c, progress_file,
+                                   github_mirrors, gh_mirror)
     elif method == "script":
         ok, msg = process_script(eff, dry, c)
     elif method == "manual":
@@ -506,6 +623,20 @@ def interactive_select(items, root, platform, c):
                     print(f"  {c.R}忽略越界编号: {tok}{c.W}", file=sys.stderr)
 
 
+# ---------- 多源 ----------
+def resolve_gh_mirror(args):
+    """--gh-mirror 优先, 其次环境变量 AVOX_GH_MIRROR; 规范化尾部斜杠。"""
+    return _norm_prefix(getattr(args, "gh_mirror", None) or os.environ.get("AVOX_GH_MIRROR", ""))
+
+
+def manifest_github_mirrors(manifest_path):
+    """从清单读顶层 github_mirrors 前缀列表; 清单缺失/损坏时静默回退空表。"""
+    try:
+        return load_manifest(manifest_path).get("github_mirrors", [])
+    except Exception:
+        return []
+
+
 # ============================================================
 # 子命令: check
 # ============================================================
@@ -573,6 +704,10 @@ def cmd_download(args):
     default_root = find_project_root()
     root = Path(args.root).resolve() if args.root else default_root
     manifest_path = Path(args.manifest) if args.manifest else (Path(__file__).resolve().parent / "assets_manifest.json")
+    github_mirrors = manifest_github_mirrors(manifest_path)
+    gh_mirror = resolve_gh_mirror(args)
+    if gh_mirror:
+        print(f"{c.C}GitHub 镜像前缀 (最优先): {gh_mirror}{c.W}", file=sys.stderr)
 
     # 直接 URL 模式
     if args.url:
@@ -581,16 +716,24 @@ def cmd_download(args):
             return 2
         dest = Path(args.dest)
         name = args.name or filename_from_url(args.url)
-        print(f"下载 {args.url} → {dest / name}", file=sys.stderr)
+        fake = {"url": args.url}
+        sources = [(_apply_mirror(u, args.hf_mirror)) for u in file_sources(fake, github_mirrors, gh_mirror)]
+        print(f"下载 {args.url} → {dest / name} ({len(sources)} 源)", file=sys.stderr)
         if args.dry_run:
+            for si, u in enumerate(sources):
+                print(f"  [{si}] {u}", file=sys.stderr)
             print(f"  (dry-run, 不实际下载)", file=sys.stderr)
             return 0
-        ok = download_file(_apply_mirror(args.url, args.hf_mirror), dest / name, c,
-                           progress_file=args.progress_file)
+        ok = False
+        for si, u in enumerate(sources):
+            if download_file(u, dest / name, c, retries=3 if si == 0 else 2,
+                             progress_file=args.progress_file):
+                ok = True
+                break
         if ok:
             print(f"  {c.G}OK{c.W} 下载完成", file=sys.stderr)
         else:
-            print(f"  {c.R}FAIL{c.W} 下载失败", file=sys.stderr)
+            print(f"  {c.R}FAIL{c.W} 下载失败 (已试 {len(sources)} 源)", file=sys.stderr)
         return 0 if ok else 1
 
     # 按 id 下载 (从 manifest 取 URL/dest)
@@ -617,7 +760,8 @@ def cmd_download(args):
     results = []
     for it in chosen:
         results.append(process_item(it, root, platform, args.force, args.hf_mirror,
-                                    args.dry_run, c, args.progress_file))
+                                    args.dry_run, c, args.progress_file,
+                                    github_mirrors, gh_mirror))
     ok_cnt = sum(1 for r in results if r["ok"])
     print(f"\n{c.BOLD}汇总: {ok_cnt}/{len(results)} 成功{c.W}", file=sys.stderr)
     if args.as_json:
@@ -641,6 +785,10 @@ def cmd_legacy(args):
     manifest = load_manifest(manifest_path)
     items = manifest["items"]
     items = filter_items(items, args.plugin, args.type_, args.method)
+    github_mirrors = manifest_github_mirrors(manifest_path)
+    gh_mirror = resolve_gh_mirror(args)
+    if gh_mirror:
+        print(f"{c.C}GitHub 镜像前缀 (最优先): {gh_mirror}{c.W}", file=sys.stderr)
     # 仅列表
     if args.list and not (args.all or args.select or args.interactive):
         if args.as_json:
@@ -687,7 +835,8 @@ def cmd_legacy(args):
     results = []
     for it in chosen:
         results.append(process_item(it, root, platform, args.force, args.hf_mirror,
-                                    args.dry_run, c, args.progress_file))
+                                    args.dry_run, c, args.progress_file,
+                                    github_mirrors, gh_mirror))
     ok_cnt = sum(1 for r in results if r["ok"])
     print(f"\n{c.BOLD}汇总: {ok_cnt}/{len(results)} 成功{c.W}", file=sys.stderr)
     if args.as_json:
@@ -723,6 +872,8 @@ def build_argparser():
     dl.add_argument("--platform", default=None, help="目标平台")
     dl.add_argument("--force", action="store_true", help="强制重新下载")
     dl.add_argument("--hf-mirror", action="store_true", help="huggingface.co -> hf-mirror.com")
+    dl.add_argument("--gh-mirror", default=None,
+                    help="GitHub 镜像前缀 (最优先试, 如 https://gh-proxy.com/); 也可用环境变量 AVOX_GH_MIRROR")
     dl.add_argument("--dry-run", action="store_true", help="只打印, 不执行")
     dl.add_argument("--json", dest="as_json", action="store_true", help="JSON 输出")
     dl.add_argument("--progress-file", default=None,
@@ -743,6 +894,8 @@ def build_argparser():
     p.add_argument("--force", action="store_true", help="强制重新下载")
     p.add_argument("--dry-run", action="store_true", help="只打印, 不执行")
     p.add_argument("--hf-mirror", action="store_true", help="huggingface.co -> hf-mirror.com")
+    p.add_argument("--gh-mirror", default=None,
+                   help="GitHub 镜像前缀 (最优先试, 如 https://gh-proxy.com/); 也可用环境变量 AVOX_GH_MIRROR")
     p.add_argument("--no-color", action="store_true", help="关闭彩色输出")
     p.add_argument("--json", dest="as_json", action="store_true", help="结构化 JSON 输出 (供程序调用)")
     p.add_argument("--progress-file", default=None, help="进度事件写入该文件 (JSONL, 供程序轮询)")
