@@ -476,6 +476,12 @@ struct VkSharedHandle {
   // Android: AHardwareBuffer*(VkImportAndroidHardwareBufferInfoANDROID)。
   // 所有权语义与 memHandle 相同: getVkOutputHandle 后转移给调用方释放
   void* ahb = nullptr;
+  // Apple: IOSurfaceRef(VkImportMetalIOSurfaceInfoEXT)。非所有权: avox 持有,
+  // 调用方不得 CFRelease, 跨帧留存必须 CFRetain; 图重建/尺寸变化会重建面,
+  // 是否换面以 ioSurfaceId 变化为准(勿用指针比较)。像素格式按
+  // IOSurfaceGetPixelFormat 查询(Vulkan 输出为 'BGRA'), 勿硬编码
+  void* ioSurface = nullptr;
+  uint64_t ioSurfaceId = 0;  // IOSurfaceGetID(), 换面探测
 };
 
 extern "C" {
@@ -501,8 +507,11 @@ AVOX_EXPORT void* getRenderSharedHandle(ISurfaceRender* surfaceRender);
 
 // ── VkDevice-VkDevice 输出: AVOX 写,外部读 ──
 // 创建可导出的 VkSharedImage,每帧自动从管线拷入
+// Apple: 数据通路常开,仅校验 IOSurface 就绪; w/h 不干预,出图分辨率跟随管线
 AVOX_EXPORT bool enableVkOutput(ISurfaceRender* sr, int32_t w, int32_t h);
 // 获取导出的 NT 句柄,外部在另一个 VkDevice 上导入
+// Apple: 填 ioSurface/ioSurfaceId(非所有权,见 VkSharedHandle 注释);
+// 未就绪返回 false,消费端轮询
 AVOX_EXPORT bool getVkOutputHandle(ISurfaceRender* sr, VkSharedHandle* out);
 // 断开输出交互
 AVOX_EXPORT void disableVkOutput(ISurfaceRender* sr);

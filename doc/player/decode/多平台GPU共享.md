@@ -7,8 +7,13 @@ unity/godot 插件是两个参考消费端 (`platform/unity/plugin/src/GpuPassth
 
 ## 方案
 
-windows/android/ios 分别使用 NT 句柄 / AHardwareBuffer / IOSurface(待做) 跨
-设备共享合成结果。
+windows/android/ios 分别使用 NT 句柄 / AHardwareBuffer / IOSurface 跨
+设备共享合成结果。Apple 侧: 数据通路常开(VkOutputLayer 每帧 blit 进
+IOSurface-backed VkImage), enableVkOutput/getVkOutputHandle 已出 Apple
+分支(ioSurface/ioSurfaceId, 非所有权, 契约见 VkSharedHandle 注释);
+探针 `iosharedtest`(IOSurface→CVPixelBuffer→Metal 读回)macOS 实测 PASS
+(match0xAB=100%, 2026-09-14), iOS 真机待做; 计划与消费桥见
+[Apple GPU直通计划](../../plan/gpu/Apple GPU直通计划.md)。
 
 - windows: 两种形态
   - Vk↔Vk: avox VkImage 导出 `OPAQUE_WIN32` NT 句柄, 宿主 VkDevice 经

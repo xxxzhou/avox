@@ -41,6 +41,8 @@ endif()
 # macOS 有窗口播放 (自建 NSWindow + CAMetalLayer, 肉眼看画面/存 PNG)
 if(APPLE AND NOT IOS)
     generatetest(macplaytest)
+    # IOSurface GPU 直通探针: A 写 0xAB → getVkOutputHandle → CVPixelBuffer→Metal 读回
+    generatetest(iosharedtest)
     if(AVOX_ENABLE_WEBRTC)
         generatetest(macrtcplaytest)
     endif()

@@ -84,6 +84,10 @@ class VkOutputLayer : public VOutputLayer, public VkLayer {
   // 开关底层自建 NT 共享纹理输出 (VK 每帧拷入, 外部 DX11 设备打开复制)
   void setDx11Output(bool bDx11);
 #endif
+#ifdef __APPLE__
+  // IOSurface 导出访问 (enableVkOutput/getVkOutputHandle 用)
+  VkIosImage* getIosImage() { return vkIosImage.get(); }
+#endif
   void setVkInterop(bool bEnable) {
     if (bVkInterop != bEnable) {
       bVkInterop = bEnable;

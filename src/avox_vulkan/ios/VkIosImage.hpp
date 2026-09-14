@@ -1,5 +1,7 @@
 #pragma once
 
+#include <IOSurface/IOSurface.h>
+
 #include "../VkContext.hpp"
 // #include "avox_apple/MetalContext.hpp"
 
@@ -24,6 +26,10 @@ class VkIosImage : public IRenderContext, public VkContextRef {
  public:
   inline VkImage getImage() { return vkImage; }
   inline IOSurfaceRef getIOSurface() { return ioSurface; }
+  // IOSurfaceGetID() 换面探测: 图重建/尺寸变化重建面, id 变化即旧面作废
+  inline uint64_t getIOSurfaceId() {
+    return ioSurface ? (uint64_t)IOSurfaceGetID(ioSurface) : 0;
+  }
   // metal->vulkan 输入传入IOSurfaceRef
   void setIOSurface(IOSurfaceRef ioSurface);
   // vulkan->metal 输出IOSurfaceRef

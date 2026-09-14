@@ -702,6 +702,20 @@ bool enableVkOutput(ISurfaceRender* sr, int32_t w, int32_t h) {
     LOGFLF(LogLevel::warn, "enableVkOutput: outputLayer is null");
     return false;
   }
+#ifdef __APPLE__
+  // Apple: 数据通路常开(VkOutputLayer 每帧 blit 进 IOSurface-backed VkImage),
+  // enable 仅校验 IOSurface 就绪并作消费标记; 出图分辨率跟随管线 outFormat,
+  // w/h 不干预(消费端自行缩放, 与 android 同逻辑)
+  (void)w;
+  (void)h;
+  VkIosImage* iosImage = outputLayer->getIosImage();
+  if (!iosImage || !iosImage->getIOSurface()) {
+    // 管线未起/图未建, 消费端轮询重试
+    LOGFLF(LogLevel::info, "enableVkOutput: iosurface not ready");
+    return false;
+  }
+  return true;
+#endif
   // 幂等: 已建立直接返回。图重建(功能开关等)后新层未激活, 会重新走建立流程
   if (outputLayer->isInteropActive()) {
     return true;
@@ -737,7 +751,23 @@ bool getVkOutputHandle(ISurfaceRender* sr, VkSharedHandle* out) {
     return false;
   }
   VkOutputLayer* outputLayer = vkRender->getOutputLayer();
-  if (!outputLayer || !outputLayer->getSharedImage() || !outputLayer->getSharedImage()->isValid()) {
+  if (!outputLayer) {
+    return false;
+  }
+#ifdef __APPLE__
+  // Apple: 导出 IOSurface + ID。非所有权(avox 持有,见 VkSharedHandle 注释),
+  // 未就绪返回 false 由消费端轮询
+  VkIosImage* iosImage = outputLayer->getIosImage();
+  if (!iosImage || !iosImage->getIOSurface()) {
+    return false;
+  }
+  out->memHandle = 0;
+  out->ahb = nullptr;
+  out->ioSurface = iosImage->getIOSurface();
+  out->ioSurfaceId = iosImage->getIOSurfaceId();
+  return true;
+#endif
+  if (!outputLayer->getSharedImage() || !outputLayer->getSharedImage()->isValid()) {
     return false;
   }
   VkShareHandle memHandle = outputLayer->getSharedImage()->exportHandle();
