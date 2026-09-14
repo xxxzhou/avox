@@ -154,6 +154,8 @@ DecodeResult FFVDecoder::decode(const AvoxPacket& packet) {
   // if(packet.frameType == 1){
   //   LOGFLF(LogLevel::info, "I pts:", packet.pts);
   // }
+  // SEI 裸流兜底: ffmpeg>=9 不导出带内 MDCV/CLL, 从包内 SEI 自提
+  scanHdrSei(packet);
   DecodeResult bRet = decodePacket(packet);
   return bRet;
 }
@@ -203,6 +205,123 @@ static void parseHdrSideData(AVFrameSideData* sd, HdrMeta& meta) {
   }
 }
 
+// SEI RBSP 反仿真(去 00 00 03 的 03)后提取 137(mdcv)/144(clli) 固定宽
+// 载荷, 语义对齐 AVMasteringDisplayMetadata/AVContentLightMetadata
+static void parseHdrSeiRbsp(const uint8_t* rbsp, int32_t size, HdrMeta& meta) {
+  int32_t i = 0;
+  auto rd16 = [&](int32_t o) -> uint16_t {
+    return (uint16_t)((rbsp[i + o] << 8) | rbsp[i + o + 1]);
+  };
+  auto rd32 = [&](int32_t o) -> uint32_t {
+    return ((uint32_t)rbsp[i + o] << 24) | ((uint32_t)rbsp[i + o + 1] << 16) |
+           ((uint32_t)rbsp[i + o + 2] << 8) | rbsp[i + o + 3];
+  };
+  while (i + 2 <= size) {
+    uint32_t type = 0, paySize = 0;
+    while (i < size && rbsp[i] == 0xFF) {
+      type += 255;
+      i++;
+    }
+    if (i >= size) {
+      break;
+    }
+    type += rbsp[i++];
+    while (i < size && rbsp[i] == 0xFF) {
+      paySize += 255;
+      i++;
+    }
+    if (i >= size) {
+      break;
+    }
+    paySize += rbsp[i++];
+    if (i + (int32_t)paySize > size) {
+      break;
+    }
+    if (type == 137 && paySize >= 24) {
+      // 基色序 G,B,R, xy 各 16bit 按 1/50000; 亮度 32bit 按 1e-4 nits
+      for (int32_t g = 0; g < 3; g++) {
+        meta.primaries[g * 2] = rd16(g * 4) / 50000.0f;
+        meta.primaries[g * 2 + 1] = rd16(g * 4 + 2) / 50000.0f;
+      }
+      meta.whitePoint[0] = rd16(12) / 50000.0f;
+      meta.whitePoint[1] = rd16(14) / 50000.0f;
+      meta.maxLuminance = rd32(16) / 10000;
+      meta.minLuminance = rd32(20) / 10000;
+      meta.valid = true;
+    } else if (type == 144 && paySize >= 4) {
+      meta.maxCLL = rd16(0);
+      meta.maxFALL = rd16(2);
+      meta.valid = true;
+    }
+    i += (int32_t)paySize;
+  }
+}
+
+void FFVDecoder::scanHdrSei(const AvoxPacket& packet) {
+  if (codecId != VCodecId::h264 && codecId != VCodecId::h265) {
+    return;
+  }
+  std::vector<AvoxPacket> nalus;
+  if (bvcc) {
+    splitAvccNalu(packet, nalus);
+  } else {
+    splitAnnexbNalu(packet, nalus);
+  }
+  HdrMeta meta = {};
+  for (auto& nalu : nalus) {
+    const uint8_t* d = nalu.data.data;
+    int32_t size = nalu.data.size;
+    if (size <= nalu.prefixSize) {
+      continue;
+    }
+    d += nalu.prefixSize;
+    size -= nalu.prefixSize;
+    bool bSei = false;
+    int32_t hdrSize = 0;
+    if (codecId == VCodecId::h265) {
+      // (forbidden<<7 | type<<1 | layer高5位): PREFIX_SEI=39, SUFFIX=40
+      bSei = size >= 2 && ((d[0] & 0x7E) >> 1) == 39;
+      hdrSize = 2;
+    } else {
+      bSei = size >= 1 && (d[0] & 0x1F) == 6;
+      hdrSize = 1;
+    }
+    if (!bSei) {
+      continue;
+    }
+    // 反仿真进临时缓冲 (载荷很小, SEI NAL 罕见, 开销可忽略)
+    seiRbsp.resize(size - hdrSize);
+    int32_t out = 0;
+    int32_t zeros = 0;
+    for (int32_t k = hdrSize; k < size; k++) {
+      uint8_t b = d[k];
+      if (zeros >= 2 && b == 0x03) {
+        zeros = 0;
+        continue;
+      }
+      zeros = (b == 0) ? zeros + 1 : 0;
+      seiRbsp[out++] = b;
+    }
+    parseHdrSeiRbsp(seiRbsp.data(), out, meta);
+  }
+  updateHdrMeta(meta);
+}
+
+void FFVDecoder::updateHdrMeta(const HdrMeta& meta) {
+  if (!meta.valid) {
+    return;
+  }
+  if (meta.maxCLL == hdrMeta.maxCLL &&
+      meta.maxLuminance == hdrMeta.maxLuminance &&
+      meta.maxFALL == hdrMeta.maxFALL) {
+    return;
+  }
+  hdrMeta = meta;
+  LOGFLF(LogLevel::info, "[hdrmeta] sei maxLum:", meta.maxLuminance,
+         " cll:", meta.maxCLL, " fall:", meta.maxFALL);
+  dispatch(&IVideoDecoderOb::onHdrMeta, meta);
+}
+
 void FFVDecoder::onFrame(AVFrame* avFrame, bool bDrop) {
   // E2E 诊断: HDR 元数据缺失的第一现场 (仅前 3 帧打印)
   static int32_t sideDataLogs = 0;
@@ -243,12 +362,8 @@ void FFVDecoder::onFrame(AVFrame* avFrame, bool bDrop) {
       parseHdrSideData(avFrame->side_data[i], meta);
     }
   }
-  if (meta.valid && (meta.maxCLL != hdrMeta.maxCLL ||
-                     meta.maxLuminance != hdrMeta.maxLuminance ||
-                     meta.maxFALL != hdrMeta.maxFALL)) {
-    hdrMeta = meta;
-    dispatch(&IVideoDecoderOb::onHdrMeta, meta);
-  }
+  updateHdrMeta(meta);
+  updateHdrMeta(meta);
   dispatch(&IVideoDecoderOb::onDecode, frame);
   // log(LogLevel::info, "ffmpeg decoder frame pts:", frame.pts);
   // if (avFrame->pict_type == AV_PICTURE_TYPE_I) {

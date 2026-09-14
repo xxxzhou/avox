@@ -189,15 +189,19 @@ void AVSource::processVideo(AvoxPacket& packet) {
         if (combineBufs.size() > 0) {
           AvoxPacket& lastBuf = combineBufs.back();
           // 前一个是配置帧(VPS/SPS/PPS)时,不把后续SEI等非配置NALU并进配置包,
-          // 否则addConfigPacket整段比较会把变化的SEI误判成update,触发假更新
+          // 否则addConfigPacket整段比较会把变化的SEI误判成update,触发假更新;
+          // SEI 单独成组随流下发(载 HDR 元数据,解码侧靠它兜底)
           if (naluConfigFrame(vcodecId, getNalUnit(vcodecId, lastBuf))) {
-            continue;  // 丢弃尾巴SEI(前缀SEI一般无关紧要)
+            combineBufs.push_back(buf);
+          } else {
+            // 上面的spilt只是记录包指针偏移,这个buff是连续的
+            lastBuf.data.size += buf.data.size;
           }
-          // 上面的spilt只是记录包指针偏移,这个buff是连续的
-          lastBuf.data.size += buf.data.size;
         } else {
-          // NAL_SEI_PREFIX
-          // 拆分的包原则上来说,第一个包肯定是新帧
+          // 帧前置的非新帧 NAL(典型为前缀 SEI): 作为合并组起点下发。
+          // 此前直接丢弃——ffmpeg>=9 已不从带内 SEI 导出 MDCV/CLL,
+          // HDR 元数据必须随流到达解码器
+          combineBufs.push_back(buf);
         }
       }
     }

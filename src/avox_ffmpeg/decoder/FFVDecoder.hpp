@@ -31,8 +31,15 @@ protected:
 protected:
   virtual void onAttachContext();
   virtual void onDetachContext();
+  // SEI 裸流兜底: ffmpeg>=9 不再从带内 SEI 导出 MDCV/CLL(三处 side data
+  // 均空), 从包内 prefix SEI NAL 自提 137/144 固定宽载荷
+  void scanHdrSei(const AvoxPacket &packet);
+  // 元数据变化才下发 (帧级 side data 与裸流 SEI 两条路共用)
+  void updateHdrMeta(const HdrMeta &meta);
   // HDR 静态元数据缓存(变化才下发)
   HdrMeta hdrMeta = {};
+  // SEI RBSP 反仿真复用缓冲
+  std::vector<uint8_t> seiRbsp;
 };
 
 }

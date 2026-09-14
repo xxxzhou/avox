@@ -745,13 +745,14 @@ bool naluNewFrame(VCodecId codeId, uint8_t* nalu) {
   return false;
 }
 
+// SEI 不再丢弃: HDR 元数据(mdcv/clli)只在带内 SEI 里, ffmpeg>=9 已不导出
+// 该元数据, 必须随流到达解码器; SEI-only 包解码器仅返回 EAGAIN(无帧)属正常
 bool naluDropAble(H264NAL nal) {
-  return nal == H264NAL::NAL_SEI || nal == H264NAL::NAL_AUD;
+  return nal == H264NAL::NAL_AUD;
 }
 
 bool naluDropAble(H265NAL nal) {
-  return nal == H265NAL::NAL_SEI_SUFFIX || nal == H265NAL::NAL_SEI_PREFIX ||
-         nal == H265NAL::NAL_AUD;
+  return nal == H265NAL::NAL_AUD;
 }
 
 // 是否数据帧
