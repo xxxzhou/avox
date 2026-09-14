@@ -91,8 +91,9 @@ bool AssOverlay::loadFile(const char* path) {
   if (isSrt) {
     // .srt: 合成最小 ASS 剧本(默认样式 + 底部居中)再喂 libass。
     // 简化解析: 索引行跳过, 时间行含 "-->", 文本行到空行止; <i>/<b> 等标签剥除。
-    FILE* f = nullptr;
-    if (fopen_s(&f, path, "rb") != 0 || !f) return false;
+    // fopen_s 为 MSVC 专属(C11 Annex K), android bionic 无此函数, 用标准 fopen
+    FILE* f = std::fopen(path, "rb");
+    if (!f) return false;
     std::string srt;
     char buf[4096];
     size_t n;

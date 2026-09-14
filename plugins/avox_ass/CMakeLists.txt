@@ -10,9 +10,27 @@ endif()
 
 # 默认探测 avc_library 的预编译产物(路径走根 CMake 的 AVOX_EXTERNAL_LIBRARY_DIR:
 # -D 参数 > 环境变量 > 默认 ../avc_library; 可用 AVOX_ASS_DEPS_DIR 显式覆盖)
+# WIN32 守卫: android/apple 交叉构建宿主也是 Windows 盘, 不守卫会抢先命中 windows 产物
 if(NOT AVOX_ASS_DEPS_DIR
+   AND WIN32
    AND EXISTS "${AVOX_EXTERNAL_LIBRARY_DIR}/3rdparty/library/windows/ass/lib/ass.lib")
   set(AVOX_ASS_DEPS_DIR "${AVOX_EXTERNAL_LIBRARY_DIR}/3rdparty/library/windows/ass")
+endif()
+if(NOT AVOX_ASS_DEPS_DIR
+   AND ANDROID
+   AND EXISTS "${AVOX_EXTERNAL_LIBRARY_DIR}/3rdparty/library/android/ass/lib/libass.a")
+  set(AVOX_ASS_DEPS_DIR "${AVOX_EXTERNAL_LIBRARY_DIR}/3rdparty/library/android/ass")
+endif()
+if(NOT AVOX_ASS_DEPS_DIR
+   AND APPLE
+   AND NOT CMAKE_SYSTEM_NAME MATCHES "iOS"
+   AND EXISTS "${AVOX_EXTERNAL_LIBRARY_DIR}/3rdparty/library/darwin/ass/lib/libass.a")
+  set(AVOX_ASS_DEPS_DIR "${AVOX_EXTERNAL_LIBRARY_DIR}/3rdparty/library/darwin/ass")
+endif()
+if(NOT AVOX_ASS_DEPS_DIR
+   AND CMAKE_SYSTEM_NAME MATCHES "iOS"
+   AND EXISTS "${AVOX_EXTERNAL_LIBRARY_DIR}/3rdparty/library/ios/ass/lib/libass.a")
+  set(AVOX_ASS_DEPS_DIR "${AVOX_EXTERNAL_LIBRARY_DIR}/3rdparty/library/ios/ass")
 endif()
 
 set(_ass_sources
@@ -34,11 +52,27 @@ if(AVOX_ASS_DEPS_DIR)
         ${AVOX_ASS_DEPS_DIR}/bin/ass-9.dll
         ${AVOX_ASS_DEPS_DIR}/bin/fribidi-0.dll)
   else()
-    # Linux/macOS/Android: 静态 .a 自包含, 无需拷贝 dll
+    # Linux/macOS/Android/iOS: 静态 .a 自包含, 无需拷贝 dll;
+    # Apple 还要补 CoreText 后端的系统框架(libass.a 内只留引用)
+    set(_ass_extra_libs "")
+    if(APPLE)
+      set(_ass_extra_libs "-framework CoreText" "-framework CoreGraphics"
+          "-framework Foundation")
+    endif()
     find_library(_ass_lib NAMES ass PATHS ${AVOX_ASS_DEPS_DIR}/lib NO_DEFAULT_PATH)
+    # libass.a 不内嵌依赖: harfbuzz/freetype/fribidi 按 libass 的引用序显式链接
+    # (Windows 动态模式无此问题, 依赖已链入 ass-9.dll)
+    set(_ass_dep_libs "")
+    foreach(_dep harfbuzz freetype fribidi)
+      find_library(_ass_dep_${_dep} NAMES ${_dep}
+                   PATHS ${AVOX_ASS_DEPS_DIR}/lib NO_DEFAULT_PATH)
+      if(_ass_dep_${_dep})
+        list(APPEND _ass_dep_libs ${_ass_dep_${_dep}})
+      endif()
+    endforeach()
     register_plugin(avox_ass DYNAMIC
       SOURCES ${_ass_sources}
-      LIBS ${_ass_lib})
+      LIBS ${_ass_lib} ${_ass_dep_libs} ${_ass_extra_libs})
   endif()
   target_include_directories(avox_ass PRIVATE ${_ass_inc})
   target_compile_definitions(avox_ass PRIVATE AVOX_ASS_HAVE_LIBASS=1)

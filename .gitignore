@@ -151,3 +151,4 @@ assets/video/hls*
 platform/android/AvoxJava/testbed/src/main/assets/
 script/ass/_cache/
 script/ass/_step.cmd
+script/smb2/_cache/
