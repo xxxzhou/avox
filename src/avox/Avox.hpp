@@ -72,6 +72,13 @@ AVOX_EXPORT FrameRate getFrameRate(double fps);
 AVOX_EXPORT std::string getImageFilePath(const char* filename);
 AVOX_EXPORT std::string getModelFilePath(const char* filename);
 
+// 模型根目录覆盖 (平台无关): 宿主把应用沙盒内可写目录 (按需下载的模型放这里,
+// 目录下直接是 "stt/sense-voice/..." 相对结构) 注入进来, getModelFilePath
+// 优先解析到该根 (文件存在才采用), 找不到再回退各平台包内默认。传空串/NULL
+// 清除覆盖。App Store 沙盒 (mac/iOS) 与 Android filesDir 的按需下载模型,
+// 都靠这条通道进引擎; 必须在打开媒体/发起识别前设置。
+AVOX_EXPORT void setModelsRoot(const char* path);
+
 // 注册 AVOX_HOME 环境变量 + avox.pth, 让外部 Python 能 import avox。
 // avox_cli / avox_agent 启动时调用一次。幂等: 路径未变则跳过。
 // 1) 写注册表用户环境变量 AVOX_HOME=<install_root>

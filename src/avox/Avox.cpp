@@ -2,10 +2,13 @@
 #include <time.h>
 
 #include <atomic>
+#include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <mutex>
 #include <random>
+#include <sys/stat.h>
 #include <thread>
 
 #include "AvoxAudio.h"
@@ -1082,11 +1085,44 @@ std::string getImageFilePath(const char* filename) {
   return imagePath;
 }
 
+// ── models root: 应用沙盒内按需下载的模型目录 (AI 字幕等, 平台无关) ──
+// 宿主 (panvox 等) 启动时经 setModelsRoot 注入可写根 (目录下直接放
+// "stt/sense-voice/..." 相对结构); getModelFilePath 优先解析到该根且文件
+// 存在才采用, 否则逐字回退各平台默认 (包内只读资源), 旧部署不受影响。
+static std::mutex g_modelsRootMutex;
+static std::string g_modelsRoot;
+
+void setModelsRoot(const char* path) {
+  std::lock_guard<std::mutex> lk(g_modelsRootMutex);
+  g_modelsRoot = path ? path : "";
+}
+
+static std::string getModelsRoot() {
+  std::lock_guard<std::mutex> lk(g_modelsRootMutex);
+  return g_modelsRoot;
+}
+
+// 文件或目录存在均算命中: 调用方两种用法都要支持 —— 直接传文件相对路径
+// (silero_vad.onnx), 也传目录段 (stt/sense-voice, 调用方再拼 "/model.onnx")。
+static bool modelsRootPathExists(const std::string& p) {
+  struct stat st;
+  return ::stat(p.c_str(), &st) == 0;
+}
+
 std::string getModelFilePath(const char* filename) {
+  // 应用可写根优先 (存在才采用, 缺文件回退包内默认)
+  const std::string root = getModelsRoot();
+  if (!root.empty()) {
+    const std::string p = root + "/" + filename;
+    if (modelsRootPathExists(p)) {
+      return p;
+    }
+  }
   // 构建模型路径
   std::string modelPath;
 #ifdef __APPLE__
-  modelPath = getModelPath(filename);
+  const char* bundlePath = getModelPath(filename);
+  modelPath = bundlePath ? bundlePath : "";
 #elif defined(__ANDROID__)
   modelPath = std::string("/assets/models/") + filename;
 #elif defined(_WIN32) || defined(__ONLY_LINUX__)
