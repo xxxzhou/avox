@@ -51,8 +51,6 @@ class VkCanvasLayer : public VkLayer, public ICanvasLayer {
   // staging 与采样纹理
   std::unique_ptr<VkWrapBuffer> cpuBuffer;
   VulkanTexturePtr canvasImage;
-  // 子矩形上传用的紧凑行缓冲
-  std::vector<uint8_t> uploadRows;
 
  public:
   VkCanvasLayer();

@@ -35,6 +35,11 @@ if(AVOX_ENABLE_ASS)
     if(MSVC)
         target_compile_options(assmkvtest PRIVATE /utf-8)
     endif()
+    # \pos 定位探针(插件级): 区分 libass 定位问题与播放管线问题
+    generatetest(asspostest)
+    if(MSVC)
+        target_compile_options(asspostest PRIVATE /utf-8)
+    endif()
     # ASS 字幕叠加视频演示: base.raw(assdemo_genbase.py 生成)→逐帧合成→comp.raw
     generatetest(assdemo)
     if(MSVC)

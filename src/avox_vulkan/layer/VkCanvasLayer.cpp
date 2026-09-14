@@ -141,31 +141,28 @@ void VkCanvasLayer::applyPending() {
 void VkCanvasLayer::onPreFrame() {
   VkLayer::onPreFrame();
   std::lock_guard<std::mutex> lock(mtx);
-  if (!bNeedUpdate || !cpuBuffer) {
+  if (!cpuBuffer || frameW <= 0) {
     return;
   }
-  bNeedUpdate = false;
-  if (!hasContent) {
-    // 无字幕: 整层直通, 不上传
-    vkParamet.opacity = 0.f;
-    updateUBO(&vkParamet);
-    bParametChange = true;
-    return;
+  if (bNeedUpdate) {
+    bNeedUpdate = false;
+    if (!hasContent) {
+      // 无字幕: 整层直通, 不上传纹理
+      vkParamet.opacity = 0.f;
+    } else {
+      // 整帧上传(staging 常驻全帧尺寸)。命令缓冲在 onInitBuffers 只录制
+      // 一次并逐帧重提交, 拷贝区域必须是录制期确定的常量, 内容更新只能
+      // 走 staging 数据; 带宽 ~8MB/次内容变化(对白节奏数秒一次), 可接受。
+      cpuBuffer->upload(canvasData.data(), frameW * frameH * 4);
+      vkParamet.centerX = (float)(rectX + rectW / 2) / frameW;
+      vkParamet.centerY = (float)(rectY + rectH / 2) / frameH;
+      vkParamet.width = (float)rectW / frameW;
+      vkParamet.height = (float)rectH / frameH;
+      vkParamet.opacity = 1.f;
+    }
   }
-  // 紧凑行拷入 staging: bufferRowLength=rectW, imageOffset=(rectX,rectY)
-  uploadRows.resize((size_t)rectW * rectH * 4);
-  for (int32_t row = 0; row < rectH; ++row) {
-    memcpy(uploadRows.data() + (size_t)row * rectW * 4,
-           canvasData.data() + (size_t)(rectY + row) * frameW * 4 +
-               (size_t)rectX * 4,
-           (size_t)rectW * 4);
-  }
-  cpuBuffer->upload(uploadRows.data(), (int32_t)uploadRows.size());
-  vkParamet.centerX = (float)(rectX + rectW / 2) / frameW;
-  vkParamet.centerY = (float)(rectY + rectH / 2) / frameH;
-  vkParamet.width = (float)rectW / frameW;
-  vkParamet.height = (float)rectH / frameH;
-  vkParamet.opacity = 1.f;
+  // UBO 每帧提交: 内容首帧恰逢命令缓冲录制常量的时序下, 一次性提交会
+  // 被吞掉; 常备提交成本可忽略(20 字节)
   updateUBO(&vkParamet);
   bParametChange = true;
 }
@@ -175,30 +172,29 @@ void VkCanvasLayer::onCommand() {
     return;
   }
   VkCommandBuffer cmd = getCurrentCmdBuffer();
-  if (hasContent) {
-    // 1. 子矩形拷贝: staging(紧凑 bbox 行) → canvasImage(rectX,rectY)
-    canvasImage->addBarrier(cmd, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                            VK_PIPELINE_STAGE_TRANSFER_BIT,
-                            VK_ACCESS_TRANSFER_WRITE_BIT);
-    VkBufferImageCopy region = {};
-    region.bufferOffset = 0;
-    region.bufferRowLength = rectW;  // 紧凑排列
-    region.bufferImageHeight = rectH;
-    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    region.imageSubresource.mipLevel = 0;
-    region.imageSubresource.baseArrayLayer = 0;
-    region.imageSubresource.layerCount = 1;
-    region.imageOffset.x = rectX;
-    region.imageOffset.y = rectY;
-    region.imageExtent.width = rectW;
-    region.imageExtent.height = rectH;
-    region.imageExtent.depth = 1;
-    vkCmdCopyBufferToImage(cmd, cpuBuffer->buffer, canvasImage->image,
-                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-    canvasImage->addBarrier(cmd, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                            VK_ACCESS_SHADER_READ_BIT);
-  }
+  // 1. staging(全帧) → canvasImage(全帧)。命令只在此处录制一次并逐帧重提交,
+  //    因此拷贝区域必须是编译期(录制期)确定的常量; 内容更新走 staging 数据。
+  canvasImage->addBarrier(cmd, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                          VK_PIPELINE_STAGE_TRANSFER_BIT,
+                          VK_ACCESS_TRANSFER_WRITE_BIT);
+  VkBufferImageCopy region = {};
+  region.bufferOffset = 0;
+  region.bufferRowLength = 0;  // 紧凑排列
+  region.bufferImageHeight = 0;
+  region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  region.imageSubresource.mipLevel = 0;
+  region.imageSubresource.baseArrayLayer = 0;
+  region.imageSubresource.layerCount = 1;
+  region.imageOffset.x = 0;
+  region.imageOffset.y = 0;
+  region.imageExtent.width = (uint32_t)frameW;
+  region.imageExtent.height = (uint32_t)frameH;
+  region.imageExtent.depth = 1;
+  vkCmdCopyBufferToImage(cmd, cpuBuffer->buffer, canvasImage->image,
+                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+  canvasImage->addBarrier(cmd, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                          VK_ACCESS_SHADER_READ_BIT);
   // 2. canvasBlend.comp: 无内容时 opacity=0, shader 直通把 base 写进输出 —
   //    层在图内就必须 dispatch, 否则输出纹理是未定义内存(灰带伪影)
   inTexs[0]->addBarrier(cmd, VK_IMAGE_LAYOUT_GENERAL,

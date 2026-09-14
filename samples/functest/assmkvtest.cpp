@@ -54,8 +54,8 @@ int32_t brightPixelsInStrip(IImageBuffer* buf, YuvType yuvType,
     const uint8_t* row = base + (size_t)y * pitch;
     for (int32_t x = 0; x < fmt.width; x += 2) {
       const uint8_t* px = row + (size_t)x * 4;
-      // 绿色字幕(RGB 0,255,0)或白色: G 高或全高即视为字幕像素
-      if (px[0] > 100 || px[1] > 180) {
+      // 绿色或白色字幕像素(yuv 往返后 G 通道仍显著高于黑底)
+      if (px[1] > 120) {
         ++count;
       }
     }
@@ -77,12 +77,20 @@ class AssOutOb : public ISurfaceRenderOb {
     if (bright < 0) {
       return;
     }
+    if (frames == 30 && rgba) {
+      saveImagePath((prefix + "raw150.png").c_str(), rgba);    }    if (frames == 150 && rgba) {      saveImagePath((prefix + "raw30.png").c_str(), rgba);
+      std::printf("dump raw30\n");
+    }
     if (bright > 40) {
       ++subFrames;
-      if (!dumped) {
-        dumped = true;
-        saveImagePath((prefix + "sub.png").c_str(), rgba);
-        std::printf("dump %ssub.png (bright=%d)\n", prefix.c_str(), bright);
+      // 前 4 个命中帧逐秒转储, 供人眼核对两条对白的 \pos 位置
+      if (dumpCount < 4) {
+        char name[64];
+        std::snprintf(name, sizeof(name), "%ssub%d.png", prefix.c_str(),
+                      dumpCount);
+        saveImagePath(name, rgba);
+        std::printf("dump %s (bright=%d)\n", name, bright);
+        ++dumpCount;
       }
     }
     delete rgba;
@@ -96,7 +104,7 @@ class AssOutOb : public ISurfaceRenderOb {
   bool subArmed = false;  // 选轨后置位: 之前的帧不计入判据
   int64_t frames = 0;
   int64_t subFrames = 0;
-  bool dumped = false;
+  int32_t dumpCount = 0;
 };
 
 }  // namespace
