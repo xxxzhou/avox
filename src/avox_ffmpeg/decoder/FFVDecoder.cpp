@@ -127,7 +127,13 @@ DecodeResult FFVDecoder::decode(const AvoxPacket& packet) {
     return DecodeResult::noConfig;
   }
   if (!codecCtx) {
-    return onPreDecoder();
+    // 首包只建上下文就吞掉的话, 无带外参数集的容器(vp9/webm等)会丢掉起始
+    // 关键帧, 第一个GOP全部报"Not all references are available", 直到下一个
+    // 关键帧才出画面。创建成功后继续走下面流程把当前包喂进解码器。
+    DecodeResult result = onPreDecoder();
+    if (result != DecodeResult::success) {
+      return result;
+    }
   }
   // 纯参数集包(SPS/PPS/VPS)无slice NAL, 喂avcodec会持续报"no frame!":
   // 内容与已存配置相同才跳过, 变化过的仍要喂, 让ffmpeg更新流内参数集
