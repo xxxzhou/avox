@@ -236,9 +236,25 @@ void AVSource::processVideo(AvoxPacket& packet) {
 void AVSource::singleVideo(AvoxPacket& packet) {
   VCodecId vcodecId = videoTracks[packet.index].codecId;
   uint8_t nalu = getNalUnit(vcodecId, packet);
-  // AUD/SEI是界定帧,不单独成包: 每帧喂一个无slice的空包,解码器会持续刷"no frame!"
+  // AUD单独成包,每帧喂一个无slice的空包,解码器会持续刷"no frame!"。
+  // 但[AUD][SEI..]合并组不能整组丢——SEI载带内HDR元数据(mdcv/clli),
+  // 跳过头AUD按下一NAL重新起头; 丢弃点必须在这里而不是合并循环:
+  // 合并循环跳AUD会破坏组内连续性(size扩展跨过跳过的字节,包内容错位)
   if (naluDropAble(vcodecId, nalu)) {
-    return;
+    std::vector<AvoxPacket> nalus;
+    if (bvcc) {
+      splitAvccNalu(packet, nalus);
+    } else {
+      splitAnnexbNalu(packet, nalus);
+    }
+    if (nalus.size() <= 1) {
+      return;
+    }
+    const AvoxPacket& next = nalus[1];
+    packet.data.size -= (int32_t)(next.data.data - packet.data.data);
+    packet.data.data = next.data.data;
+    packet.prefixSize = next.prefixSize;
+    nalu = getNalUnit(vcodecId, packet);
   }
   // log(LogLevel::info, "nalu:", (int32_t)nalu, "-", getNalName(vcodecId,
   // nalu));

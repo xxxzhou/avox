@@ -203,6 +203,7 @@ YUV→RGB 与 tone map 数学在各渲染后端为独立实现,Vulkan 先做,其
 - 落点分层:`YuvType` 加 `p010`(AVOX_MAP_YUV,group=4/groupsize=12,与 yuv420P10 同构×2B)→ `ffYuvType` 加 `AV_PIX_FMT_P010LE/BE`(hwdownload 后 sw_format 即 P010)→ V5 加 p010 读函数(高 10 位 `>>6`;UV 交错双平面按 2i/2i+1 寻址,UV 平面宽=width)→ FFVDecoder/r16 上传路径核对 P010 行对齐 stride。
 - **枚举、shader 分支、上传路径必须同一提交闭环**:只加枚举会让 p010 流落到 layer 不支持的默认分支出花屏,比现在落 `other` 更糟。
 - GPU 导入路径(`FFDx11Decoder::get_format` 主动选 P010、`getDxFormat` 映射、手工建 hw_frames_ctx)依赖真机调试,与 CPU 下载路径分开推进。
+- **2026-09-14 晚硬解实测(hdrtest -hard)**:negotiated D3D11 帧正常出(104 帧全到),画面全黑 meanY=16(limited 黑)——纹理内容没被正确采样,不是帧断流。断点三点:`Dx11Helper::getImageType(DXGI_FORMAT)` 无 NV12/P010 行(default 落 rgba8/other);`getDxFormat` 无 P010 行(落 `YuvType::other`,下游连帧类型都无法命名);`AVOX_MAP_VK_YCBCR_FORMAT` 仅 8bpp 一行(16bpp 采样的 ycbcr 转换缺位)。`VkInputLayer::inputGpuData` 从 DX 纹理描述反推 imageType,P010 必落 other。阶段 2 开工须 DXGI 映射 + VkFormat 16bpp 行 + ycbcr/shader 读函数同一提交闭环(与上面「枚举/shader/上传三合一」同理)。
 
 ### 6.9 首次真实 E2E 验证(2026-09-14 下午,补真素材打通)
 
@@ -224,3 +225,13 @@ YUV→RGB 与 tone map 数学在各渲染后端为独立实现,Vulkan 先做,其
 **元数据链打通,真因是 AVSource 丢 SEI 而非 ffmpeg9 导出行为**。链路取证:mp4 样本内 SEI 存在 → ffmpeg 解封装保留 → **AVSource 合并循环把「组开头的非新帧 NAL」静默丢弃**(combineBufs 为空时 else 分支为空,注释 NAL_SEI_PREFIX 即此缺口),[VPS/SPS/PPS][SEI] 布局还会因「配置帧后不并包」continue 丢弃。修复两处:①组空时 SEI 作为合并组起点单独下发;②前包为配置帧时 SEI 也单独成组(不并进配置包)。`naluDropAble` 同步移除 SEI(仅留 AUD)——SEI-only 包对 ffmpeg 只是无帧 EAGAIN,实测零 "no frame" 刷屏(老版本的问题已不存在)。SEI 到达解码器后:ffmpeg 9.0.1 帧级 side data 导出正常(sd:2),同时 FFVDecoder 新增 `scanHdrSei` 裸流兜底(包内 prefix SEI 提取 137/144 固定宽载荷,反仿真后解析,与帧级/ctx 三路互为冗余,`updateHdrMeta` 统一变化下发)——实测 SEI 值与注入值逐字段一致,`VideoTrack::onHdrMeta`→`setHdrMeta` 链路日志全通。**遗留边界:[AUD][SEI][IDR] 布局 AUD 作组起点仍会并包吞 SEI,待真实素材触发再修。**
 
 验收:hdrtest PASS、ctest 全绿、play_regress 离线子集 8/8。**HDR10 播放→自动 tone map 到 SDR 的核心链路就此可用**(软解路径);硬解 P010 黑屏(6.9)与 API 面(setHdrMode/宿主 onHdrMeta)仍是后续阶段主要缺口。
+
+### 6.11 [AUD][SEI] 边界修复 + HDR 用例接入回归矩阵(2026-09-14 晚)
+
+**`[AUD][SEI][IDR]` 吞 SEI 已修,但第一版修法本身是错的(记录防复发)**。`gen_hdr10_asset.py --aud` 产出 `_aud` 变体(QSV 自带 pic-timing SEI,真布局是 `[SEI_qsv][AUD][SEI_hdr][IDR]`)后元数据三路全空。第一版在合并循环里把 AUD 从组起点跳过——**破坏了合并循环「lastBuf.size 顺序扩展」的连续性前提**:SEI_hdr 并组时 `size += 40` 覆盖的是 SEI_qsv 起点后 40 字节,中间隔着 AUD 的 7 字节,拼出的包内容错位(SEI#2 被截断),自研解析和 ffmpeg 导出双双失效,而 tone map 判据因只依赖 transfer(PQ 声明)照样 PASS——差点击穿「过了判据=对了」的盲区,包级日志(log.source.packet)定位。**正解:丢弃点在 singleVideo**——纯 AUD 组照旧丢(无 slice 空包刷 no frame);`[AUD][SEI..]` 混合组在 singleVideo 重拆 NAL,跳过头部 AUD 从下一 NAL 重新起头下发,合并循环保持连续性不动。实测 SEI#2 独立成 40B 包,scanHdrSei 提取 + 帧级 sd:2 + setHdrMeta 三路全通,hdrtest 对 base/_aud 双素材 PASS(midLift 11.9/16.1)。
+
+**HDR/10bit 用例接入 playmatrix(26→29 条)**:Endpoints 加 `fileHdr10/fileHdr10Aud`(素材缺失自动 off,平台不同步素材不拖垮整表);新用例 `file-hdr10-soft`(tone map 链路拉流)、`file-hdr10-aud`(合并边界回归)、`yuvout-h265-10bit`(软解交付 yuv420P10 的帧契约哨兵,getYuvFrameSize groupsize 修复的看门人)。play_regress FILE_ASSETS 改 (开关,路径) 表驱动,Android 全量 push,离线子集含三条新用例,LINUX_OFFLINE_SKIP 补 yuvout-h265-10bit(车道 B 原生渲染缺口)。首跑 yuvout-h265-10bit 即暴露:交付契约成立(type=yuv420P10,211 帧),挂的是 FrameOb 出 PNG 用的 sw yuvframe2Rgba(不支持 10bit,tone map 属 GPU 车道)——观察器对 10bit 跳过出图,只判契约。
+
+硬解 P010 实测补进 §6.7:帧全到但 meanY=16(limited 黑),断点是 getImageType/getDxFormat 无 P010 行 + ycbcr 表只有 8bpp,属阶段 2 整层闭环。
+
+验收:play_regress 离线子集 11/11(含三条新用例),ctest 全绿,hdrtest 对 base/_aud 双素材 PASS。

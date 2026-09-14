@@ -132,6 +132,8 @@ int main(int argc, char* argv[]) {
     else if (!(v = argValue(a, "--h265=")).empty()) ep.h265Key = v;
     else if (!(v = argValue(a, "--file-h264=")).empty()) ep.fileH264 = v;
     else if (!(v = argValue(a, "--file-h265=")).empty()) ep.fileH265 = v;
+    else if (!(v = argValue(a, "--file-hdr10=")).empty()) ep.fileHdr10 = v;
+    else if (!(v = argValue(a, "--file-hdr10-aud=")).empty()) ep.fileHdr10Aud = v;
     else if (!(v = argValue(a, "--outdir=")).empty()) opt.outDir = v;
     else if (!(v = argValue(a, "--prefix=")).empty()) opt.prefix = v;
     else if (!(v = argValue(a, "--retries=")).empty()) opt.retries = std::atoi(v.c_str());
@@ -152,6 +154,12 @@ int main(int argc, char* argv[]) {
     ep.fileH265 = findAsset("test_h265_aac_960x540.mp4");
     if (ep.fileH265.empty()) ep.fileH265 = findAsset("avox_electron.mp4");
   }
+  if (ep.fileHdr10.empty()) {
+    ep.fileHdr10 = findAsset("test/test_h265_hdr10_pq_640x360.mp4");
+  }
+  if (ep.fileHdr10Aud.empty()) {
+    ep.fileHdr10Aud = findAsset("test/test_h265_hdr10_pq_640x360_aud.mp4");
+  }
   std::vector<PlayCase> cases = buildCases(ep);
   // 产物目录不存在时截图/录制会连环失败 (saveImagePath/avio_open2 都不建目录)
   if (!opt.outDir.empty()) {
@@ -162,8 +170,9 @@ int main(int argc, char* argv[]) {
     std::printf("platform=%s host=%s rtsp=%d rtmp=%d http=%d h264=%s h265=%s\n",
                 platformName(), ep.host.c_str(), ep.rtspPort, ep.rtmpPort, ep.httpPort,
                 ep.h264Key.c_str(), ep.h265Key.c_str());
-    std::printf("file-h264=%s\nfile-h265=%s\n\n", ep.fileH264.c_str(),
-                ep.fileH265.c_str());
+  std::printf("file-h264=%s\nfile-h265=%s\nfile-hdr10=%s\nfile-hdr10-aud=%s\n\n",
+              ep.fileH264.c_str(), ep.fileH265.c_str(), ep.fileHdr10.c_str(),
+              ep.fileHdr10Aud.c_str());
     printCases(cases);
     return 0;
   }

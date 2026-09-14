@@ -30,11 +30,20 @@ TESTENV = REPO_ROOT / "script" / "testenv"
 COLLECT = TESTENV / "collect_verdicts.py"
 PUSH = TESTENV / "push_streams.py"
 ANDROID_REMOTE = "/data/local/tmp/playmatrix"
-ASSETS = ["test_h264_aac_640x360.mp4", "test_h265_aac_960x540.mp4"]
+# 本地文件用例素材: (runner 开关, assets/video 下相对路径); Android 侧全量 push。
+# HDR10 两条由 script/testenv/gen_hdr10_asset.py 生成 (tone map / [AUD][SEI][IDR] 边界)
+FILE_ASSETS = [
+    ("--file-h264", "test_h264_aac_640x360.mp4"),
+    ("--file-h265", "test_h265_aac_960x540.mp4"),
+    ("--file-hdr10", "test/test_h265_hdr10_pq_640x360.mp4"),
+    ("--file-hdr10-aud", "test/test_h265_hdr10_pq_640x360_aud.mp4"),
+]
+ASSETS = [a for _, a in FILE_ASSETS]
 
 # 离线子集: 只吃仓库里的本地 mp4, 不需要 ZLM/局域网 —— CI 上可跑的那部分。
 # 保留: file-h264/h265(硬解) · file-h264/h265-soft(软解) · shot(截图+图像质量) · rec-transcode-h264
-#       · yuvout-h264-soft/rec-transcode-novk(无vulkan直取)。yuvout-h264 不在内:
+#       · yuvout-h264-soft/rec-transcode-novk(无vulkan直取) · file-hdr10-soft/aud(软解HDR)
+#       · yuvout-h265-10bit(10bit帧契约)。yuvout-h264 不在内:
 #       严格判 nv12, CI 无 GPU 视频单元会软解回退误报, 只在真机/dev 机跑
 OFFLINE_SKIP = [
     "rtsp-h264", "rtsp-h265", "rtmp-h264", "rtmp-h265", "hls-h264", "hls-h265",
@@ -45,11 +54,12 @@ OFFLINE_SKIP = [
 ]
 
 # Linux(WSL/桌面) 在离线子集上再跳过的结构性用例 (非 bug, 是平台能力缺口):
-#   yuvout-h264-soft: 车道B依赖平台原生渲染器(DX11/Metal), Linux 尚未实现
+#   yuvout-h264-soft/yuvout-h265-10bit: 车道B依赖平台原生渲染器(DX11/Metal), Linux 尚未实现
 #     (shot 不跳: Linux 上 SDK 强制 Vulkan 车道, 离屏截图已实测可用)
 #   rec-transcode-*: LGPL FFmpeg 白名单无视频编码器(Windows 有 h264_mf), Linux 无兜底
 LINUX_OFFLINE_SKIP = [
-    "yuvout-h264-soft", "rec-transcode-h264", "rec-transcode-novk",
+    "yuvout-h264-soft", "yuvout-h265-10bit",
+    "rec-transcode-h264", "rec-transcode-novk",
 ]
 
 
@@ -326,15 +336,12 @@ def main() -> int:
 
     # 真机: 本地源用 push 后的相对路径; 桌面: 直接给绝对路径
     if args.android:
-        files = [f"--file-h264=assets/video/{a}" for a in ASSETS[:1]]
-        files += [f"--file-h265=assets/video/{a}" for a in ASSETS[1:]]
+        files = [f"{key}=assets/video/{name}" for key, name in FILE_ASSETS]
         host = args.host or detect_local_ip()
     else:
-        files = []
-        for key, name in (("--file-h264", ASSETS[0]), ("--file-h265", ASSETS[1])):
-            p = REPO_ROOT / "assets" / "video" / name
-            if p.is_file():
-                files.append(f"{key}={p}")
+        files = [f"{key}={REPO_ROOT / 'assets' / 'video' / name}"
+                 for key, name in FILE_ASSETS
+                 if (REPO_ROOT / "assets" / "video" / name).is_file()]
         host = args.host or "127.0.0.1"
 
     extra = [f"--host={host}", f"--retries={args.retries}"] + files

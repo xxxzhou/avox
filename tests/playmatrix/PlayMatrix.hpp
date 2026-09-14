@@ -45,6 +45,9 @@ struct Endpoints {
   // 本地文件源 (留空则该组用例判 FAIL note=source-missing, 便于发现环境缺失)
   std::string fileH264;
   std::string fileH265;
+  // HDR10 素材 (script/testenv/gen_hdr10_asset.py 生成); 缺失时相关用例自动 off
+  std::string fileHdr10;
+  std::string fileHdr10Aud;
 
   std::string appName(const std::string& key) const {
     size_t p = key.find('/');
@@ -99,7 +102,7 @@ struct PlayCase {
   bool enabled = true;
 };
 
-// ── 用例表: 26 条, 轴 + 固定交叉 (不做全笛卡尔) ──
+// ── 用例表: 29 条, 轴 + 固定交叉 (不做全笛卡尔) ──
 inline std::vector<PlayCase> buildCases(const Endpoints& ep) {
   std::vector<PlayCase> cases;
   const std::string k264 = ep.h264Key;
@@ -113,6 +116,18 @@ inline std::vector<PlayCase> buildCases(const Endpoints& ep) {
     c.io = io;
     c.hardDecode = hard;
     c.seconds = seconds;
+    cases.push_back(c);
+  };
+  // 本地素材用例: 素材缺失自动 off (平台没同步素材不拖垮整表)
+  auto pullFile = [&cases](const std::string& id, const std::string& url, bool hard,
+                           int32_t seconds) {
+    PlayCase c;
+    c.id = id;
+    c.kind = CaseKind::pull;
+    c.url = url;
+    c.hardDecode = hard;
+    c.seconds = seconds;
+    c.enabled = !url.empty();
     cases.push_back(c);
   };
   auto special = [&cases](const std::string& id, CaseKind kind, const std::string& url,
@@ -143,6 +158,10 @@ inline std::vector<PlayCase> buildCases(const Endpoints& ep) {
   pull("file-h265-soft", ep.fileH265, IoPlan::ffmpeg, false, 15);
   pull("rtsp-h264-soft", ep.rtsp(k264), IoPlan::ffmpeg, false, 15);
   pull("rtsp-h265-soft", ep.rtsp(k265), IoPlan::ffmpeg, false, 15);
+  // C2 HDR10 本地素材 (软解): tone map 链路 / [AUD][SEI][IDR] 合并边界。
+  // 硬解 P010 尚黑屏 (计划文档 §6.7), 暂不挂硬解用例
+  pullFile("file-hdr10-soft", ep.fileHdr10, false, 15);
+  pullFile("file-hdr10-aud", ep.fileHdr10Aud, false, 15);
   // D WebRTC (独立通道, 不经 IO 方案)
   special("webrtc-h264", CaseKind::rtc, ep.rtc(k264), 15);
   special("webrtc-h265", CaseKind::rtc, ep.rtc(k265), 15);
@@ -196,6 +215,20 @@ inline std::vector<PlayCase> buildCases(const Endpoints& ep) {
     c.hardDecode = false;
     c.nativeRender = true;
     c.expectType = "yuv420P";
+    cases.push_back(c);
+  }
+  {
+    // 10bit 帧契约哨兵: 软解交付解码原始格式 yuv420P10。getYuvFrameSize 对
+    // 2B 像素格式的 packed 契约 (groupsize 修复回归), 类型不对即 10bit 车道断裂
+    PlayCase c;
+    c.id = "yuvout-h265-10bit";
+    c.kind = CaseKind::yuvOut;
+    c.url = ep.fileHdr10;
+    c.seconds = 6;
+    c.hardDecode = false;
+    c.nativeRender = true;
+    c.expectType = "yuv420P10";
+    c.enabled = !ep.fileHdr10.empty();
     cases.push_back(c);
   }
   {
@@ -564,7 +597,9 @@ class FrameOb : public ISurfaceRenderOb {
         reason = "packed-contract";
       }
     }
-    if (frames < 2) {
+    if (frames < 2 && yuvType != YuvType::yuv420P10 && yuvType != YuvType::p010) {
+      // 10bit 只判交付契约: sw yuvframe2Rgba 不支持 10bit (tone map 属 GPU
+      // 车道), 落 PNG 的诊断通道跳过, 避免误伤哨兵
       IImageBuffer* tmp = createImageBuffer();
       YUVFrame frame = {};
       if (image2SplitYUVFrame(buf, yuvType, frame, tmp)) {

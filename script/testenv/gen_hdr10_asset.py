@@ -7,6 +7,7 @@
 #   3. remux mp4 + aac
 # 用法: python script/testenv/gen_hdr10_asset.py [输出.mp4] [--size 640x360] [--secs 10]
 #       加 --sdr-only 只出 SDR 参考素材 (bt709 8bit, 供 tone map 对比)
+#       加 --aud 在 SEI 前再注入 AUD, 验证 [AUD][SEI][IDR] 布局元数据不丢
 # 判定: 末尾打印 case=genhdr10 PASS/FAIL (ffprobe 复核 transfer/primaries/side data)
 import struct
 import subprocess
@@ -56,8 +57,17 @@ def make_hdr_sei(maxCll=1000, maxFall=400):
     return b"\x00\x00\x00\x01" + b"\x4e\x01" + ep(rbsp)  # prefix SEI nal(39)
 
 
-def inject_hdr_sei(data):
+def make_aud():
+    # H265 AUD_NUT(35): 头 46 01 + pic_type=2(I)+rbsp trailing = 50
+    return b"\x00\x00\x00\x01" + b"\x46\x01\x50"
+
+
+def inject_hdr_sei(data, aud=False):
     sei = make_hdr_sei()
+    if aud:
+        # [AUD][SEI][IDR] 布局: AUD 在源码 AVSource 合并循环里曾是组起点,
+        # 会把并进来的 SEI 一起丢掉 (singleVideo 按首 NAL=AUD 整组丢弃)
+        sei = make_aud() + sei
     i, ins = 0, -1
     while True:
         j = data.find(b"\x00\x00\x01", i)
@@ -87,7 +97,7 @@ def main():
     args = sys.argv[1:]
     out = args[0] if args and not args[0].startswith("-") else \
         "assets/video/test/test_h265_hdr10_pq_640x360.mp4"
-    size, secs, sdrOnly = "640x360", "10", False
+    size, secs, sdrOnly, withAud = "640x360", "10", False, False
     for i, a in enumerate(args):
         if a == "--size":
             size = args[i + 1]
@@ -95,9 +105,14 @@ def main():
             secs = args[i + 1]
         elif a == "--sdr-only":
             sdrOnly = True
+        elif a == "--aud":
+            withAud = True
     tmp = tempfile.mkdtemp(prefix="genhdr10_")
+    base = os.path.splitext(out)[0]
+    if withAud:
+        out = base + "_aud.mp4"
     # SDR 参考 (同构图 bt709 8bit): tone map 结果对比基准
-    sdr = os.path.splitext(out)[0].replace("_hdr10_pq", "_sdr") + ".mp4"
+    sdr = base.replace("_hdr10_pq", "_sdr") + ".mp4"
     run([FFMPEG, "-y", "-hide_banner", "-loglevel", "error",
          "-f", "lavfi", "-i", f"testsrc2=size={size}:rate=30",
          "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000",
@@ -135,7 +150,7 @@ def main():
         data = f.read()
     if not data:
         fail("qsv AnnexB 输出为空")
-    data = inject_hdr_sei(data)
+    data = inject_hdr_sei(data, aud=withAud)
     with open(annexb, "wb") as f:
         f.write(data)
     run([FFMPEG, "-y", "-hide_banner", "-loglevel", "error",
@@ -155,13 +170,15 @@ def main():
         mp4 = f.read()
     seiNal = make_hdr_sei()[4:]
     hasMd = hasCll = seiNal in mp4
+    hasAud = (not withAud) or make_aud()[4:] in mp4
     print(f"[probe] profile={st.get('profile')} trc={st.get('color_transfer')} "
           f"prim={st.get('color_primaries')} space={st.get('color_space')} "
-          f"pix={st.get('pix_fmt')} masteringSei={hasMd} cllSei={hasCll}")
+          f"pix={st.get('pix_fmt')} masteringSei={hasMd} cllSei={hasCll} "
+          f"aud={hasAud}")
     if not ok:
         fail("HDR10 标签异常")
-    if not (hasMd and hasCll):
-        fail("SEI 未注入成功 (成品流中未见 137/144 NAL)")
+    if not (hasMd and hasCll and hasAud):
+        fail("SEI/AUD 未注入成功 (成品流中未见对应 NAL)")
     print(f"case=genhdr10 PASS out={out}")
 
 
