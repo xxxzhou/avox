@@ -1,7 +1,7 @@
-prefix=/Volumes/pssd/work/github/FFmpeg-9.0.1/out-ios
+prefix=/Volumes/pssd/work/github/FFmpeg-9.0.1/out-ios-0914
 exec_prefix=${prefix}
-libdir=/Volumes/pssd/work/github/FFmpeg-9.0.1/out-ios/lib
-includedir=/Volumes/pssd/work/github/FFmpeg-9.0.1/out-ios/include
+libdir=/Volumes/pssd/work/github/FFmpeg-9.0.1/out-ios-0914/lib
+includedir=/Volumes/pssd/work/github/FFmpeg-9.0.1/out-ios-0914/include
 
 Name: libavformat
 Description: FFmpeg container format library
