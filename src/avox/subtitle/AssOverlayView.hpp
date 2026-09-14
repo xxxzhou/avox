@@ -75,8 +75,9 @@ class AssOverlayView : public ISurfaceRenderOb {
 
   // PGS 画布(视图持有拷贝): seq 变化即上屏, 呈现集语义由包序决定
   std::vector<uint8_t> pgsBuf;
+  std::vector<uint8_t> pgsStable;  // 渲染线程持有的稳定拷贝(updateCanvas 用)
   AssCanvas pgsCanvas = {};
-  AssCanvas pgsSnapshot = {};  // onRender 锁内取快照用
+  AssCanvas pgsSnapshot = {};
   int32_t lastPgsSeq = 0;
   bool hasPgs = false;
 };

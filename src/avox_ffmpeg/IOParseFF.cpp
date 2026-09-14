@@ -556,6 +556,10 @@ void IOParseFF::onRunTask() {
     packet.packtype = (int32_t)packType;
     packet.prefixSize = prefixSize;
     processPacket(packet);
+    if ((++ioDbgCount % 200) == 1) {
+      LOGFLF(LogLevel::info, "[dbg] io loop alive, packets since seek:",
+             ioDbgCount, " stream:", streamId, " type:", (int)packType);
+    }
     sleepTask(true, 1);
   }
 }
@@ -665,6 +669,7 @@ bool IOParseFF::seekTo(int64_t pos) {
   if (pgsDec) {
     pgsDec->flush();
   }
+  ioDbgCount = 0;  // [dbg] seek 后 IO 活性计数清零
   return bSeek;
 }
 

@@ -155,31 +155,42 @@ void AssOverlayView::onRender() {
   }
   const int64_t pts = clock.clock();
   const AssCanvas* canvas = nullptr;
-  // 上屏也在锁内: PGS 画布像素归 pgsBuf(IO 线程 setPgsCanvas 会重排),
-  // 锁外读会与拷贝竞争
-  std::lock_guard<std::mutex> lock(mtx);
-  if (trackLoaded.load()) {
-    // ASS 轨: 播放时钟前的小窗口预喂(补偿帧间隔与渲染延迟)
-    while (!chunks.empty() && chunks.front().ptsMs <= pts + 120) {
-      SubChunk& c = chunks.front();
-      // FFmpeg 的 MKV ASS packet 自带 ReadOrder 头("0,0,Default,..."),
-      // 恰好是 ass_process_chunk 要的格式, 原样直喂
-      overlay->processChunk(c.data.data(), (int32_t)c.data.size(), c.ptsMs,
-                            c.durationMs);
-      chunks.pop_front();
+  {
+    // 锁内只做短操作(喂包/取快照); 长持锁会卡死 IO 线程的 pushChunk
+    std::lock_guard<std::mutex> lock(mtx);
+    if (trackLoaded.load()) {
+      // ASS 轨: 播放时钟前的小窗口预喂(补偿帧间隔与渲染延迟)
+      while (!chunks.empty() && chunks.front().ptsMs <= pts + 120) {
+        SubChunk& c = chunks.front();
+        // FFmpeg 的 MKV ASS packet 自带 ReadOrder 头("0,0,Default,..."),
+        // 恰好是 ass_process_chunk 要的格式, 原样直喂
+        overlay->processChunk(c.data.data(), (int32_t)c.data.size(), c.ptsMs,
+                              c.durationMs);
+        chunks.pop_front();
+      }
+      // libass 画布双缓冲, 内容到下一次 render 前有效 → 锁外使用安全
+      canvas = overlay->render(pts);
+    } else if (hasPgs) {
+      // PGS 轨: 锁内把像素拷到稳定缓冲(pgsBuf 归 IO 线程的 setPgsCanvas
+      // 重排), 锁外上屏
+      if (pgsCanvas.rgba) {
+        pgsStable.assign(pgsBuf.begin(), pgsBuf.end());
+        pgsSnapshot = pgsCanvas;
+        pgsSnapshot.rgba = pgsStable.data();
+      } else {
+        pgsSnapshot = AssCanvas{};
+        pgsSnapshot.seq = pgsCanvas.seq;
+      }
+      canvas = &pgsSnapshot;
     }
-    canvas = overlay->render(pts);
-  } else if (hasPgs) {
-    // PGS 轨: 画布由呈现集驱动(包序即语义), seq 变化即上屏
-    pgsSnapshot = pgsCanvas;
-    canvas = &pgsSnapshot;
   }
   if (canvas && canvas->seq == lastSeq) {
     return;  // 内容未变, 零上传
   }
-  if (canvas) {
-    lastSeq = canvas->seq;
+  if (!canvas) {
+    return;  // 轨未加载且无 PGS 画布: 本帧无内容
   }
+  lastSeq = canvas->seq;
   if (canvas->rgba) {
     canvasLayer->updateCanvas(canvas->rgba, canvas->width, canvas->height,
                               canvas->stride, canvas->x, canvas->y);

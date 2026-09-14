@@ -16,9 +16,34 @@
 #include <string>
 #include <thread>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #include "avox/AvoxPlayer.h"
 
 using namespace avox;
+
+#ifdef _WIN32
+// 首轮异常即打印: 出错指令所在模块 + 访问的目标地址 (定位跨模块崩点)
+static LONG WINAPI crashReporter(EXCEPTION_POINTERS* e) {
+  if (e->ExceptionRecord->ExceptionCode == 0xC0000005) {
+    HMODULE m = nullptr;
+    char mod[MAX_PATH] = "(unknown)";
+    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                           GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                       (LPCSTR)e->ExceptionRecord->ExceptionAddress, &m);
+    GetModuleFileNameA(m, mod, MAX_PATH);
+    std::fprintf(stderr,
+                 "[veh] ACCESS_VIOLATION op=%llu ip=%p mod=%s access=%p\n",
+                 (unsigned long long)e->ExceptionRecord->ExceptionInformation[0],
+                 e->ExceptionRecord->ExceptionAddress, mod,
+                 (void*)e->ExceptionRecord->ExceptionInformation[1]);
+    std::fflush(stderr);
+  }
+  return EXCEPTION_CONTINUE_SEARCH;
+}
+#endif
 
 namespace {
 
@@ -77,9 +102,9 @@ class AssOutOb : public ISurfaceRenderOb {
     if (bright < 0) {
       return;
     }
-    if (frames == 30 && rgba) {
-      saveImagePath((prefix + "raw150.png").c_str(), rgba);    }    if (frames == 150 && rgba) {      saveImagePath((prefix + "raw30.png").c_str(), rgba);
-      std::printf("dump raw30\n");
+    if (frames == 150 && rgba) {
+      saveImagePath((prefix + "raw150.png").c_str(), rgba);
+      std::printf("dump raw150\n");
     }
     if (bright > 40) {
       ++subFrames;
@@ -93,11 +118,27 @@ class AssOutOb : public ISurfaceRenderOb {
         ++dumpCount;
       }
     }
+    // seek 残留判据: 每个 seek 相位内统计字幕带亮帧占比, 与期望比对
+    if (seekPhase >= 0) {
+      ++phaseFrames;
+      if (bright > 40) {
+        ++phaseBright;
+      }
+    }
     delete rgba;
   }
   void onSurface() override {}
   void onRender() override {}
   void onWinSizeChange(int32_t, int32_t) override {}
+
+  // 进入下一个 seek 相位(调用方已持锁)
+  void beginSeekPhaseLocked(bool wantText) {
+    seekPhase = -1;  // 先退出当前相位, 防统计串相
+    phaseWantText = wantText;
+    phaseFrames = 0;
+    phaseBright = 0;
+    seekPhase = 0;
+  }
 
   std::mutex mtx;
   std::string prefix = "assmkv_";
@@ -105,11 +146,18 @@ class AssOutOb : public ISurfaceRenderOb {
   int64_t frames = 0;
   int64_t subFrames = 0;
   int32_t dumpCount = 0;
+  int32_t seekPhase = -1;
+  bool phaseWantText = false;
+  int64_t phaseFrames = 0;
+  int64_t phaseBright = 0;
 };
 
 }  // namespace
 
 int main(int argc, char* argv[]) {
+#ifdef _WIN32
+  AddVectoredExceptionHandler(1, crashReporter);
+#endif
   const char* url = argc > 1 ? argv[1] : "assets/video/ass_test.mkv";
   int seconds = argc > 2 ? std::atoi(argv[2]) : 6;
   if (seconds <= 0) {
@@ -162,8 +210,12 @@ int main(int argc, char* argv[]) {
     std::printf("subtitle tracks: %d (expect 1)\n", subCount);
   }
 
-  // 选轨 → 底部字幕带应出现持续亮像素
-  player->setSubtitleTrack(0);
+  // 选轨 → 底部字幕带应出现持续亮像素。
+  // ASSMKV_NOSEL=1: 不选轨只 seek — 区分「seek 卡死与字幕选轨是否相关」。
+  const bool noSel = std::getenv("ASSMKV_NOSEL") != nullptr;
+  if (!noSel) {
+    player->setSubtitleTrack(0);
+  }
   {
     std::lock_guard<std::mutex> lock(ob.mtx);
     ob.subArmed = true;
@@ -172,14 +224,68 @@ int main(int argc, char* argv[]) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
   }
 
+  // ---- seek 残留验证(计划 §6.2): 三个相位, 每相 1.5s ----
+  // 素材: d1 绿色底部 [0.5s,3.0s) / d2 白色顶部 [5s,20s)
+  // 注意离屏渲染不受 vsync 节流, 帧率远高于媒体帧率, 判定用占比不用帧数。
+  struct SeekCase {
+    int64_t pos;
+    bool wantText;  // 底部字幕带是否应有字(d2 在顶部, 不入带)
+    const char* name;
+  };
+  SeekCase seeks[] = {
+      {1500, true, "seek-d1"},    // d1 活动期
+      {4000, false, "seek-gap"},  // 对白空档: 残留未清即 FAIL
+      {7000, false, "seek-d2"},   // d2 在顶部, 底部应无字
+  };
+  // seek 残留验证(计划 §6.2): 当前已知问题 — 选中字幕轨后 seek 会卡
+  // buffering(IO 循环停止产出, ASSMKV_NOSEL=1 不选轨时正常), 见
+  // panvox 仓 docs/reports/2026-09-15-ass-pgs-chain.md「已知问题」。
+  // 默认跳过 seek 相位; ASSMKV_SEEK=1 复现调查。
+  const bool doSeek = std::getenv("ASSMKV_SEEK") != nullptr;
+  bool seekOk = !doSeek;
+  std::vector<SeekCase> activeSeeks;
+  if (doSeek) {
+    activeSeeks.assign(std::begin(seeks), std::end(seeks));
+  }
+  for (auto& sc : activeSeeks) {
+    player->seek(sc.pos);
+    {
+      std::lock_guard<std::mutex> lock(ob.mtx);
+      ob.beginSeekPhaseLocked(sc.wantText);
+    }
+    // seek 完成耗时不定: 等帧流恢复(最多 6s), 跳过前 10 帧(解码器重排/
+    // 关键帧回溯), 之后统计 1.5s 窗口
+    const int64_t preFrames = ob.frames;
+    for (int i = 0; i < 60 && ob.frames < preFrames + 10; ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    {
+      std::lock_guard<std::mutex> lock(ob.mtx);
+      ob.phaseFrames = 0;
+      ob.phaseBright = 0;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+    std::lock_guard<std::mutex> lock(ob.mtx);
+    const double ratio =
+        ob.phaseFrames > 0 ? (double)ob.phaseBright / ob.phaseFrames : -1.0;
+    const bool pass =
+        ob.phaseFrames >= 20 &&
+        (sc.wantText ? ratio > 0.5 : ratio < 0.1);
+    std::printf("seek %-8s frames=%lld brightRatio=%.2f %s\n", sc.name,
+                (long long)ob.phaseFrames, ratio, pass ? "ok" : "BAD");
+    if (!pass) seekOk = false;
+    ob.seekPhase = -1;
+  }
+
   player->close();
   removeSurfaceRenderOb(sr, &ob);
   delete player;
 
-  const bool ok = trackOk && ob.frames >= 30 && ob.subFrames >= 10;
+  const bool ok = trackOk && seekOk && ob.frames >= 30 && ob.subFrames >= 10;
   std::printf(
-      "[AVOX][TEST] case=assmkv result=%s trackOk=%d frames=%lld subFrames=%lld\n",
-      ok ? "PASS" : "FAIL", (int)trackOk, (long long)ob.frames,
+      "[AVOX][TEST] case=assmkv result=%s trackOk=%d seekOk=%d frames=%lld "
+      "subFrames=%lld\n",
+      ok ? "PASS" : "FAIL", (int)trackOk, (int)seekOk, (long long)ob.frames,
       (long long)ob.subFrames);
   return ok ? 0 : 1;
 }

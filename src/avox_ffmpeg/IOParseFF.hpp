@@ -34,6 +34,7 @@ protected:
   // PGS 解码器(选中该轨时建): 局部轨索引 → 解码器
   std::unique_ptr<PgsDecoder> pgsDec = nullptr;
   int32_t pgsTrackLocal = -1;  // 解码器对应的局部轨索引
+  int64_t ioDbgCount = 0;      // [dbg] seek 后 IO 循环包计数
 
 private:
   // 解析IO流媒体格式
