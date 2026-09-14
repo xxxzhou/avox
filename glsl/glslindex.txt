@@ -191,6 +191,7 @@ uvMap.comp addUVMap.comp ADD_MAP=1
 depthAlign.comp
 drawFont.comp
 drawFontBlend.comp
+canvasBlend.comp
 drawShapeBlend.comp
 basicAdjust.comp
 quality_preprocess.comp

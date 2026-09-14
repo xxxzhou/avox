@@ -30,6 +30,11 @@ endif()
 # avox_ass 插件 M1 冒烟: assOverlayHub 加载/查表/骨架降级/缺插件降级
 if(AVOX_ENABLE_ASS)
     generatetest(asstest)
+    # ASS 内封字幕轨端到端: MKV 轨枚举/选轨/libass 合成/输出帧像素判据
+    generatetest(assmkvtest)
+    if(MSVC)
+        target_compile_options(assmkvtest PRIVATE /utf-8)
+    endif()
     # ASS 字幕叠加视频演示: base.raw(assdemo_genbase.py 生成)→逐帧合成→comp.raw
     generatetest(assdemo)
     if(MSVC)

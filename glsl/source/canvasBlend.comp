@@ -1,0 +1,46 @@
+#version 450
+
+// ASS/PGS 字幕 canvas source-over 混合(ASS字幕渲染计划.md §3.4)
+// 画布为视频分辨率坐标系下 bbox 裁剪的 RGBA8(premultiplied alpha),
+// 经归一化矩形 + sampler 采样铺回帧; opacity=0 时整层直通(无字幕帧零成本)。
+
+layout(local_size_x = 16, local_size_y = 16) in; // gl_WorkGroupSize
+// 视频帧
+layout(binding = 0, rgba8) uniform readonly image2D inTex;
+// 字幕画布(premultiplied alpha), 线性采样
+layout(binding = 1) uniform sampler2D inTex2;
+// 输出
+layout(binding = 2, rgba8) uniform image2D outTex;
+
+layout(std140, binding = 3) uniform UBO {
+  // 画布矩形中心与宽高(帧的归一化坐标)
+  float centerX;
+  float centerY;
+  float width;
+  float height;
+  // 整层不透明度(0=直通/无字幕, 1=完全显示)
+  float opacity;
+}
+ubo;
+
+void main() {
+  ivec2 id = ivec2(gl_GlobalInvocationID.xy);
+  ivec2 size = imageSize(outTex);
+  if (id.x >= size.x || id.y >= size.y)
+    return;
+  vec4 color = imageLoad(inTex, id);
+  if (ubo.opacity > 0.0f) {
+    vec2 uv = vec2(id.x + 0.5, id.y + 0.5) / vec2(size);
+    vec4 rect = vec4(ubo.centerX - ubo.width / 2.0f, ubo.centerY - ubo.height / 2.0f,
+                     ubo.centerX + ubo.width / 2.0f, ubo.centerY + ubo.height / 2.0f);
+    if (uv.x >= rect.x && uv.x < rect.z && uv.y >= rect.y && uv.y < rect.w) {
+      // 画布 bbox → 归一化 UV
+      vec2 uv2 = vec2((uv.x - rect.x) / ubo.width, (uv.y - rect.y) / ubo.height);
+      vec4 overlay = textureLod(inTex2, uv2, 0.0);
+      // premultiplied source-over: out = overlay + base * (1 - overlay.a * opacity)
+      float a = overlay.a * ubo.opacity;
+      color.rgb = overlay.rgb + color.rgb * (1.0f - a);
+    }
+  }
+  imageStore(outTex, id, color);
+}

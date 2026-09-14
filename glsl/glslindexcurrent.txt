@@ -6,3 +6,4 @@ yuv2rgbaV1.comp
 yuv2rgbaV2.comp
 yuv2rgbaV3.comp
 yuv2rgbaV5.comp
+canvasBlend.comp

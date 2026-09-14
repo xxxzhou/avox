@@ -175,6 +175,27 @@ class IMediaPlayer {
   virtual void pause() = 0;
   virtual void resume() = 0;
   virtual void speed(double speed) = 0;
+  // 选择内封字幕轨(ISourceInfo::getSubtitleDesc 的局部索引, -1=关闭)。
+  // 走 avox_ass 插件渲染(计划 ASS字幕渲染计划.md); 未装插件时选轨无效(降级)。
+  // 带默认实现: 既有 IMediaPlayer 实现者零影响
+  virtual void setSubtitleTrack(int32_t index) {}
+  // 外挂字幕文件(.ass 直载/.srt 转 ASS): 走同一 overlay 通道; 无插件返回 false
+  virtual bool loadSubtitleFile(const char* path) {
+    (void)path;
+    return false;
+  }
+  // 内封字幕轨信息(跨 DLL 安全: 全部 char*/POD 出参, 字符串在引擎内拷贝)。
+  // 返回 SCodecId(ass=0/srt=1/pgs=2), 无效索引返回 -1。
+  // lang/title 拷进调用方缓冲(UTF-8, 截断安全; 缓冲可空/0 跳过), outForced 可空。
+  virtual int32_t subtitleTrackInfo(int32_t index, char* lang, int32_t langCap,
+                                    char* title, int32_t titleCap,
+                                    int32_t* outForced) {
+    (void)index; (void)lang; (void)langCap; (void)title; (void)titleCap;
+    (void)outForced;
+    return -1;
+  }
+  // 内封字幕轨数量(0 = 无)
+  virtual int32_t subtitleTrackCount() { return 0; }
 
   virtual PlayerState getState() = 0;
   virtual double getProcess() = 0;

@@ -48,6 +48,10 @@ void VideoTrack::start() {
     if (subtitleView) {
       subtitleView->setWindowRender(windowRender.get());
     }
+    // 字幕视图换渲染对象(重开循环): 重新注册每帧回调
+    if (assOverlayView) {
+      assOverlayView->setSurfaceRender(windowRender.get());
+    }
   }
   log(LogLevel::info, "decode and render start success");
 }
@@ -341,7 +345,22 @@ void VideoTrack::flush() {
 
 void VideoTrack::updateSeekTime(int64_t seekTime) { clock->update(seekTime); }
 
+void VideoTrack::attachAssOverlay(AssOverlayView* view) {
+  assOverlayView = view;
+  if (!view) {
+    return;
+  }
+  view->setSurfaceRender(windowRender.get());
+  if (!view->opened() && srcDesc.width > 0 && srcDesc.height > 0) {
+    view->open(srcDesc.width, srcDesc.height);
+  }
+}
+
 void VideoTrack::close() {
+  // 先摘字幕视图(渲染对象即将销毁)
+  if (assOverlayView) {
+    assOverlayView->setSurfaceRender(nullptr);
+  }
   packetQueue.setClose(true);
   // 先通知frameQueue不可用，保证decodeTask顺利关闭
   frameQueue.setClose(true);

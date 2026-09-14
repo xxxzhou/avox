@@ -307,6 +307,60 @@ void MediaPlayer::onError(AVError error, const char* msg) {
 void MediaPlayer::onPacket(const AvoxPacket& packet) {
   // packet.index在之前已经从全局av转化为对应a/v里的index
   int32_t index = packet.index;
+  // 字幕旁路(计划 §3.5): 不进音视频同步/录制链, 选中的轨才转发给视图
+  {
+    const PackType ptype = (PackType)packet.packtype;
+    if (ptype == PackType::sconfig) {
+      // ASS/SSA 剧本头(extradata): 按局部轨索引留存; 选轨早于解封装时补喂
+      // (选轨命令在播放器线程, parseStream 在 IO 线程, 二者次序不保证)
+      bool feedNow = false;
+      {
+        std::lock_guard<std::mutex> lock(subMetaMtx);
+        if ((int32_t)subExtradata.size() <= index) {
+          subExtradata.resize(index + 1);
+        }
+        subExtradata[index].assign(packet.data.data,
+                                   packet.data.data + packet.data.size);
+        if (index == subTrackIndex.load() && !subTrackFeeded) {
+          subTrackFeeded = true;
+          feedNow = true;
+        }
+      }
+      if (feedNow && assOverlayView && assOverlayView->opened()) {
+        std::lock_guard<std::mutex> lock(subMetaMtx);
+        assOverlayView->loadTrack(subExtradata[index].data(),
+                                  (int32_t)subExtradata[index].size());
+      }
+      return;
+    }
+    if (ptype == PackType::subtitles) {
+      // -1=未选轨(先排队, 选轨后回放该轨); -2=外挂字幕模式(内封包丢弃);
+      // >=0=已选轨, 只留选中的
+      const int32_t sel = subTrackIndex.load();
+      if (sel == -2 || (sel >= 0 && index != sel)) {
+        return;
+      }
+      if (assOverlayView && assOverlayView->opened() &&
+          assOverlayView->isTrackLoaded()) {
+        assOverlayView->pushChunk((const char*)packet.data.data,
+                                  packet.data.size, packet.pts,
+                                  packet.duration);
+      } else {
+        // 选轨/轨加载前到达: 排队(有界, 丢最旧), 加载后回放
+        std::lock_guard<std::mutex> lock(subMetaMtx);
+        if (pendingSubs.size() >= 64) {
+          pendingSubs.pop_front();
+        }
+        PendingSub& ps = pendingSubs.emplace_back();
+        ps.track = index;
+        ps.data.assign(packet.data.data,
+                       packet.data.data + packet.data.size);
+        ps.ptsMs = packet.pts;
+        ps.durationMs = packet.duration;
+      }
+      return;
+    }
+  }
   // 录制优先: 录制拿完整原始流, 不受播放倍速丢帧影响 — 否则 >4x
   // 录制只有I帧无音频 丢帧是播放策略, 不影响录制(录制内容随demux走,
   // 倍速下超前画面属预期)
@@ -386,6 +440,146 @@ void MediaPlayer::setIoPlan(IoPlan plan) {
   pushPB<MPPBType::MediaAction>(mpPingback.get(), pb);
   // 选择IO方案
   selectIO = plan;
+}
+
+void MediaPlayer::setSubtitleTrack(int32_t index) {
+  auto cmd = createCommand<MPCommandType::SetSubtitleTrack>(index);
+  mpCommands.enqueueWait(cmd);
+  // 记录
+  PBMediaAction pb = {};
+  pb.mediaObject = MediaObject::track;
+  pb.trackType = TrackType::subtitle;
+  pb.action = index >= 0 ? MediaAction::open : MediaAction::close;
+  pushPB<MPPBType::MediaAction>(mpPingback.get(), pb);
+}
+
+bool MediaPlayer::loadSubtitleFile(const char* path) {
+  if (!path) {
+    return false;
+  }
+  auto cmd = createCommand<MPCommandType::LoadSubtitleFile>(std::string(path));
+  mpCommands.enqueueWait(cmd);
+  return loadSubFileResult;
+}
+
+void MediaPlayer::cmdLoadSubtitleFile(const std::string& path) {
+  loadSubFileResult = false;
+  if (!assOverlayView) {
+    assOverlayView = std::make_unique<AssOverlayView>();
+  }
+  // 外挂模式: 无内封轨号, 内封包按 subTrackIndex 过滤全丢弃(-2 不等于任何局部轨)
+  subTrackIndex = -2;
+  bool attached = false;
+  for (const auto& vtrack : videoTracks) {
+    if (vtrack && vtrack->vaild()) {
+      vtrack->attachAssOverlay(assOverlayView.get());
+      attached = true;
+    }
+  }
+  if (!attached) {
+    LOGFLF(LogLevel::warn, "loadSubtitleFile: no valid video track");
+    return;
+  }
+  loadSubFileResult = assOverlayView->loadFile(path.c_str());
+  replayPendingSubs();
+  LOGFLF(LogLevel::info, "loadSubtitleFile:", path,
+         " ok:", loadSubFileResult);
+}
+
+void MediaPlayer::replayPendingSubs() {
+  if (!assOverlayView || !assOverlayView->opened() ||
+      !assOverlayView->isTrackLoaded()) {
+    return;
+  }
+  const int32_t sel = subTrackIndex.load();
+  std::lock_guard<std::mutex> lock(subMetaMtx);
+  for (auto& ps : pendingSubs) {
+    if (ps.track != sel) {
+      continue;  // 其他轨的包不回放
+    }
+    assOverlayView->pushChunk(ps.data.data(), (int32_t)ps.data.size(),
+                              ps.ptsMs, ps.durationMs);
+  }
+  pendingSubs.clear();
+}
+
+int32_t MediaPlayer::subtitleTrackCount() {
+  return ioSource ? ioSource->subtitleSize() : 0;
+}
+
+static void copyTrackStr(const std::string& src, char* dst, int32_t cap) {
+  if (!dst || cap <= 0) {
+    return;
+  }
+  const int32_t n = (int32_t)src.size() < cap - 1 ? (int32_t)src.size() : cap - 1;
+  memcpy(dst, src.data(), (size_t)n);
+  dst[n] = 0;
+}
+
+int32_t MediaPlayer::subtitleTrackInfo(int32_t index, char* lang,
+                                       int32_t langCap, char* title,
+                                       int32_t titleCap, int32_t* outForced) {
+  if (!ioSource || index < 0 || index >= ioSource->subtitleSize()) {
+    return -1;
+  }
+  const STrackDesc desc = ioSource->getSubtitleDesc(index);
+  copyTrackStr(desc.lang, lang, langCap);
+  copyTrackStr(desc.title, title, titleCap);
+  if (outForced) {
+    *outForced = desc.forced ? 1 : 0;
+  }
+  return (int32_t)desc.codecId;
+}
+
+void MediaPlayer::cmdSetSubtitleTrack(int32_t index) {
+  const int32_t trackCount = ioSource ? ioSource->subtitleSize() : 0;
+  if (index >= trackCount) {
+    LOGFLF(LogLevel::warn, "setSubtitleTrack: index out of range:", index,
+           " count:", trackCount);
+    return;
+  }
+  subTrackIndex = index;
+  if (index < 0) {
+    if (assOverlayView) {
+      assOverlayView->close();
+    }
+    LOGFLF(LogLevel::info, "subtitle track off");
+    return;
+  }
+  if (!assOverlayView) {
+    assOverlayView = std::make_unique<AssOverlayView>();
+  }
+  std::vector<char> extradata;
+  {
+    std::lock_guard<std::mutex> lock(subMetaMtx);
+    subTrackFeeded = false;
+    if (index < (int32_t)subExtradata.size()) {
+      extradata = subExtradata[index];
+      subTrackFeeded = true;
+    }
+  }
+  // 挂到视频轨(渲染接线 + 以视频分辨率 init); 无视频轨则字幕无意义, 停在这
+  bool attached = false;
+  for (const auto& vtrack : videoTracks) {
+    if (vtrack && vtrack->vaild()) {
+      vtrack->attachAssOverlay(assOverlayView.get());
+      attached = true;
+    }
+  }
+  if (!attached) {
+    LOGFLF(LogLevel::warn, "setSubtitleTrack: no valid video track");
+    return;
+  }
+  if (!extradata.empty()) {
+    if (!assOverlayView->loadTrack(extradata.data(),
+                                   (int32_t)extradata.size())) {
+      LOGFLF(LogLevel::warn, "setSubtitleTrack: load extradata failed");
+    }
+  } else {
+    LOGFLF(LogLevel::info, "setSubtitleTrack: no extradata yet (srt/pgs?)");
+  }
+  replayPendingSubs();
+  LOGFLF(LogLevel::info, "subtitle track selected:", index);
 }
 
 void MediaPlayer::setHardDecode(bool hard) {
@@ -782,6 +976,14 @@ void MediaPlayer::onRunTask() {
         }
         case MPCommandType::IFrameMode: {
           cmdIFrameMode(getCommand<MPCommandType::IFrameMode>(cmd));
+          break;
+        }
+        case MPCommandType::SetSubtitleTrack: {
+          cmdSetSubtitleTrack(getCommand<MPCommandType::SetSubtitleTrack>(cmd)->getData());
+          break;
+        }
+        case MPCommandType::LoadSubtitleFile: {
+          cmdLoadSubtitleFile(getCommand<MPCommandType::LoadSubtitleFile>(cmd)->getData());
           break;
         }
         default:
@@ -1193,6 +1395,16 @@ void MediaPlayer::cmdClose() {
   renderTime = 0;
   //
   subtitleView->close();
+  if (assOverlayView) {
+    assOverlayView->close();
+  }
+  subTrackIndex = -1;
+  {
+    std::lock_guard<std::mutex> lock(subMetaMtx);
+    subExtradata.clear();
+    subTrackFeeded = false;
+    pendingSubs.clear();
+  }
   ioStatus.url.clear();
   setState(PlayerState::stopped);
   MPOB::dispatch(&IMediaPlayerOb::onClose);
@@ -1249,6 +1461,10 @@ void MediaPlayer::cmdSeek(SeekCommandPtr cmd) {
     sleepTask(false, 50);
     // 清空队列
     flush();
+    // 字幕: 清旁路队列 + flush libass 事件(seek 后旧事件作废, 防残留帧)
+    if (assOverlayView && assOverlayView->opened()) {
+      assOverlayView->resetEvents();
+    }
     bool bSeek = ioSource->seekTo(spts);
     // 成功: 保持 bSeeking(true, 由 compateIoTime 见真实位置追平目标后解除);
     // 失败: 解除, 如实报当前位置

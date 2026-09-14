@@ -120,17 +120,19 @@ bool IOParseFF::parseStream(int32_t streamId, AVCodecParameters* codecpar) {
     }
   }
   // 字幕轨: ASS/SSA 的 extradata(MKV [Script Info]/[V4+ Styles] 剧本头)以
-  // sconfig 包旁路下发, MediaPlayer 侧留存, 选轨时喂 libass(计划 §3.2)
+  // sconfig 包旁路下发, MediaPlayer 侧留存, 选轨时喂 libass(计划 §3.2)。
+  // index 与 subtitles 包一致走局部轨索引(与选轨号同域)
   if (codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE) {
     if (ffSCodec(codecpar->codec_id) == SCodecId::ass &&
-        codecpar->extradata_size > 0) {
+        codecpar->extradata_size > 0 && streamId >= 0 &&
+        streamId < (int32_t)sIndexMaps.size()) {
       AvoxPacket spack = {};
       spack.data.bRef = true;
       spack.data.data = codecpar->extradata;
       spack.data.size = codecpar->extradata_size;
       spack.prefixSize = 0;
       spack.packtype = (int32_t)PackType::sconfig;
-      spack.index = streamId;
+      spack.index = sIndexMaps[streamId];
       spack.pts = 0;
       spack.dts = 0;
       dispatch(&IAVSourceOb::onPacket, spack);

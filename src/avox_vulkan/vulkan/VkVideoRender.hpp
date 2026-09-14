@@ -7,6 +7,7 @@
 #include "../quality/VkFSRLayer.hpp"
 #include "../quality/VkQEnhanceLayer.hpp"
 #include "../layer/VkBlendLayer.hpp"
+#include "../layer/VkCanvasLayer.hpp"
 #include "../layer/VkInputLayer.hpp"
 #include "../layer/VkOutputLayer.hpp"
 #include "../layer/VkPipeGraph.hpp"
@@ -99,6 +100,10 @@ class VkVideoRender : public VideoRender, public IVOutputLayerOb {
   // 几何叠加层（线/矩形/点/圆），无外部依赖，随 Vulkan 一并启用
   std::unique_ptr<GeometryRender> geometryRender = nullptr;
   VKTNodePtr<VkGeometryLayer> geometryLayer = nullptr;
+  // ASS/PGS 字幕画布层(§3.4): CanvasRender 为稳定前端, 层随图重建换指针
+  std::unique_ptr<CanvasRender> canvasRender = std::make_unique<CanvasRender>();
+  VKTNodePtr<VkCanvasLayer> canvasLayer = nullptr;
+  bool bEnableCanvas = false;
 
  public:
   // 图重建期间(渲染线程)返回空: 外部 enableVkOutput 等拿不到层, 自然失败下帧重试,
@@ -149,6 +154,9 @@ class VkVideoRender : public VideoRender, public IVOutputLayerOb {
   FontRender* enableRenderFont();
   void disableRenderFont();
 #endif
+  // ASS/PGS 字幕画布层
+  ICanvasLayer* enableRenderCanvas();
+  void disableRenderCanvas();
   // 几何叠加层
   GeometryRender* enableRenderGeometry();
   void disableRenderGeometry();

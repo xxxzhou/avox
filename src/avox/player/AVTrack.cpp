@@ -150,6 +150,11 @@ void AVTrack::updateClock(int64_t pts) {
   if (subtitleView) {
     subtitleView->getClock()->sync(clock.get());
   }
+  // ASS/PGS 字幕轨视图的时钟同源(渲染线程按它取 pts)
+  auto* assView = mediaPlayer->getAssOverlayView();
+  if (assView) {
+    assView->getClock()->sync(clock.get());
+  }
   if (mpPingback->canLogPts()) {
     PBPtsTick pp = {};
     pp.pts = pts;

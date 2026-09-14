@@ -165,6 +165,19 @@ void VkVideoRender::disableRenderGeometry() {
   bResetFlag = true;
 }
 
+ICanvasLayer* VkVideoRender::enableRenderCanvas() {
+  bEnableCanvas = true;
+  bResetFlag = true;
+  // CanvasRender 为稳定前端(层随图重建换指针), 外部长期持有
+  return canvasRender.get();
+}
+
+void VkVideoRender::disableRenderCanvas() {
+  bEnableCanvas = false;
+  canvasRender->setCanvasLayer(nullptr);
+  bResetFlag = true;
+}
+
 void VkVideoRender::enableSizeChange(int32_t width, int32_t height) {
   bUseNewSize = true;
   userWidth = width;
@@ -307,6 +320,10 @@ bool VkVideoRender::vaildAndInitGraph() {
     fontRender->setFontLayer(fontLayer->get());
   }
 #endif
+  if (bEnableCanvas) {
+    canvasLayer = graph->addNode<VkCanvasLayer>();
+    canvasRender->setCanvasLayer(canvasLayer->get());
+  }
   if (geometryRender->enabled()) {
     geometryLayer = graph->addNode<VkGeometryLayer>();
     geometryLayer->get()->setSource(geometryRender.get());
@@ -378,6 +395,11 @@ bool VkVideoRender::vaildAndInitGraph() {
     outNode = outNode->addLine(fontLayer);
   }
 #endif
+  // 字幕画布层在字体(OSD/SRT)之后、几何层之前: ASS/PGS 与 SRT 互斥,
+  // 顺序晚于所有画质层, 保证字幕不被超分/增强重采样(计划 §3.4 挂载位)
+  if (canvasLayer) {
+    outNode = outNode->addLine(canvasLayer);
+  }
   if (geometryRender->enabled()) {
     outNode = outNode->addLine(geometryLayer);
   }
@@ -425,6 +447,8 @@ void VkVideoRender::releaseGraph() {
   fontRender->setFontLayer(nullptr);
 #endif
   geometryRender->setLayer(nullptr);
+  // 层随图销毁, 前端脱钩(来件暂存, 下次建图后补发)
+  canvasRender->setCanvasLayer(nullptr);
   if (graph) {
     // 必须先等 GPU 命令完成,否则 clear() 销毁 layer 时的 descriptor pool
     // 会被 in-flight 的 command buffer 引用,触发 Vulkan 校验层错误

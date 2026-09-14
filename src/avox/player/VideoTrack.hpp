@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../module/AvBuffer.hpp"
+#include "../subtitle/AssOverlayView.hpp"
 #include "../video/VDecoderTask.hpp"
 #include "../video/VideoDecoder.hpp"
 #include "../video/VideoFrame.hpp"
@@ -22,6 +23,10 @@ class VideoTrack : public TAVTrack<VideoFramePtr>,
   VideoTrack();
   virtual ~VideoTrack();
 
+ public:
+  // 挂 ASS/PGS 字幕视图: 注册渲染回调并以当前视频分辨率 init 通道
+  void attachAssOverlay(AssOverlayView* view);
+
  protected:
   // 解码器线程
   std::unique_ptr<VDecoderTask> decodeTask = nullptr;
@@ -30,6 +35,9 @@ class VideoTrack : public TAVTrack<VideoFramePtr>,
 
   VCodecId codecId = VCodecId::none;
   VideoDesc srcDesc = {};
+
+  // ASS/PGS 字幕轨视图(可空): 挂渲染对象/按视频分辨率 init 由 MediaPlayer 驱动
+  AssOverlayView* assOverlayView = nullptr;
 
   // 解码类型
   VCodecTh codecTh = VCodecTh::cpu;

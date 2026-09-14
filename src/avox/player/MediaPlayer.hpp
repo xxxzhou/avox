@@ -1,6 +1,8 @@
 #pragma once
 
 #include <atomic>
+#include <deque>
+#include <mutex>
 
 #include "../AvoxPlayer.h"
 #include "../module/RunTask.hpp"
@@ -8,6 +10,7 @@
 #include "../muxer/MediaMuxer.hpp"
 #include "../muxer/RawMuxer.hpp"
 #include "../source/AVSource.hpp"
+#include "../subtitle/AssOverlayView.hpp"
 #include "../subtitle/SubtitleView.hpp"
 #include "../video/Window.hpp"
 #include "AudioTrack.hpp"
@@ -46,6 +49,25 @@ class MediaPlayer : public IMediaPlayer,
   std::vector<AudioTrackPtr> audioTracks;
   // 字幕显示
   std::unique_ptr<SubtitleView> subtitleView;
+  // ASS/PGS 内封字幕轨视图(计划 §3.5): 选轨(setSubtitleTrack)后建通道,
+  // 与 SRT/ASR 通道的互斥由调用方保证。extradata 由 IO 线程经 onPacket 存表,
+  // 锁只护表本身; subTrackIndex 两线程读, atomic
+  std::unique_ptr<AssOverlayView> assOverlayView;
+  // 选轨前到达的字幕包待播队列(有界): 视图打开+轨加载后按序回放
+  struct PendingSub {
+    int32_t track = -1;  // 局部轨索引(选轨后按轨回放)
+    std::vector<char> data;
+    int64_t ptsMs = 0;
+    int64_t durationMs = 0;
+  };
+  std::deque<PendingSub> pendingSubs;
+  std::mutex subMetaMtx;
+  std::vector<std::vector<char>> subExtradata;  // 局部轨索引 → ASS 剧本头
+  std::atomic<int32_t> subTrackIndex{-1};
+  // cmdLoadSubtitleFile 的同步回执(命令在播放器线程执行)
+  bool loadSubFileResult = false;
+  // 当前选中轨的剧本头是否已喂(选轨可能早于 IO 线程 parseStream)
+  bool subTrackFeeded = false;
   // 相对于track的外部时钟
   std::unique_ptr<Clock> clock = nullptr;
   // 同步类型
@@ -134,6 +156,7 @@ class MediaPlayer : public IMediaPlayer,
   AVSource* getSource() { return ioSource.get(); }
   RawMuxer* getRawMuxer() { return rawMuxer.get(); }
   SubtitleView* getSubtitleView() { return subtitleView.get(); }
+  AssOverlayView* getAssOverlayView() { return assOverlayView.get(); }
   SyncType getSyncType() { return syncType; }
   // I帧渲染模式: 源级I帧模式(源只发I帧) 或 >4x只解I帧生效(bIFrameOnlyActive)时
   // 都为true。渲染节奏/音频静音/外部调用统一用这个判断"当前是否处于稀疏I帧渲染",
@@ -209,6 +232,12 @@ class MediaPlayer : public IMediaPlayer,
   virtual int64_t getStartTime() override;
 
   virtual ISourceInfo* getSourceInfo() override;
+  virtual void setSubtitleTrack(int32_t index) override;
+  virtual bool loadSubtitleFile(const char* path) override;
+  virtual int32_t subtitleTrackInfo(int32_t index, char* lang, int32_t langCap,
+                                    char* title, int32_t titleCap,
+                                    int32_t* outForced) override;
+  virtual int32_t subtitleTrackCount() override;
   virtual double getRate(TrackType type, bool bAvg) override;
   virtual float getLossRate(TrackType type) override;
   virtual double getFps() override;
@@ -243,6 +272,9 @@ class MediaPlayer : public IMediaPlayer,
   void cmdResetDecodeComplete();
   void cmdSyncPts();
   void cmdIFrameMode(IFrameModeCommandPtr cmd);
+  void cmdSetSubtitleTrack(int32_t index);
+  void replayPendingSubs();
+  void cmdLoadSubtitleFile(const std::string& path);
 
  public:
   // 解码队列遇到结束信号，调用

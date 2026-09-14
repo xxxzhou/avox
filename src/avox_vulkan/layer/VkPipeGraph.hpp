@@ -27,6 +27,7 @@ class VkPipeGraph : public VPipeGraph<VkLayer>, public VkContextRef {
   friend class VkSeparableLayer;
   friend class VkFontLayer;
   friend class VkGeometryLayer;
+  friend class VkCanvasLayer;
   friend class VkQEnhanceLayer;
 
  private:
