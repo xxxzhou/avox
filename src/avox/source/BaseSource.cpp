@@ -38,6 +38,15 @@ ATrackDesc BaseSource::getAudioDesc(int32_t index) {
   return audioTracks[index];
 }
 
+int32_t BaseSource::subtitleSize() { return subtitleTracks.size(); }
+
+STrackDesc BaseSource::getSubtitleDesc(int32_t index) {
+  if (index < 0 || index >= subtitleTracks.size()) {
+    return {};
+  }
+  return subtitleTracks[index];
+}
+
 bool BaseSource::canSeek() { return bSeek; }
 
 void BaseSource::addVideoDesc(const VTrackDesc& desc) {
@@ -48,6 +57,12 @@ void BaseSource::addVideoDesc(const VTrackDesc& desc) {
 void BaseSource::addAudioDesc(const ATrackDesc& desc) {
   audioTracks.push_back(desc);
   LOGFLF(LogLevel::info, "add audio track: ", desc);
+}
+
+void BaseSource::addSubtitleDesc(const STrackDesc& desc) {
+  subtitleTracks.push_back(desc);
+  LOGFLF(LogLevel::info, "add subtitle track: id:", desc.trackId,
+         " codec:", (int32_t)desc.codecId, " lang:", desc.lang);
 }
 
 void BaseSource::trackReady() {

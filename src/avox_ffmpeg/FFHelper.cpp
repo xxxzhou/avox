@@ -184,6 +184,21 @@ ACodecId ffACodec(AVCodecID codecId) {
   }
 }
 
+SCodecId ffSCodec(AVCodecID codecId) {
+  switch (codecId) {
+    case AV_CODEC_ID_ASS:
+    case AV_CODEC_ID_SSA:
+      // MKV ASS packet 天然是 libass chunk(带 ReadOrder), 零转换
+      return SCodecId::ass;
+    case AV_CODEC_ID_SUBRIP:
+      return SCodecId::srt;
+    case AV_CODEC_ID_HDMV_PGS_SUBTITLE:
+      return SCodecId::pgs;
+    default:
+      return SCodecId::none;
+  }
+}
+
 AVCodecID getFFCodecId(VCodecId codecId) {
   switch (codecId) {
     case VCodecId::h264:

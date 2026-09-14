@@ -35,7 +35,8 @@ struct AvoxData {
   XX(audio, 2, "audio")                                                        \
   XX(vconfig, 3, "vconfig")                                                    \
   XX(aconfig, 4, "aconfig")                                                    \
-  XX(subtitles, 5, "subtitles")
+  XX(subtitles, 5, "subtitles")                                                \
+  XX(sconfig, 6, "sconfig")
 
 enum class PackType : int32_t {
 #define XX(name, value, str) name = value,

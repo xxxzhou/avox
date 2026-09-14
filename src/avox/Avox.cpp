@@ -238,7 +238,8 @@ void logMsg(LogLevel level, const char* message) {
 }
 
 bool bConfigType(PackType packType) {
-  return packType == PackType::vconfig || packType == PackType::aconfig;
+  return packType == PackType::vconfig || packType == PackType::aconfig ||
+         packType == PackType::sconfig;
 }
 
 const char* getPackTypeStr(PackType packType) {

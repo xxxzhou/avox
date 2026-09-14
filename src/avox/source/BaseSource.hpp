@@ -22,6 +22,8 @@ class AVOX_EXPORT BaseSource : public OptionLink, public ISourceInfo {
   // 音频和视频轨道描述
   std::vector<VTrackDesc> videoTracks;
   std::vector<ATrackDesc> audioTracks;
+  // 字幕轨描述(只有内封字幕轨, 外挂文件不经源)
+  std::vector<STrackDesc> subtitleTracks;
 
   // 是否不处理视频,默认处理,子类不要改这个,只用来表示用户是否处理
   bool bDisableVideo = false;
@@ -36,6 +38,9 @@ class AVOX_EXPORT BaseSource : public OptionLink, public ISourceInfo {
  public:
   const std::vector<VTrackDesc>& getVideoTracks() const { return videoTracks; }
   const std::vector<ATrackDesc>& getAudioTracks() const { return audioTracks; }
+  const std::vector<STrackDesc>& getSubtitleTracks() const {
+    return subtitleTracks;
+  }
 
   // 关闭视频，源里有视频也不会处理，需要在open之前调用
   virtual void disableVideo(bool bDisable);
@@ -47,6 +52,8 @@ class AVOX_EXPORT BaseSource : public OptionLink, public ISourceInfo {
   virtual int32_t audioSize() override;
   virtual VTrackDesc getVideoDesc(int32_t index) override;
   virtual ATrackDesc getAudioDesc(int32_t index) override;
+  virtual int32_t subtitleSize() override;
+  virtual STrackDesc getSubtitleDesc(int32_t index) override;
   virtual bool canSeek() override;
 
  public:
@@ -56,6 +63,7 @@ class AVOX_EXPORT BaseSource : public OptionLink, public ISourceInfo {
   // 在open之后调用
   void addVideoDesc(const VTrackDesc& desc);
   void addAudioDesc(const ATrackDesc& desc);
+  void addSubtitleDesc(const STrackDesc& desc);
 
  public:
   // 当音频与视频都准备好了，请调用开始下一步

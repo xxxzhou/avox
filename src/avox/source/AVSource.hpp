@@ -134,6 +134,8 @@ class AVOX_EXPORT AVSource : public BaseSource,
   std::vector<int32_t> vIndexMaps;
   // 音频索引映射表，用于多流时，将音频流映射到指定的索引
   std::vector<int32_t> aIndexMaps;
+  // 字幕索引映射表(streamId → 字幕轨局部索引): MKV 可带多条字幕轨, 容量给足
+  std::vector<int32_t> sIndexMaps;
   // 分拆包
   std::vector<AvoxPacket> spiltBufs;
   // I帧/P帧合并包

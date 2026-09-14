@@ -11,6 +11,8 @@ AVSource::AVSource() {
   audioInfo.type = TrackType::audio;
   vIndexMaps.resize(4, 0);
   aIndexMaps.resize(4, 0);
+  // MKV 动漫源常见 10+ 字幕轨
+  sIndexMaps.resize(32, 0);
 }
 
 AVSource::~AVSource() {}
@@ -80,6 +82,13 @@ void AVSource::onTrackOpen() {
     aIndexMaps[audioTracks[i].trackId] = i;
   }
   audioInfo.reset();
+  // 字幕轨映射重置(容量不足时扩到 trackId+1, 防越界)
+  for (int32_t i = 0; i < subtitleTracks.size(); i++) {
+    if (subtitleTracks[i].trackId >= (int32_t)sIndexMaps.size()) {
+      sIndexMaps.resize(subtitleTracks[i].trackId + 1, 0);
+    }
+    sIndexMaps[subtitleTracks[i].trackId] = i;
+  }
   //
   vconfigPackets.clear();
   aconfigPacket = nullptr;
@@ -114,6 +123,15 @@ void AVSource::onOptionChange(const char* key, ArgType type) {
 
 void AVSource::processPacket(AvoxPacket& packet) {
   PackType type = (PackType)packet.packtype;
+  // 字幕旁路: 只做 index 映射后直接下发, 不进音视频同步/基准链
+  // (字幕由播放时钟旁路消费, 见计划 doc/plan/player/ASS字幕渲染计划.md §3.2)
+  if (type == PackType::subtitles || type == PackType::sconfig) {
+    if (packet.index >= 0 && packet.index < (int32_t)sIndexMaps.size()) {
+      packet.index = sIndexMaps[packet.index];
+      dispatch(&IAVSourceOb::onPacket, packet);
+    }
+    return;
+  }
   // 全局packet.index映射到A/V对应的index
   if (type == PackType::video || type == PackType::vconfig) {
     packet.index = vIndexMaps[packet.index];

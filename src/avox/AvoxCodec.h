@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include "AvoxAudio.h"
 #include "AvoxBuffer.h"
 #include "AvoxDef.h"
@@ -114,6 +116,30 @@ struct ATrackDesc {
   ACodecId codecId = ACodecId::none;
   // 音频信息
   AudioDesc desc = {};
+};
+
+// 字幕编解码器类型(值导出给引擎插件, 只增不改不删)
+#define AVOX_MAP_SCODEC(XX) \
+  XX(none, -1, "none")      \
+  XX(ass, 0, "ass")         \
+  XX(srt, 1, "srt")         \
+  XX(pgs, 2, "pgs")
+
+enum class SCodecId : int32_t {
+#define XX(name, value, str) name = value,
+  AVOX_MAP_SCODEC(XX)
+#undef XX
+};
+
+struct STrackDesc {
+  // 对应流Id
+  int32_t trackId = 0;
+  SCodecId codecId = SCodecId::none;
+  // 轨道语言(MKV TrackLanguage, ISO 639-2, 空=未标)与标题(可显示名)
+  std::string lang;
+  std::string title;
+  // 强制字幕(forced disposition): 听障翻译轨/外语对白轨, 选轨 UI 可用
+  bool forced = false;
 };
 
 // 视频Buffer,YUV图像,可以直接转ImageBuffer使用

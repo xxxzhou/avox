@@ -218,6 +218,9 @@ class ISourceInfo {
   virtual ATrackDesc getAudioDesc(int32_t index) = 0;
   // 是否可以seek
   virtual bool canSeek() = 0;
+  // 字幕轨信息(默认无: 带默认实现, 外部既有 ISourceInfo 实现者不受影响)
+  virtual int32_t subtitleSize() { return 0; }
+  virtual STrackDesc getSubtitleDesc(int32_t index) { return {}; }
 };
 
 // 编码数据源，如H264/H265/AAC

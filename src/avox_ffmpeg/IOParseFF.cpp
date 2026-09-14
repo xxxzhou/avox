@@ -91,7 +91,8 @@ IOParseFF::~IOParseFF() {
 bool IOParseFF::parseStream(int32_t streamId, AVCodecParameters* codecpar) {
   // 如果不是视频和音频，直接返回
   if (codecpar->codec_type != AVMEDIA_TYPE_VIDEO &&
-      codecpar->codec_type != AVMEDIA_TYPE_AUDIO) {
+      codecpar->codec_type != AVMEDIA_TYPE_AUDIO &&
+      codecpar->codec_type != AVMEDIA_TYPE_SUBTITLE) {
     return true;
   }
   AVBSFContext* vbsf = nullptr;
@@ -117,6 +118,24 @@ bool IOParseFF::parseStream(int32_t streamId, AVCodecParameters* codecpar) {
       dispatch(&IAVSourceOb::onPacket, vpack);
       updateConfig(vpack);
     }
+  }
+  // 字幕轨: ASS/SSA 的 extradata(MKV [Script Info]/[V4+ Styles] 剧本头)以
+  // sconfig 包旁路下发, MediaPlayer 侧留存, 选轨时喂 libass(计划 §3.2)
+  if (codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE) {
+    if (ffSCodec(codecpar->codec_id) == SCodecId::ass &&
+        codecpar->extradata_size > 0) {
+      AvoxPacket spack = {};
+      spack.data.bRef = true;
+      spack.data.data = codecpar->extradata;
+      spack.data.size = codecpar->extradata_size;
+      spack.prefixSize = 0;
+      spack.packtype = (int32_t)PackType::sconfig;
+      spack.index = streamId;
+      spack.pts = 0;
+      spack.dts = 0;
+      dispatch(&IAVSourceOb::onPacket, spack);
+    }
+    return true;
   }
   if (!bDisableAudio && codecpar->codec_type == AVMEDIA_TYPE_AUDIO &&
       codecpar->extradata_size > 0) {
@@ -318,6 +337,25 @@ void IOParseFF::onRunTask() {
       addAudioDesc(adesc);
       // 单独给AAC配置头文件使用
       audioDesc = adesc.desc;
+    } else if (st->codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE) {
+      // 字幕流入轨枚举(计划 §3.2): 只登记 ASS/SSA/SRT/PGS, 其余跳过。
+      // 数据包经 PackType::subtitles 旁路下发, 不进音视频同步时钟。
+      STrackDesc sdesc = {};
+      sdesc.codecId = ffSCodec(st->codecpar->codec_id);
+      if (sdesc.codecId == SCodecId::none) {
+        LOGFLF(LogLevel::info, "unsupported subtitle codec:",
+               st->codecpar->codec_id);
+        continue;
+      }
+      sdesc.trackId = st->index;
+      if (auto* e = av_dict_get(st->metadata, "language", nullptr, 0)) {
+        sdesc.lang = e->value ? e->value : "";
+      }
+      if (auto* e = av_dict_get(st->metadata, "title", nullptr, 0)) {
+        sdesc.title = e->value ? e->value : "";
+      }
+      sdesc.forced = (st->disposition & AV_DISPOSITION_FORCED) != 0;
+      addSubtitleDesc(sdesc);
     }
   }
   // 禁用的流打 AVDISCARD_ALL: 带采样索引的 demuxer(mov/mp4) 对 discard 流不再
@@ -421,6 +459,13 @@ void IOParseFF::onRunTask() {
       if (bDisableAudio) {
         continue;
       }
+    } else if (st->codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE) {
+      packType = PackType::subtitles;
+      // 旁路数据量极小(每条对白几十字节), 不按 a/v 的禁用开关丢弃;
+      // 无消费者时 MediaPlayer 侧自然忽略
+      if (pkt->size <= 0) {
+        continue;
+      }
     }
     // 忽略其他类型
     if (packType == PackType::other) {
@@ -452,6 +497,10 @@ void IOParseFF::onRunTask() {
     // B帧可能没有pts
     if (refPkt->pts == AV_NOPTS_VALUE) {
       refPkt->pts = refPkt->dts;
+    }
+    // 字幕包没有有效 pts 则无法按播放时钟消费, 直接丢弃(防 NOPTS rescale 变垃圾值)
+    if (packType == PackType::subtitles && refPkt->pts == AV_NOPTS_VALUE) {
+      continue;
     }
     // 时间全转成毫秒
     refPkt->pts = av_rescale_q(refPkt->pts, st->time_base, {1, 1000});
