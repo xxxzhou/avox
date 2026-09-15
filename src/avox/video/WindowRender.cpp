@@ -53,6 +53,15 @@ void WindowRender::setVulkan(bool bVulkan_) {
   SurfaceRenderNative::setVulkan(bVulkan_);
 }
 
+void WindowRender::setHdrMode(HdrMode mode) {
+  SurfaceRenderNative::setHdrMode(mode);
+  // forceHDR 且显示器支持 HDR 时, 窗口交换链切 PQ 色彩空间直通上屏;
+  // SDR 显示器 no-op。离屏无窗口(交换链)自然跳过
+  if (window) {
+    window->setHdrPassthrough(mode == HdrMode::forceHDR);
+  }
+}
+
 void WindowRender::onSurfaceChange() {
   std::lock_guard<std::mutex> lck(mtx);
   if (bOffSurface) {

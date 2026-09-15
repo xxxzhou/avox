@@ -77,6 +77,8 @@ class AVOX_EXPORT WindowRender : public SurfaceRenderNative,
   // 覆盖 setVulkan已有窗口时不能切换
   virtual void setVulkan(bool bVulkan) override;
   virtual void* getSurface() override;
+  // HDR 模式: 双路转发 + forceHDR 时触发窗口 HDR 直通(显示器支持时)
+  virtual void setHdrMode(HdrMode mode) override;
   //
   virtual void onSurfaceChange() override;
   virtual void render(const VideoFrame& frame) override;

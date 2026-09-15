@@ -80,6 +80,9 @@ YuvType getDxFormat(DXGI_FORMAT format) {
   switch (format) {
     case DXGI_FORMAT_NV12:
       return YuvType::nv12;
+    case DXGI_FORMAT_P010:
+      // 10bit 硬解直出, GpuFrame 带正确标签才能进原生转换车道
+      return YuvType::p010;
     case DXGI_FORMAT_YUY2:
       return YuvType::yuv422P;
   }

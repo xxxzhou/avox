@@ -7,7 +7,8 @@
 
 namespace avox {
 
-// 把NV12纹理转换为RGBA8纹理
+// 把NV12/P010纹理转换为RGBA8纹理(P010路径内置 HDR tone map, 与 glsl
+// yuv2rgbaV5.comp 同源: PQ/HLG 解码 + ACES + BT.2020->BT.709)
 class Dx11CSVideoRender : public VideoRender, public Dx11Context {
  public:
   Dx11CSVideoRender();
@@ -30,6 +31,13 @@ class Dx11CSVideoRender : public VideoRender, public Dx11Context {
   uint32_t imageWidth = 0;
   uint32_t imageHeight = 0;
   D3D11_TEXTURE2D_DESC yuvDesc = {};
+  // 颜色/HDR 参数(setColorSpace/setHdrMeta/setHdrMode 注入, 随脏标记进常量):
+  // P010 硬解的 tone map 在本 CS 内完成(与 glsl yuv2rgbaV5.comp 同源)
+  ColorSpaceDesc cs{YuvStandard::bt601, YuvRange::full};
+  HdrMeta hdrMeta = {};
+  HdrMode hdrMode = HdrMode::follow;
+  bool bParamsDirty = true;
+  uint32_t constData[8] = {};
   // CPU NV12直取(bOutCpuYuv时): 复用staging纹理,映射指针零拷发布
   // Unmap顺延到下一帧回读,消费者须在当帧窗口内使用
   MComPtr<ID3D11Texture2D> stagingTexture = nullptr;
@@ -45,6 +53,10 @@ class Dx11CSVideoRender : public VideoRender, public Dx11Context {
   virtual void releaseGraph() override;
   virtual void renderGpuFrame(const GpuFrame& frame) override;
   virtual bool fetchFrame(ImageBuffer* imageBuffer) override;
+  // 颜色/HDR 参数(VideoRender 虚接口), 触发常量脏标记
+  virtual void setColorSpace(const ColorSpaceDesc& c) override;
+  virtual void setHdrMeta(const HdrMeta& meta) override;
+  virtual void setHdrMode(HdrMode mode) override;
   // bOutCpuYuv时把当前NV12帧staging回读,渲染线程内按需调用,一帧最多一次
   virtual bool getCpuFrameBuffer(IImageBuffer** buffer, YuvType& yuvType,
                                  int64_t* pts) override;

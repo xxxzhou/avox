@@ -67,6 +67,27 @@ void SurfaceRenderNative::setVulkan(bool bVulkan_) {
   }
 }
 
+void SurfaceRenderNative::setColorSpace(const ColorSpaceDesc& c) {
+  SurfaceRenderVk::setColorSpace(c);
+  if (pVideoRender) {
+    pVideoRender->setColorSpace(c);
+  }
+}
+
+void SurfaceRenderNative::setHdrMeta(const HdrMeta& meta) {
+  SurfaceRenderVk::setHdrMeta(meta);
+  if (pVideoRender) {
+    pVideoRender->setHdrMeta(meta);
+  }
+}
+
+void SurfaceRenderNative::setHdrMode(HdrMode mode) {
+  SurfaceRenderVk::setHdrMode(mode);
+  if (pVideoRender) {
+    pVideoRender->setHdrMode(mode);
+  }
+}
+
 void SurfaceRenderNative::enableYuvOut(YuvType ytype) {
   // vulkan在场: 走vk管线输出处理后的帧(现状不变)
   if (bVulkan) {

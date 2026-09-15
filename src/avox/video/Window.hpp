@@ -78,6 +78,9 @@ class Window : public Observer<IWindowOb> {
   virtual IRenderContext* getRenderContext();
   // vk/dx11显示context
   virtual void renderContext(IRenderContext* context) {};
+  // HDR 直通输出(块3): 显示器支持 HDR 时把交换链切 PQ 色彩空间,
+  // forceHDR 内容原样上屏; SDR 显示器恒 no-op 返回 false。默认不支持
+  virtual bool setHdrPassthrough(bool bPassthrough) { return false; };
 
  public:
   const char* getTitle() const { return wdTitle.c_str(); }

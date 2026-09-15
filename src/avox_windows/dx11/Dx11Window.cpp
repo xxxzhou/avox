@@ -1,5 +1,10 @@
 #include "Dx11Window.hpp"
 #include "avox/AvoxMath.h"
+#include <dxgi1_6.h>
+// 老SDK的 DXGI_COLOR_SPACE_TYPE 枚举缺 PQ 值(12), 兜底补齐
+#ifndef DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P709
+#define DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P709 ((DXGI_COLOR_SPACE_TYPE)12)
+#endif
 namespace avox {
 
 extern vec4i getViewRect(int swidth, int sheight, float aspect);
@@ -230,8 +235,70 @@ void Dx11Window::initDevice() {
     AVOX_WIN_LOG(hr, "create device and swapchain failed");
     return;
   }
+  detectHdrDisplay();
   initBuffers();
   bInitDevice = true;
+}
+
+// 探测所在显示器的 HDR 能力(IDXGIOutput6 色彩空间), 决定直通输出是否可生效
+void Dx11Window::detectHdrDisplay() {
+  bHdrDisplay = false;
+  MComPtr<IDXGIOutput> output = nullptr;
+  MComPtr<IDXGIOutput6> output6 = nullptr;
+  if (FAILED(swapChain->GetContainingOutput(&output)) || !output) {
+    LOGFLF(LogLevel::info, "hdr detect: no containing output");
+    return;
+  }
+  if (FAILED(output->QueryInterface(IID_PPV_ARGS(&output6))) || !output6) {
+    LOGFLF(LogLevel::info, "hdr detect: no IDXGIOutput6 (win10 1703前)");
+    return;
+  }
+  DXGI_OUTPUT_DESC1 desc1 = {};
+  if (FAILED(output6->GetDesc1(&desc1))) {
+    return;
+  }
+  bHdrDisplay =
+      desc1.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P709;
+  LOGFLF(LogLevel::info, "hdr display capable:", bHdrDisplay);
+}
+
+// forceHDR 时把交换链切 10bit+PQ 色彩空间, 内容原样上屏;
+// SDR 显示器恒 no-op(返回 false), 行为零变化
+bool Dx11Window::setHdrPassthrough(bool bPassthrough) {
+  if (!swapChain || !bInitDevice) {
+    return false;
+  }
+  if (bHdrActive == bPassthrough) {
+    return true;
+  }
+  if (!bPassthrough && !bHdrDisplay) {
+    return true;  // SDR 链本来就是非直通状态
+  }
+  if (!bHdrDisplay) {
+    LOGFLF(LogLevel::info, "hdr passthrough ignored, display not hdr capable");
+    return false;
+  }
+  MComPtr<IDXGISwapChain3> sc3 = nullptr;
+  if (FAILED(swapChain->QueryInterface(IID_PPV_ARGS(&sc3))) || !sc3) {
+    LOGFLF(LogLevel::warn, "no IDXGISwapChain3, hdr passthrough unsupported");
+    return false;
+  }
+  // PQ 直通需要 10bit 交换链; 切回时恢复 8bit
+  initBuffers(bPassthrough ? DXGI_FORMAT_R10G10B10A2_UNORM
+                           : DXGI_FORMAT_R8G8B8A8_UNORM);
+  HRESULT hr = sc3->SetColorSpace1(
+      bPassthrough ? DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P709
+                   : DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709);
+  if (FAILED(hr)) {
+    AVOX_WIN_LOG(hr, "SetColorSpace1 failed");
+    if (bPassthrough) {
+      initBuffers();  // 回退 SDR 链
+    }
+    return false;
+  }
+  bHdrActive = bPassthrough;
+  LOGFLF(LogLevel::info, "hdr passthrough swapchain:", bPassthrough);
+  return true;
 }
 
 void Dx11Window::initShader() {
@@ -334,7 +401,7 @@ void Dx11Window::initShader() {
   bInitShader = true;
 }
 
-void Dx11Window::initBuffers() {
+void Dx11Window::initBuffers(DXGI_FORMAT fmt) {
   // 释放 RTV 和 back buffer 引用
   renderView.Reset();
   backTex.Reset();
@@ -343,9 +410,8 @@ void Dx11Window::initBuffers() {
   context->OMSetRenderTargets(0, nullptr, nullptr);  // 解绑 RTV
   context->ClearState();
   context->Flush();
-  // 调整 buffer 大小
-  HRESULT hr = swapChain->ResizeBuffers(frameCount, wdWidth, wdHeight,
-                                        DXGI_FORMAT_R8G8B8A8_UNORM, 0);
+  // 调整 buffer 大小(fmt 参数支持 HDR 直通切 10bit)
+  HRESULT hr = swapChain->ResizeBuffers(frameCount, wdWidth, wdHeight, fmt, 0);
   if (FAILED(hr)) {
     AVOX_WIN_LOG(hr, "resize buffer failed");
     return;

@@ -247,3 +247,15 @@ YUV→RGB 与 tone map 数学在各渲染后端为独立实现,Vulkan 先做,其
 **判据教训两条**:①forceHDR 档等首帧后才切模式,末帧流内时间与 follow/SDR 播错位 0.5s,testsrc2 移动图案把逐像素对比变噪声(vs follow midLift -2.6 虚报)——改为**按固定渲染帧序号采样**(三档都取第 90 帧,内容按帧序天然对齐,vs sdr diffRatio 0.71→0.02);②midLift>10 阈值贴边(AUD 素材 9.4)且 ACES 压暗/抬升在频带内正负抵消——tone map 的硬信号改 diffRatio(无 map ≈0.02),midLift 降为方向哨兵(>3)。forceHDR 三向判定:follow≠sdr(map 开)+force≠follow(diffRatio>0.5)+force≈sdr(<0.1)。
 
 验收:hdrtest 对 base/_aud 双素材 PASS(meta=1/1000, force diffRatio 0.02/0.69),play_regress 离线子集全绿,ctest 全绿。HDR API 面缺口就此关闭,剩余:硬解 P010(§6.7 三断点)/非 Vulkan 后端 tone map/HDR 直通输出。
+
+### 6.13 硬解 P010 闭环 + 原生车道 tone map(DX11)+ HDR 直通脚手架(2026-09-15)
+
+**硬解 P010(阶段 2 主项)闭环**。真因:Windows 硬解 GpuFrame 从不进 Vulkan 导入(`SurfaceRenderNative::render(GpuFrame)` 先经 pVideoRender 做 YUV->RGBA,再以 RGBA 纹理进 vk 管线),P010 黑屏发生在 `Dx11CSVideoRender`——P010 解码纹理被按 NV12 惯例建 R8/R8G8_UNORM SRV,类型不兼容 cast 静默失败(无 HRESULT 检查),`renderToTexture` 因视图空指针早退,零渲染输出黑。修复:①SRV 按 `desc.Format` 分支(P010 用 R16_UNORM/R16G16_UNORM,补创建失败检查);②CS 增加 P010 读路径(16bit 视图->10bit 归一,BT.2020 tv-range 展开)+ 与 V5 同源的 PQ/HLG/ACES/BT.2020->BT.709 tone map(forceHDR 直通分支同款);③`getDxFormat` 补 P010->`YuvType::p010` 标签(GpuFrame 得以进原生车道门控);④staging 回读补 P010 分支,enableYuvOut 可交付 p010。验收:hdrtest -hard PASS(hdrMean 16->127.4,midLift 11.2,diffRatio 0.69,meta 回调正常),NV12 路径回归全绿。
+
+**颜色参数首次到达原生车道**:基类 `VideoRender` 增 `setColorSpace/setHdrMeta/setHdrMode` 虚接口(VkVideoRender 签名兼容自动成 override),`SurfaceRenderNative` 双路转发——此前 WindowRender 链只喂 vk 一侧,DX11 CS 连流是 PQ 还是 BT.601 都不知道。DX11 CS 的 tone map 随块 1 一并落地,即**块 2(原生车道 tone map)的 Windows 部分完成**;Metal/EGL 原生转换器可平移同一函数集,留待对应平台真机。
+
+**块 3(HDR 直通输出)脚手架**:`Window::setHdrPassthrough` 虚接口 + `Dx11Window` 实现——`IDXGIOutput6::GetDesc1` 探测显示器 HDR 能力,生效时 `ResizeBuffers(R10G10B10A2)+SetColorSpace1(G2084)`,SDR 显示器恒 no-op(返回 false,行为零变化,本机已验证 no-op 路径);`WindowRender::setHdrMode` 联动(forceHDR 且显示器支持才切)。**触发分支需 HDR 真机验证**,本机 SDR 屏只能验到探测与 no-op。
+
+坑:老 SDK 的 `DXGI_COLOR_SPACE_TYPE` 枚举缺 G2084(值 12),编译期兜底 define;公共接口(VideoRender)加虚函数后必须全量重编所有宿主二进制,增量混跑会 vtable 错位(9-14 已踩过)。
+
+至此三块状态:块 1 硬解 P010 **完成**;块 2 原生 tone map **Windows 完成,Metal/EGL 待平台**;块 3 HDR 直通 **脚手架就绪,触发路径待 HDR 真机**。软硬解双车道的 HDR10->SDR tone map 全链可用,forceHDR 在 SDR 表面直通、在 HDR 显示器(待验证)可原样上屏。

@@ -22,6 +22,13 @@ class AVOX_EXPORT SurfaceRenderNative : public SurfaceRenderVk {
   // true: pVideoRender 做 NV12→RGBA，交给 Vk 接手处理
   // false: pVideoRender 做 NV12→RGBA，给对应 surface 显示
   virtual void setVulkan(bool bVulkan) override;
+  // 颜色/HDR 参数双路转发: vk lane 进 UBO, 原生 lane 进平台转换器
+  // (硬解 YUV->RGB 在 pVideoRender 里发生, 不转发则原生车道拿不到 tone map 参数)
+  virtual void setColorSpace(const ColorSpaceDesc& c) override;
+  // setHdrMeta 不在 ISurfaceRender 接口(无虚基), 遮蔽+双路转发;
+  // 调用方持具体类型(WindowRender)
+  void setHdrMeta(const HdrMeta& meta);
+  void setHdrMode(HdrMode mode) override;
   // screenShot: Vulkan时走vkVideoRender，非Vulkan时走pVideoRender
   virtual bool screenShot(IImageBuffer* imageBuffer) override;
 

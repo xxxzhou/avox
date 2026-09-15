@@ -90,6 +90,11 @@ class AVOX_EXPORT VideoRender : public OptionLink {
   bool bCpuOut() { return bOutCpuYuv; }
   // 当前输入是否为CPU帧(软解/软编透传),供外层判交付格式
   bool bCpuInput() { return cpuIn; }
+  // 颜色空间与HDR参数: vk lane 进 UBO, dx11 lane 进 CS 常量
+  // (硬解 YUV->RGB 转换在 dx11 CS 里, tone map 参数必须送到这一层)
+  virtual void setColorSpace(const ColorSpaceDesc& c) {};
+  virtual void setHdrMeta(const HdrMeta& meta) {};
+  virtual void setHdrMode(HdrMode mode) {};
   // CPU输入帧的解码格式(cpuIn时有效)
   YuvType cpuFrameYuvType() { return yuvFrame.format.type; }
   // 改变窗口，会重置bResetFlag,这样会在运行时重置

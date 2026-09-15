@@ -41,8 +41,11 @@ private:
   bool bInitDevice = false;
   bool bInitShader = false;
   ImageFormat sformat = {};
+  // HDR 直通输出(块3): 显示器能力探测 + 交换链 PQ 色彩空间状态
+  bool bHdrDisplay = false;
+  bool bHdrActive = false;
 
-protected:
+ protected:
   virtual void onInitWin() override;
   virtual bool onValidWin() override;
   virtual void onChangeSize() override;
@@ -51,15 +54,18 @@ protected:
   virtual IRenderContext *getRenderContext() override;
   // 供外部调用，传入解码后的纹理
   virtual void renderContext(IRenderContext* context) override;
+  // HDR 直通输出: 显示器支持时切 10bit+PQ 交换链 (Window 虚接口)
+  virtual bool setHdrPassthrough(bool bPassthrough) override;
 
-public:
+ public:
   virtual ID3D11Device *getDevice() override;
-  virtual ID3D11Texture2D *getTexture() override; 
+  virtual ID3D11Texture2D *getTexture() override;
 
 private:
   void initDevice();
   void initShader();
-  void initBuffers();
+  void initBuffers(DXGI_FORMAT fmt = DXGI_FORMAT_R8G8B8A8_UNORM);
+  void detectHdrDisplay();
   void renderWindow();
   LRESULT handleMessage(UINT msg, WPARAM wparam, LPARAM lparam);
   
