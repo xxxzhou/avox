@@ -148,11 +148,11 @@ class VkVideoRender : public VideoRender, public IVOutputLayerOb {
   void updateSharpen(const SharpenVideo& paramet);
   void disableSharpen();
   // 颜色空间(矩阵), 运行时重传, 不重建 graph
-  void setColorSpace(const ColorSpaceDesc& c);
+  void setColorSpace(const ColorSpaceDesc& c) override;
   // HDR 静态元数据(峰值亮度), 运行时重传, 不重建 graph
-  void setHdrMeta(const HdrMeta& meta);
+  void setHdrMeta(const HdrMeta& meta) override;
   // HDR 输出模式(forceHDR 跳过 tone map), 运行时重传, 不重建 graph
-  void setHdrMode(HdrMode mode);
+  void setHdrMode(HdrMode mode) override;
 #ifdef AVOX_ENABLE_FREETYPE
   // 获取字体层
   FontRender* enableRenderFont();
