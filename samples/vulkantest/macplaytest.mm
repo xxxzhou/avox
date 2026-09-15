@@ -17,6 +17,8 @@ using namespace avox;
 // 窗口一律由宿主提供 (Window.hpp 里 AvoxSurfaceType 就是 CAMetalLayer*), 故样例自建。
 // 键位: p 存一帧 PNG, q/关窗退出。第 4 个参数给存图路径时每 3 秒自动覆盖存一张,
 // 远程无 VNC 也能靠轮询这张图看画面 (SSH 里按不了键)。
+// 用法: macplaytest [url] [运行秒数] [ffmpeg|zlmediakit] [存图路径] [外挂字幕.srt]
+//   第 5 个参数给 .srt 时 open 就绪后加载(引擎内按扩展名分流), 用于字幕合帧取证。
 
 // 背衬层换成 CAMetalLayer, 供 MetalRender 直接上屏
 @interface AvoxMetalView : NSView
@@ -66,9 +68,11 @@ int main(int argc, char* argv[]) {
   // 给了路径就每 3 秒自动存一张; 没给也能按 p 手动存到这个默认路径
   const char* shotPath = argc > 4 ? argv[4] : nullptr;
   const char* keyShotPath = shotPath ? shotPath : "/tmp/avox_shot.png";
-  fprintf(stderr, "[mac] url: %s, timeout: %ds, io: %s, shot: %s\n", url,
+  // 可选外挂字幕(第 5 参数): open 就绪后加载, 走引擎外挂槽(后激活者胜)
+  const char* srtPath = argc > 5 ? argv[5] : nullptr;
+  fprintf(stderr, "[mac] url: %s, timeout: %ds, io: %s, shot: %s, srt: %s\n", url,
           timeoutSec, ioPlanArg ? ioPlanArg : "auto",
-          shotPath ? shotPath : "off");
+          shotPath ? shotPath : "off", srtPath ? srtPath : "off");
   @autoreleasepool {
     [NSApplication sharedApplication];
     [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
@@ -111,6 +115,7 @@ int main(int argc, char* argv[]) {
     bool played = false;
     bool shotOk = false;
     bool running = true;
+    bool srtTried = false;
     while (running && window.isVisible) {
       @autoreleasepool {
         NSEvent* event =
@@ -133,6 +138,13 @@ int main(int argc, char* argv[]) {
       }
       if (mp->getState() == PlayerState::playing && mp->getPosition() > 0) {
         played = true;
+      }
+      // 外挂字幕: 就绪后加载一次(引擎三槽位仲裁, 顶掉内封轨/ASR 槽)
+      if (srtPath && !srtTried && mp->getState() >= PlayerState::ready) {
+        srtTried = true;
+        const bool srtOk = mp->loadSubtitle(srtPath);
+        fprintf(stderr, "[mac] loadSubtitle %s: %s\n", srtPath,
+                srtOk ? "ok" : "failed");
       }
       const auto now = std::chrono::steady_clock::now();
       // 起播后每 3 秒覆盖存一张, 供远程轮询看画面
