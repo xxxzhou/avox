@@ -310,3 +310,11 @@ forceHDR 直通在中转链路不可达,三个结构性原因:
 若将来要中转车道支持直通,需三件套:rgba16f(或 rgba16)中间格式仅在 forceHDR 时启用;特效链在 forceHDR 时旁路或 HDR 化(线性光/宽色域);各呈现端配 HDR swapchain(引擎侧还需引擎支持 HDR 输出,超出 SDK 控制面)。当前判定投入产出比低,先保原生车道块 3 验证。
 
 另:VkVideoRender.hpp 三个 HDR 接口补 override 标注(与 VideoRender 基类虚函数签名核对一致),收尾提交 9a3f652。
+
+### 6.17 产品驱动:panvox 真 HDR 需求(2026-09-15)
+
+同级产品仓 panvox(Flutter 播放器)拍板必须打通真 HDR,策略定稿见 panvox `docs/adr-0009-hdr-strategy.md`。对引擎侧的直接影响:
+
+1. **块 3 有了明确消费者**:panvox 三条纹理桥(Windows BGRA8 共享纹理 / Android TextureRegistry ANativeWindow / macOS Vulkan IOSurface 'BGRA')全落在本计划 §6.16 定性的中转车道,tone map 层开箱即用;真直通层等块 3 验证后由 panvox 走 PlatformView 挖洞复用原生车道。块 3 的 HDR 显示器实测(Windows DXGI HDR swapchain / macOS CAMetalLayer EDR / Android SurfaceView)是两端共同的下一里程碑;
+2. **验收口径**:HDR10/HLG 色彩正确 + DV 走 HDR10 兼容层(DV Profile 5 无 RPU 处理,不承诺);
+3. **对接缺口在宿主侧**:panvox_c_api.h 尚无 onHdrMeta/setHdrMode 透传(引擎 C++ API 已备),panvox 侧补 C API+FFI 两个口子即可,引擎侧无改动。
