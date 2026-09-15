@@ -91,6 +91,17 @@ def _cached_dist_flavor(cmake_cache):
         pass
     return "agpl"
 
+def _cached_cmake_bool(cmake_cache, key):
+    """读CMakeCache里bool选项的实际生效值(cache OFF 不会出现在本次命令行参数里)"""
+    try:
+        with open(cmake_cache, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if line.startswith(key + ":BOOL="):
+                    return line.split("=", 1)[1].strip().upper() == "ON"
+    except OSError:
+        pass
+    return True
+
 def _requested_dist_flavor(build_args):
     """从本次cmake参数解析请求的发行渠道(未传为默认commercial, 可商用渠道)"""
     for arg in (build_args.split() if isinstance(build_args, str) else (build_args or [])):
@@ -224,8 +235,10 @@ def build_module(module_name, bOnlyMake=False,build_args="",bself=False):
 
     if bself:
         # SWIG 显式关闭时跳过 AvoxWrapper: CMake 侧 if(AVOX_ENABLE_SWIG) 不加载 swig 子目录,
-        # AvoxWrapper target 不存在, 无条件 --target AvoxWrapper 会报 unknown target 误判构建失败
-        if "AVOX_ENABLE_SWIG=OFF" in (build_args or ""):
+        # AvoxWrapper target 不存在, 无条件 --target AvoxWrapper 会报 unknown target 误判构建失败。
+        # cache 里 OFF 的同样跳过 (值不在命令行参数里, 只看 build_args 会漏, 每次全量构建误报)
+        if "AVOX_ENABLE_SWIG=OFF" in (build_args or "") or \
+                not _cached_cmake_bool(cmake_cache, "AVOX_ENABLE_SWIG"):
             print("SWIG 已关闭 (AVOX_ENABLE_SWIG=OFF), 跳过 AvoxWrapper")
             print(f"项目构建完成: {module_name}")
             return True
