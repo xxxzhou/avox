@@ -38,13 +38,81 @@ void main()
 }
 )";
 
+// OES采样输出已是驱动隐式转换后的RGB(HDR内容为BT.2020+PQ编码, [0,1]),
+// HDR链与 Dx11CSVideoRender/MetalRender 同源: PQ EOTF->ACES->BT.2020->BT.709
 static const char* FragmentShaderString = R"(
 #extension GL_OES_EGL_image_external : require
-precision mediump float;
+precision highp float;
 varying mediump vec2 textureCoordinate;
 uniform samplerExternalOES oes_texture;
+uniform int uHdrMode;
+uniform int uTransfer;
+uniform float uPeakNits;
+uniform float uSdrWhite;
+
+vec3 pqToLinear(vec3 n) {
+    const float m1 = 0.1593017578125;
+    const float m2 = 78.84375;
+    const float c1 = 0.8359375;
+    const float c2 = 18.8515625;
+    const float c3 = 18.6875;
+    vec3 p = pow(clamp(n, 0.0, 1.0), vec3(1.0 / m2));
+    vec3 num = max(p - c1, 0.0);
+    return pow(num / (c2 - c3 * p), vec3(1.0 / m1));
+}
+
+vec3 hlgToLinear(vec3 e) {
+    vec3 t = clamp(e, 0.0, 1.0);
+    vec3 lo = t * t / 3.0;
+    vec3 hi = (exp((t - 0.55991073) / 0.17883277) + 0.28466892) / 12.0;
+    vec3 scene = mix(lo, hi, step(vec3(0.5), t));
+    float ys = dot(scene, vec3(0.2627, 0.6780, 0.0593));
+    return scene * pow(vec3(max(ys, 1e-6)), vec3(0.2));
+}
+
+vec3 toneMap(vec3 lin) {
+    float xScale = 10000.0 / uSdrWhite;
+    vec3 x = max(lin * xScale, 0.0);
+    vec3 a = (x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14);
+    float peakX = max(uPeakNits, uSdrWhite) / uSdrWhite;
+    float peak = (peakX * (2.51 * peakX + 0.03)) / (peakX * (2.43 * peakX + 0.59) + 0.14);
+    return clamp(a / peak, 0.0, 1.0);
+}
+
+vec3 bt2020ToBt709(vec3 c) {
+    return max(vec3(dot(c, vec3(1.6605, -0.5876, -0.0728)),
+                    dot(c, vec3(-0.1246, 1.1329, -0.1006)),
+                    dot(c, vec3(-0.0182, -0.1006, 1.1187))), 0.0);
+}
+
+vec3 linearToBt709(vec3 c) {
+    vec3 lo = c * 4.5;
+    vec3 hi = 1.099 * pow(max(c, 0.0), vec3(0.45)) - 0.099;
+    return mix(lo, hi, step(vec3(0.018), c));
+}
+
+vec3 processColor(vec3 rgb) {
+    if (uHdrMode == 2) {
+        return rgb;
+    }
+    if (uTransfer == 2) {
+        vec3 lin = pqToLinear(rgb);
+        lin = toneMap(lin);
+        lin = bt2020ToBt709(lin);
+        return linearToBt709(lin);
+    }
+    if (uTransfer == 3) {
+        vec3 lin = hlgToLinear(rgb) * 0.1;
+        lin = toneMap(lin);
+        lin = bt2020ToBt709(lin);
+        return linearToBt709(lin);
+    }
+    return rgb;
+}
+
 void main() {
-    gl_FragColor = texture2D(oes_texture, textureCoordinate);
+    vec3 rgb = texture2D(oes_texture, textureCoordinate).rgb;
+    gl_FragColor = vec4(clamp(processColor(rgb), 0.0, 1.0), 1.0);
 }
 )";
 
@@ -177,6 +245,24 @@ void EglVideoRender::renderGpuFrame(const GpuFrame& frame) {
 
 IRenderContext* EglVideoRender::getGpuContext() { return this; }
 
+// 颜色/HDR参数: 每帧渲染时直接读取成员, 无需脏标记
+void EglVideoRender::setColorSpace(const ColorSpaceDesc& c) {
+  if (c.standard == cs.standard && c.range == cs.range &&
+      c.transfer == cs.transfer) {
+    return;
+  }
+  cs = c;
+}
+
+void EglVideoRender::setHdrMeta(const HdrMeta& meta) {
+  if (!meta.valid) {
+    return;
+  }
+  hdrMeta = meta;
+}
+
+void EglVideoRender::setHdrMode(HdrMode mode) { hdrMode = mode; }
+
 void EglVideoRender::createProgram() {
 #ifndef WIN32
   if (glProgram == 0) {
@@ -208,6 +294,10 @@ void EglVideoRender::createProgram() {
   posAttr = glGetAttribLocation(glProgram, "position");
   uvAttr = glGetAttribLocation(glProgram, "uv");
   extAttr = glGetUniformLocation(glProgram, "oes_texture");
+  hdrModeAttr = glGetUniformLocation(glProgram, "uHdrMode");
+  transferAttr = glGetUniformLocation(glProgram, "uTransfer");
+  peakNitsAttr = glGetUniformLocation(glProgram, "uPeakNits");
+  sdrWhiteAttr = glGetUniformLocation(glProgram, "uSdrWhite");
   LOGFLF(LogLevel::info, "create program success,textureId:", textureId,
          " width:", imageFormat.width, " height:", imageFormat.height);
   // 禁用垂直同步以减少交换缓冲区延迟
@@ -261,6 +351,11 @@ void EglVideoRender::useProgram(uint32_t oesId) {
   // 设置可编程管线参数
   glUseProgram(glProgram);
   glUniform1i(extAttr, 0);
+  // 颜色/HDR参数每帧下发(免脏标记); SDR内容 uTransfer=gamma 走直通, 行为零变化
+  glUniform1i(hdrModeAttr, (int)hdrMode);
+  glUniform1i(transferAttr, (int)cs.transfer);
+  glUniform1f(peakNitsAttr, (float)hdrPeakNits(hdrMeta));
+  glUniform1f(sdrWhiteAttr, 100.0f);
   glEnableVertexAttribArray(posAttr);
   glVertexAttribPointer(posAttr, 2, GL_FLOAT, false, 0, (void*)(verts));
   glEnableVertexAttribArray(uvAttr);

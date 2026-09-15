@@ -276,3 +276,18 @@ Mac mini M2(macOS 26.1, ssh mac)实机闭环,**块 2 的 Metal 部分完成**,�
 **Metal CPU 出帧平面间隙**:VT biplanar CVPixelBuffer 平面间有对齐间隙(Y/UV 不连续),packed 视图零拷贝假设不成立;不连续时聚合拷贝成紧凑 packed(Y 行距保留,UV 紧随)再交付。修复 rec-transcode/yuvout-h264——硬解 nv12 readback(车道 B 哨兵)在 mac 首次 PASS。
 
 **矩阵**:mac 离线子集 14/14:新增 file-hdr10-hard(29.5fps)、shot-hdr(luma=130,tone map 后曝光正常,fetchFrame 抓的是 tone map 后 RGBA);hdr10-hard 回调 x420 实证。hdrtest 像素级三档判定需 Metal 车道 enableImage 移植,与 Android EGL 移植同列待办。
+
+### 6.15 Android EGL 原生 tone map + 真机验证(2026-09-15)
+
+块 2 收尾。真机: Redmi K70e(Android 16, adb 6fe1b9b0)。
+
+**EGL OES tone map**:EglVideoRender 的 OES 直通 fragment shader 植入与 DX11/Metal/GLSL 同源的 PQ/HLG→ACES→BT.2020→BT.709 链。OES 采样的 RGB 已由驱动隐式 YUV→RGB(HDR 内容保持 PQ 编码),tone map 直接后接采样,无需显式平面展开;参数经 4 个 uniform 每帧下发(uHdrMode/uTransfer/uPeakNits/uSdrWhite)。SDR 内容 uTransfer=gamma 走原直通路径,行为零变化。
+
+**真机矩阵**:android 离线子集 11/11——file-hdr10-hard(MediaCodec HDR10 硬解 11.4fps)/soft/aud 全过;shot-hdr luma=126.5,与 mac(130.4)/windows 三平台 tone map 输出对齐。yuvout-h264(硬解 nv12 契约)与 rec-transcode 在控制台(无 JNI,MediaCodec 走 byte-buffer)依赖 vulkan 车道,shot/shot-hdr(nativeRender)走 EGL 车道。
+
+**play_regress.py 三处修复**(android 首跑全灭的定位产物):
+1. FILE_ASSETS 的 h264/h265 条目是平铺旧路径(实际素材在 assets/video/test/),--file-* 开关指向不存在文件 → open input failed 全灭;改回真实相对路径;
+2. adb push 平铺丢 test/ 子目录,推送改为按相对结构 mkdir -p 再推;
+3. 新增 ANDROID_OFFLINE_SKIP(rec-transcode-*): android LGPL 白名单只开 aac 编码器,转码录制结构性不可行(与 LINUX_OFFLINE_SKIP 同理)。
+
+至此**块 2 三平台(Windows DX11 / macOS Metal / Android EGL)原生 tone map 全部完成**。HDR 直通(块 3)脚手架仍待 HDR 真机。

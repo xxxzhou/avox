@@ -33,8 +33,8 @@ ANDROID_REMOTE = "/data/local/tmp/playmatrix"
 # 本地文件用例素材: (runner 开关, assets/video 下相对路径); Android 侧全量 push。
 # HDR10 两条由 script/testenv/gen_hdr10_asset.py 生成 (tone map / [AUD][SEI][IDR] 边界)
 FILE_ASSETS = [
-    ("--file-h264", "test_h264_aac_640x360.mp4"),
-    ("--file-h265", "test_h265_aac_960x540.mp4"),
+    ("--file-h264", "test/test_h264_aac_640x360.mp4"),
+    ("--file-h265", "test/test_h265_aac_960x540.mp4"),
     ("--file-hdr10", "test/test_h265_hdr10_pq_640x360.mp4"),
     ("--file-hdr10-aud", "test/test_h265_hdr10_pq_640x360_aud.mp4"),
 ]
@@ -59,6 +59,12 @@ OFFLINE_SKIP = [
 #   rec-transcode-*: LGPL FFmpeg 白名单无视频编码器(Windows 有 h264_mf), Linux 无兜底
 LINUX_OFFLINE_SKIP = [
     "yuvout-h264-soft", "yuvout-h265-10bit",
+    "rec-transcode-h264", "rec-transcode-novk",
+]
+
+# Android 控制台在离线子集上再跳过的结构性用例 (非 bug, 是平台能力缺口):
+#   rec-transcode-*: LGPL FFmpeg 白名单无视频编码器(android 只开 aac), 转码录制无兜底
+ANDROID_OFFLINE_SKIP = [
     "rec-transcode-h264", "rec-transcode-novk",
 ]
 
@@ -251,7 +257,13 @@ def run_android(args, extra, runner: str) -> int:
     for a in ASSETS:
         p = REPO_ROOT / "assets" / "video" / a
         if p.is_file():
-            pushes.append((p, f"{ANDROID_REMOTE}/assets/video"))
+            # 保留相对目录结构(test/xxx.mp4): HostMain 的 --file-* 开关按
+            # assets/video/<相对路径> 寻址, adb push 平铺后路径全灭(open input failed)
+            dst = f"{ANDROID_REMOTE}/assets/video"
+            if "/" in a:
+                dst += "/" + a.rsplit("/", 1)[0]
+                sh("shell", f"mkdir -p {dst}")
+            pushes.append((p, dst))
     # 渲染资源: avox 在无 assetManager(控制台进程) 时从 <exe目录>/assets 找 shader/字体
     app_assets = REPO_ROOT / "platform" / "android" / "AvoxJava" / "avox" / "assets"
     for sub in ("glsl", "fonts"):
@@ -316,6 +328,8 @@ def main() -> int:
         merged = [s for s in args.skip.split(",") if s] + OFFLINE_SKIP
         if sys.platform.startswith("linux"):
             merged += LINUX_OFFLINE_SKIP
+        if args.android:
+            merged += ANDROID_OFFLINE_SKIP
         args.skip = ",".join(dict.fromkeys(merged))
         print(f"[offline] 跳过 {len(OFFLINE_SKIP)} 条网络用例, 只跑本地文件子集")
 
