@@ -23,6 +23,8 @@ private:
 
   YUVFormat yuvFormat = {};
   int32_t stride = 0;
+  // 流位深(H265 SPS profile_idc==2 即 Main10), 决定 VT 输出 8bit NV12 或 10bit x420
+  int32_t streamBitDepth = 8;
 
   H264NalUnit h264Unit = {};
   H265NalUnit h265Unit = {};

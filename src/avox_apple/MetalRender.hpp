@@ -25,6 +25,8 @@ public:
   // releaseGpuFrame会CVBufferRelease,故在renderGpuFrame内buffer存活时锁定
   CVPixelBufferRef cpuPb = nullptr;
   ImageBuffer cpuBuffer;
+  // VT biplanar平面间常有对齐间隙, 不连续时聚合到紧凑packed的暂存
+  std::vector<uint8_t> cpuPack;
   bool bCpuPublished = false;
   uint32_t publishedTick = 0;
 
@@ -44,15 +46,25 @@ public:
   virtual ImageFormat getImageFormat() override;
   virtual IOSurfaceRef getIOSurface() override;
 
-private:
+ protected:
+  // 颜色/HDR 参数(与 Dx11CSVideoRender 同策略): 随帧进 setFragmentBytes,
+  // 无需重建管线。transfer=pq/hlg 且非 forceHDR 时走 tone map
+  ColorSpaceDesc cs;
+  HdrMeta hdrMeta;
+  HdrMode hdrMode = HdrMode::follow;
+  virtual void setColorSpace(const ColorSpaceDesc& c) override;
+  virtual void setHdrMeta(const HdrMeta& meta) override;
+  virtual void setHdrMode(HdrMode mode) override;
+
+ private:
   void createPipelineState();
   void createTextureCache();
   void closePipelineState();
   void closeTextureCache();
 
-public:
-  void updateNV12ToMetalLayer(CVImageBufferRef imageBuffer);
-  // 锁定并零拷发布当前NV12 CVPixelBuffer到cpuBuffer(每帧最多一次)
+ public:
+  void renderCVPixelBuffer(CVImageBufferRef imageBuffer);
+  // 锁定并零拷发布当前NV12/x420 CVPixelBuffer到cpuBuffer(每帧最多一次)
   void publishCpuFrame(CVImageBufferRef imageBuffer);
 
 private:

@@ -45,9 +45,8 @@ void IOSVDecoder::updateYuvFormat() {
         CMVideoFormatDescriptionGetDimensions(videoFormatDescription);
     yuvFormat.width = dimensions.width;
     yuvFormat.height = dimensions.height;
-    // 这里需要根据实际情况解析 YUV 格式
-    // 示例代码，可能需要调整
-    yuvFormat.type = YuvType::nv12;
+    // x420 与 P010 同布局(16bit 字高位对齐 10bit), 渲染/导出侧按 p010 语义处理
+    yuvFormat.type = streamBitDepth == 10 ? YuvType::p010 : YuvType::nv12;
   }
 }
 
@@ -69,6 +68,8 @@ bool IOSVDecoder::onVaild() {
 
 DecodeResult IOSVDecoder::onPreDecoder() {
   const auto &packets = configPackets;
+  // 每次会话重建重置, 防解码器复用时上次流的位深残留
+  streamBitDepth = 8;
   // 不包含start code信息
   std::vector<uint8_t> vpsData;
   std::vector<uint8_t> spsData;
@@ -138,6 +139,10 @@ DecodeResult IOSVDecoder::onPreDecoder() {
       LOGFLF(LogLevel::warn, "missing VPS, SPS, or PPS in H265 stream");
       return DecodeResult::noConfig;
     }
+    // Main10 探测: SPS NAL 无起始码布局为 [0..1]头+[2]vpsid/子层+[3]profile,
+    // 低5位 profile_idc==2 即 Main10。EPB 不可能落在此处([3]==0 即 profile_idc=0
+    // 非法流), 无需展开仿真预防字节直接判
+    streamBitDepth = (spsData.size() > 3 && (spsData[3] & 0x1F) == 2) ? 10 : 8;
     const uint8_t *const parameterSetPointers[3] = {
         vpsData.data(), spsData.data(), ppsData.data()};
     const size_t parameterSetSizes[3] = {vpsData.size(), spsData.size(),
@@ -163,17 +168,35 @@ DecodeResult IOSVDecoder::onPreDecoder() {
   // 硬解选项
   // NV12 kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
   // YUV420P  kCVPixelFormatType_420YpCbCr8PlanarVideoRange
+  // x420 kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange: 10bit 流直接输出
+  // 10bit(P010 布局), 8bit NV12 会截断 PQ 编码损失精度(渲染侧 tone map 依赖
+  // 完整 PQ 码值); 平台不支持 x420 输出时回退 NV12
   // 不带 kCVPixelBufferOpenGLESCompatibilityKey: 本解码器恒 Metal 渲染用不到
   // GLES 兼容, 且 iOS 26 已移除 OpenGL ES, 带 GLES 兼容键建会话会挂在废弃
   // GL 路径上 (真机实测视频解码线程停在会话创建, 包队列积压零帧)
+  OSType dstFmt = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;
+  if (codecDesc.vcodecId == VCodecId::h265 && streamBitDepth == 10) {
+    dstFmt = kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange;
+  }
   NSDictionary *attr = [NSDictionary
-      dictionaryWithObjectsAndKeys:
-          [NSNumber numberWithInt:kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange],
+      dictionaryWithObjectsAndKeys: [NSNumber numberWithInt:dstFmt],
           (id)kCVPixelBufferPixelFormatTypeKey, nil];
   LOGFLF(LogLevel::info, "creating ios vt decompression session");
   status = VTDecompressionSessionCreate(
       kCFAllocatorDefault, videoFormatDescription, nullptr,
       (__bridge CFDictionaryRef)attr, &callback, &decompressionSession);
+  if (status != noErr && dstFmt != kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange) {
+    LOGFLF(LogLevel::warn, "x420 output unsupported, fallback nv12, status:",
+           (int32_t)status);
+    streamBitDepth = 8;
+    dstFmt = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;
+    attr = [NSDictionary
+        dictionaryWithObjectsAndKeys: [NSNumber numberWithInt:dstFmt],
+            (id)kCVPixelBufferPixelFormatTypeKey, nil];
+    status = VTDecompressionSessionCreate(
+        kCFAllocatorDefault, videoFormatDescription, nullptr,
+        (__bridge CFDictionaryRef)attr, &callback, &decompressionSession);
+  }
   LOGFLF(LogLevel::info, "ios vt decompression session created, status:",
          (int)status);
   if (status != noErr) {
@@ -201,6 +224,19 @@ DecodeResult IOSVDecoder::decode(const AvoxPacket &packet_) {
   uint8_t ualUnit = getNalUnit(codecDesc.vcodecId, packet);
   // 是否可解码数据
   bool bDecode = naluDataFrame(codecDesc.vcodecId, ualUnit);
+  // 合并组首NAL可能是PPS/SEI/AUD等非VCL而组内仍含slice, 不能按首NAL整包丢:
+  // HDR素材每组带前导SEI(元数据), 首NAL判会全量丢帧(实证硬解零帧)。VT 能自行
+  // 解析组内非VCL前缀, 整组喂入; 拆分后无任何帧NAL才丢
+  if (!bDecode) {
+    std::vector<AvoxPacket> nalus;
+    splitAvccNalu(packet, nalus);
+    for (const auto &item : nalus) {
+      if (naluDataFrame(codecDesc.vcodecId, getNalUnit(codecDesc.vcodecId, item))) {
+        bDecode = true;
+        break;
+      }
+    }
+  }
   bool bKeyFrame = naluKeyFrame(codecDesc.vcodecId, ualUnit);
   // ios里不能解码的包不要输入,可能引起问题
   if (!bDecode) {

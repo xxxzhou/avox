@@ -158,9 +158,10 @@ inline std::vector<PlayCase> buildCases(const Endpoints& ep) {
   pull("file-h265-soft", ep.fileH265, IoPlan::ffmpeg, false, 15);
   pull("rtsp-h264-soft", ep.rtsp(k264), IoPlan::ffmpeg, false, 15);
   pull("rtsp-h265-soft", ep.rtsp(k265), IoPlan::ffmpeg, false, 15);
-  // C2 HDR10 本地素材 (软解): tone map 链路 / [AUD][SEI][IDR] 合并边界。
-  // 硬解 P010 尚黑屏 (计划文档 §6.7), 暂不挂硬解用例
+  // C2 HDR10 本地素材: 软解 tone map 链路 / [AUD][SEI][IDR] 合并边界。
+  // 硬解 10bit 已闭环: win DX11CS P010, mac VT 输出 x420 由 Metal 前端 tone map
   pullFile("file-hdr10-soft", ep.fileHdr10, false, 15);
+  pullFile("file-hdr10-hard", ep.fileHdr10, true, 15);
   pullFile("file-hdr10-aud", ep.fileHdr10Aud, false, 15);
   // D WebRTC (独立通道, 不经 IO 方案)
   special("webrtc-h264", CaseKind::rtc, ep.rtc(k264), 15);
@@ -174,6 +175,17 @@ inline std::vector<PlayCase> buildCases(const Endpoints& ep) {
     c.id = "shot";
     c.kind = CaseKind::screenShot;
     c.url = ep.fileH264;
+    c.seconds = 6;
+    c.nativeRender = true;
+    cases.push_back(c);
+  }
+  {
+    // HDR10 硬解原生截图: VT 输出 x420 → Metal 前端 tone map → fetchFrame 抓
+    // tone map 后的 RGBA; 截图为 SDR 表面, PQ 直通(若 tone map 断链)会过曝失真
+    PlayCase c;
+    c.id = "shot-hdr";
+    c.kind = CaseKind::screenShot;
+    c.url = ep.fileHdr10;
     c.seconds = 6;
     c.nativeRender = true;
     cases.push_back(c);

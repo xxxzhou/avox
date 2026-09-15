@@ -1,12 +1,21 @@
 #include "MetalRender.hpp"
 #include "MetalWindow.hpp"
 #include "avox/module/AvoxManager.hpp"
+#include "avox/video/ColorSpace.hpp"
 #include <iostream>
 
-// 若有使用 MetalKit 相关功能，也可包含该头文件
 #import <MetalKit/MetalKit.h>
 
 namespace avox {
+
+// 与 shader 内 FragParams 同布局(20B), 每帧经 setFragmentBytes 下发
+struct MetalFragParams {
+  int hdrMode;
+  int tenBit;
+  int transfer;
+  float peakNits;
+  float sdrWhiteNits;
+};
 
 // 顶点数据
 const float vertices[] = {
@@ -25,6 +34,10 @@ const float vertices[] = {
 NSString *const nv12trgbPrefix =
     @"#include <metal_stdlib>\nusing namespace metal;\n";
 
+// 与 Dx11CSVideoRender 的 HLSL / glsl/yuv2rgbaV5.comp 同源的 HDR 链:
+// PQ EOTF -> ACES(Narkowicz) -> BT.2020->BT.709 -> BT.709 OETF。
+// 10bit x420 按 P010 布局高 10 位采样(R16/RG16 UNORM, k=65535/64/1023);
+// 8bit NV12 承载 HDR(平台不支持 x420 回退)按 tv-range 展开同链处理
 NSString *const nv12trgbBody = AVOX_SHADER_STRING(
     struct VertexIn {
       float2 position [[attribute(0)]];
@@ -36,6 +49,14 @@ NSString *const nv12trgbBody = AVOX_SHADER_STRING(
       float2 texCoord;
     };
 
+    struct FragParams {
+      int hdrMode;
+      int tenBit;
+      int transfer;
+      float peakNits;
+      float sdrWhiteNits;
+    };
+
     vertex VertexOut vertexShader(const VertexIn in [[stage_in]]) {
       VertexOut out;
       out.position = float4(in.position, 0.0, 1.0);
@@ -44,28 +65,101 @@ NSString *const nv12trgbBody = AVOX_SHADER_STRING(
       return out;
     }
 
+    float3 pqToLinear(float3 n) {
+      const float m1 = 0.1593017578125;
+      const float m2 = 78.84375;
+      const float c1 = 0.8359375;
+      const float c2 = 18.8515625;
+      const float c3 = 18.6875;
+      float3 p = pow(clamp(n, float3(0.0), float3(1.0)), float3(1.0 / m2));
+      float3 num = max(p - float3(c1), float3(0.0));
+      return pow(num / (float3(c2) - p * float3(c3)), float3(1.0 / m1));
+    }
+
+    float3 hlgToLinear(float3 e) {
+      float3 t = clamp(e, float3(0.0), float3(1.0));
+      float3 lo = t * t / float3(3.0);
+      float3 hi = (exp((t - float3(0.55991073)) / float3(0.17883277)) +
+                   float3(0.28466892)) /
+                  float3(12.0);
+      float3 scene = mix(lo, hi, step(float3(0.5), t));
+      float ys = dot(scene, float3(0.2627, 0.6780, 0.0593));
+      return scene * pow(float3(max(ys, 1e-6)), float3(0.2));
+    }
+
+    float3 toneMap(float3 lin, float peakNits, float sdrWhite) {
+      float xScale = 10000.0 / sdrWhite;
+      float3 x = max(lin * xScale, float3(0.0));
+      float3 a = (x * (x * 2.51 + 0.03)) / (x * (x * 2.43 + 0.59) + 0.14);
+      float peakX = max(peakNits, sdrWhite) / sdrWhite;
+      float peak =
+          (peakX * (2.51 * peakX + 0.03)) / (peakX * (2.43 * peakX + 0.59) + 0.14);
+      return clamp(a / peak, float3(0.0), float3(1.0));
+    }
+
+    float3 bt2020ToBt709(float3 c) {
+      return max(float3(dot(c, float3(1.6605, -0.5876, -0.0728)),
+                        dot(c, float3(-0.1246, 1.1329, -0.1006)),
+                        dot(c, float3(-0.0182, -0.1006, 1.1187))),
+                 float3(0.0));
+    }
+
+    float3 linearToBt709(float3 c) {
+      float3 lo = c * 4.5;
+      float3 hi = 1.099 * pow(max(c, float3(0.0)), float3(0.45)) - 0.099;
+      return mix(lo, hi, step(float3(0.018), c));
+    }
+
+    float3 processColor(float3 rgb, constant FragParams& params) {
+      if (params.hdrMode == 2) {
+        return rgb;
+      }
+      if (params.transfer == 2) {
+        float3 lin = pqToLinear(rgb);
+        lin = toneMap(lin, params.peakNits, params.sdrWhiteNits);
+        lin = bt2020ToBt709(lin);
+        return linearToBt709(lin);
+      }
+      if (params.transfer == 3) {
+        float3 lin = hlgToLinear(rgb) * 0.1;
+        lin = toneMap(lin, params.peakNits, params.sdrWhiteNits);
+        lin = bt2020ToBt709(lin);
+        return linearToBt709(lin);
+      }
+      return rgb;
+    }
+
     fragment float4 fragmentShader(VertexOut in [[stage_in]],
                                    texture2d<float> yTexture [[texture(0)]],
                                    texture2d<float> uvTexture [[texture(1)]],
-                                   sampler sampler [[sampler(0)]]) {
-      // 采样 Y 分量
+                                   sampler sampler [[sampler(0)]],
+                                   constant FragParams& params [[buffer(0)]]) {
       float y = yTexture.sample(sampler, in.texCoord).r;
       float2 uv = uvTexture.sample(sampler, in.texCoord).rg;
-
-      // 调整 YUV 分量到标准范围
-      const float yOffset = 16.0 / 255.0;
-      const float uvOffset = 128.0 / 255.0;
-      float3 yuv = float3(y - yOffset, uv - uvOffset);
-
-      // 使用 BT.601 标准的 YUV 转 RGB 矩阵
-      float3x3 conversionMatrix = float3x3(1.164, 0.000, 1.596, 1.164, -0.392,
-                                           -0.813, 1.164, 2.017, 0.000);
-      float3 rgb = yuv * conversionMatrix;
-
-      // 限制 RGB 分量在 [0, 1] 范围内
-      rgb = clamp(rgb, 0.0, 1.0);
-      // return float4(rgb.r, rgb.g, rgb.b, 1.0);
-      return float4(rgb, 1.0);
+      float3 rgb;
+      if (params.tenBit == 1) {
+        float k = 65535.0 / 64.0 / 1023.0;
+        float yy = (y * k - 64.0 / 1023.0) / (876.0 / 1023.0);
+        float uu = (uv.x * k - 0.5) * (876.0 / 896.0);
+        float vv = (uv.y * k - 0.5) * (876.0 / 896.0);
+        rgb = float3(yy + 1.4746 * vv, yy - 0.164553 * uu - 0.571353 * vv,
+                     yy + 1.8814 * uu);
+      } else if (params.transfer == 2 || params.transfer == 3) {
+        float yy = (y - 16.0 / 255.0) / (219.0 / 255.0);
+        float uu = (uv.x - 128.0 / 255.0) / (224.0 / 255.0);
+        float vv = (uv.y - 128.0 / 255.0) / (224.0 / 255.0);
+        rgb = float3(yy + 1.4746 * vv, yy - 0.164553 * uu - 0.571353 * vv,
+                     yy + 1.8814 * uu);
+      } else {
+        const float yOffset = 16.0 / 255.0;
+        const float uvOffset = 128.0 / 255.0;
+        float3 yuv = float3(y - yOffset, uv - uvOffset);
+        float3x3 conversionMatrix = float3x3(1.164, 0.000, 1.596, 1.164, -0.392,
+                                             -0.813, 1.164, 2.017, 0.000);
+        rgb = yuv * conversionMatrix;
+      }
+      rgb = processColor(rgb, params);
+      return float4(clamp(rgb, 0.0, 1.0), 1.0);
     });
 
 NSString *const nv12trgb =
@@ -136,7 +230,7 @@ IOSurfaceRef MetalRender::getIOSurface() { return ioSurface; }
 
 void MetalRender::renderGpuFrame(const GpuFrame &frame) {
   CVImageBufferRef imageBuffer = (CVImageBufferRef)frame.buffer;
-  updateNV12ToMetalLayer(imageBuffer);
+  renderCVPixelBuffer(imageBuffer);
   // bOutCpuYuv时在buffer还存活的地方锁定发布(releaseGpuFrame随后CVBufferRelease,
   // 惰性回读会拿到已释放的buffer)
   if (bOutCpuYuv && !cpuIn) {
@@ -152,7 +246,11 @@ void MetalRender::publishCpuFrame(CVImageBufferRef imageBuffer) {
     return;
   }
   OSType pbType = CVPixelBufferGetPixelFormatType(imageBuffer);
-  if (pbType != kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange &&
+  // x420 与 nv12 同为 biplanar, packed 视图约定一致(r8/r16 + height*3/2)
+  bool bTenBit = pbType == kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange ||
+                 pbType == kCVPixelFormatType_420YpCbCr10BiPlanarFullRange;
+  if (!bTenBit &&
+      pbType != kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange &&
       pbType != kCVPixelFormatType_420YpCbCr8BiPlanarFullRange) {
     LOGFLF(LogLevel::warn, "cpu yuv out not support pixel format:",
            (int32_t)pbType);
@@ -173,17 +271,44 @@ void MetalRender::publishCpuFrame(CVImageBufferRef imageBuffer) {
       publishedTick = renderTick;
       return;
     }
+    // nv12/x420 packed布局约定: r8/r16 + height*3/2 + rowPitch(字节),
+    // UV平面紧随Y平面; VT biplanar平面间常有对齐间隙, 不连续时聚合成
+    // 紧凑packed再交付(零拷贝只在天然连续时成立)
+    uint8_t *yBase =
+        (uint8_t *)CVPixelBufferGetBaseAddressOfPlane(imageBuffer, 0);
+    uint8_t *uvBase =
+        (uint8_t *)CVPixelBufferGetBaseAddressOfPlane(imageBuffer, 1);
+    int32_t yPitch =
+        (int32_t)CVPixelBufferGetBytesPerRowOfPlane(imageBuffer, 0);
+    int32_t uvPitch =
+        (int32_t)CVPixelBufferGetBytesPerRowOfPlane(imageBuffer, 1);
+    int32_t yHeight = (int32_t)CVPixelBufferGetHeight(imageBuffer);
+    int32_t uvHeight = yHeight / 2;
+    if (!yBase || !uvBase || yPitch <= 0 || uvPitch <= 0) {
+      LOGFLF(LogLevel::warn, "cpu yuv out plane layout invalid, skip");
+      CVPixelBufferUnlockBaseAddress(imageBuffer, kCVPixelBufferLock_ReadOnly);
+      CFRelease(imageBuffer);
+      publishedTick = renderTick;
+      return;
+    }
     cpuPb = imageBuffer;
-    // nv12 packed布局约定: r8 + height*3/2 + rowPitch(字节),
-    // biplanar连续内存,UV平面紧跟Y平面
     ImageFormat fmt = {};
     fmt.width = (int32_t)CVPixelBufferGetWidth(imageBuffer);
-    fmt.height = (int32_t)CVPixelBufferGetHeight(imageBuffer) * 3 / 2;
-    fmt.imageType = ImageType::r8;
-    fmt.rowPitch = (int32_t)CVPixelBufferGetBytesPerRowOfPlane(imageBuffer, 0);
-    cpuBuffer.setData(
-        (uint8_t *)CVPixelBufferGetBaseAddressOfPlane(imageBuffer, 0), fmt,
-        false);
+    fmt.height = yHeight + uvHeight;
+    fmt.imageType = bTenBit ? ImageType::r16 : ImageType::r8;
+    fmt.rowPitch = yPitch;
+    if (uvBase == yBase + (size_t)yPitch * yHeight) {
+      cpuBuffer.setData(yBase, fmt, false);
+    } else {
+      size_t yBytes = (size_t)yPitch * yHeight;
+      size_t uvBytes = (size_t)uvPitch * uvHeight;
+      if (cpuPack.size() < yBytes + uvBytes) {
+        cpuPack.resize(yBytes + uvBytes);
+      }
+      memcpy(cpuPack.data(), yBase, yBytes);
+      memcpy(cpuPack.data() + yBytes, uvBase, uvBytes);
+      cpuBuffer.setData(cpuPack.data(), fmt, false);
+    }
     bCpuPublished = true;
   }
   publishedTick = renderTick;
@@ -359,7 +484,8 @@ void MetalRender::createTextureCache() {
     (id)kIOSurfaceHeight : @(imageFormat.height),
     (id)kIOSurfacePixelFormat : @(kCVPixelFormatType_32RGBA),
     (id)kIOSurfaceBytesPerElement : @(4),
-    (id)kIOSurfaceBytesPerRow : @(imageFormat.width * 4)
+    // Metal requires IOSurface texture bytesPerRow 16-byte alignment (odd widths like 854 would assert and crash), align to 64
+    (id)kIOSurfaceBytesPerRow : @((imageFormat.width * 4 + 63) & ~63)
   };
   ioSurface = IOSurfaceCreate((CFDictionaryRef)surfaceProps);
   MTLTextureDescriptor *textureDesc = [MTLTextureDescriptor
@@ -391,7 +517,25 @@ void MetalRender::closeTextureCache() {
   }
 }
 
-void MetalRender::updateNV12ToMetalLayer(CVImageBufferRef imageBuffer) {
+// 颜色/HDR参数: 每帧渲染时直接读取成员, 无需脏标记
+void MetalRender::setColorSpace(const ColorSpaceDesc &c) {
+  if (c.standard == cs.standard && c.range == cs.range &&
+      c.transfer == cs.transfer) {
+    return;
+  }
+  cs = c;
+}
+
+void MetalRender::setHdrMeta(const HdrMeta &meta) {
+  if (!meta.valid) {
+    return;
+  }
+  hdrMeta = meta;
+}
+
+void MetalRender::setHdrMode(HdrMode mode) { hdrMode = mode; }
+
+void MetalRender::renderCVPixelBuffer(CVImageBufferRef imageBuffer) {
   // 异步渲染任务堆积或自动释放池（Autorelease Pool）未及时清理
   // CVMetalTextureCacheCreateTextureFromImage 内部以及 Metal
   // 的一些方法会产生大量 autorelease 对象。
@@ -418,10 +562,15 @@ void MetalRender::updateNV12ToMetalLayer(CVImageBufferRef imageBuffer) {
     CVMetalTextureRef uvTextureRef = nullptr;
     size_t width = CVPixelBufferGetWidth(imageBuffer);
     size_t height = CVPixelBufferGetHeight(imageBuffer);
+    // x420(Main10)平面为16bit字高位对齐10bit(P010布局), 采样走 R16/RG16 UNORM
+    OSType pbType = CVPixelBufferGetPixelFormatType(imageBuffer);
+    bool bTenBit = pbType == kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange ||
+                   pbType == kCVPixelFormatType_420YpCbCr10BiPlanarFullRange;
     // 创建 Y 平面纹理
     CVReturn err = CVMetalTextureCacheCreateTextureFromImage(
         kCFAllocatorDefault, cacheTexture, imageBuffer, nullptr,
-        MTLPixelFormatR8Unorm, width, height, 0, &yTextureRef);
+        bTenBit ? MTLPixelFormatR16Unorm : MTLPixelFormatR8Unorm, width, height,
+        0, &yTextureRef);
     if (err == kCVReturnSuccess) {
       yTexture = CVMetalTextureGetTexture(yTextureRef);
       CFRelease(yTextureRef);
@@ -432,7 +581,8 @@ void MetalRender::updateNV12ToMetalLayer(CVImageBufferRef imageBuffer) {
     // 创建 UV 平面纹理
     err = CVMetalTextureCacheCreateTextureFromImage(
         kCFAllocatorDefault, cacheTexture, imageBuffer, nullptr,
-        MTLPixelFormatRG8Unorm, width / 2, height / 2, 1, &uvTextureRef);
+        bTenBit ? MTLPixelFormatRG16Unorm : MTLPixelFormatRG8Unorm, width / 2,
+        height / 2, 1, &uvTextureRef);
     if (err == kCVReturnSuccess) {
       uvTexture = CVMetalTextureGetTexture(uvTextureRef);
       CFRelease(uvTextureRef);
@@ -456,6 +606,14 @@ void MetalRender::updateNV12ToMetalLayer(CVImageBufferRef imageBuffer) {
     [commandEncoder setFragmentSamplerState:samplerState atIndex:0];
     // 设置顶点缓冲区
     [commandEncoder setVertexBytes:vertices length:sizeof(vertices) atIndex:0];
+    // 颜色/HDR参数随帧下发(20B, 免常量缓冲与脏标记)
+    MetalFragParams params = {};
+    params.hdrMode = (int)hdrMode;
+    params.tenBit = bTenBit ? 1 : 0;
+    params.transfer = (int)cs.transfer;
+    params.peakNits = (float)hdrPeakNits(hdrMeta);
+    params.sdrWhiteNits = 100.0f;
+    [commandEncoder setFragmentBytes:&params length:sizeof(params) atIndex:0];
     // 设置纹理
     [commandEncoder setFragmentTexture:yTexture atIndex:0];
     [commandEncoder setFragmentTexture:uvTexture atIndex:1];

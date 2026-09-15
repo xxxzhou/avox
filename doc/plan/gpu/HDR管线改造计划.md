@@ -259,3 +259,20 @@ YUV→RGB 与 tone map 数学在各渲染后端为独立实现,Vulkan 先做,其
 坑:老 SDK 的 `DXGI_COLOR_SPACE_TYPE` 枚举缺 G2084(值 12),编译期兜底 define;公共接口(VideoRender)加虚函数后必须全量重编所有宿主二进制,增量混跑会 vtable 错位(9-14 已踩过)。
 
 至此三块状态:块 1 硬解 P010 **完成**;块 2 原生 tone map **Windows 完成,Metal/EGL 待平台**;块 3 HDR 直通 **脚手架就绪,触发路径待 HDR 真机**。软硬解双车道的 HDR10->SDR tone map 全链可用,forceHDR 在 SDR 表面直通、在 HDR 显示器(待验证)可原样上屏。
+
+### 6.14 Metal 原生车道 tone map + VT x420 硬解 10bit(2026-09-15)
+
+Mac mini M2(macOS 26.1, ssh mac)实机闭环,**块 2 的 Metal 部分完成**,块 2 仅剩 Android EGL。
+
+**Metal 原生 tone map**:MetalRender fragment shader 移植与 DX11 CS/GLSL V5 同源的 PQ EOTF→ACES→BT.2020→BT.709 链(含 HLG OOTF);`setColorSpace/setHdrMeta/setHdrMode` 三个 override 落地,参数经 `setFragmentBytes` 每帧下发(20B struct,免常量缓冲与脏标记)。硬解管线里 MetalRender 本就是 Vulkan 车道的 YUV→RGBA 前端(SurfaceRenderNative::render(GpuFrame) 先原生转换再以 RGBA IOSurface 交 vk),故此实现同时覆盖 Metal 直显与 Vulkan 合成两条路。8bit NV12 承载 HDR(x420 不可用回退)按 tv-range 展开同链处理;SDR 8bit 保持 BT.601 原路径零变化。
+
+**VT 硬解 10bit 输出**:IOSVDecoder 解析 H265 SPS profile_idc==2(Main10),会话按 `kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange`(x420,P010 布局)建,失败回退 NV12;updateYuvFormat 标 `YuvType::p010`。实证回调 pbType='x420'、30fps 满帧。Metal 平面纹理按 R16/RG16 UNORM 采样(k=65535/64/1023),CPU 出帧(x420)交付 r16 packed p010。
+
+**连带修复三处硬解丢帧**(新用例 file-hdr10-hard 首跑零帧暴露,均属存量 bug):
+1. `VideoDecoder::decoderImp` bMustVcc/bMustAnnexb 分支:多 NALU 包拆分后成员 `spiltBufs` 残留,随后的单 NALU 包不满足拆分条件(size==len+4)却用陈旧视图逐个 decode——slice 永远到不了解码器。带前导 SEI 的流必现;8bit 素材每包单 NALU 从未触发所以多年未暴露。单 NALU 路径补 `spiltBufs.clear()`;
+2. `IOSVDecoder::decode` 首 NAL 门控:[SEI][SEI][IDR] 合并组按首 NAL 判"非帧"整包丢弃,补全组扫描存在 VCL 才喂(VT 自行解析组内非 VCL 前缀);
+3. `pushConfig` 首次 update 时参数从 0(未解析)到有效尺寸被误判"分辨率变化"→updateSize→硬解重置连带 `VideoTrack::flush` 清空**包队列**,本地文件包已全量入队时饿死零帧。0→有效值不再算变化(数据流重复播报 PPS 触发,跨平台隐患)。
+
+**Metal CPU 出帧平面间隙**:VT biplanar CVPixelBuffer 平面间有对齐间隙(Y/UV 不连续),packed 视图零拷贝假设不成立;不连续时聚合拷贝成紧凑 packed(Y 行距保留,UV 紧随)再交付。修复 rec-transcode/yuvout-h264——硬解 nv12 readback(车道 B 哨兵)在 mac 首次 PASS。
+
+**矩阵**:mac 离线子集 14/14:新增 file-hdr10-hard(29.5fps)、shot-hdr(luma=130,tone map 后曝光正常,fetchFrame 抓的是 tone map 后 RGBA);hdr10-hard 回调 x420 实证。hdrtest 像素级三档判定需 Metal 车道 enableImage 移植,与 Android EGL 移植同列待办。

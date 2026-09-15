@@ -40,7 +40,11 @@ ConfigAddType VideoDecoder::pushConfig(const PacketBuf& data) {
     int32_t twidth = params.width;
     int32_t theight = params.height;
     parseConfigs();
-    if (twidth != params.width || theight != params.height) {
+    // 首次从0(尚未解析出尺寸)到有效值是初始赋值而非运行中改分辨率; 误判
+    // updateSize 会触发硬解重置并连带清空包队列, 本地文件包已全量入队时
+    // 直接饿死零帧(实证: HDR素材数据流重复播报PPS触发, 硬解零帧)
+    if (twidth > 0 && theight > 0 &&
+        (twidth != params.width || theight != params.height)) {
       LOGFLF(LogLevel::info, "video size changed:", params.width, "x",
              params.height, " old size:", twidth, "x", theight);
       ctype = ConfigAddType::updateSize;
@@ -200,6 +204,10 @@ DecodeResult VideoDecoder::decoderImp(AvoxPacket& vdata) {
     uint32_t naluLength = (vdata.data.data[0] << 24) |
                           (vdata.data.data[1] << 16) |
                           (vdata.data.data[2] << 8) | vdata.data.data[3];
+    // 单NALU包不拆分时必须清掉上一包残留的拆分视图: spiltBufs是成员,
+    // 陈旧视图会让本包被跳过、却对上一包的旧内存重复decode(实证:
+    // 带前导SEI的流首包多NALU拆分后, 后续单NALU slice包全部喂空, 硬解零帧)
+    spiltBufs.clear();
     if (vdata.data.size > naluLength + 4) {
       splitAvccNalu(vdata, spiltBufs);
     }
@@ -217,6 +225,8 @@ DecodeResult VideoDecoder::decoderImp(AvoxPacket& vdata) {
     uint32_t naluLength = (vdata.data.data[0] << 24) |
                           (vdata.data.data[1] << 16) |
                           (vdata.data.data[2] << 8) | vdata.data.data[3];
+    // 同上: 单NALU包先清陈旧拆分视图, 否则本包整包喂不进decode
+    spiltBufs.clear();
     if (vdata.data.size > naluLength + 4) {
       splitAvccNalu(vdata, spiltBufs);
     }
