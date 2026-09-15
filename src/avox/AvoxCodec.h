@@ -1,7 +1,5 @@
 #pragma once
 
-#include <string>
-
 #include "AvoxAudio.h"
 #include "AvoxBuffer.h"
 #include "AvoxDef.h"
@@ -131,15 +129,20 @@ enum class SCodecId : int32_t {
 #undef XX
 };
 
-struct STrackDesc {
+// 字幕轨描述只读接口(托管对象: 由 ISourceInfo 持有, 生命周期同源, 调用方不得释放)。
+// 公共头不出现 STL: 字符串经方法取 const char*(引擎内持久缓冲, UTF-8, 空=未标,
+// 约定同 getImageBase64), 跨 DLL 只过 POD 与指针
+class ISTrackDesc {
+ public:
+  virtual ~ISTrackDesc() = default;
   // 对应流Id
-  int32_t trackId = 0;
-  SCodecId codecId = SCodecId::none;
+  virtual int32_t trackId() const = 0;
+  virtual SCodecId codecId() const = 0;
   // 轨道语言(MKV TrackLanguage, ISO 639-2, 空=未标)与标题(可显示名)
-  std::string lang;
-  std::string title;
+  virtual const char* lang() const = 0;
+  virtual const char* title() const = 0;
   // 强制字幕(forced disposition): 听障翻译轨/外语对白轨, 选轨 UI 可用
-  bool forced = false;
+  virtual bool forced() const = 0;
 };
 
 // 视频Buffer,YUV图像,可以直接转ImageBuffer使用

@@ -462,8 +462,14 @@ bool PlayerBridge::loadSubtitle(const char* path) {
 }
 
 void PlayerBridge::closeSubtitle() {
-  if (player) {
-    if (auto* sub = player->getSubtitle()) sub->close();
+  if (!player) {
+    return;
+  }
+  // 全关 = 三个槽位各关一次(引擎内建了"仅当该槽是胜者才清"的判定)
+  player->setSubtitleTrack(-1);
+  player->unloadSubtitle();
+  if (auto* sub = player->getSubtitle()) {
+    sub->disableAsr();
   }
 }
 

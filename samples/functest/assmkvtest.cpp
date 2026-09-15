@@ -201,11 +201,11 @@ int main(int argc, char* argv[]) {
   const int32_t subCount = info ? info->subtitleSize() : 0;
   bool trackOk = false;
   if (subCount == 1) {
-    STrackDesc desc = info->getSubtitleDesc(0);
-    trackOk = desc.codecId == SCodecId::ass;
+    const ISTrackDesc* desc = info->getSubtitleDesc(0);
+    trackOk = desc && desc->codecId() == SCodecId::ass;
     std::printf("track0: codec=%s lang=%s title=%s forced=%d\n",
-                desc.codecId == SCodecId::ass ? "ass" : "?",
-                desc.lang.c_str(), desc.title.c_str(), (int)desc.forced);
+                trackOk ? "ass" : "?", desc ? desc->lang() : "",
+                desc ? desc->title() : "", desc ? (int)desc->forced() : 0);
   } else {
     std::printf("subtitle tracks: %d (expect 1)\n", subCount);
   }

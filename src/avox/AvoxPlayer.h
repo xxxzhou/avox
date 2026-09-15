@@ -12,15 +12,16 @@ enum class AsrMode {
   ptsSync     // PTS同步模式：队列查找
 };
 
-// 字幕视图接口(ASR 实时识别控制; 外挂字幕文件走 IMediaPlayer::loadSubtitle,
-// 内封字幕轨走 IMediaPlayer::setSubtitleTrack — 三槽位互斥由引擎内仲裁)
+// 字幕视图接口(仅 ASR 开关): 外挂字幕文件走 IMediaPlayer::loadSubtitle/
+// unloadSubtitle, 内封字幕轨走 IMediaPlayer::setSubtitleTrack; 三槽位互斥由
+// 引擎内仲裁(后激活者胜), 全关即三个关闭入口各调一次
 class ISubtitle {
  public:
   virtual ~ISubtitle() = default;
-  // ASR 控制
+  // 启用 ASR(激活 asr 槽: 拆被顶掉的内封轨/外挂槽, 启动识别)
   virtual void enableAsr() = 0;
-  // 关闭加载的字幕或是ASR
-  virtual void close() = 0;
+  // 关闭 ASR(仅当 asr 槽是当前胜者时清; 不影响内封轨/外挂槽)
+  virtual void disableAsr() = 0;
 };
 
 #define AVOX_MAP_PLAYER_STATE(XX) \
@@ -184,18 +185,8 @@ class IMediaPlayer {
     (void)path;
     return false;
   }
-  // 内封字幕轨信息(跨 DLL 安全: 全部 char*/POD 出参, 字符串在引擎内拷贝)。
-  // 返回 SCodecId(ass=0/srt=1/pgs=2), 无效索引返回 -1。
-  // lang/title 拷进调用方缓冲(UTF-8, 截断安全; 缓冲可空/0 跳过), outForced 可空。
-  virtual int32_t subtitleTrackInfo(int32_t index, char* lang, int32_t langCap,
-                                    char* title, int32_t titleCap,
-                                    int32_t* outForced) {
-    (void)index; (void)lang; (void)langCap; (void)title; (void)titleCap;
-    (void)outForced;
-    return -1;
-  }
-  // 内封字幕轨数量(0 = 无)
-  virtual int32_t subtitleTrackCount() { return 0; }
+  // 关闭外挂槽(仅当外挂是当前胜者时清; 不影响内封轨/ASR), 返回是否真的关了
+  virtual bool unloadSubtitle() { return false; }
 
   virtual PlayerState getState() = 0;
   virtual double getProcess() = 0;

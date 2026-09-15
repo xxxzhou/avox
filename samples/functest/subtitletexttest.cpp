@@ -236,7 +236,8 @@ int main(int argc, char* argv[]) {
   bool loadOk;
   if (std::getenv("SUBTEXT_ASS") && std::getenv("SUBTEXT_ASS")[0] == '1') {
     player->setSubtitleTrack(0);
-    loadOk = player->subtitleTrackCount() > 0;
+    ISourceInfo* info = player->getSourceInfo();
+    loadOk = info && info->subtitleSize() > 0;
   } else {
     loadOk = player->loadSubtitle(srt);
   }

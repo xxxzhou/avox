@@ -83,11 +83,12 @@ void AVSource::onTrackOpen() {
   }
   audioInfo.reset();
   // 字幕轨映射重置(容量不足时扩到 trackId+1, 防越界)
-  for (int32_t i = 0; i < subtitleTracks.size(); i++) {
-    if (subtitleTracks[i].trackId >= (int32_t)sIndexMaps.size()) {
-      sIndexMaps.resize(subtitleTracks[i].trackId + 1, 0);
+  for (int32_t i = 0; i < (int32_t)subtitleTracks.size(); i++) {
+    const int32_t trackId = subtitleTracks[i].trackId();
+    if (trackId >= (int32_t)sIndexMaps.size()) {
+      sIndexMaps.resize(trackId + 1, 0);
     }
-    sIndexMaps[subtitleTracks[i].trackId] = i;
+    sIndexMaps[trackId] = i;
   }
   //
   vconfigPackets.clear();

@@ -121,7 +121,7 @@ namespace AvoxCommon
             {
                 if (subtitle != null)
                 {
-                    subtitle.close();
+                    subtitle.disableAsr();
                     subtitle.Dispose();
                     subtitle = null;
                 }

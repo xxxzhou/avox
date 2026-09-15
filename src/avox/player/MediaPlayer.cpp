@@ -42,7 +42,6 @@ MediaPlayer::MediaPlayer() {
   }
   subtitleView = std::make_unique<SubtitleView>();
   subtitleView->setAsrMode(AsrMode::ptsSync);
-  subtitleProxy = std::make_unique<MPSubtitleProxy>(this);
   clock = std::make_unique<Clock>();
   // 埋点单独线程
   mpPingback = std::make_unique<MPPingQueue>();
@@ -488,18 +487,29 @@ static bool hasExt(const std::string& path, const char* ext) {
   return true;
 }
 
+bool MediaPlayer::waitSubtitleOp() {
+  // enqueueWait 只保证入队, 命令由播放器线程执行: 等回执落定(上限 3s)
+  for (int i = 0; i < 300 && subOpState.load() == -1; ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  return subOpState.load() == 1;
+}
+
 bool MediaPlayer::loadSubtitle(const char* path) {
   if (!path) {
     return false;
   }
-  loadSubtitleState.store(-1);
+  subOpState.store(-1);
   auto cmd = createCommand<MPCommandType::LoadSubtitle>(std::string(path));
   mpCommands.enqueueWait(cmd);
-  // enqueueWait 只保证入队, 命令由播放器线程执行: 等回执落定(上限 3s)
-  for (int i = 0; i < 300 && loadSubtitleState.load() == -1; ++i) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-  }
-  return loadSubtitleState.load() == 1;
+  return waitSubtitleOp();
+}
+
+bool MediaPlayer::unloadSubtitle() {
+  subOpState.store(-1);
+  auto cmd = createCommand<MPCommandType::UnloadSubtitle>();
+  mpCommands.enqueueWait(cmd);
+  return waitSubtitleOp();
 }
 
 void MediaPlayer::cmdLoadSubtitle(const std::string& path) {
@@ -525,19 +535,34 @@ void MediaPlayer::cmdLoadSubtitle(const std::string& path) {
     }
     if (!attached) {
       LOGFLF(LogLevel::warn, "loadSubtitle: no valid video track");
-      loadSubtitleState.store(0);
+      subOpState.store(0);
       return;
     }
-    loadSubtitleState.store(subtitleView->loadTrackFile(path.c_str()) ? 1 : 0);
+    subOpState.store(subtitleView->loadTrackFile(path.c_str()) ? 1 : 0);
     replayPendingSubs();
   } else {
-    loadSubtitleState.store(subtitleView->loadTextFile(path.c_str()) ? 1 : 0);
+    subOpState.store(subtitleView->loadTextFile(path.c_str()) ? 1 : 0);
     // 内封包不再回放, 丢弃排队残留
     std::lock_guard<std::mutex> lock(subMetaMtx);
     pendingSubs.clear();
   }
   LOGFLF(LogLevel::info, "loadSubtitle:", path, " ok:",
-         loadSubtitleState.load() == 1);
+         subOpState.load() == 1);
+}
+
+void MediaPlayer::cmdUnloadSubtitle() {
+  // 外挂槽关闭(仅当外挂是胜者, 不影响轨/ASR): 视图拆槽 + IO 侧复位
+  const bool off = subtitleView->deactivateFile();
+  if (off) {
+    subTrackIndex = -1;
+    if (ioSource) {
+      ioSource->setSelectedSubtitle(-1);
+    }
+    std::lock_guard<std::mutex> lock(subMetaMtx);
+    pendingSubs.clear();
+  }
+  subOpState.store(off ? 1 : 0);
+  LOGFLF(LogLevel::info, "unloadSubtitle ok:", off);
 }
 
 void MediaPlayer::replayPendingSubs() {
@@ -554,34 +579,6 @@ void MediaPlayer::replayPendingSubs() {
                             ps.ptsMs, ps.durationMs);
   }
   pendingSubs.clear();
-}
-
-int32_t MediaPlayer::subtitleTrackCount() {
-  return ioSource ? ioSource->subtitleSize() : 0;
-}
-
-static void copyTrackStr(const std::string& src, char* dst, int32_t cap) {
-  if (!dst || cap <= 0) {
-    return;
-  }
-  const int32_t n = (int32_t)src.size() < cap - 1 ? (int32_t)src.size() : cap - 1;
-  memcpy(dst, src.data(), (size_t)n);
-  dst[n] = 0;
-}
-
-int32_t MediaPlayer::subtitleTrackInfo(int32_t index, char* lang,
-                                       int32_t langCap, char* title,
-                                       int32_t titleCap, int32_t* outForced) {
-  if (!ioSource || index < 0 || index >= ioSource->subtitleSize()) {
-    return -1;
-  }
-  const STrackDesc desc = ioSource->getSubtitleDesc(index);
-  copyTrackStr(desc.lang, lang, langCap);
-  copyTrackStr(desc.title, title, titleCap);
-  if (outForced) {
-    *outForced = desc.forced ? 1 : 0;
-  }
-  return (int32_t)desc.codecId;
 }
 
 void MediaPlayer::cmdSetSubtitleTrack(int32_t index) {
@@ -678,14 +675,20 @@ IMediaMuxer* MediaPlayer::getMuxer(bool bTranscode) {
   return mediaMuxer.get();
 }
 
-ISubtitle* MediaPlayer::getSubtitle() { return subtitleProxy.get(); }
+ISubtitle* MediaPlayer::getSubtitle() { return this; }
 
-void MPSubtitleProxy::enableAsr() {
-  // ASR 激活(后激活者胜): 视图内拆被顶掉槽并启动识别, 这里复位轨槽 IO 侧
-  player->onSubtitleActivate();
+void MediaPlayer::enableAsr() {
+  // ASR 激活(后激活者胜): 视图内拆被顶掉槽并启动识别, 这里复位轨槽 IO 侧。
+  // 任意线程可调(只碰 atomic 槽位与视图内部锁), 与既有 proxy 行为一致
+  onSubtitleActivate();
 }
 
-void MPSubtitleProxy::close() { player->getSubtitleView()->close(); }
+void MediaPlayer::disableAsr() {
+  // 关 ASR 槽(仅当它是胜者, 不影响内封轨/外挂槽)
+  if (subtitleView->deactivateAsr()) {
+    LOGFLF(LogLevel::info, "asr off");
+  }
+}
 
 void MediaPlayer::onSubtitleActivate() {
   const SubtitleSlots::Slot prev = subtitleView->activateAsr();
@@ -1055,6 +1058,10 @@ void MediaPlayer::onRunTask() {
         }
         case MPCommandType::LoadSubtitle: {
           cmdLoadSubtitle(getCommand<MPCommandType::LoadSubtitle>(cmd)->getData());
+          break;
+        }
+        case MPCommandType::UnloadSubtitle: {
+          cmdUnloadSubtitle();
           break;
         }
         default:
@@ -1465,7 +1472,7 @@ void MediaPlayer::cmdClose() {
   ioBaseTime = 0;
   renderTime = 0;
   //
-  subtitleView->close();
+  subtitleView->closeSubtitle();
   subTrackIndex = -1;
   {
     std::lock_guard<std::mutex> lock(subMetaMtx);

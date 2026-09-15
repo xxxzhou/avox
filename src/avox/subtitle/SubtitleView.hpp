@@ -29,8 +29,8 @@ class ISurfaceRender;
 // 插件(chunk 流)/PGS 画布; 外挂按扩展名分流(.ass/.ssa→插件, 其余→
 // TextRasterizer); ASR 走 TextRasterizer。未装 avox_ass 插件时轨通道降级
 // 为不渲染, 纯文本照常。
-// 线程约定: activate*/load*/close/resetEvents 只在播放器线程; pushChunk/
-// setPgsCanvas 在 IO 线程; onRender 在渲染线程(内部互斥)。
+// 线程约定: activate*/deactivate*/load*/closeSubtitle/resetEvents 只在播放器
+// 线程; pushChunk/setPgsCanvas 在 IO 线程; onRender 在渲染线程(内部互斥)。
 class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
  public:
   using Slot = SubtitleSlots::Slot;
@@ -40,8 +40,10 @@ class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
 
   // ISubtitle 接口
   virtual void enableAsr() override;
-  // 全复位: 三槽位 + 轨通道 + 文件/ASR 内容(渲染对象注册保留, 供重开复用)
-  virtual void close() override;
+  virtual void disableAsr() override;
+  // 全复位(内部用: 播放器 close/换源/析构): 三槽位 + 轨通道 + 文件/ASR 内容
+  // (渲染对象注册保留, 供重开复用)
+  void closeSubtitle();
 
   // ISurfaceRenderOb 接口
   virtual void onRender() override;
@@ -66,6 +68,10 @@ class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
   Slot activateAsr();
   // 关轨槽(仅当轨本就是胜者, 不影响外挂/ASR), 返回是否真的关了
   bool deactivateTrack();
+  // 关外挂槽(仅当外挂本就是胜者, 不影响轨/ASR), 返回是否真的关了
+  bool deactivateFile();
+  // 关 ASR 槽(仅当 ASR 本就是胜者, 不影响轨/外挂), 返回是否真的关了
+  bool deactivateAsr();
 
   // ---- 轨槽通道(内封 ASS/PGS 与外挂样式文件共用) ----
   // 建通道: assOverlayHub 查表 + libass init(视频分辨率坐标系)。

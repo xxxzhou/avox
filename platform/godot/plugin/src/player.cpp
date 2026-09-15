@@ -324,8 +324,13 @@ bool MediaPlayer::loadSubtitle(const String &p_path) {
 }
 
 void MediaPlayer::closeSubtitle() {
+    // 全关 = 三个槽位各关一次(引擎内建了"仅当该槽是胜者才清"的判定)
     if (player) {
-        player->getSubtitle()->close();
+        player->setSubtitleTrack(-1);
+        player->unloadSubtitle();
+        if (auto* sub = player->getSubtitle()) {
+            sub->disableAsr();
+        }
     }
 }
 

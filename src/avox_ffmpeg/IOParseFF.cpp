@@ -374,25 +374,25 @@ void IOParseFF::onRunTask() {
     } else if (st->codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE) {
       // 字幕流入轨枚举(计划 §3.2): 只登记 ASS/SSA/SRT/PGS, 其余跳过。
       // 数据包经 PackType::subtitles 旁路下发, 不进音视频同步时钟。
-      STrackDesc sdesc = {};
-      sdesc.codecId = ffSCodec(st->codecpar->codec_id);
-      if (sdesc.codecId == SCodecId::none) {
+      const SCodecId subCodec = ffSCodec(st->codecpar->codec_id);
+      if (subCodec == SCodecId::none) {
         LOGFLF(LogLevel::info, "unsupported subtitle codec:",
                st->codecpar->codec_id);
         continue;
       }
-      if (sdesc.codecId == SCodecId::pgs && !pgsDec) {
+      if (subCodec == SCodecId::pgs && !pgsDec) {
         pgsTrackLocal = st->index;  // 暂存 streamId, parseStream 时换局部索引
       }
-      sdesc.trackId = st->index;
+      std::string lang;
+      std::string title;
       if (auto* e = av_dict_get(st->metadata, "language", nullptr, 0)) {
-        sdesc.lang = e->value ? e->value : "";
+        lang = e->value ? e->value : "";
       }
       if (auto* e = av_dict_get(st->metadata, "title", nullptr, 0)) {
-        sdesc.title = e->value ? e->value : "";
+        title = e->value ? e->value : "";
       }
-      sdesc.forced = (st->disposition & AV_DISPOSITION_FORCED) != 0;
-      addSubtitleDesc(sdesc);
+      addSubtitleDesc(st->index, subCodec, lang, title,
+                      (st->disposition & AV_DISPOSITION_FORCED) != 0);
     }
   }
   // 禁用的流打 AVDISCARD_ALL: 带采样索引的 demuxer(mov/mp4) 对 discard 流不再

@@ -38,13 +38,13 @@ ATrackDesc BaseSource::getAudioDesc(int32_t index) {
   return audioTracks[index];
 }
 
-int32_t BaseSource::subtitleSize() { return subtitleTracks.size(); }
+int32_t BaseSource::subtitleSize() { return (int32_t)subtitleTracks.size(); }
 
-STrackDesc BaseSource::getSubtitleDesc(int32_t index) {
-  if (index < 0 || index >= subtitleTracks.size()) {
-    return {};
+const ISTrackDesc* BaseSource::getSubtitleDesc(int32_t index) {
+  if (index < 0 || index >= (int32_t)subtitleTracks.size()) {
+    return nullptr;
   }
-  return subtitleTracks[index];
+  return &subtitleTracks[index];
 }
 
 bool BaseSource::canSeek() { return bSeek; }
@@ -59,10 +59,12 @@ void BaseSource::addAudioDesc(const ATrackDesc& desc) {
   LOGFLF(LogLevel::info, "add audio track: ", desc);
 }
 
-void BaseSource::addSubtitleDesc(const STrackDesc& desc) {
-  subtitleTracks.push_back(desc);
-  LOGFLF(LogLevel::info, "add subtitle track: id:", desc.trackId,
-         " codec:", (int32_t)desc.codecId, " lang:", desc.lang);
+void BaseSource::addSubtitleDesc(int32_t trackId, SCodecId codecId,
+                                 const std::string& lang,
+                                 const std::string& title, bool forced) {
+  subtitleTracks.emplace_back(trackId, codecId, lang, title, forced);
+  LOGFLF(LogLevel::info, "add subtitle track: id:", trackId,
+         " codec:", (int32_t)codecId, " lang:", lang);
 }
 
 void BaseSource::trackReady() {

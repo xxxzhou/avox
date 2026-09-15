@@ -46,7 +46,7 @@
 | 文件 | 说明 |
 |------|------|
 | **AvoxSource.h** | 数据源：`IAVSource`(编码流)、`IRawSource`(原始帧)、`ISourceInfo`、设备管理接口 |
-| **AvoxPlayer.h** | 播放器：`IMediaPlayer`(URL 播放)、`ISourcePlayer`(设备播放)、`PlayerState`、`IMediaPlayerOb`；字幕 `ISubtitle`/`AsrMode`(SRT/ASR/翻译) |
+| **AvoxPlayer.h** | 播放器：`IMediaPlayer`(URL 播放)、`ISourcePlayer`(设备播放)、`PlayerState`、`IMediaPlayerOb`；字幕 `ISubtitle`(ASR 开关 enableAsr/disableAsr)/`AsrMode`，字幕轨/外挂入口在 `IMediaPlayer`(setSubtitleTrack/loadSubtitle/unloadSubtitle) |
 | **AvoxMuxer.h** | 封装录制：`IMediaMuxer`、`IRecorder`、`IRecorderOb`、`MuxerType` |
 | **AvoxLayer.h** | GPU 渲染：`IPipeGraph`/`IPipeNode`(管线图)、`ISurfaceRender`、`IVInputLayer`/`IVOutputLayer` |
 | **AvoxVision.h** | 视觉 AI：`IYoloDetector`(检测/分类)、`IWatermarkRemoval`/`InpaintMode`(水印去除)、特征/颜色/方向/地图匹配检测等 |

@@ -20,20 +20,6 @@
 
 namespace avox {
 
-class MediaPlayer;
-
-// ASR 激活仲裁桥(getSubtitle 返回它): enableAsr 前先清内封轨/外挂槽,
-// 三槽位(内封轨/外挂文件/ASR)后激活者胜 — 计划 doc/plan/player/字幕模块合并计划.md
-class MPSubtitleProxy : public ISubtitle {
- public:
-  explicit MPSubtitleProxy(MediaPlayer* p) : player(p) {}
-  void enableAsr() override;
-  void close() override;
-
- private:
-  MediaPlayer* player = nullptr;
-};
-
 // 把所有播放相关对象，track,render创建与释放都尽量统一到播放器自身线程上执行
 // 减少相关对象需要同步导致的问题
 // 注意一定要先调用onOpen，然后再能调用onPacket
@@ -43,7 +29,8 @@ class MediaPlayer : public IMediaPlayer,
                     public IMuxerOb,
                     public BasePlayer,
                     public RunTask,
-                    public TaskTrack {
+                    public TaskTrack,
+                    public ISubtitle {
  public:
   MediaPlayer();
   virtual ~MediaPlayer();
@@ -65,8 +52,6 @@ class MediaPlayer : public IMediaPlayer,
   // extradata 由 IO 线程经 onPacket 存表, 锁只护表本身;
   // subTrackIndex 两线程读, atomic
   std::unique_ptr<SubtitleView> subtitleView;
-  // ISubtitle 出口(enableAsr 方向的槽位仲裁桥)
-  std::unique_ptr<MPSubtitleProxy> subtitleProxy;
   // 选轨前到达的字幕包待播队列(有界): 视图打开+轨加载后按序回放
   struct PendingSub {
     int32_t track = -1;  // 局部轨索引(选轨后按轨回放)
@@ -78,10 +63,10 @@ class MediaPlayer : public IMediaPlayer,
   std::mutex subMetaMtx;
   std::vector<std::vector<char>> subExtradata;  // 局部轨索引 → ASS 剧本头
   std::atomic<int32_t> subTrackIndex{-1};
-  // cmdLoadSubtitle 的同步回执: -1=未执行 0=false 1=true。
-  // enqueueWait 只保证入队不保证已执行, 主线程按三态等回执(旧 bool 有竞态:
-  // 播放器线程尚未跑完命令就读到初值 false)
-  std::atomic<int8_t> loadSubtitleState{-1};
+  // 字幕命令(cmdLoadSubtitle/cmdUnloadSubtitle/cmdCloseSubtitle)的同步回执:
+  // -1=未执行 0=false 1=true。enqueueWait 只保证入队不保证已执行, 调用线程按
+  // 三态等回执(旧 bool 有竞态: 播放器线程尚未跑完命令就读到初值 false)
+  std::atomic<int8_t> subOpState{-1};
   // 当前选中轨的剧本头是否已喂(选轨可能早于 IO 线程 parseStream)
   bool subTrackFeeded = false;
   // 相对于track的外部时钟
@@ -250,10 +235,10 @@ class MediaPlayer : public IMediaPlayer,
   virtual ISourceInfo* getSourceInfo() override;
   virtual void setSubtitleTrack(int32_t index) override;
   virtual bool loadSubtitle(const char* path) override;
-  virtual int32_t subtitleTrackInfo(int32_t index, char* lang, int32_t langCap,
-                                    char* title, int32_t titleCap,
-                                    int32_t* outForced) override;
-  virtual int32_t subtitleTrackCount() override;
+  virtual bool unloadSubtitle() override;
+  // ISubtitle(ASR 槽开关; 轨/外挂槽见 setSubtitleTrack/loadSubtitle)
+  virtual void enableAsr() override;
+  virtual void disableAsr() override;
   virtual double getRate(TrackType type, bool bAvg) override;
   virtual float getLossRate(TrackType type) override;
   virtual double getFps() override;
@@ -291,9 +276,12 @@ class MediaPlayer : public IMediaPlayer,
   void cmdSetSubtitleTrack(int32_t index);
   void replayPendingSubs();
   void cmdLoadSubtitle(const std::string& path);
+  void cmdUnloadSubtitle();
+  // 等字幕命令回执落定(上限 3s); 单次调用前需先把 subOpState 置 -1
+  bool waitSubtitleOp();
 
  public:
-  // 三槽位仲裁(计划 字幕模块合并计划.md): ASR 激活(MPSubtitleProxy 调)时
+  // 三槽位仲裁(计划 字幕模块合并计划.md): enableAsr(ISubtitle, 本类自身实现)时
   // 视图内拆被顶掉槽, 这里只复位轨槽的 IO 侧(轨号 + PGS 解码开关)
   void onSubtitleActivate();
 

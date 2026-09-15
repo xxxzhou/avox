@@ -11,7 +11,7 @@ static constexpr int32_t kMaxPendingChunks = 512;
 SubtitleView::SubtitleView() = default;
 
 SubtitleView::~SubtitleView() {
-  close();
+  closeSubtitle();
   if (windowRender) {
     if (canvasLayer) {
       disableRenderCanvas(windowRender);
@@ -122,9 +122,31 @@ bool SubtitleView::deactivateTrack() {
   return true;
 }
 
+bool SubtitleView::deactivateFile() {
+  if (slots.active() != Slot::file) {
+    return false;
+  }
+  slots.deactivateIf(Slot::file);
+  // 两路文件内容态都清: .srt 文本 + .ass(经 overlay 轨通道), 同 activateFile
+  closeFileContent();
+  closeTrackChannel();
+  return true;
+}
+
+bool SubtitleView::deactivateAsr() {
+  if (slots.active() != Slot::asr) {
+    return false;
+  }
+  slots.deactivateIf(Slot::asr);
+  closeAsrContent();
+  return true;
+}
+
 void SubtitleView::enableAsr() { activateAsr(); }
 
-void SubtitleView::close() {
+void SubtitleView::disableAsr() { deactivateAsr(); }
+
+void SubtitleView::closeSubtitle() {
   slots.reset();
   closeTrackChannel();
   closeFileContent();

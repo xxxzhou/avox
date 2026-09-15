@@ -141,7 +141,7 @@ void SourcePlayer::cmdClose() {
   // 这样下次android相机打开可能就不能正常显示
   windowRender->stop();
   windowRender->removeObserver(this);
-  subtitleView->close();
+  subtitleView->closeSubtitle();
   setState(PlayerState::stopped);
   MPOB::dispatch(&IMediaPlayerOb::onClose);
 }
@@ -252,6 +252,6 @@ void SourcePlayer::onAudioFrame(const AvoxAFrame& frame, int32_t trackId) {
   }
 }
 
-void SourcePlayer::onClose() { subtitleView->close(); }
+void SourcePlayer::onClose() { subtitleView->closeSubtitle(); }
 
 }

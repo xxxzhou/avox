@@ -26,27 +26,34 @@ SubtitleView : public ISubtitle, public ISurfaceRenderOb   (统一视图)
 
 ## 三槽位仲裁
 
-| 槽位 | 激活入口 | 内容源 |
-|------|----------|--------|
-| track | `setSubtitleTrack(i)` | 内封 ASS/SSA/SRT/PGS 轨 |
-| file | `loadSubtitle(path)` | 外挂 .ass/.ssa(插件) / .srt(光栅化器) |
-| asr | `getSubtitle()->enableAsr()` | 语音识别结果 |
+| 槽位 | 激活入口 | 关闭入口 | 内容源 |
+|------|----------|----------|--------|
+| track | `setSubtitleTrack(i)` | `setSubtitleTrack(-1)` | 内封 ASS/SSA/SRT/PGS 轨 |
+| file | `loadSubtitle(path)` | `unloadSubtitle()` | 外挂 .ass/.ssa(插件) / .srt(光栅化器) |
+| asr | `getSubtitle()->enableAsr()` | `getSubtitle()->disableAsr()` | 语音识别结果 |
 
 - **后激活者胜**: 激活新槽位时视图内自动拆除被顶掉的槽位(轨=关通道+PGS
   解码路由复位; 外挂=清文件; ASR=停识别), 引擎内保证任一时刻至多一路
   上屏, 不依赖调用方自觉。
 - **空窗不回落**: 胜者无内容的时段就空屏, 不回落到其他槽位, 避免两路
   字幕闪替。「AI 字幕 vs 片源字幕」的产品切换 = 重新调对应激活接口。
-- `setSubtitleTrack(-1)` 只关轨槽(轨本就是胜者时), 不影响外挂/ASR。
+- **关闭按槽位对称**: 三个关闭入口各自只关本槽(仅当本槽是胜者时清,
+  不影响其他槽); 「全关」由调用方组合三调(Unity/Godot 桥的
+  `closeSubtitle()` 即 `setSubtitleTrack(-1)` + `unloadSubtitle()` +
+  `disableAsr()`)。
 - 无 avox_ass 插件: 轨槽降级为不渲染, 纯文本(.srt/ASR)照常。
+
+轨信息查询走 `ISourceInfo`(不在 IMediaPlayer 上重复):
+`subtitleSize()` + `getSubtitleDesc(i)` 返回托管 `ISTrackDesc*`
+(公共头无 STL, `lang()/title()` 取引擎内 `const char*`)。
 
 ## 渲染细节
 
 - **canvas 去重**: 单一 `lastSeq` 序号判重, 内容未变零上传; seq 域在
   槽位切换/源切换(ASS↔PGS)时置 -1, 强制清异源残留。
-- **线程约定**: activate*/load*/close/resetEvents 只在播放器线程;
-  pushChunk/setPgsCanvas 在 IO 线程(有界队列, 溢出丢最旧); onRender 在
-  渲染线程(内部互斥, 锁内只做短操作)。
+- **线程约定**: activate*/deactivate*/load*/closeSubtitle/resetEvents 只在
+  播放器线程; pushChunk/setPgsCanvas 在 IO 线程(有界队列, 溢出丢最旧);
+  onRender 在渲染线程(内部互斥, 锁内只做短操作)。
 - **样式**: TextCanvasStyle(字体/字号/颜色/锚点/换行), 默认 simhei 40
   底部居中, 字号随帧高 DPI 缩放(参考 1080p), 对齐旧观感。
 - **性能**: 文本光栅化 ~0.06ms@1080p(subtitletexttest SUBTEXT_PERF=1
@@ -69,9 +76,17 @@ avox_cmd translate)在字幕模块之外, 不受影响。
 
 ```cpp
 player->loadSubtitle("movie.srt");     // 或 .ass/.ssa, 扩展名内部分流
+player->unloadSubtitle();              // 关外挂槽
 player->setSubtitleTrack(0);           // 或选内封轨(三槽位自动互斥)
 player->setSubtitleTrack(-1);          // 关轨槽
 player->getSubtitle()->enableAsr();    // ASR(自动清轨/外挂槽)
+player->getSubtitle()->disableAsr();   // 关 ASR
+// 内封轨枚举/语言标题
+ISourceInfo* info = player->getSourceInfo();
+for (int32_t i = 0; i < info->subtitleSize(); ++i) {
+  const ISTrackDesc* d = info->getSubtitleDesc(i);
+  // d->codecId() / d->lang() / d->title() / d->forced()
+}
 ```
 
 ### SourcePlayer(streaming ASR)
