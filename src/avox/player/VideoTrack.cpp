@@ -7,9 +7,7 @@
 namespace avox {
 
 VideoTrack::VideoTrack() {
-  // android如果选择硬解码,经测试，大于10容易花屏
-  // 因为视频帧资源大，队列长度是有限制的，这边的长度超过解码队列
-  // 取对应的帧索引可能已经被释放了而出现问题
+  // 硬解下队列过大易花屏(帧资源大, 超出解码队列时索引可能已被释放)
   frameQueue.setMaxSize(10);
   trackType = TrackType::video;
   decodeTask = std::make_unique<VDecoderTask>();

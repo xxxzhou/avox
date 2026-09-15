@@ -71,9 +71,7 @@ bool EglVideoYuv::vaildAndInitGraph(const GpuFrame& frame) {
     LOGFLF(LogLevel::warn, "eglContext is null");
     return false;
   }
-  // 如果输入的EGL上下文是本身,则直接用
-  // 否则用传入的EGL上下文作为共享上下文
-  // 不管如何,当前EGL环境都可以访问传入的GPU数据
+  // EGL输入上下文直接用, 否则作为共享上下文 — 当前EGL环境均能访问传入的GPU数据
   initContext(inContext->getContext());
   eglSize.width = frame.format.width;
   eglSize.height = frame.format.height;

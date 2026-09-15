@@ -129,9 +129,7 @@ DecodeResult FFVEncoder::onPreEncoder() {
     // AMD AMF: 用 quality=speed
     av_dict_set(&param, "quality", "speed", 0);
   }
-  // _mf(MediaFoundation, LGPL 渠道默认)等其余编码器不下发 profile:
-  // MF 封装的 profile 是数值枚举, 字符串 "main" Eval 失败 → avcodec_open2 EINVAL
-  // 子类硬编码
+  // MF(MediaFoundation, LGPL渠道)等不下发profile: 其profile是数值枚举, 字符串"main"会导致avcodec_open2 EINVAL
   onAttachContext();
   // 打开编码器
   int32_t ret = avcodec_open2(codecCtx.get(), codec, &param);

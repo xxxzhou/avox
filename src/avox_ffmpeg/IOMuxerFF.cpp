@@ -192,9 +192,7 @@ void IOMuxerFF::onPushPacket(const AvoxPacket& buffer) {
       onError(aerr, errBuf);
       fmtCtx.reset();
     } else {
-      // 非致命(如DTS非单调EINVAL): 只丢这一帧, 不销毁fmtCtx
-      // 保fmtCtx活着, onClose才能av_write_trailer写出moov, 文件不至于整盘作废
-      // 只记首帧, 避免脏流刷屏; 写成功时nonFatalDropCount清零
+      // 非致命错误(如DTS非单调EINVAL)只丢该帧: 保fmtCtx活以便onClose能写moov, 文件不致整盘作废
       if (nonFatalDropCount == 0) {
         char errBuf[AV_ERROR_MAX_STRING_SIZE] = {0};
         av_strerror(ret, errBuf, sizeof(errBuf));

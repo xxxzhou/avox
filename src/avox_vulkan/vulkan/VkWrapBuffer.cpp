@@ -27,13 +27,7 @@ void VkWrapBuffer::initResoure(BufferUsage usage_, uint32_t dataSize,
                  "create buffer failed");
   // Buffer存入位置
   VkMemoryPropertyFlags memoryFlag = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-  // 相对HOST_COHERENT,HOST_CACHED 不能自动，但是性能更高？
-  // 但是如果本来每帧我就要刷新一次用vkInvalidateMappedMemoryRanges
-  // 那对于我每次tick都要调用vkInvalidateMappedMemoryRanges来说
-  // 使用HOST_CACHED相对HOST_COHERENT提高的性能在那？
-  // 一句话总结：
-  // 即使每帧都 invalidate，HOST_CACHED 依然能让 CPU 读 Vulkan buffer
-  // 时享受缓存带宽和低延迟，性能远优于 uncached。
+  // 用 HOST_CACHED: CPU 读享缓存带宽/低延迟, 每帧手动 invalidate 仍远优于 uncached 的 HOST_COHERENT
   if (usage == BufferUsage::onestore) {
     memoryFlag = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;

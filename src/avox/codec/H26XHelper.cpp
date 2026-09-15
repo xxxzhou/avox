@@ -24,9 +24,7 @@ int32_t checkAnnexbHeader(const uint8_t* extradata, int32_t size) {
 }
 
 int32_t checkAvccHeader(const uint8_t* extradata, int32_t size) {
-  // AVCC格式头结构:
-  // 第1字节: configurationVersion(0x01)
-  // 第5字节: lengthSizeMinusOne (低2位)
+  // AVCC头: byte0=1(configVersion), byte4低位=lengthSize
   if (size < 5 || extradata[0] != 0x01) {
     return -1;
   }
@@ -39,9 +37,7 @@ int32_t checkAvccHeader(const uint8_t* extradata, int32_t size) {
 
 // 新增HVCC检测（HEVC的extradata格式）
 int32_t checkHvccHeader(const uint8_t* extradata, int32_t size) {
-  // HVCC格式头结构:
-  // 第1字节: configurationVersion(0x01)
-  // 第22字节: lengthSizeMinusOne (低2位)
+  // HVCC头: byte0=1(configVersion), byte21低位=lengthSize
   if (size < 23 || extradata[0] != 0x01) {
     return -1;
   }

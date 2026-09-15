@@ -168,9 +168,7 @@ bool bTightlyPacked(const YUVFrame& frame) {
                            frame.format.type == YuvType::yuv420P10)
                               ? 2
                               : 1;
-    // 步长比例必须严格匹配
-    // 如果 yRowPitch 是 1122，那么 uvPitch 必须是 561。
-    // 如果是 568（对齐了），则不属于“紧密排列”
+    // 紧密排列要求 stride 比例严格匹配: yRowPitch 1122 → uvPitch 必为 561(568即已对齐, 非紧密)
     if (frame.stride[1] != yRowPitch / uvWidthDiv ||
         frame.stride[2] != yRowPitch / uvWidthDiv) {
       return false;

@@ -238,10 +238,7 @@ void MediaPlayer::onReady() {
   const auto& aTracks = ioSource->getAudioTracks();
   ioDuration = ioSource->duration();
   LOGFLF(LogLevel::info, "io duration:", ioDuration);
-  // 设置
-  // 源轨道数可能超过播放器轨位上限(AVOX_MAX_TRACK=4): 多码率HLS每个变体
-  // 都会各挂一套音视频轨(FFmpeg IO把全部变体暴露为独立track), 越界访问
-  // audioTracks/videoTracks 会踩穿堆; 只挂前 MAX_TRACK 路
+  // 挂载音视频轨: 源轨道数可能超过轨位上限(MAX_TRACK=4, 多码率HLS每变体各挂一套), 只挂前MAX_TRACK路防越界
   if (aTracks.size() > audioTracks.size() || vTracks.size() > videoTracks.size()) {
     LOGFLF(LogLevel::warn, "source tracks exceed player max track, drop extra: audio ",
            aTracks.size(), " video ", vTracks.size());
@@ -873,9 +870,7 @@ void MediaPlayer::renderFrame(AVTrack* track, bool bGetFrame) {
     }
     return;
   }
-  // 检查所有IO队列是不是都没了
-  // 可能视频有段数据有问题，所有包解码失败，帧队列是空
-  // 但是音频最好保持继续渲染，让时间轴向前走
+  // IO队列皆空才视为空: 视频包全部解码失败时帧队列虽空, 但音频仍续渲染推进时间轴
   bool bIoEmpty = audioStatus.queueSize == 0 && videoStatus.queueSize == 0;
   if (!bIoEmpty) {
     return;
@@ -1117,11 +1112,7 @@ void MediaPlayer::tick() {
   // 服务器会把缓存的一段GOP数据过来，如果正常播放，时延会比较大
   if (bLowLatency && bAVAlign && ioDuration <= 0 &&
       state == PlayerState::playing) {
-    // 只有正常播放状态下才处理
-    // 有B帧时不太好用，B帧计算getQueueTime是乱的
-    // cspeed只记录用户设置的速度，不记录自动调整的速度
-    // 从cmdSpeed里设置的速度才是用户设置的速度
-    // 直接使用setSpeed是自动调整的速度
+    // 仅正常播放态处理; 用用户设置的速度(cspeed/cmdSpeed), 因B帧会打乱getQueueTime
     if (cspeed == 1.0) {
       // 有视频的源才启用自动快播，也以视频的时延为准
       int64_t qTime = getQueueTime(TrackType::video);
@@ -1274,9 +1265,7 @@ void MediaPlayer::collectStatus() {
       LOGFLF(LogLevel::warn, "audio pts span not match data");
     }
   }
-  // 当同步状态变化时，记录说明
-  // 第一种情况，从同步变为不同步
-  // 第二种情况，从不同步变为同步
+  // 同步状态变化(同步→不同步 / 不同步→同步)时记录
   if ((!bAVAlign && syncType != SyncType::none) ||
       (bAVAlign && syncType == SyncType::none &&
        preSyncType != SyncType::none)) {
@@ -1522,11 +1511,8 @@ void MediaPlayer::cmdSeek(SeekCommandPtr cmd) {
   bSeekSeenLanding = false;
   bSeekingStartMs = 0;
   if (seekType != SeekType::none) {
-    // 撤背压前预通知 IO 线程打断 av_read_frame: 必须早于 pauseIOPacket ——
-    // 撤背压(enqueueWait 不阻塞)的瞬间读线程即恢复读,
-    // 打断标志晚设哪怕微秒快源都可能先狂奔几包; 先设标志则撤背压后 第一次
-    // av_read_frame 即被截停. 正常播放时读线程阻塞在 enqueueWait(不看
-    // interrupt), 不受影响
+    // 先打断了读再撤背压(顺序关键): 撤背压瞬间读线程恢复, 晚设打断标志快源会先狂奔几包;
+    // 正常播放读线程阻塞在 enqueueWait(不看 interrupt), 不受影响
     ioSource->preSeek();
     // IO包队列暂时关闭,直接暂停ioSource可能导致RTSP seek不了
     pauseIOPacket(true);

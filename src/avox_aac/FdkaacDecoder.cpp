@@ -33,9 +33,7 @@ DecodeResult FdkaacDecoder::onPreDecoder() {
   if (!confPkt) {
     return DecodeResult::noConfig;
   }
-  // 如果配置使用adts头，则解析数据也需要带adts头，zlmediakt直播流
-  // 如果配置文件使用asc头，则解析数据不带头，本地流,webrtc,ffmpeg解析流
-  // adts头与ASC(Audio Specific Config)头
+  // 数据是否带 ADTS/ASC 头由配置来源决定: adts→zlmediakit 直播流, asc→本地/webrtc/ffmpeg 流
   AacSC aacsc = {};
   splitAAConfig(*confPkt, aacsc, bAdts);
   objectType = aacsc.objectType;
@@ -109,8 +107,7 @@ DecodeResult FdkaacDecoder::decode(const AvoxPacket& packet) {
   UCHAR* dataPtr = packet.data.data;
   UINT dataSize = packet.data.size;
   if (bAdts) {
-    // 纯adts头包(配置拆出的7/9字节)不喂fdk: 流模式Fill是追加, 残头留在内部
-    // 缓冲会令下一帧错位解析, 解出垃圾报error:5后持续失步
+    // 纯ADTS配置头(7/9字节)不喂解码器: 流模式追加会留残头导致后续帧失步错位
     if (dataSize <= 9 && bAdtsHeader(dataPtr, dataSize)) {
       return DecodeResult::dataNoReady;
     }
@@ -181,9 +178,7 @@ DecodeResult FdkaacDecoder::decode(const AvoxPacket& packet) {
 
 void FdkaacDecoder::flush() {
   if (handle) {
-    // FDK AAC 的 AACDEC_FLUSH 需要多次调用才能完全清空内部缓冲区
-    // 每次调用会返回一个残留帧，直到返回 AAC_DEC_NOT_ENOUGH_BITS 表示已清空
-    // HE-AAC 使用 SBR 技术，内部可能缓冲 30+ 帧
+    // FDK AACDEC_FLUSH 需多次调用才能清空内部缓冲(HE-AAC 可缓冲 30+ 帧), 直至返回 AAC_DEC_NOT_ENOUGH_BITS
     UINT flags = AACDEC_FLUSH;
     std::vector<uint8_t> flushBuffer(10240);
     INT_PCM* outputBuffer = reinterpret_cast<INT_PCM*>(flushBuffer.data());

@@ -56,9 +56,7 @@ DecodeResult AudioEncoder::fillFrame(const AvoxAFrame& frame) {
     if (size >= spaceleft) {
       // 写入当前BUFFER并写满
       curFrame.writeBytes(data, spaceleft);
-      // 因为如mp4/rtsp都要求pts是递增的,所以要修正这种情况
-      // 原因主要是录制时，100ms的数据，可能因为buffer，直接10/200ms来的
-      // 这样实际间隔与数据间隔不一致，spts计算就不匹配，android录音频繁
+      // mp4/rtsp要求pts递增: 录制buffer抖动使实际间隔与数据间隔不一致, 需修正(android录音常见)
       if (curFrame.getPts() <= lastPts) {
         // 修正这种情况
         spts = lastPts + 1;

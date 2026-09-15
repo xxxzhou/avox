@@ -129,9 +129,7 @@ bool TranscodeRecorder::open(const char* url, const char* file) {
 }
 
 void TranscodeRecorder::close() {
-  // 先置completed: 封死close期间seek/getSourceInfo重入ioSource的窗口
-  // (编码线程在join前会source.reset(), ioSource随后悬空)
-  // 失败态保持failed, 避免close把失败洗成完成
+  // 先置completed封死close期重入窗口(编码线程join前source.reset会悬空ioSource); 失败态保持failed
   if (state != RecorderState::failed) {
     setRecState(RecorderState::completed);
   }
@@ -220,9 +218,7 @@ void TranscodeRecorder::onReady() {
          progress.totalTimeMs, "ms");
 }
 
-// IRawSourceOb - 解码回调
-// 在此线程做GPU处理(renderFrame)与unpack(getCpuFrame),
-// 处理后的YUVFrame拷贝入队,避免GPU共享buffer被下一帧覆盖
+// 解码回调做GPU处理/取CPU帧后拷贝入队, 避免GPU共享buffer被下一帧覆盖
 void TranscodeRecorder::onVideoFrame(const YUVFrame& frame, int32_t trackId) {
   // seek 期间丢弃帧(含 flushDecoders 同步重入的尾帧),避免旧帧污染输出
   // close(stopTask)后丢弃: 停掉无谓的GPU处理,编码线程排空后即关源

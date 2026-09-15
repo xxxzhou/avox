@@ -40,9 +40,8 @@ ConfigAddType VideoDecoder::pushConfig(const PacketBuf& data) {
     int32_t twidth = params.width;
     int32_t theight = params.height;
     parseConfigs();
-    // 首次从0(尚未解析出尺寸)到有效值是初始赋值而非运行中改分辨率; 误判
-    // updateSize 会触发硬解重置并连带清空包队列, 本地文件包已全量入队时
-    // 直接饿死零帧(实证: HDR素材数据流重复播报PPS触发, 硬解零帧)
+    // 尺寸首次从0到有效值是初始赋值, 误判updateSize会触发硬解重置并清空包队列,
+    // 本地文件包已全量入队时直接饿死零帧(实证: HDR重复播报PPS触发)
     if (twidth > 0 && theight > 0 &&
         (twidth != params.width || theight != params.height)) {
       LOGFLF(LogLevel::info, "video size changed:", params.width, "x",
@@ -50,9 +49,8 @@ ConfigAddType VideoDecoder::pushConfig(const PacketBuf& data) {
       ctype = ConfigAddType::updateSize;
     }
   }
-  // 配置帧发生了实质变化: 该参数集对解码器而言是新的,必须喂进去。
-  // 注意此时 configPackets 已被覆盖,解码器侧再做"内容是否相同"的比对
-  // 只会得到"相同"的结论,所以这里要单独记下,否则新参数集永远进不了解码器。
+  // 参数集实质变化才喂解码器: 此时 configPackets 已被覆盖, 解码器侧比对恒为"相同",
+  // 故须在此单独标记, 否则新参数集永远进不了解码器
   bConfigChanged = ctype == ConfigAddType::add ||
                    ctype == ConfigAddType::update ||
                    ctype == ConfigAddType::updateSize;
@@ -204,9 +202,8 @@ DecodeResult VideoDecoder::decoderImp(AvoxPacket& vdata) {
     uint32_t naluLength = (vdata.data.data[0] << 24) |
                           (vdata.data.data[1] << 16) |
                           (vdata.data.data[2] << 8) | vdata.data.data[3];
-    // 单NALU包不拆分时必须清掉上一包残留的拆分视图: spiltBufs是成员,
-    // 陈旧视图会让本包被跳过、却对上一包的旧内存重复decode(实证:
-    // 带前导SEI的流首包多NALU拆分后, 后续单NALU slice包全部喂空, 硬解零帧)
+    // 单NALU包须清掉上包残留的拆分视图(spiltBufs成员): 否则本包被跳过、重复decode旧内存,
+    // 实证: 带前导SEI首包多NALU拆分后, 后续单NALU slice全部喂空零帧
     spiltBufs.clear();
     if (vdata.data.size > naluLength + 4) {
       splitAvccNalu(vdata, spiltBufs);
