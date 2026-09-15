@@ -25,6 +25,7 @@ add_executable(avox_tests
   ${AVOX_TESTS_SRC}/test_time.cpp
   ${AVOX_TESTS_SRC}/test_threadsync.cpp
   ${AVOX_TESTS_SRC}/test_pipenode.cpp
+  ${AVOX_TESTS_SRC}/test_subtitle_slots.cpp
   ${AVOX_TESTS_SRC}/log_sink.cpp
   # 被测源码 (自包含编译)
   ${AVOX_SRC}/module/AvoxMath.cpp

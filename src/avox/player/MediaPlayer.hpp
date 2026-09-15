@@ -11,6 +11,7 @@
 #include "../muxer/RawMuxer.hpp"
 #include "../source/AVSource.hpp"
 #include "../subtitle/AssOverlayView.hpp"
+#include "../subtitle/SubtitleSlots.hpp"
 #include "../subtitle/SubtitleView.hpp"
 #include "../video/Window.hpp"
 #include "AudioTrack.hpp"
@@ -65,6 +66,8 @@ class MediaPlayer : public IMediaPlayer,
   std::unique_ptr<SubtitleView> subtitleView;
   // ISubtitle 出口(enableAsr 方向的槽位仲裁桥)
   std::unique_ptr<MPSubtitleProxy> subtitleProxy;
+  // 三槽位(内封轨/外挂/ASR)仲裁状态机(计划 字幕模块合并计划.md)
+  SubtitleSlots subtitleSlots;
   // ASS/PGS 内封字幕轨视图(计划 §3.5): 选轨(setSubtitleTrack)后建通道,
   // 与 SRT/ASR 通道的互斥由调用方保证。extradata 由 IO 线程经 onPacket 存表,
   // 锁只护表本身; subTrackIndex 两线程读, atomic
@@ -292,6 +295,9 @@ class MediaPlayer : public IMediaPlayer,
   void cmdSetSubtitleTrack(int32_t index);
   void replayPendingSubs();
   void cmdLoadSubtitle(const std::string& path);
+  // 三槽位仲裁: 拆除被顶掉的槽位(轨=复位轨号+关PGS解码+关overlay;
+  // 外挂=关文件字幕; ASR=停识别)
+  void teardownSubtitleSlot(SubtitleSlots::Slot slot);
 
  public:
   // 三槽位仲裁(计划 字幕模块合并计划.md): ASR 激活(MPSubtitleProxy 调)时

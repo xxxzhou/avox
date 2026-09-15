@@ -500,11 +500,17 @@ bool MediaPlayer::loadSubtitle(const char* path) {
 
 void MediaPlayer::cmdLoadSubtitle(const std::string& path) {
   loadSubtitleResult = false;
-  // 外挂激活(后激活者胜): 清内封轨通道与旧文件/ASR 槽
+  // 外挂激活(后激活者胜): 拆被顶掉的槽位
+  const SubtitleSlots::Slot prev =
+      subtitleSlots.activate(SubtitleSlots::Slot::file);
+  if (prev != SubtitleSlots::Slot::file) {
+    teardownSubtitleSlot(prev);
+  }
+  // 同槽位换渲染路径(.srt↔.ass): 两路文件态都先清
+  subtitleView->closeFile();
   if (assOverlayView) {
     assOverlayView->close();
   }
-  subtitleView->close();
   // 外挂模式: 无内封轨号, 内封包按 subTrackIndex 过滤全丢弃(-2 不等于任何局部轨)
   subTrackIndex = -2;
   // 扩展名分流: .ass/.ssa → libass 插件; 其余(.srt) → 文件路径(P2 切光栅化器)
@@ -591,14 +597,22 @@ void MediaPlayer::cmdSetSubtitleTrack(int32_t index) {
     ioSource->setSelectedSubtitle(index);  // PGS 解码/旁路路由开关
   }
   if (index < 0) {
-    if (assOverlayView) {
-      assOverlayView->close();
+    // 关轨槽: 仅当轨本就是胜者(不影响外挂/ASR 胜者)
+    if (subtitleSlots.active() == SubtitleSlots::Slot::track) {
+      subtitleSlots.deactivateIf(SubtitleSlots::Slot::track);
+      if (assOverlayView) {
+        assOverlayView->close();
+      }
     }
     LOGFLF(LogLevel::info, "subtitle track off");
     return;
   }
-  // 选轨激活(后激活者胜): 清外挂文件与 ASR 槽
-  subtitleView->close();
+  // 选轨激活(后激活者胜): 拆被顶掉的槽位
+  const SubtitleSlots::Slot prev =
+      subtitleSlots.activate(SubtitleSlots::Slot::track);
+  if (prev != SubtitleSlots::Slot::track) {
+    teardownSubtitleSlot(prev);
+  }
   if (!assOverlayView) {
     assOverlayView = std::make_unique<AssOverlayView>();
   }
@@ -680,7 +694,7 @@ IMediaMuxer* MediaPlayer::getMuxer(bool bTranscode) {
 ISubtitle* MediaPlayer::getSubtitle() { return subtitleProxy.get(); }
 
 void MPSubtitleProxy::enableAsr() {
-  // ASR 激活(后激活者胜): 先清内封轨/外挂槽, 再开 ASR
+  // ASR 激活(后激活者胜): 先拆被顶掉的槽位, 再开 ASR
   player->onSubtitleActivate();
   player->getSubtitleView()->enableAsr();
 }
@@ -688,14 +702,34 @@ void MPSubtitleProxy::enableAsr() {
 void MPSubtitleProxy::close() { player->getSubtitleView()->close(); }
 
 void MediaPlayer::onSubtitleActivate() {
-  subTrackIndex = -1;
-  if (ioSource) {
-    ioSource->setSelectedSubtitle(-1);
+  const SubtitleSlots::Slot prev =
+      subtitleSlots.activate(SubtitleSlots::Slot::asr);
+  if (prev != SubtitleSlots::Slot::asr) {
+    teardownSubtitleSlot(prev);
   }
-  if (assOverlayView) {
-    assOverlayView->close();
+}
+
+void MediaPlayer::teardownSubtitleSlot(SubtitleSlots::Slot slot) {
+  switch (slot) {
+    case SubtitleSlots::Slot::track:
+      // 轨槽拆除: 轨号复位 + PGS 解码关 + overlay 关
+      subTrackIndex = -1;
+      if (ioSource) {
+        ioSource->setSelectedSubtitle(-1);
+      }
+      if (assOverlayView) {
+        assOverlayView->close();
+      }
+      break;
+    case SubtitleSlots::Slot::file:
+      subtitleView->closeFile();
+      break;
+    case SubtitleSlots::Slot::asr:
+      subtitleView->closeAsr();
+      break;
+    default:
+      break;
   }
-  subtitleView->closeFile();
 }
 
 PlayerState MediaPlayer::getState() { return state; }
@@ -1471,6 +1505,7 @@ void MediaPlayer::cmdClose() {
     assOverlayView->close();
   }
   subTrackIndex = -1;
+  subtitleSlots.reset();
   {
     std::lock_guard<std::mutex> lock(subMetaMtx);
     subExtradata.clear();

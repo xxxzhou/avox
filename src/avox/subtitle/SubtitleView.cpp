@@ -68,6 +68,13 @@ void SubtitleView::closeFile() {
   }
 }
 
+void SubtitleView::closeAsr() {
+  if (asrEnabled) {
+    subtitleAsr->unloadAsr();
+    asrEnabled = false;
+  }
+}
+
 void SubtitleView::enableAsr() {
   subtitleAsr->loadAsr();
   asrEnabled = true;
@@ -75,10 +82,7 @@ void SubtitleView::enableAsr() {
 
 void SubtitleView::close() {
   closeFile();
-  if (asrEnabled) {
-    subtitleAsr->unloadAsr();
-    asrEnabled = false;
-  }
+  closeAsr();
 }
 
 Clock* SubtitleView::getClock() { return clock.get(); }

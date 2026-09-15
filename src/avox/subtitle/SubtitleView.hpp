@@ -56,6 +56,8 @@ class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
   bool loadFile(const char* path);
   // 只关文件字幕槽(保留 ASR), 供三槽位仲裁用
   void closeFile();
+  // 只关 ASR 槽(保留文件字幕), 供三槽位仲裁用
+  void closeAsr();
   void setAsrMode(AsrMode mode);
   void setWindowRender(ISurfaceRender* render);
   // 画布坐标系(storage)尺寸, 开流描述就绪时下发
