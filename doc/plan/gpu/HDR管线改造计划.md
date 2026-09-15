@@ -291,3 +291,22 @@ Mac mini M2(macOS 26.1, ssh mac)实机闭环,**块 2 的 Metal 部分完成**,�
 3. 新增 ANDROID_OFFLINE_SKIP(rec-transcode-*): android LGPL 白名单只开 aac 编码器,转码录制结构性不可行(与 LINUX_OFFLINE_SKIP 同理)。
 
 至此**块 2 三平台(Windows DX11 / macOS Metal / Android EGL)原生 tone map 全部完成**。HDR 直通(块 3)脚手架仍待 HDR 真机。
+
+### 6.16 Vulkan 中转链路的 HDR 边界(2026-09-15 定性)
+
+结论先行:**HDR 内容中转 Vulkan 车道不会坏——正确 tone map 到 SDR 输出;但 forceHDR 直通到 HDR 屏只在原生车道可达,中转后目前不可行。**
+
+中转架构(`SurfaceRenderNative::render(GpuFrame)`, bVulkan=true):YUV 帧先经原生前段(DX11 CS / Metal / GLES)转 RGBA,再导入 Vulkan 管线消费;raw 平面格式(YuvType::other)则由 Vulkan 自转(yuv2rgbaV5.comp)。
+
+tone map 在中转链路是通的:
+- yuv2rgbaV5.comp 含与原生三端同源的完整链(PQ/HLG→ACES→BT.2020→BT.709, §6.1 UBO 定稿),宿主 setHdrMode/setHdrMeta 经 VkVideoRender→VkYUV2RGBALayer→UBO 每帧贯通;
+- 原生前段转出的 RGBA 已按 hdrMode 完成 tone map(Metal/DX11 CS 的 forceHDR 分支同源)。
+
+forceHDR 直通在中转链路不可达,三个结构性原因:
+1. **中间纹理 8bit**:VkYUV2RGBALayer 输出固定 ImageType::rgba8(VK_FORMAT_R8G8B8A8_UNORM),10bit PQ 量化到 8bit 产生带状失真,且宽色域(BT.2020)信息不随纹理传递;
+2. **特效域假设**:100+ 特效按 gamma 域 BT.709 SDR 设计(shader 内注释「下游特效按 gamma 域消费」),HDR 线性光数据进特效链语义错误;
+3. **呈现端点 SDR**:引擎互操作(UE/Unity/Godot GPU 直通)把 RGBA 纹理交给引擎自身的 SDR swapchain 呈现;VkWindow 亦未配 HDR 格式。
+
+若将来要中转车道支持直通,需三件套:rgba16f(或 rgba16)中间格式仅在 forceHDR 时启用;特效链在 forceHDR 时旁路或 HDR 化(线性光/宽色域);各呈现端配 HDR swapchain(引擎侧还需引擎支持 HDR 输出,超出 SDK 控制面)。当前判定投入产出比低,先保原生车道块 3 验证。
+
+另:VkVideoRender.hpp 三个 HDR 接口补 override 标注(与 VideoRender 基类虚函数签名核对一致),收尾提交 9a3f652。
