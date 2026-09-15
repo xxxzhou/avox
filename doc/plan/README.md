@@ -2,6 +2,11 @@
 
 avox 各模块的计划、设计与调研文档索引。已完成的方案随功能落地, 对应实现文档见 [INDEX.md](../INDEX.md)。
 
+## backlog/ — panvox backlog 施工计划集 (A-1 ~ A-19)
+
+双仓清单([panvox/docs/backlog.md](../../../panvox/docs/backlog.md))中 avox 项的逐条施工方案:
+代码落点/任务拆解/验收判据/依赖风险。入口 [backlog/README.md](backlog/README.md)。
+
 ## current.md — 当前在办
 
 当前迭代的任务清单与进度。

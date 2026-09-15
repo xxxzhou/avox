@@ -24,7 +24,7 @@ avox 是跨平台音视频播放器 SDK，支持直播流、本地媒体、硬�
 | [ai](ai/) | AI 功能: inpaint 图像修复、语音转文字 |
 | [build](build/) | 构建: 脚本/CMake、Android、FFmpeg、SWIG、wasm |
 | [tools](tools/) | 开发工具: VSCode/Wireshark/ffmpeg/git/trae |
-| [plan](plan/) | 设计与规划方案 |
+| [plan](plan/) | 设计与规划方案 · 功能计划集 [backlog/README.md](plan/backlog/README.md) (panvox 双仓对齐 A-1~A-19) |
 | [test](test/环境与插件总览.md) | 测试: 环境与插件关系地图 / 测试与修复工作流 / 发布检查清单 / 功能测试矩阵 |
 
 ---
