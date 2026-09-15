@@ -169,7 +169,7 @@ inline std::vector<PlayCase> buildCases(const Endpoints& ep) {
   // E 帧契约 / 截图 / 录制
   special("frame-contract", CaseKind::frameContract, ep.rtsp(k264), 8);
   {
-    // 截图走平台原生渲染 (关 vulkan): 离屏 vulkan 路线 fetchFrame 返回 0, 见 README 已知取舍。
+    // 截图走平台原生渲染 (关 vulkan): 原生车道基线。
     // 用本地文件而不是网络源: 截图能力与协议无关, 这样它也能进离线子集(CI 覆盖)
     PlayCase c;
     c.id = "shot";
@@ -191,13 +191,24 @@ inline std::vector<PlayCase> buildCases(const Endpoints& ep) {
     cases.push_back(c);
   }
   {
-    // 离屏 vulkan 截图: 已知返回 0 未修, 默认不跑 (--all 打开)
+    // 离屏 vulkan 截图 (中转车道): 与 shot 同源本地文件; 截 vk 管线
+    // outputLayer 的处理后帧, SDR 经中转的基线对照
     PlayCase c;
     c.id = "shot-vk";
     c.kind = CaseKind::screenShot;
-    c.url = ep.rtsp(k264);
+    c.url = ep.fileH264;
     c.seconds = 6;
-    c.enabled = false;
+    cases.push_back(c);
+  }
+  {
+    // HDR10 中转车道截图: 硬解 P010 → DX11CS tone map → vk 管线 outputLayer 抓帧。
+    // 与 shot-hdr(原生车道) 构成双车道对照, 钉死「HDR10 经中转输出正确 SDR」
+    PlayCase c;
+    c.id = "shot-hdr-vk";
+    c.kind = CaseKind::screenShot;
+    c.url = ep.fileHdr10;
+    c.seconds = 6;
+    c.enabled = !ep.fileHdr10.empty();
     cases.push_back(c);
   }
   special("rec-copy-h264", CaseKind::recordCopy, ep.rtsp(k264), 8);

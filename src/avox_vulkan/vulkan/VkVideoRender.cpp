@@ -343,7 +343,9 @@ bool VkVideoRender::vaildAndInitGraph() {
   }
   OutputParamet outputParamet = {};
   outputParamet.bCpu = false;
-  outputParamet.bGpu = true;
+  // bGpu = 有真实呈现/互操作消费者; 离屏时 display 支路仅截图 sink,
+  // 关掉避免每帧 fence 与各平台 interop 资源分配
+  outputParamet.bGpu = surface != nullptr;
   outputLayer->get()->updateParamet(outputParamet);
   outputLayer->get()->setAspect(aspect);
   // 输出
@@ -443,10 +445,11 @@ bool VkVideoRender::vaildAndInitGraph() {
     imageResizeLayer->addLine(imageOutLayer);
     outNode->addLine(imageResizeLayer);
   }
-  // 如果有surface,或者不输出CPU YUV !surface
-  if (surface || !bOutCpuYuv) {
-    outNode->addLine(outputLayer);
-  }
+  // display 支路始终连图: 无 surface 时它只作 fetchFrame 截图 sink
+  // (bGpu 随 surface 关, 不产生 fence/interop 副作用); 曾按
+  // surface||!bOutCpuYuv 裁剪, 离屏+cpuYuv(录制/yuvout/截图)时未连边,
+  // fetchFrame 读到空纹理 → vk 车道截图恒败(shot-vk 已知取舍的根因)
+  outNode->addLine(outputLayer);
   bRebuilding.store(false);
   bResetFlag = false;
   return true;

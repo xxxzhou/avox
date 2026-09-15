@@ -29,7 +29,9 @@
 | D WebRTC | `webrtc-h264` · `webrtc-h265` | ZLM WHEP 信令 | 独立通道, 不经 IO 方案 |
 | E 帧 / 截图 / 录制 | `frame-contract` | ZLM | 离屏 yuv420P packed 契约 + 抽帧 RGBA |
 | | `shot` | 本地 mp4 | 截图 + **图像客观质量** (关 vulkan 走原生渲染) |
-| | `shot-vk` | ZLM | 截图 (离屏 vulkan 路线) — **已知返回 0, 默认不跑** |
+| | `shot-vk` | 本地 mp4 | 截图 (中转车道, vk 管线 outputLayer) |
+| | `shot-hdr` | 本地 mp4 | HDR10 截图 + luma (原生车道) |
+| | `shot-hdr-vk` | 本地 mp4 | HDR10 截图 + luma (中转车道, 与 shot-hdr 双车道对照) |
 | | `rec-copy-h264` | ZLM | 直通录制 (原流拷贝) |
 | | `rec-transcode-h264` | 本地 mp4 | 转码录制 + 中途 seek |
 | F 无vulkan直取<br>(车道B) | `yuvout-h264` | 本地 mp4 | 硬解直出 **nv12** 类型契约 (DX11 staging / Metal readback) |
@@ -256,9 +258,10 @@ Android commercial 构建 (LGPL 无 libx264) 没有注册任何 FF 软编, 转�
 - **`shot` 的质量阈值是经验值**（均值 12~243 / 标准差 6 / 同色比 95%）：能抓住黑屏、
   纯色、卡帧这类典型坏图，但**没做过对抗性验证** —— 比如"画面对但整体偏暗"的合法场景
   可能被误杀。阈值在 `PlayMatrix.hpp::imageLooksAlive`，按实际误报调。
-- **截图分两条路线**: `shot` 关掉 vulkan 走平台原生渲染 (稳定路线, 实测 PASS);
-  `shot-vk` 走离屏 vulkan, `fetchFrame` 返回 0 —— Windows 实测 `VideoRender.cpp:117 check shot:0`,
-  Apple 侧见 `doc/test/功能测试矩阵.md` W5 同源问题。修好前 `shot-vk` 默认不跑 (`--all` 可开)。
+- **截图两条车道**: `shot`/`shot-hdr` 关 vulkan 走平台原生渲染; `shot-vk`/`shot-hdr-vk`
+  走离屏 vulkan (vk 管线 outputLayer fetchFrame)。中转车道曾恒败 —— 离屏+cpuYuv 建图时
+  display 支路按 `surface||!bOutCpuYuv` 未连边, fetchFrame 读到空纹理; 已改为始终连边
+  (无 surface 时该支路 bGpu 关, 仅作截图 sink), 双车道 luma 对齐 (HDR10: 129.9 vs 130.0)。
 - **zlmediakit IO 的 PTS 异常**: `rtsp-*-zm` 判 PASS 但 `pos` 报出 1.78e12 ms 量级的绝对时间戳
   (ffmpeg IO 同流为正常相对值)。用例只判 `pos>1500` 所以不受影响, 但这个口径值得单独查
   (此前 `samples/vulkantest/README.md` 记过"用 zlmediakit 拉流 PTS 约 9 倍"的现象, 同一家族)。
