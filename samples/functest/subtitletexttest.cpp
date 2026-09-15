@@ -24,6 +24,10 @@
 
 #include "avox/AvoxPlayer.h"
 
+#ifdef AVOX_ENABLE_FREETYPE
+#include "avox/subtitle/TextRasterizer.hpp"
+#endif
+
 using namespace avox;
 
 #ifdef _WIN32
@@ -159,6 +163,42 @@ int main(int argc, char* argv[]) {
     seconds = 5;
   }
   std::string prefix = argc > 4 ? (std::string(argv[4]) + "_") : "subtext_";
+
+  // SUBTEXT_PERF=1: 文本光栅化 CPU 基准(计划 P4 性能走查 <3ms@1080p 复测)。
+  // 预热后交替两条对白绕过同文本零重渲染判定, 1080p 200 次取均值/最大。
+  if (std::getenv("SUBTEXT_PERF") && std::getenv("SUBTEXT_PERF")[0] == '1') {
+#ifdef AVOX_ENABLE_FREETYPE
+    TextRasterizer r;
+    r.render("预热 预热", 1920, 1080);
+    const char* cues[2] = {"字幕合并验证 TextRasterizer 行",
+                           "第二句对白, 用来绕过同文本零重渲染判定"};
+    double totalMs = 0;
+    double maxMs = 0;
+    int okIter = 0;
+    for (int i = 0; i < 200; ++i) {
+      const auto t0 = std::chrono::steady_clock::now();
+      const int32_t seq = r.render(cues[i % 2], 1920, 1080);
+      const auto t1 = std::chrono::steady_clock::now();
+      if (seq <= 0) {
+        continue;
+      }
+      ++okIter;
+      const double ms =
+          std::chrono::duration<double, std::milli>(t1 - t0).count();
+      totalMs += ms;
+      if (ms > maxMs) {
+        maxMs = ms;
+      }
+    }
+    if (okIter > 0) {
+      std::printf("[perf] rasterizer 1080p avg=%.3fms max=%.3fms iters=%d "
+                  "canvas=%dx%d\n",
+                  totalMs / okIter, maxMs, okIter, r.width(), r.height());
+    } else {
+      std::printf("[perf] rasterizer unavailable (font missing)\n");
+    }
+#endif
+  }
 
   IMediaPlayer* player = createMediaPlayer();
   if (!player) {

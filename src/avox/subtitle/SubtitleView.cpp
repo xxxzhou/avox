@@ -376,8 +376,6 @@ void SubtitleView::renderText(int64_t ptsMs) {
 #endif
 }
 
-SubtitleAsr* SubtitleView::getSubtitleAsr() { return &subtitleAsr; }
-
 void SubtitleView::setAudioDesc(AudioDesc desc) { subtitleAsr.setAudioDesc(desc); }
 
 void SubtitleView::inputSpeech(const AvoxData& data, int64_t pts) {

@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+#include "../AvoxDef.h"
+
 #ifdef AVOX_ENABLE_FREETYPE
 
 namespace avox {
@@ -26,7 +28,7 @@ struct TextCanvasStyle {
 // (计划 doc/plan/player/字幕模块合并计划.md P2)。字形经 FontCache
 // (avox_freetype), 排版/换行规则与旧 VkFontLayer 同源。
 // 线程约定: 只在渲染线程调 render。
-class TextRasterizer {
+class AVOX_EXPORT TextRasterizer {
  public:
   // 渲染文本到内部画布。返回内容序号: 0=无内容(调用方清层), 内容变化时递增,
   // 文本与帧尺寸都没变则返回上次的序号(调用方零上传)。

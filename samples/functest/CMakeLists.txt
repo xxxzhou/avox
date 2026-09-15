@@ -27,6 +27,8 @@ generatetest(httplibtest)
 # 外挂 .srt 文本字幕端到端: loadSubtitle→TextRasterizer→canvas 合成→像素判据
 if(AVOX_ENABLE_FREETYPE)
     generatetest(subtitletexttest)
+    # SUBTEXT_PERF 基准直链 TextRasterizer(导出类), 头文件按此宏开门
+    target_compile_definitions(subtitletexttest PRIVATE AVOX_ENABLE_FREETYPE)
     if(MSVC)
         target_compile_options(subtitletexttest PRIVATE /utf-8)
     endif()
