@@ -21,7 +21,7 @@
 
 ## 目录结构
 
-`3rdparty/` 第三方库源码 · `assets/` 资源 · `cmake/` 构建脚本 · `glsl/` 着色器源码 · `platform/` 平台代码 (UE/Unity/Godot 插件) · `samples/` 探针与人工走查样例 (归位说明见 samples/README.md) · `src/` SDK 源码 (avox 模块) · `swig/` C#/Java/Node/python 绑定 · `build/` 构建输出 · `tests/` 单测 (doctest, 随主构建编译) 与播放回归矩阵共享用例表 (tests/playmatrix) · `doc/` 文档 · `plugins/` 插件 · `script/` 辅助脚本
+`3rdparty/` 第三方库源码 · `assets/` 资源 · `cmake/` 构建脚本 · `glsl/` 着色器源码 · `platform/` 平台代码 (UE/Unity/Godot 插件) · `samples/` 探针与人工走查样例 (归位说明见 samples/README.md) · `src/` SDK 源码 (avox 模块) · `swig/` C#/Java/Node/python 绑定 · `build/` 构建输出 · `tests/` 白盒单测 (doctest, 随主构建编译; 播放回归矩阵等测试正在移交同级 avox-test 仓, 见下「测试」节) · `doc/` 文档 · `plugins/` 插件 · `script/` 辅助脚本
 
 ## 构建命令
 
@@ -34,14 +34,25 @@ python build_linux.py     # Linux x64
 
 # 单元测试 (随构建自动编译, 手动运行:)
 ctest --test-dir build/windows/avox --output-on-failure -C Release
-
-# 播放回归矩阵 (每次改动后跑一次, 确认播放链路未坏; 需本机 ZLM MediaServer)
-python script/testenv/play_regress.py
-python script/testenv/play_regress.py --offline   # 无 ZLM 的离线子集 (CI 用这个)
-
-# 提交门禁: pre-push 跑 ctest + 上面那个离线子集 (已装 core.hooksPath=.githooks)
-# 跳过: AVOX_SKIP_GATE=1 git push; 全量: AVOX_GATE_FULL=1 git push
 ```
+
+## 测试：移交同级 avox-test 仓（进行中）
+
+**功能开发/修复完成后的测试验证，一律去同级 `../avox-test` 仓跑**（统一测试仓，收拢 avox/panvox/三引擎的全部测试，入口见 [avox-test/README.md](../avox-test/README.md)）。
+
+- **已迁入 avox-test**（规范版本在那边维护）：`script/testenv/` 推流与回归脚本、`tests/playmatrix/` 播放回归矩阵用例表、`doc/test/` 测试文档、`assets/video/test/` 标准测试源、`platform/godot/tools/tests/` headless 用例。本仓同名目录只是**过渡期副本，不再更新**
+- **留在本仓**：`tests/test_*.cpp`（doctest 白盒单测，直接编本仓源码，随主构建编译）；`platform/*/playtest` 宿主与 `samples/` 属第二批迁移，过渡期仍归本仓
+- **新增/修改测试用例一律写到 avox-test**，不要再往本仓加
+
+```bash
+# 在 avox-test 仓跑回归 (AVOX_ROOT 默认指向同级 avox, 自动读本仓 build/install 产物)
+cd ../avox-test
+python script/testenv/play_regress.py --offline   # 离线子集, 无 ZLM 也能跑 (每次改动后跑)
+python script/testenv/play_regress.py             # 全量 (需本机 ZLM MediaServer)
+python script/build_runner.py --target playtest   # 只重建 runner (avox 主树编不过时用它绕过)
+```
+
+提交门禁 (pre-push) 过渡期仍跑本仓 ctest + 本仓离线子集副本 (已装 core.hooksPath=.githooks)；跳过: `AVOX_SKIP_GATE=1 git push`，全量: `AVOX_GATE_FULL=1 git push`。
 
 ## 平台支持
 

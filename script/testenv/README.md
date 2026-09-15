@@ -1,5 +1,7 @@
 # testenv/ — 功能测试本地流源套件
 
+> **迁移通知（2026-09-15）**：本套脚本规范副本已迁入同级统一测试仓 `../avox-test/script/testenv/`（路径已改造为 TEST_ROOT/AVOX_ROOT 双根，`AVOX_ROOT` 默认 `../avox`）。过渡期本仓副本仅供 pre-push 门禁使用；**改动请落在 avox-test**，回归也从那边跑。
+
 复用本机已运行的 ZLMediaKit MediaServer（`MediaServer.exe`，http/80 rtsp/554 rtmp/1935 rtc/8000），
 用 ffmpeg 循环推流产生多协议测试源，并为所有平台的自动化回归提供**统一判定行约定**。
 
