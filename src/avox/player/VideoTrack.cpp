@@ -73,13 +73,9 @@ void VideoTrack::onVideoDesc() {
   }
   windowRender->setFPS(dparams.fps);
   dropDuration = (int32_t)(1000.0 / windowRender->getFPS()) * 2;
-  // 字幕画布坐标系跟随实际渲染分辨率(解码器配置优先)
-  if (mediaPlayer) {
-    SubtitleView* subtitleView = mediaPlayer->getSubtitleView();
-    if (subtitleView) {
-      subtitleView->setStorageSize(imageFormat.width, imageFormat.height);
-    }
-  }
+  // 字幕画布坐标系 = srcDesc(与 attachAssOverlay 的 ASS storage 同源);
+  // 不用 dparams——部分硬解路径上报的高度非视频真实高度(如 1080p 报 270),
+  // 会导致文本字号按错的比例缩放
   // 按流下发颜色空间(矩阵+量程+transfer): 图未建时 VkVideoRender 存成员, 建图时应用
   windowRender->setColorSpace(srcDesc.colorSpace);
   // 记录track里的渲染器创建

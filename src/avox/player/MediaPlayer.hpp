@@ -83,8 +83,10 @@ class MediaPlayer : public IMediaPlayer,
   std::mutex subMetaMtx;
   std::vector<std::vector<char>> subExtradata;  // 局部轨索引 → ASS 剧本头
   std::atomic<int32_t> subTrackIndex{-1};
-  // cmdLoadSubtitle 的同步回执(命令在播放器线程执行)
-  bool loadSubtitleResult = false;
+  // cmdLoadSubtitle 的同步回执: -1=未执行 0=false 1=true。
+  // enqueueWait 只保证入队不保证已执行, 主线程按三态等回执(旧 bool 有竞态:
+  // 播放器线程尚未跑完命令就读到初值 false)
+  std::atomic<int8_t> loadSubtitleState{-1};
   // 当前选中轨的剧本头是否已喂(选轨可能早于 IO 线程 parseStream)
   bool subTrackFeeded = false;
   // 相对于track的外部时钟

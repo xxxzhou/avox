@@ -1,6 +1,7 @@
 #include "MediaPlayer.hpp"
 
 #include <cctype>
+#include <chrono>
 #include <cstring>
 #include <thread>
 
@@ -493,13 +494,18 @@ bool MediaPlayer::loadSubtitle(const char* path) {
   if (!path) {
     return false;
   }
+  loadSubtitleState.store(-1);
   auto cmd = createCommand<MPCommandType::LoadSubtitle>(std::string(path));
   mpCommands.enqueueWait(cmd);
-  return loadSubtitleResult;
+  // enqueueWait 只保证入队, 命令由播放器线程执行: 等回执落定(上限 3s)
+  for (int i = 0; i < 300 && loadSubtitleState.load() == -1; ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  return loadSubtitleState.load() == 1;
 }
 
 void MediaPlayer::cmdLoadSubtitle(const std::string& path) {
-  loadSubtitleResult = false;
+  bool ok = false;
   // 外挂激活(后激活者胜): 拆被顶掉的槽位
   const SubtitleSlots::Slot prev =
       subtitleSlots.activate(SubtitleSlots::Slot::file);
@@ -529,15 +535,16 @@ void MediaPlayer::cmdLoadSubtitle(const std::string& path) {
       LOGFLF(LogLevel::warn, "loadSubtitle: no valid video track");
       return;
     }
-    loadSubtitleResult = assOverlayView->loadFile(path.c_str());
+    loadSubtitleState.store(assOverlayView->loadFile(path.c_str()) ? 1 : 0);
     replayPendingSubs();
   } else {
-    loadSubtitleResult = subtitleView->loadFile(path.c_str());
+    loadSubtitleState.store(subtitleView->loadFile(path.c_str()) ? 1 : 0);
     // 内封包不再回放, 丢弃排队残留
     std::lock_guard<std::mutex> lock(subMetaMtx);
     pendingSubs.clear();
   }
-  LOGFLF(LogLevel::info, "loadSubtitle:", path, " ok:", loadSubtitleResult);
+  LOGFLF(LogLevel::info, "loadSubtitle:", path, " ok:",
+         loadSubtitleState.load() == 1);
 }
 
 void MediaPlayer::replayPendingSubs() {

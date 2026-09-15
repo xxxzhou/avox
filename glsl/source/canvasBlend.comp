@@ -34,9 +34,9 @@ void main() {
     vec4 rect = vec4(ubo.centerX - ubo.width / 2.0f, ubo.centerY - ubo.height / 2.0f,
                      ubo.centerX + ubo.width / 2.0f, ubo.centerY + ubo.height / 2.0f);
     if (uv.x >= rect.x && uv.x < rect.z && uv.y >= rect.y && uv.y < rect.w) {
-      // 画布 bbox → 归一化 UV
-      vec2 uv2 = vec2((uv.x - rect.x) / ubo.width, (uv.y - rect.y) / ubo.height);
-      vec4 overlay = textureLod(inTex2, uv2, 0.0);
+      // 画布为全帧坐标系, 内容按绝对位置写入(canvasData 与输出同尺寸),
+      // 按绝对 uv 1:1 采样; rect 仅作采样门控(内容区外画布恒为透明)
+      vec4 overlay = textureLod(inTex2, uv, 0.0);
       // premultiplied source-over: out = overlay + base * (1 - overlay.a * opacity)
       float a = overlay.a * ubo.opacity;
       color.rgb = overlay.rgb + color.rgb * (1.0f - a);
