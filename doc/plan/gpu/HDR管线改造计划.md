@@ -318,3 +318,19 @@ forceHDR 直通在中转链路不可达,三个结构性原因:
 1. **块 3 有了明确消费者**:panvox 三条纹理桥(Windows BGRA8 共享纹理 / Android TextureRegistry ANativeWindow / macOS Vulkan IOSurface 'BGRA')全落在本计划 §6.16 定性的中转车道,tone map 层开箱即用;真直通层等块 3 验证后由 panvox 走 PlatformView 挖洞复用原生车道。块 3 的 HDR 显示器实测(Windows DXGI HDR swapchain / macOS CAMetalLayer EDR / Android SurfaceView)是两端共同的下一里程碑;
 2. **验收口径**:HDR10/HLG 色彩正确 + DV 走 HDR10 兼容层(DV Profile 5 无 RPU 处理,不承诺);
 3. **对接缺口在宿主侧**:panvox_c_api.h 尚无 onHdrMeta/setHdrMode 透传(引擎 C++ API 已备),panvox 侧补 C API+FFI 两个口子即可,引擎侧无改动。
+
+### 6.18 中转车道截图修复 + shot-hdr-vk 双车道实测(2026-09-15)
+
+**修复**:vk 车道离屏截图恒败(shot-vk 已知取舍)根因——`setOffSurface` 隐含 `enableYuvOut`(bOutCpuYuv=true),建图时 display 支路按 `surface||!bOutCpuYuv` 条件未连边,fetchFrame 在未连边的 outputLayer 上读到空纹理(inTexs[0]=null)。修复:display 支路始终连图,无 surface 时该支路 `bGpu=surface` 关闭(仅作截图 sink,不产生 fence/interop 副作用,APPLE 侧相应跳过 createIOSurface)。顺带修正 shot-vk 误用 RTSP 源(无服务器环境 playing=0 掩盖真实链路)改本地文件,与 shot 同源,转正进离线子集。
+
+**新增 shot-hdr-vk**(HDR10 素材,中转车道截图 + luma):与 shot-hdr(原生车道)构成双车道对照,把「HDR10 经中转输出正确 SDR」从代码走读升级为三平台实测:
+
+| 平台 | 原生 shot-hdr | 中转 shot-hdr-vk |
+|------|--------------|------------------|
+| Windows | 130.2 | 130.0 |
+| macOS | 130.4 | 130.3 |
+| Android 真机 | 126.5 | 126.7 |
+
+同平台双车道 luma 差 ≤0.2,六组数字同族(SDR 对照 shot/shot-vk 同样对齐:win 124.6/124.5, mac 24.6/24.6, android 124.5/126.3)。Windows 离线矩阵 15/15、Android 真机 16/16、ctest 2/2。
+
+**对接意义**:panvox ADR-0009 的 tone map 层(其三条纹理桥全落中转车道)现在有三平台像素级背书。
