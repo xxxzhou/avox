@@ -1,132 +1,98 @@
 # Subtitle 字幕模块
 
-统一管理字幕文件、语音识别(ASR)和翻译，为 MediaPlayer/SourcePlayer 提供字幕能力。
+统一字幕视图: 内封字幕轨(ASS/SSA/SRT/PGS)、外挂字幕文件(.ass/.srt)、
+语音识别(ASR)三路内容共用一条 canvas 渲染通道, 三槽位引擎内仲裁。
+架构来源: doc/plan/player/字幕模块合并计划.md(v3 统一 canvas 通道)。
 
 ## 架构
 
 ```
-SubtitleView : public ISubtitle, public ISurfaceRenderOb
-├── unique_ptr<Clock>           // 时间同步
-├── unique_ptr<SubtitleFile>    // 文件字幕（SRT）
-│   └── IOnnxTranslator         // 查找时翻译
-└── unique_ptr<SubtitleAsr>     // ASR 管理
-    ├── AudioStt                // 语音识别器（识别线程）
-    └── IOnnxTranslator         // 翻译器（翻译线程）
+SubtitleView : public ISubtitle, public ISurfaceRenderOb   (统一视图)
+├── SubtitleSlots               // 三槽位仲裁(后激活者胜, 空窗不回落)
+├── Clock                       // 统一时钟(AVTrack 每帧 sync)
+├── [轨槽] IAssOverlay          // libass 插件(avox_ass): chunk 流 → RGBA canvas
+│   └── PGS 画布                // PgsDecoder(IO 线程解码) → setPgsCanvas
+├── [文件槽] SubtitleFile       // .srt 解析 → 按时间查文本
+│            或 IAssOverlay     // .ass/.ssa → 插件直载(扩展名内部分流)
+├── [ASR槽] SubtitleAsr         // 识别结果/流式部分文本
+│   └── AudioStt                // 语音识别(内部线程)
+├── TextRasterizer              // 文本 → RGBA8 bbox canvas(FreeType, 样式可配)
+└── ICanvasLayer                // 唯一混合出口(VkCanvasLayer, sourceOver)
 ```
 
-### 线程模型
+所有内容统一产出 RGBA8(premultiplied) bbox canvas, 经同一个
+`ICanvasLayer` sourceOver 混合出帧。渲染路径唯一: 谁画 canvas 的差别
+只在内封轨(libass/PGS 位图)与纯文本(FreeType 光栅化)之间。
 
-**streaming 模式**：
-- 识别线程：流式识别，~100ms 延迟
-- 无翻译，快速显示
+## 三槽位仲裁
 
-**ptsSync 模式**：
-- 识别线程：离线识别，~500ms
-- 翻译线程：神经网络翻译，~500ms
-- 两个线程并行处理，总延迟约 1s
+| 槽位 | 激活入口 | 内容源 |
+|------|----------|--------|
+| track | `setSubtitleTrack(i)` | 内封 ASS/SSA/SRT/PGS 轨 |
+| file | `loadSubtitle(path)` | 外挂 .ass/.ssa(插件) / .srt(光栅化器) |
+| asr | `getSubtitle()->enableAsr()` | 语音识别结果 |
 
-## 核心接口
+- **后激活者胜**: 激活新槽位时视图内自动拆除被顶掉的槽位(轨=关通道+PGS
+  解码路由复位; 外挂=清文件; ASR=停识别), 引擎内保证任一时刻至多一路
+  上屏, 不依赖调用方自觉。
+- **空窗不回落**: 胜者无内容的时段就空屏, 不回落到其他槽位, 避免两路
+  字幕闪替。「AI 字幕 vs 片源字幕」的产品切换 = 重新调对应激活接口。
+- `setSubtitleTrack(-1)` 只关轨槽(轨本就是胜者时), 不影响外挂/ASR。
+- 无 avox_ass 插件: 轨槽降级为不渲染, 纯文本(.srt/ASR)照常。
 
-```cpp
-// 公共接口
-class ISubtitle {
-    virtual bool loadSrt(const char* path) = 0;    // 加载 SRT
-    virtual void enableAsr(AsrMode mode) = 0;      // 启用 ASR
-    virtual void close() = 0;                       // 关闭
-    virtual void enableTranslation() = 0;          // 启用翻译
-    virtual void disableTranslation() = 0;         // 禁用翻译
-};
+## 渲染细节
 
-// 内部接口
-void setWindowRender(ISurfaceRender* render);            // 绑定渲染窗口
-void setAudioDesc(AudioDesc desc);                      // 设置音频格式
-void inputSpeech(const AvoxData& data, int64_t pts);     // 输入音频
-Clock* getClock();                                      // 获取时钟
-```
+- **canvas 去重**: 单一 `lastSeq` 序号判重, 内容未变零上传; seq 域在
+  槽位切换/源切换(ASS↔PGS)时置 -1, 强制清异源残留。
+- **线程约定**: activate*/load*/close/resetEvents 只在播放器线程;
+  pushChunk/setPgsCanvas 在 IO 线程(有界队列, 溢出丢最旧); onRender 在
+  渲染线程(内部互斥, 锁内只做短操作)。
+- **样式**: TextCanvasStyle(字体/字号/颜色/锚点/换行), 默认 simhei 40
+  底部居中, 字号随帧高 DPI 缩放(参考 1080p), 对齐旧观感。
+- **性能**: 文本光栅化 ~0.06ms@1080p(subtitletexttest SUBTEXT_PERF=1
+  实测, 稳态); canvas 仅内容变化时上传, bbox 裁剪天然限制尺寸。
 
 ## 识别模式
 
-| 模式 | 场景 | 识别器 | 翻译 | 总延迟 |
-|------|------|--------|------|--------|
-| `streaming` | SourcePlayer 实时采集 | 流式 | 否 | ~100ms |
-| `ptsSync` | MediaPlayer 视频播放 | 离线 | 是 | ~1s |
+| 模式 | 场景 | 识别 | 延迟 |
+|------|------|------|------|
+| `streaming` | SourcePlayer 实时采集 | 流式 | ~100ms |
+| `ptsSync` | MediaPlayer 视频播放 | 离线, 结果按 PTS 入队 | ~0.5s |
 
-## 同步机制
-
-### streaming 模式
-
-识别快（~100ms），直接显示，无需特殊同步：
-
-```
-音频输入 → 识别线程 → onPartialResult → 立即显示
-```
-
-主打快速，边说边显示。
-
-### ptsSync 模式
-
-识别和翻译较慢，通过音频缓冲队列延迟渲染：
-
-```
-音频解码帧
-    │
-    ├──────────────────────────────┐
-    │                              │
-    ▼                              ▼
-识别线程 (~500ms)            frameQueue (4秒缓冲)
-    │                              │
-    ▼                              ▼
-识别结果                     渲染 → 播放
-    │                         (延迟约1s)
-    ▼
-翻译线程 (~500ms)
-    │
-    ▼
-subtitleQueue (PTS标签)
-    │
-    ▼
-按PTS查找显示
-```
-
-**关键**：渲染队列领先约 1 秒，识别和翻译在各自线程并行处理，完成后按 PTS 同步显示。
+翻译链路已删除(端上小模型质量不行, 产品侧翻译由应用层 AI 管线负责)。
+翻译基础设施(ITranslator hub / avox_zlmediakit HttpTranslator /
+avox_cmd translate)在字幕模块之外, 不受影响。
 
 ## 使用示例
 
-### MediaPlayer（ptsSync 模式）
+### MediaPlayer(外挂/内封轨/ASR)
 
 ```cpp
-// 初始化
-subtitleView->setWindowRender(windowRender);
-subtitleView->setAudioDesc(audioDesc);
-subtitleView->enableAsr(AsrMode::ptsSync);
-subtitleView->enableTranslation();  // 可选
-
-// 音频解码后输入（AudioTrack::onDecode）
-subtitleView->inputSpeech(audioData, pts);
-
-// 渲染线程自动调用 onRender()，按 PTS 显示字幕
+player->loadSubtitle("movie.srt");     // 或 .ass/.ssa, 扩展名内部分流
+player->setSubtitleTrack(0);           // 或选内封轨(三槽位自动互斥)
+player->setSubtitleTrack(-1);          // 关轨槽
+player->getSubtitle()->enableAsr();    // ASR(自动清轨/外挂槽)
 ```
 
-### SourcePlayer（streaming 模式）
+### SourcePlayer(streaming ASR)
 
 ```cpp
-// 初始化
+subtitleView->setAsrMode(AsrMode::streaming);
 subtitleView->setWindowRender(windowRender);
 subtitleView->setAudioDesc(audioDesc);
-subtitleView->enableAsr(AsrMode::streaming);  // 用户手动启用
-
-// 音频帧输入
-subtitleView->inputSpeech(audioData, 0);
-
-// 渲染线程自动显示 getStreamingText()
+subtitleView->enableAsr();             // getSubtitle() 直返视图
+subtitleView->inputSpeech(audioData, pts);
 ```
 
 ## 组件职责
 
 | 组件 | 职责 |
 |------|------|
-| `SubtitleView` | 对外协调，渲染调度 |
-| `SubtitleAsr` | ASR 模式管理，翻译调度 |
-| `SubtitleFile` | SRT 解析，查找翻译 |
-| `AudioStt` | 语音识别（内部线程） |
-| `Clock` | 时间同步，外部操作 |
+| `SubtitleView` | 统一视图: 三槽位仲裁, canvas 生产调度, 唯一混合出口 |
+| `SubtitleSlots` | 槽位仲裁状态机(header-only, 单测覆盖) |
+| `SubtitleFile` | .srt 解析(SrtParser), 按时间查当前文本 |
+| `SubtitleAsr` | ASR 模式管理, 识别结果按 PTS 查找/流式文本 |
+| `TextRasterizer` | 文本 → RGBA8 bbox canvas(FreeType, 样式参数化) |
+| `IAssOverlay` | libass 插件通道接口(assOverlayHub 工厂, 缺插件降级) |
+| `AudioStt` | 语音识别(内部线程) |
+| `Clock` | 统一时钟(AVTrack::updateClock 每帧 sync) |

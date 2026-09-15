@@ -31,6 +31,12 @@
 > VK PipeGraph 图层(与现有 SRT 引擎内渲染同槽位),字幕随输出帧到达消费端;
 > ③渲染固定 Vulkan(`setVulkan(true)`),shim 不做位图导出——字幕只随帧走,
 > 越简单越好。
+> **2026-09-15 视图并入统一字幕模块**(字幕模块合并计划.md P3):本计划的
+> AssOverlayView 已并入统一 `SubtitleView`(复用名,三槽位仲裁内聚),
+> AssOverlayView 类删除;`getSubtitleView()` 为唯一视图入口,通道方法
+> (loadTrack/pushChunk/setPgsCanvas/resetEvents 等)语义不变。本计划的
+> 插件链路(avox_ass/IAssOverlay/PgsDecoder)不受影响。canvasBlend 缩放
+> 错位(rect 相对 uv 采样把内容压进 bbox)已修——ASS 渲染尺寸恢复正常。
 > 背景:panvox 定位修订(panvox 仓 ADR-0006)把「ASS/PGS 完整渲染」列为播放
 > 核心验收硬指标。行号基于当前 main,仅作定位参考。
 
