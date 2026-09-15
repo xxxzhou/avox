@@ -92,6 +92,8 @@ class VkVideoRender : public VideoRender, public IVOutputLayerOb {
   ColorSpaceDesc colorSpace{YuvStandard::bt601, YuvRange::full};
   // HDR 静态元数据, 驱动 yuv2RGBA tone map 峰值
   HdrMeta hdrMeta = {};
+  // HDR 输出模式, 驱动 yuv2RGBA tone map 开关
+  HdrMode hdrMode = HdrMode::follow;
 
 #ifdef AVOX_ENABLE_FREETYPE
   std::unique_ptr<FontRender> fontRender = nullptr;
@@ -149,6 +151,8 @@ class VkVideoRender : public VideoRender, public IVOutputLayerOb {
   void setColorSpace(const ColorSpaceDesc& c);
   // HDR 静态元数据(峰值亮度), 运行时重传, 不重建 graph
   void setHdrMeta(const HdrMeta& meta);
+  // HDR 输出模式(forceHDR 跳过 tone map), 运行时重传, 不重建 graph
+  void setHdrMode(HdrMode mode);
 #ifdef AVOX_ENABLE_FREETYPE
   // 获取字体层
   FontRender* enableRenderFont();

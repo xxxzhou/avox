@@ -235,3 +235,15 @@ YUV→RGB 与 tone map 数学在各渲染后端为独立实现,Vulkan 先做,其
 硬解 P010 实测补进 §6.7:帧全到但 meanY=16(limited 黑),断点是 getImageType/getDxFormat 无 P010 行 + ycbcr 表只有 8bpp,属阶段 2 整层闭环。
 
 验收:play_regress 离线子集 11/11(含三条新用例),ctest 全绿,hdrtest 对 base/_aud 双素材 PASS。
+
+### 6.12 API 面落地:onHdrMeta 宿主回调 + setHdrMode(2026-09-15)
+
+**回调挂在 IMediaPlayerOb(非 ISurfaceRenderOb)**:HdrMeta 是流级媒体属性(每流至多一次),与 ISurfaceRenderOb 现有四个回调(onFrame/onRender/onSurface/onWinSizeChange,全是渲染循环/帧级事件)语义不合;宿主消费场景(HDR 标识/显示器切换/模式决策)也是 player 级。派发点 `VideoTrack::onHdrMeta`——内部喂 `windowRender->setHdrMeta` 的同时经 `mediaPlayer->Observer<IMediaPlayerOb>::dispatch` 给宿主。**track 跨 open 复用**,`bHdrMetaSent` 必须在 `onVideoDesc`(每次开流解码器构造后必回调)复位,否则第二个 HDR 流不回调。
+
+**setHdrMode {follow/forceSDR/forceHDR} 挂 ISurfaceRender**(渲染策略,与 setColorSpace 并排;默认实现 {}, 既有实现者零影响)。语义:follow=按流自动(HDR 进 tone map 出 SDR);forceSDR=恒 tone map(当前与 follow 等价,HDR 直通输出落地后才有分野);forceHDR=shader `processColor` 入口直接返回(PQ 编码值原样落帧,SDR 表面过曝属预期,等 HDR 交换链)。贯通链:SurfaceRenderVk→VkVideoRender→VkYUV2RGBALayer→ColorYuvUBO.hdrMode(offset 88,原 pad)→V5 shader 分支。
+
+**顺手挖出一个潜伏缺陷**:`VkLayer::updateUBO` 只 memcpy CPU 暂存,真正上传在 `onPreFrame` 且需 `bParametChange` 置位——旧 `setHdrMeta` 运行时更新从未真正到过 GPU(被「meta 恒先于建图到达」掩盖,setHdrMeta 补置位修复),新 setHdrMode 首版同样踩中(实测 forceHDR 后画面纹丝不动才暴露)。
+
+**判据教训两条**:①forceHDR 档等首帧后才切模式,末帧流内时间与 follow/SDR 播错位 0.5s,testsrc2 移动图案把逐像素对比变噪声(vs follow midLift -2.6 虚报)——改为**按固定渲染帧序号采样**(三档都取第 90 帧,内容按帧序天然对齐,vs sdr diffRatio 0.71→0.02);②midLift>10 阈值贴边(AUD 素材 9.4)且 ACES 压暗/抬升在频带内正负抵消——tone map 的硬信号改 diffRatio(无 map ≈0.02),midLift 降为方向哨兵(>3)。forceHDR 三向判定:follow≠sdr(map 开)+force≠follow(diffRatio>0.5)+force≈sdr(<0.1)。
+
+验收:hdrtest 对 base/_aud 双素材 PASS(meta=1/1000, force diffRatio 0.02/0.69),play_regress 离线子集全绿,ctest 全绿。HDR API 面缺口就此关闭,剩余:硬解 P010(§6.7 三断点)/非 Vulkan 后端 tone map/HDR 直通输出。

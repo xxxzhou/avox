@@ -136,6 +136,9 @@ class IMediaPlayerOb {
   virtual void onIoError(AVError error, const char* msg) {}
   // 解码错误返回
   virtual void onDecodeError(TrackType trackType, DecodeResult error) {}
+  // HDR静态元数据(ST2086/CTA-861.3)就绪, 每次开流至多一次, 无元数据的流不回调
+  // 用途: 宿主侧HDR标识/显示器HDR模式切换/决策 ISurfaceRender::setHdrMode
+  virtual void onHdrMeta(const HdrMeta& hdrMeta) {}
 
   // Track信息准备好了
   virtual void onReady() {}

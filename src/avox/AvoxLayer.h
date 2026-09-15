@@ -345,6 +345,10 @@ class ISurfaceRender {
   virtual void disableYuvOut() = 0;
   // 设置源视频色彩空间(矩阵标准+量程), 决定 yuv2RGBA/rgba2YUV 转换, 运行时可调
   virtual void setColorSpace(const ColorSpaceDesc& cs) {};
+  // HDR输出模式(默认follow), 运行时可调。tone map 仅 Vulkan 车道实现:
+  // follow=按流与元数据自动(HDR进 tone map 出SDR); forceSDR=恒tone map;
+  // forceHDR=跳过tone map(PQ编码值原样落帧, SDR表面表现为过曝, 宿主自担)
+  virtual void setHdrMode(HdrMode mode) {};
   // 调用方须先对 buf 调用 setImageFormat 设定 width/height/imageType(当前仅
   // rgba8); 每帧按该 ImageFormat 经 GPU 缩放后零拷贝写入 buf, 读取时以
   // buf->getImageFormat() 为准(rowPitch 可能对齐到 16 字节) buf 由调用方持有,

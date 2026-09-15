@@ -57,6 +57,8 @@ void VideoTrack::start() {
 }
 
 void VideoTrack::onVideoDesc() {
+  // 每次开流复位: track跨open复用, 不复位则第二个HDR流不再回调
+  bHdrMetaSent = false;
   // 设置图像格式
   ImageFormat imageFormat = {};
   imageFormat.width = srcDesc.width;
@@ -89,6 +91,11 @@ void VideoTrack::onHdrMeta(const HdrMeta& hdrMeta) {
   }
   bHdrMetaSent = true;
   windowRender->setHdrMeta(hdrMeta);
+  // 宿主观察面: 流级媒体属性, 供HDR标识/显示模式切换/setHdrMode决策
+  if (mediaPlayer) {
+    mediaPlayer->Observer<IMediaPlayerOb>::dispatch(&IMediaPlayerOb::onHdrMeta,
+                                                    hdrMeta);
+  }
 }
 
 void VideoTrack::onDecode(const YUVFrame& frame) {

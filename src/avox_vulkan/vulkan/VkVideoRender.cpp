@@ -138,6 +138,18 @@ void VkVideoRender::setHdrMeta(const HdrMeta& meta) {
   }
 }
 
+// HDR 输出模式: forceHDR 跳过 tone map, 仅变化时下发
+void VkVideoRender::setHdrMode(HdrMode mode) {
+  if (mode == hdrMode) {
+    return;
+  }
+  LOGFLF(LogLevel::info, "set hdrMode:", (int32_t)mode);
+  hdrMode = mode;
+  if (yuv2RGBA) {
+    yuv2RGBA->get()->setHdrMode(mode);
+  }
+}
+
 #ifdef AVOX_ENABLE_FREETYPE
 FontRender* VkVideoRender::enableRenderFont() {
   fontRender->setEnable(true);

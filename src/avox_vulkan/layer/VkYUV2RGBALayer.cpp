@@ -18,8 +18,10 @@ void VkYUV2RGBALayer::refreshColorMat() {
   uboData.colorMat = buildYuvToRgb(cs);
   // transfer 随 cs 运行时更新: setColorSpace 只走本函数, 只写 onInitLayer 会丢晚到的标志
   uboData.transfer = (int32_t)cs.transfer;
+  uboData.hdrMode = (int32_t)hdrMode;
   LOGFLF(LogLevel::info, "[yuv2rgba] ubo transfer:", uboData.transfer,
-         " peak:", uboData.maxLuminance, " sdrWhite:", uboData.sdrWhiteNits);
+         " peak:", uboData.maxLuminance, " sdrWhite:", uboData.sdrWhiteNits,
+         " hdrMode:", uboData.hdrMode);
   updateUBO(&uboData);
 }
 
@@ -35,7 +37,20 @@ void VkYUV2RGBALayer::setHdrMeta(const HdrMeta& meta) {
     return;
   }
   uboData.maxLuminance = (float)hdrPeakNits(meta);
-  updateUBO(&uboData);
+  // updateUBO 只写 CPU 暂存, 真正上传在 onPreFrame 且需 bParametChange 置位,
+  // 否则晚于建图的元数据静默失效
+  bParametChange = true;
+}
+
+void VkYUV2RGBALayer::setHdrMode(HdrMode mode) {
+  if (mode == hdrMode) {
+    return;
+  }
+  LOGFLF(LogLevel::info, "[yuv2rgba] hdrMode:", (int32_t)mode,
+         " (0=follow 1=forceSDR 2=forceHDR)");
+  hdrMode = mode;
+  refreshColorMat();
+  bParametChange = true;
 }
 
 void VkYUV2RGBALayer::onInitLayer() {

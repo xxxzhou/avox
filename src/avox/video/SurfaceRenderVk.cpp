@@ -254,6 +254,16 @@ void SurfaceRenderVk::setHdrMeta(const HdrMeta& meta) {
 #endif
 }
 
+void SurfaceRenderVk::setHdrMode(HdrMode mode) {
+#ifdef AVOX_ENABLE_VULKAN
+  if (vkVideoRender) {
+    vkVideoRender->setHdrMode(mode);
+  }
+#else
+  (void)mode;
+#endif
+}
+
 void SurfaceRenderVk::setAutoAspect(bool bEnable) {
   if (!vkVideoRender) {
     return;

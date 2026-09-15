@@ -17,6 +17,8 @@ layout (std140, binding = 2) uniform UBO
 	mat4 colorMat;      // 行优先 YUV->RGB, UV 的 -0.5 已折进偏移列, 用法 vec4(yuv,1)*colorMat
 	float maxLuminance; // 内容峰值亮度 nits
 	float sdrWhiteNits; // SDR 白点 nits
+	int hdrMode;        // 0=follow 1=forceSDR 2=forceHDR
+	int _pad;
 } ubo;
 
 // ---------- 读函数: 内存布局 -> 归一化 [0,1], 与色彩处理无关 ----------
@@ -83,8 +85,12 @@ vec3 linearToBt709(vec3 c) {
 	return mix(lo, hi, step(vec3(0.018), c));
 }
 
-// 色彩处理总入口: 仅 PQ/HLG 做变换, SDR 原样透传(零改动)
+// 色彩处理总入口: forceHDR 跳过全部处理(PQ 编码值直通); 否则仅 PQ/HLG 做变换,
+// SDR 原样透传(零改动)。forceSDR 与 follow 在此等价(恒 tone map)
 vec3 processColor(vec3 rgb) {
+	if (ubo.hdrMode == 2) {           // forceHDR: 直通, HDR 显示链消费
+		return rgb;
+	}
 	if (ubo.transfer == 2) {          // pq (HDR10)
 		vec3 lin = pqToLinear(rgb);
 		lin = toneMap(lin);

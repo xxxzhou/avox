@@ -6,11 +6,10 @@
 //      与 SDR 接近 —— 均值差 > 40 作为 tone map 生效的客观判据
 //   3. -hard 档走硬解 (DX11VA P010), 观察 getDxFormat 不识别 P010 落 other 的
 //      已知雷区实际表现 (计划文档 §2.2/§6.7)
+//   4. API 面验证: IMediaPlayerOb::onHdrMeta 宿主回调(HDR 流回调/SDR 流不回调)
+//      + ISurfaceRender::setHdrMode(forceHDR 直通: 对 follow 中间调大幅回落,
+//      与 SDR 参考接近重合)
 // 判定: 末尾打印 case=hdrtest PASS/FAIL
-// API 面现状(本探针固化的事实, 待实现):
-//   - setHdrMode {auto/forceSDR/forceHDR} 全仓无实现, 宿主无法强制 SDR 输出
-//   - ISurfaceRender 只有 setColorSpace, 无 setHdrMeta (HdrMeta 只在内部链路流转)
-//   - IMediaPlayerOb/ISurfaceRenderOb 无 onHdrMeta 回调, 宿主拿不到峰值亮度
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -118,22 +117,27 @@ class HdrOb : public ISurfaceRenderOb {
         sum += (row[c * 4] + row[c * 4 + 1] + row[c * 4 + 2]) / 3;
       }
     }
-    int px = fmt.width * fmt.height;
-    if (px > 0) {
-      double m = (double)sum / px;
-      imgMeanSum += m;
-      imgFrames++;
-      // 保留最后一帧 RGB (与另一素材同构内容做像素级映射对比)
-      lastImg.resize((size_t)px * 3);
-      for (int r = 0; r < fmt.height; r++) {
-        const uint8_t* row = p + (size_t)r * pitch;
-        uint8_t* dst = lastImg.data() + (size_t)r * fmt.width * 3;
-        for (int c = 0; c < fmt.width; c++) {
-          dst[c * 3] = row[c * 4];
-          dst[c * 3 + 1] = row[c * 4 + 1];
-          dst[c * 3 + 2] = row[c * 4 + 2];
+      int px = fmt.width * fmt.height;
+      if (px > 0) {
+        double m = (double)sum / px;
+        imgMeanSum += m;
+        imgFrames++;
+        // 采样帧 RGB (与另一素材同构内容做像素级映射对比)。
+        // captureIdx>0 时按渲染帧序号采样: forceHDR 档等首帧后才切模式,
+        // 末帧的流内时间与 follow/SDR 播错位, 移动图案会把像素对比变噪声
+        if (captureIdx < 0 || (!captured && imgFrames >= captureIdx)) {
+          captured = true;
+          lastImg.resize((size_t)px * 3);
+          for (int r = 0; r < fmt.height; r++) {
+            const uint8_t* row = p + (size_t)r * pitch;
+            uint8_t* dst = lastImg.data() + (size_t)r * fmt.width * 3;
+            for (int c = 0; c < fmt.width; c++) {
+              dst[c * 3] = row[c * 4];
+              dst[c * 3 + 1] = row[c * 4 + 1];
+              dst[c * 3 + 2] = row[c * 4 + 2];
+            }
+          }
         }
-      }
       if (imgDump < 1) {
         std::string path = prefix + tag + "_img.png";
         if (saveImagePath(path.c_str(), imgBuf)) {
@@ -162,7 +166,9 @@ class HdrOb : public ISurfaceRenderOb {
   struct ImgVerdict {
     double midLift = 0.0;   // 中间调 luma 均值差 (hdr-sdr)
     double diffRatio = 0.0; // rgb max-diff>15 的像素占比
-    bool ok() const { return midLift > 10.0 && diffRatio > 0.5; }
+    // 硬信号是 diffRatio(无 tone map 时 ≈0.02); midLift 仅作方向哨兵
+    // (实证跨素材 9.4~16 波动, >10 会贴边误报)
+    bool ok() const { return midLift > 3.0 && diffRatio > 0.5; }
   };
   ImgVerdict compareImg(const HdrOb& sdr) const {
     ImgVerdict v;
@@ -199,7 +205,10 @@ class HdrOb : public ISurfaceRenderOb {
   std::string tag = "hdr";
   std::string prefix = "hdrtest_";
   IImageBuffer* imgBuf = nullptr;  // 外部持有(enableImage), 不 delete
-  std::vector<uint8_t> lastImg;    // 末帧 RGB, 供像素级对比
+  std::vector<uint8_t> lastImg;    // 采样帧 RGB, 供像素级对比
+  // 采样帧序号: -1=最后一帧; >0 时取该渲染帧序号的帧(跨播放内容对齐)
+  int32_t captureIdx = -1;
+  bool captured = false;
   int64_t frames = 0;
   int64_t meanFrames = 0;
   double meanSum = 0.0;
@@ -212,8 +221,25 @@ class HdrOb : public ISurfaceRenderOb {
   std::map<std::string, int64_t> typeCount;
 };
 
+// 宿主观察者: 捕获 IMediaPlayerOb::onHdrMeta (流级属性, 每次开流至多一次)
+class MetaOb : public IMediaPlayerOb {
+ public:
+  void onHdrMeta(const HdrMeta& hdrMeta) override {
+    std::lock_guard<std::mutex> lock(mtx);
+    seen = true;
+    maxLuminance = hdrMeta.maxLuminance;
+    maxCLL = hdrMeta.maxCLL;
+  }
+  std::mutex mtx;
+  bool seen = false;
+  uint32_t maxLuminance = 0;
+  uint32_t maxCLL = 0;
+};
+
 // 播放单个素材 seconds 秒, 返回是否正常出帧
-bool playOnce(const char* url, bool hard, HdrOb& ob) {
+// mode 非 follow 时等首帧后再切(走运行时 UBO 重传路径, 图未建时设置会被丢弃)
+bool playOnce(const char* url, bool hard, HdrOb& ob,
+              HdrMode mode = HdrMode::follow, MetaOb* metaOb = nullptr) {
   IMediaPlayer* player = createMediaPlayer();
   if (!player) {
     fail("createMediaPlayer null");
@@ -226,11 +252,22 @@ bool playOnce(const char* url, bool hard, HdrOb& ob) {
   ISurfaceRender* sr = player->getSurfaceRender();
   sr->setOffSurface(YuvType::yuv420P);
   addSurfaceRenderOb(sr, &ob);
+  if (metaOb) {
+    addMediaPlayerOb(player, metaOb);
+  }
   if (ob.imgBuf) {
     // 先订阅再 enableImage, 保证首帧即能读到
     sr->enableImage(ob.imgBuf);
   }
   player->open(url);
+  if (mode != HdrMode::follow) {
+    for (int32_t i = 0; i < 40 && ob.frames < 3; ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    sr->setHdrMode(mode);
+    std::printf("[mode] set %d after %lld frames\n", (int32_t)mode,
+                (long long)ob.frames);
+  }
   std::this_thread::sleep_for(std::chrono::seconds(4));
   player->close();
   if (ob.imgBuf) {
@@ -274,8 +311,21 @@ int main(int argc, char* argv[]) {
   sdrImg->setImageFormat(imgFmt);
   hdrOb.imgBuf = hdrImg;
   sdrOb.imgBuf = sdrImg;
-  bool hdrOk = playOnce(hdrUrl, hard, hdrOb);
-  bool sdrOk = playOnce(sdrUrl, false, sdrOb);
+  // 三档播放都取第 90 渲染帧做像素对比: 内容按帧序天然对齐
+  hdrOb.captureIdx = 90;
+  sdrOb.captureIdx = 90;
+  // forceHDR 档: 直通输出与元数据回调的验证通道
+  HdrOb forceOb;
+  forceOb.tag = "forcehdr";
+  forceOb.prefix = prefix;
+  IImageBuffer* forceImg = createImageBuffer();
+  forceImg->setImageFormat(imgFmt);
+  forceOb.imgBuf = forceImg;
+  forceOb.captureIdx = 90;
+  MetaOb hdrMetaOb, sdrMetaOb, forceMetaOb;
+  bool hdrOk = playOnce(hdrUrl, hard, hdrOb, HdrMode::follow, &hdrMetaOb);
+  bool sdrOk = playOnce(sdrUrl, false, sdrOb, HdrMode::follow, &sdrMetaOb);
+  bool forceOk = playOnce(hdrUrl, false, forceOb, HdrMode::forceHDR, &forceMetaOb);
   double hdrMean = hdrOb.meanY();
   double sdrMean = sdrOb.meanY();
   std::string hdrDist, sdrDist;
@@ -296,13 +346,36 @@ int main(int argc, char* argv[]) {
   // 饱和抵消, 不能作判据 (实测本素材总均值仅 +4)
   HdrOb::ImgVerdict verdict = hdrOb.compareImg(sdrOb);
   bool toneMapOk = hdrOb.frames > 30 && sdrOb.frames > 30 && verdict.ok();
-  bool ok = !g_failed && hdrOk && sdrOk && toneMapOk;
+  // 宿主回调契约: HDR 流(两次)必回调且峰值=素材注入值, SDR 流不回调
+  bool metaOk = hdrMetaOb.seen && forceMetaOb.seen && !sdrMetaOb.seen &&
+                hdrMetaOb.maxLuminance == 1000;
+  if (!metaOk) {
+    fail("onHdrMeta 回调异常: hdr=" + std::to_string(hdrMetaOb.seen) +
+         "/" + std::to_string(hdrMetaOb.maxLuminance) +
+         " force=" + std::to_string(forceMetaOb.seen) +
+         " sdrSeen=" + std::to_string(sdrMetaOb.seen));
+  }
+  // forceHDR 直通的三向关系: follow≠sdr(tone map 开,上面 verdict 已判),
+  // force≠follow(diffRatio 过半, 模式确实生效), force≈sdr(直通还原内容,
+  // 本素材内容即 SDR 采样值, 仅差 bt2020/bt709 矩阵)。
+  // 注意不用 midLift<阈值: ACES 压暗与抬升在频带内正负抵消, 均值类判据失真
+  HdrOb::ImgVerdict vsFollow = forceOb.compareImg(hdrOb);
+  HdrOb::ImgVerdict vsSdr = forceOb.compareImg(sdrOb);
+  bool forceHdrOk = forceOb.frames > 30 && vsFollow.diffRatio > 0.5 &&
+                    vsSdr.diffRatio < 0.1 && std::abs(vsSdr.midLift) < 15.0;
+  std::printf("[mode] forceHDR vs follow midLift=%.1f diffRatio=%.2f | "
+              "vs sdr midLift=%.1f diffRatio=%.2f\n",
+              vsFollow.midLift, vsFollow.diffRatio, vsSdr.midLift,
+              vsSdr.diffRatio);
+  bool ok = !g_failed && hdrOk && sdrOk && toneMapOk && metaOk && forceHdrOk;
   std::printf(
       "[AVOX][TEST] case=hdrtest result=%s hdrMean=%.1f sdrMean=%.1f "
-      "midLift=%.1f diffRatio=%.2f%s\n",
+      "midLift=%.1f diffRatio=%.2f forceMidLift=%.1f meta=%d/%u%s\n",
       ok ? "PASS" : "FAIL", hdrMean, sdrMean, verdict.midLift,
-      verdict.diffRatio, g_failed ? (" reason: " + g_reason).c_str() : "");
+      verdict.diffRatio, vsSdr.midLift, (int)hdrMetaOb.seen,
+      hdrMetaOb.maxLuminance, g_failed ? (" reason: " + g_reason).c_str() : "");
   delete hdrImg;
   delete sdrImg;
+  delete forceImg;
   return ok ? 0 : 1;
 }

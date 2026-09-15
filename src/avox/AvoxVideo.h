@@ -62,6 +62,11 @@ struct ColorSpaceDesc {
   YuvTransfer transfer = YuvTransfer::gamma;
 };
 
+// HDR 输出模式(ISurfaceRender::setHdrMode): 声明序即 ColorYuvUBO.hdrMode 的 int 值
+// follow=按流与元数据自动(HDR 进 tone map 出 SDR); forceSDR=恒 tone map;
+// forceHDR=跳过 tone map 直通(PQ 编码值原样落帧, 需 HDR 显示链支持, SDR 表面过曝)
+enum class HdrMode { follow = 0, forceSDR = 1, forceHDR = 2 };
+
 // HDR 静态元数据(ST2086/CTA-861.3): 解码器从 side data 解出, 无标记全零不生效
 struct HdrMeta {
   uint32_t maxLuminance = 0;  // nits, mastering display 峰值亮度

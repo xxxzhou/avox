@@ -27,7 +27,8 @@ struct ColorYuvUBO {
   // --- V5 追加区: HDR tone map 参数 ---
   float maxLuminance = 1000.0f;  // 内容峰值亮度 nits
   float sdrWhiteNits = 100.0f;   // SDR 白点 nits
-  int32_t _pad2[2] = {};
+  int32_t hdrMode = 0;           // HdrMode 声明序: 0=follow 1=forceSDR 2=forceHDR
+  int32_t _pad2 = {};
 };
 static_assert(sizeof(ColorYuvUBO) == 96, "UBO layout must match shader std140");
 
