@@ -12,6 +12,7 @@
 #include "IAssOverlay.hpp"
 #include "Subtitle.hpp"
 #include "SubtitleAsr.hpp"
+#include "SubtitleCanvas.h"
 #include "SubtitleFile.hpp"
 #include "SubtitleSlots.hpp"
 
@@ -30,7 +31,8 @@ class ISurfaceRender;
 // TextRasterizer); ASR 走 TextRasterizer。未装 avox_ass 插件时轨通道降级
 // 为不渲染, 纯文本照常。
 // 线程约定: activate*/deactivate*/load*/closeSubtitle/resetEvents 只在播放器
-// 线程; pushChunk/setPgsCanvas 在 IO 线程; onRender 在渲染线程(内部互斥)。
+// 线程; pushChunk/setPgsCanvas 在 IO 线程; onRender 在渲染线程(内部互斥);
+// ISubtitle 观感 setter 任意线程可调(含 open 前, 不触发图重建)。
 class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
  public:
   using Slot = SubtitleSlots::Slot;
@@ -41,6 +43,17 @@ class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
   // ISubtitle 接口
   virtual void enableAsr() override;
   virtual void disableAsr() override;
+  // 全局变换(三层通用): 文本槽在 CPU 侧消费(重栅格化), 轨槽直发 canvas 合成
+  virtual void setScale(float s) override;
+  virtual void setOffset(float offsetX, float offsetY) override;
+  virtual void setOpacity(float o) override;
+  // 纯文本样式(仅 SRT/ASR 文本槽生效; ASS/PGS 槽静默忽略)
+  virtual void setFont(const char* fontName, int32_t fontSize) override;
+  virtual void setColor(float r, float g, float b) override;
+  virtual void setAlign(HAlignType h, VAlignType v) override;
+  virtual void setPosition(float anchorX, float anchorY) override;
+  virtual void setPositionMargin(float marginX, float marginY) override;
+  virtual void setMaxWidth(float ratio) override;
   // 全复位(内部用: 播放器 close/换源/析构): 三槽位 + 轨通道 + 文件/ASR 内容
   // (渲染对象注册保留, 供重开复用)
   void closeSubtitle();
@@ -104,6 +117,9 @@ class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
   void teardownSlot(Slot slot);
   void renderTrack(int64_t ptsMs);
   void renderText(int64_t ptsMs);
+  // 全局变换按当前胜者槽位下发(文本槽=单位值避免双份, 轨槽=用户值);
+  // 变换 setter/槽位变化/画布层挂载时调
+  void pushCanvasTransform();
 
   // ---- 公共 ----
   ISurfaceRender* windowRender = nullptr;
@@ -117,6 +133,16 @@ class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
   int32_t storageH = 0;
   SubtitleSlots slots;
 
+  // ---- 观感样式(权威副本): setter 任意线程写(styleMtx), 渲染线程拷贝消费;
+  // 不触发图重建 ----
+  mutable std::mutex styleMtx;
+  int32_t styleSeq = 0;  // 任一样式 setter 递增, 参与 rasterizer 缓存判定
+  float scale = 1.f;     // 全局变换(轨槽直发 canvas; 文本槽由 CPU 侧消费)
+  float offsetX = 0.f;
+  float offsetY = 0.f;
+  float opacity = 1.f;
+  Slot pushedSlot = Slot::none;  // 已按此槽位下发变换(onRender 渲染线程检测变化)
+
   // ---- 外挂文件/ASR 槽(文本路径) ----
   SubtitleFile subtitleFile;
   SubtitleAsr subtitleAsr;
@@ -124,6 +150,7 @@ class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
   bool asrEnabled = false;
 #ifdef AVOX_ENABLE_FREETYPE
   TextRasterizer rasterizer;
+  TextCanvasStyle style;  // 纯文本样式副本(setFont/setColor/setAlign/... 写入)
 #endif
 
   // ---- 轨槽通道(ASS/PGS) ----

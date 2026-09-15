@@ -3,6 +3,9 @@
 // ASS/PGS 字幕 canvas source-over 混合(ASS字幕渲染计划.md §3.4)
 // 画布为视频分辨率坐标系下 bbox 裁剪的 RGBA8(premultiplied alpha),
 // 经归一化矩形 + sampler 采样铺回帧; opacity=0 时整层直通(无字幕帧零成本)。
+// 全局变换(字幕样式设计.md §3.2): 门控矩形与采样映射由 CPU 每帧合成。
+// 正向 screen = P + (c - P) * s + o(P=帧中心轴心, o=帧归一化 offset),
+// 反算 suv = origin + uv * invScale, origin = P - (P+o) * invScale。
 
 layout(local_size_x = 16, local_size_y = 16) in; // gl_WorkGroupSize
 // 视频帧
@@ -13,13 +16,17 @@ layout(binding = 1) uniform sampler2D inTex2;
 layout(binding = 2, rgba8) uniform image2D outTex;
 
 layout(std140, binding = 3) uniform UBO {
-  // 画布矩形中心与宽高(帧的归一化坐标)
+  // 变换后门控矩形中心与宽高(帧的归一化坐标)
   float centerX;
   float centerY;
   float width;
   float height;
   // 整层不透明度(0=直通/无字幕, 1=完全显示)
   float opacity;
+  // 采样反算仿射原点与 1/scale(与 CanvasBlendParamet 严格同序)
+  float originX;
+  float originY;
+  float invScale;
 }
 ubo;
 
@@ -31,15 +38,19 @@ void main() {
   vec4 color = imageLoad(inTex, id);
   if (ubo.opacity > 0.0f) {
     vec2 uv = vec2(id.x + 0.5, id.y + 0.5) / vec2(size);
-    vec4 rect = vec4(ubo.centerX - ubo.width / 2.0f, ubo.centerY - ubo.height / 2.0f,
-                     ubo.centerX + ubo.width / 2.0f, ubo.centerY + ubo.height / 2.0f);
+    vec4 rect = vec4(ubo.centerX - ubo.width * 0.5f, ubo.centerY - ubo.height * 0.5f,
+                     ubo.centerX + ubo.width * 0.5f, ubo.centerY + ubo.height * 0.5f);
     if (uv.x >= rect.x && uv.x < rect.z && uv.y >= rect.y && uv.y < rect.w) {
-      // 画布为全帧坐标系, 内容按绝对位置写入(canvasData 与输出同尺寸),
-      // 按绝对 uv 1:1 采样; rect 仅作采样门控(内容区外画布恒为透明)
-      vec4 overlay = textureLod(inTex2, uv, 0.0);
-      // premultiplied source-over: out = overlay + base * (1 - overlay.a * opacity)
-      float a = overlay.a * ubo.opacity;
-      color.rgb = overlay.rgb + color.rgb * (1.0f - a);
+      // 反算采样点; 越界必须显式丢弃(sampler 是 clamp-to-edge,
+      // 靠它会把画布边缘 alpha 拉花到内容边界; 缩小时反算点会出画布)
+      vec2 suv = vec2(ubo.originX, ubo.originY) + uv * ubo.invScale;
+      if (suv.x >= 0.0f && suv.x <= 1.0f && suv.y >= 0.0f && suv.y <= 1.0f) {
+        vec4 overlay = textureLod(inTex2, suv, 0.0);
+        // premultiplied source-over: opacity<1 时 rgb 必须随 alpha 一起乘,
+        // 否则半透明会向白漂移(setOpacity(0.8) 发白)
+        vec4 src = vec4(overlay.rgb * ubo.opacity, overlay.a * ubo.opacity);
+        color.rgb = src.rgb + color.rgb * (1.0f - src.a);
+      }
     }
   }
   imageStore(outTex, id, color);

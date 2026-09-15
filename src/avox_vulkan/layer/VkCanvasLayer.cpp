@@ -71,6 +71,15 @@ void VkCanvasLayer::clearCanvas() {
   bNeedUpdate = true;
 }
 
+void VkCanvasLayer::setCanvasTransform(float scale, float offsetX,
+                                       float offsetY, float opacity) {
+  std::lock_guard<std::mutex> lock(mtx);
+  userScale = scale > 0.f ? scale : 1.f;
+  userOffsetX = offsetX;
+  userOffsetY = offsetY;
+  userOpacity = std::min(std::max(opacity, 0.f), 1.f);
+}
+
 void VkCanvasLayer::onInitGraph() {
   // descriptor set layout: inTexs[0](视频帧) + canvasImage(sampler) +
   // outTexs[0] + UBO — 与 VkFontLayer/VkGeometryLayer 同构
@@ -146,23 +155,38 @@ void VkCanvasLayer::onPreFrame() {
   }
   if (bNeedUpdate) {
     bNeedUpdate = false;
-    if (!hasContent) {
-      // 无字幕: 整层直通, 不上传纹理
-      vkParamet.opacity = 0.f;
-    } else {
+    if (hasContent) {
       // 整帧上传(staging 常驻全帧尺寸)。命令缓冲在 onInitBuffers 只录制
       // 一次并逐帧重提交, 拷贝区域必须是录制期确定的常量, 内容更新只能
       // 走 staging 数据; 带宽 ~8MB/次内容变化(对白节奏数秒一次), 可接受。
       cpuBuffer->upload(canvasData.data(), frameW * frameH * 4);
-      vkParamet.centerX = (float)(rectX + rectW / 2) / frameW;
-      vkParamet.centerY = (float)(rectY + rectH / 2) / frameH;
-      vkParamet.width = (float)rectW / frameW;
-      vkParamet.height = (float)rectH / frameH;
-      vkParamet.opacity = 1.f;
     }
   }
+  // 门控矩形与采样映射每帧由 base bbox + 用户变换重算(不做增量累加,
+  // 静止帧改变换也即时生效); 无内容时 opacity=0 强制直通(不能填用户值,
+  // 否则去采样已清空的画布)
+  if (!hasContent) {
+    vkParamet.opacity = 0.f;
+  } else {
+    const float s = userScale;
+    const float inv = 1.f / s;
+    // 轴心 = 帧中心(ASS/PGS 锚点归片源不可知); offset 叠加在轴心上:
+    // 正向 screen = P + (c - P) * s + o, 反算 suv = origin + uv * invScale
+    const float qx = 0.5f + userOffsetX;
+    const float qy = 0.5f + userOffsetY;
+    const float baseCX = (float)(rectX + rectW / 2) / frameW;
+    const float baseCY = (float)(rectY + rectH / 2) / frameH;
+    vkParamet.centerX = qx + (baseCX - 0.5f) * s;
+    vkParamet.centerY = qy + (baseCY - 0.5f) * s;
+    vkParamet.width = (float)rectW / frameW * s;
+    vkParamet.height = (float)rectH / frameH * s;
+    vkParamet.originX = 0.5f - qx * inv;
+    vkParamet.originY = 0.5f - qy * inv;
+    vkParamet.invScale = inv;
+    vkParamet.opacity = userOpacity;
+  }
   // UBO 每帧提交: 内容首帧恰逢命令缓冲录制常量的时序下, 一次性提交会
-  // 被吞掉; 常备提交成本可忽略(20 字节)
+  // 被吞掉; 常备提交成本可忽略(32 字节)
   updateUBO(&vkParamet);
   bParametChange = true;
 }

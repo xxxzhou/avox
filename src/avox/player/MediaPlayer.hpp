@@ -239,6 +239,16 @@ class MediaPlayer : public IMediaPlayer,
   // ISubtitle(ASR 槽开关; 轨/外挂槽见 setSubtitleTrack/loadSubtitle)
   virtual void enableAsr() override;
   virtual void disableAsr() override;
+  // 观感设置(转发 subtitleView 权威实现; 生效矩阵见 AvoxPlayer.h ISubtitle)
+  virtual void setScale(float s) override;
+  virtual void setOffset(float offsetX, float offsetY) override;
+  virtual void setOpacity(float o) override;
+  virtual void setFont(const char* fontName, int32_t fontSize) override;
+  virtual void setColor(float r, float g, float b) override;
+  virtual void setAlign(HAlignType h, VAlignType v) override;
+  virtual void setPosition(float anchorX, float anchorY) override;
+  virtual void setPositionMargin(float marginX, float marginY) override;
+  virtual void setMaxWidth(float ratio) override;
   virtual double getRate(TrackType type, bool bAvg) override;
   virtual float getLossRate(TrackType type) override;
   virtual double getFps() override;

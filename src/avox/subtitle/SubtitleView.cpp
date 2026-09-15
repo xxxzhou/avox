@@ -1,5 +1,7 @@
 #include "SubtitleView.hpp"
 
+#include <algorithm>
+
 #include "../module/AvoxManager.hpp"
 #include "../module/LogHelper.hpp"
 #include "../video/WindowRender.hpp"
@@ -55,6 +57,9 @@ void SubtitleView::checkWindowRender() {
   if (bShow && !canvasLayer) {
     canvasLayer = enableRenderCanvas(windowRender);
     lastSeq = -1;
+    // 新挂层/新渲染对象: 层侧变换是默认值, 立即按当前槽位补发一次
+    pushedSlot = Slot::none;
+    pushCanvasTransform();
   } else if (!bShow && canvasLayer) {
     disableRenderCanvas(windowRender);
     canvasLayer = nullptr;
@@ -145,6 +150,126 @@ bool SubtitleView::deactivateAsr() {
 void SubtitleView::enableAsr() { activateAsr(); }
 
 void SubtitleView::disableAsr() { deactivateAsr(); }
+
+// ---- ISubtitle: 观感样式(任意线程可调, 不触发图重建; 生效矩阵见 AvoxPlayer.h) ----
+
+void SubtitleView::setScale(float s) {
+  if (s <= 0.f) {
+    return;  // <=0 忽略, 保持上次有效值
+  }
+  {
+    std::lock_guard<std::mutex> lock(styleMtx);
+    scale = s;
+  }
+  pushCanvasTransform();
+}
+
+void SubtitleView::setOffset(float offsetX_, float offsetY_) {
+  {
+    std::lock_guard<std::mutex> lock(styleMtx);
+    offsetX = offsetX_;
+    offsetY = offsetY_;
+  }
+  pushCanvasTransform();
+}
+
+void SubtitleView::setOpacity(float o) {
+  o = std::min(std::max(o, 0.f), 1.f);
+  {
+    std::lock_guard<std::mutex> lock(styleMtx);
+    opacity = o;
+  }
+  pushCanvasTransform();
+}
+
+void SubtitleView::setFont(const char* fontName, int32_t fontSize) {
+#ifdef AVOX_ENABLE_FREETYPE
+  std::lock_guard<std::mutex> lock(styleMtx);
+  // 存副本: const char* 可能来自脚本层的临时串(FontCache 亦不收 nullptr)
+  if (fontName && fontName[0] != '\0') {
+    style.fontName = fontName;
+  }
+  if (fontSize > 0) {
+    style.fontSize = fontSize;
+  }
+  ++styleSeq;
+#endif
+}
+
+void SubtitleView::setColor(float r, float g, float b) {
+#ifdef AVOX_ENABLE_FREETYPE
+  std::lock_guard<std::mutex> lock(styleMtx);
+  style.colorR = std::min(std::max(r, 0.f), 1.f);
+  style.colorG = std::min(std::max(g, 0.f), 1.f);
+  style.colorB = std::min(std::max(b, 0.f), 1.f);
+  ++styleSeq;
+#endif
+}
+
+void SubtitleView::setAlign(HAlignType h, VAlignType v) {
+#ifdef AVOX_ENABLE_FREETYPE
+  std::lock_guard<std::mutex> lock(styleMtx);
+  if (h != HAlignType::none) {
+    style.hAlign = h;
+  }
+  if (v != VAlignType::none) {
+    style.vAlign = v;
+  }
+  ++styleSeq;
+#endif
+}
+
+void SubtitleView::setPosition(float anchorX, float anchorY) {
+#ifdef AVOX_ENABLE_FREETYPE
+  std::lock_guard<std::mutex> lock(styleMtx);
+  style.anchorXRatio = std::min(std::max(anchorX, 0.f), 1.f);
+  style.anchorYRatio = std::min(std::max(anchorY, 0.f), 1.f);
+  ++styleSeq;
+#endif
+}
+
+void SubtitleView::setPositionMargin(float marginX_, float marginY_) {
+#ifdef AVOX_ENABLE_FREETYPE
+  std::lock_guard<std::mutex> lock(styleMtx);
+  style.marginX = std::max(marginX_, 0.f);
+  style.marginY = std::max(marginY_, 0.f);
+  ++styleSeq;
+#endif
+}
+
+void SubtitleView::setMaxWidth(float ratio) {
+#ifdef AVOX_ENABLE_FREETYPE
+  if (ratio <= 0.f) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(styleMtx);
+  style.maxWidthRatio = std::min(ratio, 1.f);
+  ++styleSeq;
+#endif
+}
+
+// 全局变换按胜者槽位二选一下发到画布层前端: 文本槽的 scale/offset/opacity
+// 已被 CPU 侧重栅格化消费, 层侧必须置单位值, 否则双份缩放; 轨槽(ASS/PGS)
+// 由 canvas 合成消费, 直发用户值
+void SubtitleView::pushCanvasTransform() {
+  if (!canvasLayer) {
+    return;
+  }
+  float s, ox, oy, op;
+  {
+    std::lock_guard<std::mutex> lock(styleMtx);
+    s = scale;
+    ox = offsetX;
+    oy = offsetY;
+    op = opacity;
+  }
+  const Slot cur = slots.active();
+  if (cur == Slot::file || cur == Slot::asr) {
+    canvasLayer->setCanvasTransform(1.f, 0.f, 0.f, 1.f);
+  } else {
+    canvasLayer->setCanvasTransform(s, ox, oy, op);
+  }
+}
 
 void SubtitleView::closeSubtitle() {
   slots.reset();
@@ -286,9 +411,19 @@ void SubtitleView::onRender() {
   if (!canvasLayer) {
     return;
   }
+  // 图重建后新层为空(内容不随层迁移): 强制本帧重传, 否则字幕消失到下次内容变化
+  if (canvasLayer->takeContentStale()) {
+    lastSeq = -1;
+  }
+  // 胜者槽位变化 → 变换通道换源(文本槽单位值/轨槽用户值), 当帧生效
+  const Slot cur = slots.active();
+  if (cur != pushedSlot) {
+    pushedSlot = cur;
+    pushCanvasTransform();
+  }
   const int64_t pts = clock.clock();
   // 胜者槽位独占画布: 空窗就空屏, 不回落(后激活者胜)
-  switch (slots.active()) {
+  switch (cur) {
     case Slot::track:
       renderTrack(pts);
       break;
@@ -376,6 +511,17 @@ void SubtitleView::renderText(int64_t ptsMs) {
     if (item && !item->text.empty()) {
       text = item->text.c_str();
     }
+  }
+  // 样式快照灌入(锁内拷副本, 锁外渲染): 文本槽把全局变换吃进样式,
+  // 由 CPU 侧重栅格化消费(scale→字号, offset→落点, opacity→alpha)
+  {
+    std::lock_guard<std::mutex> lock(styleMtx);
+    TextCanvasStyle snap = style;
+    snap.scale = scale;
+    snap.offsetXRatio = offsetX;
+    snap.offsetYRatio = offsetY;
+    snap.opacity = opacity;
+    rasterizer.setStyle(snap, styleSeq);
   }
   // 文本 → RGBA bbox canvas → 统一混合层(内容变化才上传)
   const int32_t seq = rasterizer.render(text, storageW, storageH);

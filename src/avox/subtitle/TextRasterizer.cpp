@@ -32,18 +32,27 @@ int32_t TextRasterizer::render(const char* text, int32_t frameW,
     lastReturned = 0;
     return 0;
   }
-  // 文本与帧尺寸都没变: 内容没变, 序号不变(调用方零上传)
-  if (lastText == text && frameW == lastFrameW && frameH == lastFrameH) {
+  // 文本/帧尺寸/样式版本都没变: 内容没变, 序号不变(调用方零上传)
+  if (lastText == text && frameW == lastFrameW && frameH == lastFrameH &&
+      styleSeq == lastStyleSeq) {
     return lastReturned;
+  }
+  // opacity=0 即无内容(层清空即可); 作废文本缓存, 恢复 opacity 后强制重绘
+  if (style.opacity <= 0.f) {
+    lastText.clear();
+    lastReturned = 0;
+    return 0;
   }
   lastText = text;
   lastFrameW = frameW;
   lastFrameH = frameH;
+  lastStyleSeq = styleSeq;
 
   auto& fontCache = FontCache::instance();
-  // 字号随帧高 DPI 缩放, 与旧 VkFontLayer 观感对齐
-  const int32_t fontPx =
-      std::max(8, (int32_t)(style.fontSize * (float)frameH / kReferenceHeight));
+  // 字号随帧高 DPI 缩放, 全局 scale 在 CPU 侧吃进字号(重栅格化, 清晰)
+  const float scaleF = style.scale > 0.f ? style.scale : 1.f;
+  const int32_t fontPx = std::max(
+      8, (int32_t)(style.fontSize * (float)frameH / kReferenceHeight * scaleF));
   if (!fontCache.setFont(style.fontName, fontPx)) {
     lastReturned = 0;
     return 0;
@@ -112,7 +121,8 @@ int32_t TextRasterizer::render(const char* text, int32_t frameW,
         const uint8_t* src = &g.bitmap[(size_t)y * g.width];
         uint8_t* dst = &canvas[(size_t)dy * totalW * 4];
         for (int32_t x = 0; x < g.width; ++x) {
-          const uint8_t a = src[x];
+          // opacity 乘进 alpha(premultiplied: rgb 同步随 a 缩放); 保留 max-blend
+          const uint8_t a = (uint8_t)(src[x] * style.opacity + 0.5f);
           if (a == 0) {
             continue;
           }
@@ -130,11 +140,8 @@ int32_t TextRasterizer::render(const char* text, int32_t frameW,
     curY += style.vSpace + ln.height;
   }
 
-  // 底部锚点定位(帧坐标系), 越界裁到帧内
-  canvasX = std::min(std::max(0, (int32_t)(frameW * style.anchorXRatio) - totalW / 2),
-                     frameW - totalW);
-  canvasY = std::min(std::max(0, (int32_t)(frameH * style.anchorYRatio) - totalH),
-                     frameH - totalH);
+  // 排版落点(align/margin/anchor/offset 合成, 帧内钳制): 见 TextRasterizer.hpp
+  computeTextPos(style, frameW, frameH, totalW, totalH, &canvasX, &canvasY);
   ++seq;
   lastReturned = seq;
   return seq;

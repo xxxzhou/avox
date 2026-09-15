@@ -178,6 +178,9 @@ bool EglVideoRender::vaildAndInitGraph() {
   }
 #endif
   if (glProgram > 0) {
+    // 快路径消费重置标志(原由调用方清, 现契约: 各后端 vaildAndInitGraph
+    // 内部消费; 与调用方清的时机等价, EGL 语义不变)
+    bResetFlag = false;
     return true;
   }
   // 如果是EGL窗口，则应该有值，如果Vulkan窗口，则需要有ImageFormat
@@ -225,6 +228,10 @@ bool EglVideoRender::vaildAndInitGraph() {
   // }
 #endif
   LOGFLF(LogLevel::info, "success");
+  // 重建成功才消费; 失败保留标志, 下一帧重试(与原调用方"通过后清"一致)
+  if (glProgram > 0) {
+    bResetFlag = false;
+  }
   return glProgram > 0;
 }
 

@@ -221,9 +221,8 @@ void VideoRender::renderFrame(IImageBuffer* buffer) {
       setAspect((float)fmt.width / (float)fmt.height);
     }
   }
-  // 验证是否需要重新初始化
+  // 验证是否需要重新初始化(bResetFlag 由各后端 vaildAndInitGraph 内部消费)
   if (vaildAndInitGraph()) {
-    bResetFlag = false;
     renderCpuFrame(buffer);
   }
   checkShot();
@@ -255,10 +254,9 @@ void VideoRender::renderFrame() {
     bResetFlag = true;
   }
   HighClock clock = {};
-  // 验证是否需要重新初始化
+  // 验证是否需要重新初始化(bResetFlag 由各后端 vaildAndInitGraph 内部消费;
+  // 此处不再清零, 否则会吞掉重建窗口期间宿主线程新置的请求)
   if (vaildAndInitGraph()) {
-    // vaildAndInitGraph通过后,bResetFlag重置为false
-    bResetFlag = false;
     if (cpuIn) {
       renderCpuFrame(yuvFrame);
     } else {

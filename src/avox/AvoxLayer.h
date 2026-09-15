@@ -389,21 +389,6 @@ class ISurfaceRender {
   virtual void disableSharpen() {};
 };
 
-// ASS/PGS 字幕画布混合层(计划 doc/plan/player/ASS字幕渲染计划.md §3.4)。
-// 画布为视频分辨率坐标系的 RGBA8 bbox 裁剪区(由 IAssOverlay::render 产出,
-// premultiplied alpha), 变化时上传, 静止段零上传。
-class ICanvasLayer {
- public:
-  virtual ~ICanvasLayer() {}
-
- public:
-  // 上传画布(bbox 裁剪, 整帧坐标系): x/y 为画布相对视频帧的偏移
-  virtual void updateCanvas(const uint8_t* rgba, int32_t w, int32_t h,
-                            int32_t stride, int32_t x, int32_t y) = 0;
-  // 清空(无字幕帧): 层走直通, 不采样画布
-  virtual void clearCanvas() = 0;
-};
-
 // 静态图像渲染器 - 显示单张图片,不用RunTask循环
 // 持有Window + VkVideoRender,调用render()时触发单次渲染+呈现
 // 窗口消息循环由调用者负责
@@ -515,11 +500,6 @@ AVOX_EXPORT void addSurfaceRenderOb(ISurfaceRender* surfaceRender,
                                    ISurfaceRenderOb* ob);
 AVOX_EXPORT void removeSurfaceRenderOb(ISurfaceRender* surfaceRender,
                                       ISurfaceRenderOb* ob);
-
-// 开启/关闭 ASS/PGS 字幕 canvas 混合层(Vulkan 图内 source-over)。
-// 无 Vulkan 图(纯 CPU 渲染)时返回 nullptr, 调用方降级为不渲染字幕轨。
-AVOX_EXPORT ICanvasLayer* enableRenderCanvas(ISurfaceRender* surfaceRender);
-AVOX_EXPORT void disableRenderCanvas(ISurfaceRender* surfaceRender);
 
 // https://cloud.tencent.com/developer/ask/sof/115847757
 // Electorn当在32位和64位应用程序之间共享句柄时

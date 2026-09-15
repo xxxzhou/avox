@@ -47,6 +47,25 @@ SubtitleView : public ISubtitle, public ISurfaceRenderOb   (统一视图)
 `subtitleSize()` + `getSubtitleDesc(i)` 返回托管 `ISTrackDesc*`
 (公共头无 STL, `lang()/title()` 取引擎内 `const char*`)。
 
+## 观感样式(字幕样式设计.md)
+
+宿主唯一入口 `getSubtitle()`(ISubtitle), 两层能力, 任意线程可调(含 open
+前), 不触发图重建, 改动当帧生效:
+
+| setter | SRT/ASR(文本路径) | 内封 ASS 轨 / 外挂 .ass | PGS 位图轨 |
+|---|---|---|---|
+| `setFont/setColor/setAlign/setPosition/setPositionMargin/setMaxWidth` | 生效(CPU 重排) | 忽略(样式归片源 libass) | 忽略(位图) |
+| `setScale/setOffset/setOpacity` | **CPU 侧生效**(按最终字号重栅格化, 放大清晰) | canvas 合成(UV 反算) | canvas 合成 |
+
+- 语义口径: `fontSize`/`margin` 为 1080 基准像素随帧高缩放; `position`/
+  `offset` 帧归一化; margin 按对齐方向内收; `setOpacity(0)` 等同隐藏。
+- 缩放轴心差异(设计取舍): 文本围绕对齐锚点缩放(底对齐向上生长),
+  ASS/PGS 固定帧中心(锚点归片源不可知); 对齐观感用 offset 微调。
+- 平台前提: ASS/PGS 的 transform 需要 Vulkan canvas 混合层; 非 Vulkan 时
+  轨字幕本就不渲染, 文本样式与文本路径 transform 不受影响。
+- 回归: playmatrix `sub-style-srt` 用例(setFont+黄色+setScale+setOpacity
+  亮像素取证), 几何语义由 `tests/test_subtitle_style.cpp` 单测覆盖。
+
 ## 渲染细节
 
 - **canvas 去重**: 单一 `lastSeq` 序号判重, 内容未变零上传; seq 域在
@@ -81,6 +100,14 @@ player->setSubtitleTrack(0);           // 或选内封轨(三槽位自动互斥)
 player->setSubtitleTrack(-1);          // 关轨槽
 player->getSubtitle()->enableAsr();    // ASR(自动清轨/外挂槽)
 player->getSubtitle()->disableAsr();   // 关 ASR
+// 观感样式(生效矩阵见上节; 纯文本 setter 对 ASS/PGS 静默忽略)
+player->getSubtitle()->setFont("simhei.ttf", 64);
+player->getSubtitle()->setColor(1.f, 1.f, 0.f);
+player->getSubtitle()->setAlign(HAlignType::mid, VAlignType::bottom);
+player->getSubtitle()->setPosition(0.5f, 0.9f);
+player->getSubtitle()->setPositionMargin(0.f, 80.f);
+player->getSubtitle()->setScale(1.2f);     // 三层通用: 文本 CPU 清晰缩放
+player->getSubtitle()->setOpacity(0.8f);   // 三层通用
 // 内封轨枚举/语言标题
 ISourceInfo* info = player->getSourceInfo();
 for (int32_t i = 0; i < info->subtitleSize(); ++i) {

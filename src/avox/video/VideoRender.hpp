@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <future>
 #include <mutex>
 #include <string>
@@ -37,8 +38,9 @@ class AVOX_EXPORT VideoRender : public OptionLink {
   ImageFormat windowFormat = {};
   // 窗口为空，渲染离屏的大小
   ImageFormat imageFormat = {};
-  // 重置标志，窗口大小改变，GPU上下文改变可能都需要重置
-  bool bResetFlag = false;
+  // 重置标志，窗口大小改变，GPU上下文改变可能都需要重置。
+  // 宿主线程置位/渲染线程消费, 原子化避免丢请求与数据竞态
+  std::atomic<bool> bResetFlag{false};
   // 渲染类型，opengles/vulkan/metal/dx11
   RenderType renderType = RenderType::other;
 

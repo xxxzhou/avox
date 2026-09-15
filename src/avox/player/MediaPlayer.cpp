@@ -697,6 +697,38 @@ void MediaPlayer::onSubtitleActivate() {
   }
 }
 
+// ---- ISubtitle 观感设置: 全部转发 subtitleView(任意线程可调) ----
+
+void MediaPlayer::setScale(float s) { subtitleView->setScale(s); }
+
+void MediaPlayer::setOffset(float offsetX, float offsetY) {
+  subtitleView->setOffset(offsetX, offsetY);
+}
+
+void MediaPlayer::setOpacity(float o) { subtitleView->setOpacity(o); }
+
+void MediaPlayer::setFont(const char* fontName, int32_t fontSize) {
+  subtitleView->setFont(fontName, fontSize);
+}
+
+void MediaPlayer::setColor(float r, float g, float b) {
+  subtitleView->setColor(r, g, b);
+}
+
+void MediaPlayer::setAlign(HAlignType h, VAlignType v) {
+  subtitleView->setAlign(h, v);
+}
+
+void MediaPlayer::setPosition(float anchorX, float anchorY) {
+  subtitleView->setPosition(anchorX, anchorY);
+}
+
+void MediaPlayer::setPositionMargin(float marginX, float marginY) {
+  subtitleView->setPositionMargin(marginX, marginY);
+}
+
+void MediaPlayer::setMaxWidth(float ratio) { subtitleView->setMaxWidth(ratio); }
+
 PlayerState MediaPlayer::getState() { return state; }
 
 double MediaPlayer::getProcess() { return ioPrecent; }

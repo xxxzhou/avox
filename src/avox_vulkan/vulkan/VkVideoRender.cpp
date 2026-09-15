@@ -1,5 +1,7 @@
 #include "VkVideoRender.hpp"
 
+#include <cstring>
+
 #include "avox/AvoxVideo.h"
 #include "avox/module/AvoxManager.hpp"
 #include "avox/player/MediaPlayer.hpp"
@@ -36,6 +38,8 @@ IRenderContext* VkVideoRender::getGpuContext() { return nullptr; }
 
 void VkVideoRender::enableWatermark(const Watermark& paramet,
                                     IImageBuffer* imageBuffer) {
+  // 注: 不做"参数相同跳过重建"的幂等 — VkInputLayer 的 CPU 数据仅在
+  // inputCpuData(建图时)搬运, 跳过重建会让刷新的水印像素到不了 GPU。
   bEnableBlend = true;
   if (!blendImage) {
     blendImage = std::make_unique<ImageBuffer>();
@@ -49,6 +53,9 @@ void VkVideoRender::enableWatermark(const Watermark& paramet,
   bResetFlag = true;
 }
 void VkVideoRender::disableWatermark() {
+  if (!bEnableBlend) {
+    return;
+  }
   bEnableBlend = false;
   bResetFlag = true;
 }
@@ -152,12 +159,18 @@ void VkVideoRender::setHdrMode(HdrMode mode) {
 
 #ifdef AVOX_ENABLE_FREETYPE
 FontRender* VkVideoRender::enableRenderFont() {
+  if (fontRender->enabled()) {
+    return fontRender.get();  // 已开启: 图上已有该层, 无需求重建
+  }
   fontRender->setEnable(true);
   bResetFlag = true;
   return fontRender.get();
 }
 
 void VkVideoRender::disableRenderFont() {
+  if (!fontRender->enabled()) {
+    return;
+  }
   fontRender->setEnable(false);
   fontRender->setFontLayer(nullptr);
   bResetFlag = true;
@@ -165,12 +178,18 @@ void VkVideoRender::disableRenderFont() {
 #endif
 
 GeometryRender* VkVideoRender::enableRenderGeometry() {
+  if (geometryRender->enabled()) {
+    return geometryRender.get();  // 已开启: 图上已有该层, 无需求重建
+  }
   geometryRender->setEnable(true);
   bResetFlag = true;
   return geometryRender.get();
 }
 
 void VkVideoRender::disableRenderGeometry() {
+  if (!geometryRender->enabled()) {
+    return;
+  }
   // 对象常驻，仅让 VkGeometryLayer 在下次 graph 重建时不接入执行链
   geometryRender->setEnable(false);
   geometryRender->setLayer(nullptr);
@@ -178,6 +197,9 @@ void VkVideoRender::disableRenderGeometry() {
 }
 
 ICanvasLayer* VkVideoRender::enableRenderCanvas() {
+  if (bEnableCanvas) {
+    return canvasRender.get();  // 已开启: 图上已有该层, 无需求重建
+  }
   bEnableCanvas = true;
   bResetFlag = true;
   // CanvasRender 为稳定前端(层随图重建换指针), 外部长期持有
@@ -185,30 +207,50 @@ ICanvasLayer* VkVideoRender::enableRenderCanvas() {
 }
 
 void VkVideoRender::disableRenderCanvas() {
+  if (!bEnableCanvas) {
+    return;
+  }
   bEnableCanvas = false;
   canvasRender->setCanvasLayer(nullptr);
   bResetFlag = true;
 }
 
 void VkVideoRender::enableSizeChange(int32_t width, int32_t height) {
+  // sizeScale==1 时图走 userWidth/userHeight 分支, 两者相同即无变化
+  if (bUseNewSize && sizeScale == 1.0f && userWidth == width &&
+      userHeight == height) {
+    return;
+  }
   bUseNewSize = true;
+  sizeScale = 1.0f;
   userWidth = width;
   userHeight = height;
   bResetFlag = true;
 }
 
 void VkVideoRender::enableSizeScale(float scale) {
+  if (bUseNewSize && sizeScale != 1.0f && sizeScale == scale) {
+    return;
+  }
   bUseNewSize = true;
   sizeScale = scale;
   bResetFlag = true;
 }
 
 void VkVideoRender::disableSizeChange() {
+  if (!bUseNewSize) {
+    return;
+  }
   bUseNewSize = false;
   bResetFlag = true;
 }
 
 void VkVideoRender::enableAnime4K(const Anime4KParamet& paramet) {
+  // 参数相同且已开启: 跳过重建(结构体 POD, memcmp 比对; 不等则照常重建)
+  if (bEnableAnime4K &&
+      0 == std::memcmp(&paramet, &anime4KParamet, sizeof(Anime4KParamet))) {
+    return;
+  }
   anime4KParamet = paramet;
   bEnableAnime4K = true;
   // 互斥: 开启Anime4K时关闭QualityEnhance和FSR
@@ -218,11 +260,18 @@ void VkVideoRender::enableAnime4K(const Anime4KParamet& paramet) {
 }
 
 void VkVideoRender::disableAnime4K() {
+  if (!bEnableAnime4K) {
+    return;
+  }
   bEnableAnime4K = false;
   bResetFlag = true;
 }
 
 void VkVideoRender::enableQualityEnhance(const QualityEnhanceParamet& paramet) {
+  if (bEnableQualityEnhance && 0 == std::memcmp(&paramet, &qualityEnhanceParamet,
+                                                sizeof(QualityEnhanceParamet))) {
+    return;
+  }
   qualityEnhanceParamet = paramet;
   bEnableQualityEnhance = true;
   // 互斥: 开启画质增强时关闭Anime4K和FSR
@@ -232,11 +281,18 @@ void VkVideoRender::enableQualityEnhance(const QualityEnhanceParamet& paramet) {
 }
 
 void VkVideoRender::disableQualityEnhance() {
+  if (!bEnableQualityEnhance) {
+    return;
+  }
   bEnableQualityEnhance = false;
   bResetFlag = true;
 }
 
 void VkVideoRender::enableFSR(const FSRParamet& paramet) {
+  if (bEnableFSR &&
+      0 == std::memcmp(&paramet, &fsrParamet, sizeof(FSRParamet))) {
+    return;
+  }
   fsrParamet = paramet;
   bEnableFSR = true;
   // 互斥: 开启FSR时关闭Anime4K和QualityEnhance
@@ -246,6 +302,9 @@ void VkVideoRender::enableFSR(const FSRParamet& paramet) {
 }
 
 void VkVideoRender::disableFSR() {
+  if (!bEnableFSR) {
+    return;
+  }
   bEnableFSR = false;
   bResetFlag = true;
 }
@@ -274,6 +333,9 @@ bool VkVideoRender::vaildAndInitGraph() {
     onParametUpdate();
     return true;
   }
+  // 先消费再重建: 重建耗时数十毫秒, 期间宿主线程新置的请求留到下一帧,
+  // 不会被这次重建的收尾清掉(末尾清零会吞请求, 表现为"开关不生效")
+  bResetFlag = false;
   // 重建窗口开始: getOutputLayer/getInputLayer 对外部返回空, 直至重建完成
   bRebuilding.store(true);
   VkContext* ctx = nullptr;
@@ -451,7 +513,6 @@ bool VkVideoRender::vaildAndInitGraph() {
   // fetchFrame 读到空纹理 → vk 车道截图恒败(shot-vk 已知取舍的根因)
   outNode->addLine(outputLayer);
   bRebuilding.store(false);
-  bResetFlag = false;
   return true;
 }
 

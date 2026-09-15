@@ -26,6 +26,7 @@ add_executable(avox_tests
   ${AVOX_TESTS_SRC}/test_threadsync.cpp
   ${AVOX_TESTS_SRC}/test_pipenode.cpp
   ${AVOX_TESTS_SRC}/test_subtitle_slots.cpp
+  ${AVOX_TESTS_SRC}/test_subtitle_style.cpp
   ${AVOX_TESTS_SRC}/log_sink.cpp
   # 被测源码 (自包含编译)
   ${AVOX_SRC}/module/AvoxMath.cpp
@@ -53,6 +54,11 @@ target_include_directories(avox_tests PRIVATE
 
 # AVOX_EXPORT_DEFINE: 被编入测试目标的源码按 dllexport 导出, 目标自包含
 target_compile_definitions(avox_tests PRIVATE AVOX_EXPORT_DEFINE)
+
+# test_subtitle_style 只测 TextRasterizer.hpp 的纯样式/排版部分(无 freetype 依赖),
+# 单 TU 打开宏以通过头文件门槛
+set_source_files_properties(${AVOX_TESTS_SRC}/test_subtitle_style.cpp
+    PROPERTIES COMPILE_DEFINITIONS AVOX_ENABLE_FREETYPE=1)
 
 if(MSVC)
   # 源码含 UTF-8 中文注释, 与主工程保持一致

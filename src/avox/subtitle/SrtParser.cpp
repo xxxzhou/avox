@@ -39,6 +39,11 @@ bool SrtParser::parse(const char* content, size_t len,
     }
     std::string line = text.substr(lineStart, pos - lineStart);
     if (pos < text.size() && text[pos] == '\n') pos++;
+    // CRLF 容错: 行尾 \r 不去的话序号行("1\r")判不出是数字索引, 整条被跳过
+    // (git autocrlf / Windows 侧生成的 srt 常见)
+    if (!line.empty() && line.back() == '\r') {
+      line.pop_back();
+    }
 
     // Skip empty lines
     bool allSpace = true;
@@ -67,6 +72,9 @@ bool SrtParser::parse(const char* content, size_t len,
       }
       std::string timeLine = text.substr(lineStart, pos - lineStart);
       if (pos < text.size() && text[pos] == '\n') pos++;
+      if (!timeLine.empty() && timeLine.back() == '\r') {
+        timeLine.pop_back();
+      }
 
       // Parse time: 00:00:00,000 --> 00:00:00,000
       size_t arrowPos = timeLine.find("-->");
@@ -89,6 +97,9 @@ bool SrtParser::parse(const char* content, size_t len,
         }
         std::string textLine = text.substr(lineStart, pos - lineStart);
         if (pos < text.size() && text[pos] == '\n') pos++;
+        if (!textLine.empty() && textLine.back() == '\r') {
+          textLine.pop_back();  // 文本行不吞 \r, 免得光栅化出杂符
+        }
 
         // Check if empty line (end of subtitle)
         bool allSpace2 = true;

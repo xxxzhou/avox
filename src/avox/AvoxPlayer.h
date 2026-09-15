@@ -12,9 +12,13 @@ enum class AsrMode {
   ptsSync     // PTS同步模式：队列查找
 };
 
-// 字幕视图接口(仅 ASR 开关): 外挂字幕文件走 IMediaPlayer::loadSubtitle/
-// unloadSubtitle, 内封字幕轨走 IMediaPlayer::setSubtitleTrack; 三槽位互斥由
-// 引擎内仲裁(后激活者胜), 全关即三个关闭入口各调一次
+
+// 观感设置生效矩阵(样式计划 doc/plan/player/字幕样式设计.md):
+//   纯文本样式(setFont/setColor/setAlign/setPosition/setPositionMargin/
+//   setMaxWidth) → 仅 SRT/ASR 文本路径生效; 内封 ASS 轨/外挂 .ass 样式归
+//   片源(libass)、PGS 是位图, 静默忽略。
+//   全局变换(setScale/setOffset/setOpacity) → 三层通用: 文本在 CPU 侧重
+//   栅格化(放大清晰), ASS/PGS 在 canvas 合成处重采样。
 class ISubtitle {
  public:
   virtual ~ISubtitle() = default;
@@ -22,6 +26,30 @@ class ISubtitle {
   virtual void enableAsr() = 0;
   // 关闭 ASR(仅当 asr 槽是当前胜者时清; 不影响内封轨/外挂槽)
   virtual void disableAsr() = 0;
+
+  // ---- 全局变换: SRT/ASR + ASS + PGS 通用 ----
+  // 整层缩放, 1.0=原尺寸(<=0 忽略, 保持上次有效值)
+  virtual void setScale(float scale) {}
+  // 帧归一化平移(0.1=帧宽/帧高的 10%), 不钳制, 越界由帧内钳制/可见区裁剪兜底
+  virtual void setOffset(float offsetX, float offsetY) {}
+  // 整层不透明度 0.0~1.0(0=隐藏, 1=不透明, 越界钳制)
+  virtual void setOpacity(float opacity) {}
+
+  // ---- 纯文本样式: 仅 SRT/ASR 生效(ASS/PGS 静默忽略) ----
+  // 字体名(asset/fonts 下, FontMap 解析; nullptr/空串保持现值)与字号
+  // (1080 基准像素, 随帧高缩放; <=0 忽略)
+  virtual void setFont(const char* fontName, int32_t fontSize) {}
+  // 文字颜色 0.0~1.0(逐分量钳制)
+  virtual void setColor(float r, float g, float b) {}
+  // 对齐(决定文本块相对锚点的摆放与边距内收方向; none=该轴保持现值)。
+  // 默认 mid/bottom
+  virtual void setAlign(HAlignType h, VAlignType v) {}
+  // 帧归一化锚点(0~1 钳制, 默认 0.5/0.8)
+  virtual void setPosition(float anchorX, float anchorY) {}
+  // 对齐方向上的内收边距(1080 基准像素, 随帧高缩放; 负值取 0)
+  virtual void setPositionMargin(float marginX, float marginY) {}
+  // 自动换行宽度(帧宽比例, 默认 0.8; <=0 忽略, >1 钳到 1)
+  virtual void setMaxWidth(float ratio) {}
 };
 
 #define AVOX_MAP_PLAYER_STATE(XX) \
