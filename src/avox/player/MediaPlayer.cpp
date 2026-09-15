@@ -330,10 +330,10 @@ void MediaPlayer::onPacket(const AvoxPacket& packet) {
           feedNow = true;
         }
       }
-      if (feedNow && assOverlayView && assOverlayView->opened()) {
+      if (feedNow && subtitleView->trackOpened()) {
         std::lock_guard<std::mutex> lock(subMetaMtx);
-        assOverlayView->loadTrack(subExtradata[index].data(),
-                                  (int32_t)subExtradata[index].size());
+        subtitleView->loadTrack(subExtradata[index].data(),
+                                (int32_t)subExtradata[index].size());
       }
       return;
     }
@@ -349,12 +349,10 @@ void MediaPlayer::onPacket(const AvoxPacket& packet) {
       if (sel == -2 || (sel >= 0 && index != sel)) {
         return;
       }
-      if (assOverlayView && assOverlayView->opened() &&
-          assOverlayView->isTrackLoaded()) {
+      if (subtitleView->trackOpened() && subtitleView->isTrackLoaded()) {
         const int64_t t0 = timeStampMS();
-        assOverlayView->pushChunk((const char*)packet.data.data,
-                                  packet.data.size, packet.pts,
-                                  packet.duration);
+        subtitleView->pushChunk((const char*)packet.data.data,
+                                packet.data.size, packet.pts, packet.duration);
         const int64_t dt = timeStampMS() - t0;
         if (dt > 100) {
           LOGFLF(LogLevel::warn, "[dbg] pushChunk blocked ms:", dt);
@@ -436,10 +434,10 @@ void MediaPlayer::onPacket(const AvoxPacket& packet) {
 
 void MediaPlayer::onPgsFrame(const AssCanvas& canvas) {
   // PGS 解码在 IO 线程, 画布内存归源所有: 拷贝进视图(线程安全)
-  if (!assOverlayView || !assOverlayView->opened()) {
+  if (!subtitleView || !subtitleView->trackOpened()) {
     return;
   }
-  assOverlayView->setPgsCanvas(canvas);
+  subtitleView->setPgsCanvas(canvas);
 }
 
 IOption* MediaPlayer::getOption() { return this; }
@@ -505,40 +503,35 @@ bool MediaPlayer::loadSubtitle(const char* path) {
 }
 
 void MediaPlayer::cmdLoadSubtitle(const std::string& path) {
-  bool ok = false;
-  // 外挂激活(后激活者胜): 拆被顶掉的槽位
-  const SubtitleSlots::Slot prev =
-      subtitleSlots.activate(SubtitleSlots::Slot::file);
-  if (prev != SubtitleSlots::Slot::file) {
-    teardownSubtitleSlot(prev);
-  }
-  // 同槽位换渲染路径(.srt↔.ass): 两路文件态都先清
-  subtitleView->closeFile();
-  if (assOverlayView) {
-    assOverlayView->close();
+  // 外挂激活(后激活者胜): 视图内完成被顶掉槽的视图侧拆除 + 两路文件内容清
+  const SubtitleSlots::Slot prev = subtitleView->activateFile();
+  if (prev == SubtitleSlots::Slot::track) {
+    // 被顶掉的是轨槽: 复位 IO 侧(轨号 + PGS 解码路由)
+    subTrackIndex = -1;
+    if (ioSource) {
+      ioSource->setSelectedSubtitle(-1);
+    }
   }
   // 外挂模式: 无内封轨号, 内封包按 subTrackIndex 过滤全丢弃(-2 不等于任何局部轨)
   subTrackIndex = -2;
-  // 扩展名分流: .ass/.ssa → libass 插件; 其余(.srt) → 文件路径(P2 切光栅化器)
+  // 扩展名分流: .ass/.ssa → libass 插件; 其余(.srt) → 文本光栅化器
   if (hasExt(path, ".ass") || hasExt(path, ".ssa")) {
-    if (!assOverlayView) {
-      assOverlayView = std::make_unique<AssOverlayView>();
-    }
     bool attached = false;
     for (const auto& vtrack : videoTracks) {
       if (vtrack && vtrack->vaild()) {
-        vtrack->attachAssOverlay(assOverlayView.get());
+        vtrack->attachSubtitle(subtitleView.get());
         attached = true;
       }
     }
     if (!attached) {
       LOGFLF(LogLevel::warn, "loadSubtitle: no valid video track");
+      loadSubtitleState.store(0);
       return;
     }
-    loadSubtitleState.store(assOverlayView->loadFile(path.c_str()) ? 1 : 0);
+    loadSubtitleState.store(subtitleView->loadTrackFile(path.c_str()) ? 1 : 0);
     replayPendingSubs();
   } else {
-    loadSubtitleState.store(subtitleView->loadFile(path.c_str()) ? 1 : 0);
+    loadSubtitleState.store(subtitleView->loadTextFile(path.c_str()) ? 1 : 0);
     // 内封包不再回放, 丢弃排队残留
     std::lock_guard<std::mutex> lock(subMetaMtx);
     pendingSubs.clear();
@@ -548,8 +541,7 @@ void MediaPlayer::cmdLoadSubtitle(const std::string& path) {
 }
 
 void MediaPlayer::replayPendingSubs() {
-  if (!assOverlayView || !assOverlayView->opened() ||
-      !assOverlayView->isTrackLoaded()) {
+  if (!subtitleView->trackOpened() || !subtitleView->isTrackLoaded()) {
     return;
   }
   const int32_t sel = subTrackIndex.load();
@@ -558,8 +550,8 @@ void MediaPlayer::replayPendingSubs() {
     if (ps.track != sel) {
       continue;  // 其他轨的包不回放
     }
-    assOverlayView->pushChunk(ps.data.data(), (int32_t)ps.data.size(),
-                              ps.ptsMs, ps.durationMs);
+    subtitleView->pushChunk(ps.data.data(), (int32_t)ps.data.size(),
+                            ps.ptsMs, ps.durationMs);
   }
   pendingSubs.clear();
 }
@@ -604,25 +596,13 @@ void MediaPlayer::cmdSetSubtitleTrack(int32_t index) {
     ioSource->setSelectedSubtitle(index);  // PGS 解码/旁路路由开关
   }
   if (index < 0) {
-    // 关轨槽: 仅当轨本就是胜者(不影响外挂/ASR 胜者)
-    if (subtitleSlots.active() == SubtitleSlots::Slot::track) {
-      subtitleSlots.deactivateIf(SubtitleSlots::Slot::track);
-      if (assOverlayView) {
-        assOverlayView->close();
-      }
-    }
+    // 关轨槽: 仅当轨本就是胜者(不影响外挂/ASR 胜者), 视图内判定
+    subtitleView->deactivateTrack();
     LOGFLF(LogLevel::info, "subtitle track off");
     return;
   }
-  // 选轨激活(后激活者胜): 拆被顶掉的槽位
-  const SubtitleSlots::Slot prev =
-      subtitleSlots.activate(SubtitleSlots::Slot::track);
-  if (prev != SubtitleSlots::Slot::track) {
-    teardownSubtitleSlot(prev);
-  }
-  if (!assOverlayView) {
-    assOverlayView = std::make_unique<AssOverlayView>();
-  }
+  // 选轨激活(后激活者胜): 视图内拆除被顶掉槽(视图侧); IO 侧已在上面重路由
+  subtitleView->activateTrack();
   std::vector<char> extradata;
   {
     std::lock_guard<std::mutex> lock(subMetaMtx);
@@ -632,11 +612,11 @@ void MediaPlayer::cmdSetSubtitleTrack(int32_t index) {
       subTrackFeeded = true;
     }
   }
-  // 挂到视频轨(渲染接线 + 以视频分辨率 init); 无视频轨则字幕无意义, 停在这
+  // 挂到视频轨(渲染接线 + 开轨通道); 无视频轨则字幕无意义, 停在这
   bool attached = false;
   for (const auto& vtrack : videoTracks) {
     if (vtrack && vtrack->vaild()) {
-      vtrack->attachAssOverlay(assOverlayView.get());
+      vtrack->attachSubtitle(subtitleView.get());
       attached = true;
     }
   }
@@ -645,8 +625,8 @@ void MediaPlayer::cmdSetSubtitleTrack(int32_t index) {
     return;
   }
   if (!extradata.empty()) {
-    if (!assOverlayView->loadTrack(extradata.data(),
-                                   (int32_t)extradata.size())) {
+    if (!subtitleView->loadTrack(extradata.data(),
+                                 (int32_t)extradata.size())) {
       LOGFLF(LogLevel::warn, "setSubtitleTrack: load extradata failed");
     }
   } else {
@@ -701,41 +681,19 @@ IMediaMuxer* MediaPlayer::getMuxer(bool bTranscode) {
 ISubtitle* MediaPlayer::getSubtitle() { return subtitleProxy.get(); }
 
 void MPSubtitleProxy::enableAsr() {
-  // ASR 激活(后激活者胜): 先拆被顶掉的槽位, 再开 ASR
+  // ASR 激活(后激活者胜): 视图内拆被顶掉槽并启动识别, 这里复位轨槽 IO 侧
   player->onSubtitleActivate();
-  player->getSubtitleView()->enableAsr();
 }
 
 void MPSubtitleProxy::close() { player->getSubtitleView()->close(); }
 
 void MediaPlayer::onSubtitleActivate() {
-  const SubtitleSlots::Slot prev =
-      subtitleSlots.activate(SubtitleSlots::Slot::asr);
-  if (prev != SubtitleSlots::Slot::asr) {
-    teardownSubtitleSlot(prev);
-  }
-}
-
-void MediaPlayer::teardownSubtitleSlot(SubtitleSlots::Slot slot) {
-  switch (slot) {
-    case SubtitleSlots::Slot::track:
-      // 轨槽拆除: 轨号复位 + PGS 解码关 + overlay 关
-      subTrackIndex = -1;
-      if (ioSource) {
-        ioSource->setSelectedSubtitle(-1);
-      }
-      if (assOverlayView) {
-        assOverlayView->close();
-      }
-      break;
-    case SubtitleSlots::Slot::file:
-      subtitleView->closeFile();
-      break;
-    case SubtitleSlots::Slot::asr:
-      subtitleView->closeAsr();
-      break;
-    default:
-      break;
+  const SubtitleSlots::Slot prev = subtitleView->activateAsr();
+  if (prev == SubtitleSlots::Slot::track) {
+    subTrackIndex = -1;
+    if (ioSource) {
+      ioSource->setSelectedSubtitle(-1);
+    }
   }
 }
 
@@ -1508,11 +1466,7 @@ void MediaPlayer::cmdClose() {
   renderTime = 0;
   //
   subtitleView->close();
-  if (assOverlayView) {
-    assOverlayView->close();
-  }
   subTrackIndex = -1;
-  subtitleSlots.reset();
   {
     std::lock_guard<std::mutex> lock(subMetaMtx);
     subExtradata.clear();
@@ -1576,9 +1530,7 @@ void MediaPlayer::cmdSeek(SeekCommandPtr cmd) {
     // 清空队列
     flush();
     // 字幕: 清旁路队列 + flush libass 事件(seek 后旧事件作废, 防残留帧)
-    if (assOverlayView && assOverlayView->opened()) {
-      assOverlayView->resetEvents();
-    }
+    subtitleView->resetEvents();
     bool bSeek = ioSource->seekTo(spts);
     // 成功: 保持 bSeeking(true, 由 compateIoTime 见真实位置追平目标后解除);
     // 失败: 解除, 如实报当前位置

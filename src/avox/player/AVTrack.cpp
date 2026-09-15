@@ -145,15 +145,10 @@ void AVTrack::updateClock(int64_t pts) {
     // 同步给播放器时钟
     mediaPlayer->getExtClock()->sync(clock.get());
   }
-  // 字幕与音频同步，字幕时钟跟随音频时钟走
+  // 字幕统一视图单时钟(合并计划 D4): 文本与轨通道两路共用, 渲染线程按它取 pts
   SubtitleView* subtitleView = mediaPlayer->getSubtitleView();
   if (subtitleView) {
     subtitleView->getClock()->sync(clock.get());
-  }
-  // ASS/PGS 字幕轨视图的时钟同源(渲染线程按它取 pts)
-  auto* assView = mediaPlayer->getAssOverlayView();
-  if (assView) {
-    assView->getClock()->sync(clock.get());
   }
   if (mpPingback->canLogPts()) {
     PBPtsTick pp = {};

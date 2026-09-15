@@ -44,14 +44,11 @@ void VideoTrack::start() {
     return;
   }
   if (mediaPlayer) {
+    // 统一字幕视图(文本与轨通道同一对象): 重开循环后重挂渲染回调
     SubtitleView* subtitleView = mediaPlayer->getSubtitleView();
     if (subtitleView) {
       subtitleView->setWindowRender(windowRender.get());
       subtitleView->setStorageSize(srcDesc.width, srcDesc.height);
-    }
-    // 字幕视图换渲染对象(重开循环): 重新注册每帧回调
-    if (assOverlayView) {
-      assOverlayView->setSurfaceRender(windowRender.get());
     }
   }
   log(LogLevel::info, "decode and render start success");
@@ -73,7 +70,7 @@ void VideoTrack::onVideoDesc() {
   }
   windowRender->setFPS(dparams.fps);
   dropDuration = (int32_t)(1000.0 / windowRender->getFPS()) * 2;
-  // 字幕画布坐标系 = srcDesc(与 attachAssOverlay 的 ASS storage 同源);
+  // 字幕画布坐标系 = srcDesc(与 attachSubtitle 的轨通道 storage 同源);
   // 不用 dparams——部分硬解路径上报的高度非视频真实高度(如 1080p 报 270),
   // 会导致文本字号按错的比例缩放
   // 按流下发颜色空间(矩阵+量程+transfer): 图未建时 VkVideoRender 存成员, 建图时应用
@@ -356,21 +353,23 @@ void VideoTrack::flush() {
 
 void VideoTrack::updateSeekTime(int64_t seekTime) { clock->update(seekTime); }
 
-void VideoTrack::attachAssOverlay(AssOverlayView* view) {
-  assOverlayView = view;
+void VideoTrack::attachSubtitle(SubtitleView* view) {
+  subtitleView = view;
   if (!view) {
     return;
   }
-  view->setSurfaceRender(windowRender.get());
-  if (!view->opened() && srcDesc.width > 0 && srcDesc.height > 0) {
-    view->open(srcDesc.width, srcDesc.height);
+  view->setWindowRender(windowRender.get());
+  if (srcDesc.width > 0 && srcDesc.height > 0) {
+    view->setStorageSize(srcDesc.width, srcDesc.height);
   }
+  // 轨通道惰性建立(无插件降级为不渲染字幕轨); 文本路径不经过这里
+  view->openTrackChannel();
 }
 
 void VideoTrack::close() {
   // 先摘字幕视图(渲染对象即将销毁)
-  if (assOverlayView) {
-    assOverlayView->setSurfaceRender(nullptr);
+  if (subtitleView) {
+    subtitleView->setWindowRender(nullptr);
   }
   packetQueue.setClose(true);
   // 先通知frameQueue不可用，保证decodeTask顺利关闭

@@ -10,7 +10,6 @@
 #include "../muxer/MediaMuxer.hpp"
 #include "../muxer/RawMuxer.hpp"
 #include "../source/AVSource.hpp"
-#include "../subtitle/AssOverlayView.hpp"
 #include "../subtitle/SubtitleSlots.hpp"
 #include "../subtitle/SubtitleView.hpp"
 #include "../video/Window.hpp"
@@ -62,16 +61,12 @@ class MediaPlayer : public IMediaPlayer,
   std::vector<VideoTrackPtr> videoTracks;
   // 音频解码(缓存数据都在这里面)
   std::vector<AudioTrackPtr> audioTracks;
-  // 字幕显示
+  // 字幕显示(统一视图: 三槽位仲裁内聚, 计划 字幕模块合并计划.md P3)。
+  // extradata 由 IO 线程经 onPacket 存表, 锁只护表本身;
+  // subTrackIndex 两线程读, atomic
   std::unique_ptr<SubtitleView> subtitleView;
   // ISubtitle 出口(enableAsr 方向的槽位仲裁桥)
   std::unique_ptr<MPSubtitleProxy> subtitleProxy;
-  // 三槽位(内封轨/外挂/ASR)仲裁状态机(计划 字幕模块合并计划.md)
-  SubtitleSlots subtitleSlots;
-  // ASS/PGS 内封字幕轨视图(计划 §3.5): 选轨(setSubtitleTrack)后建通道,
-  // 与 SRT/ASR 通道的互斥由调用方保证。extradata 由 IO 线程经 onPacket 存表,
-  // 锁只护表本身; subTrackIndex 两线程读, atomic
-  std::unique_ptr<AssOverlayView> assOverlayView;
   // 选轨前到达的字幕包待播队列(有界): 视图打开+轨加载后按序回放
   struct PendingSub {
     int32_t track = -1;  // 局部轨索引(选轨后按轨回放)
@@ -177,7 +172,6 @@ class MediaPlayer : public IMediaPlayer,
   AVSource* getSource() { return ioSource.get(); }
   RawMuxer* getRawMuxer() { return rawMuxer.get(); }
   SubtitleView* getSubtitleView() { return subtitleView.get(); }
-  AssOverlayView* getAssOverlayView() { return assOverlayView.get(); }
   SyncType getSyncType() { return syncType; }
   // I帧渲染模式: 源级I帧模式(源只发I帧) 或 >4x只解I帧生效(bIFrameOnlyActive)时
   // 都为true。渲染节奏/音频静音/外部调用统一用这个判断"当前是否处于稀疏I帧渲染",
@@ -297,13 +291,10 @@ class MediaPlayer : public IMediaPlayer,
   void cmdSetSubtitleTrack(int32_t index);
   void replayPendingSubs();
   void cmdLoadSubtitle(const std::string& path);
-  // 三槽位仲裁: 拆除被顶掉的槽位(轨=复位轨号+关PGS解码+关overlay;
-  // 外挂=关文件字幕; ASR=停识别)
-  void teardownSubtitleSlot(SubtitleSlots::Slot slot);
 
  public:
   // 三槽位仲裁(计划 字幕模块合并计划.md): ASR 激活(MPSubtitleProxy 调)时
-  // 清内封轨与外挂文件槽 — 后激活者胜, 空窗不回落
+  // 视图内拆被顶掉槽, 这里只复位轨槽的 IO 侧(轨号 + PGS 解码开关)
   void onSubtitleActivate();
 
  public:
