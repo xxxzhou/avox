@@ -1,5 +1,7 @@
 # playmatrix — 播放回归矩阵
 
+> **迁移通知（2026-09-15）**：本目录（用例表 `PlayMatrix.hpp` / 宿主 `HostMain.cpp` / `PlayTee.hpp`）规范副本已迁入同级统一测试仓 `../avox-test/l1_avox/playmatrix/`。过渡期本仓副本仍作为构建编译源，但**新增用例与改动一律写到 avox-test**；整体规划见其 [README.md](../../../avox-test/README.md)。
+
 > 每次改动后跑一次, 确认**播放**这条链路(拉流 / 解码 / 帧输出 / 录制)没被搞坏。
 > 用例表与判定口径只此一份 (`PlayMatrix.hpp`), 各平台 runner 只做宿主适配,
 > 因此同一 case id 在五个平台含义一致, 可汇总成一张跨平台表。
@@ -120,7 +122,7 @@ python script/testenv/play_regress.py --list
 
 # 直接跑 runner (Windows 产物在 build/.../install/*/Release/)
 playtest --host=127.0.0.1 --skip=webrtc-h265
-playtest --host=127.0.0.1 --win        # 出窗口看画面; macOS 同样支持 (判定横幅上屏)
+playtest --host=127.0.0.1 --win        # 界面走查: 出窗口 + 左上角说明横幅 (macOS 同样支持)
 ```
 
 `--offline` 已接进 CI: `.github/workflows/release.yml` 的 `Run playback regression
@@ -131,6 +133,35 @@ hwaccel 那类回归的哨兵: 车道任何一环断了都会从这里先炸)。
 
 流源由 `script/testenv/push_streams.py` 提供 (`live/avox264`=H264, `live/avox`=H265);
 局域网真机跑时加 `--lan-ip=<本机 IP>`。
+
+## 界面走查 (--win): 左上角说明横幅, 人判画面
+
+回归判定全部离屏自动化, 人看不到画面。需要肉眼确认画面时走 `--win` 界面走查:
+
+```bash
+# 桌面全量走查 (自动推流, 需本机 ZLM); --offline 只走本地文件子集, 不需要 ZLM
+python script/testenv/play_regress.py --win
+python script/testenv/play_regress.py --win --offline
+# 只走查某一组 (--only 前缀筛选)
+playtest --win --only=sub        # 字幕组
+playtest --win --only=file-h26   # h265 本地文件
+```
+
+- **左上角横幅**: 每条用例开始时显示 `[i/N] case-id ● 运行中` + **该看到什么**
+  (事实源是 `PlayMatrix.hpp` 每条用例的 `desc`, 与画面逐项对应: 四角定位标/色块灰阶/
+  左上时间码走动/底部帧号条码连续…), 底部滚最近 2 条判定行。人照着说明即可判断画面
+  是否正常, 不用背用例表。改用例必须同步改 `desc` (`--list` 同步展示, 与改资产必须
+  同步 manifest 同理)。
+- **离屏用例明说"窗口无画面"**: 截图/录制/字幕取证/yuvout 本来就不出窗口画面, 横幅
+  会标注并指到产物路径 (`pm_shot.png` 等), 免得人等一个不会来的图。
+- **关窗即停**: 关窗 = 取消, 当前用例跑完 (≤20s) 即打印汇总退出, 不必等全表。
+  判定行口径不变 (只补一行 `[info] matrix canceled …`); 中途关窗退出码按已跑结果计。
+- **各平台宿主**: Windows 在 `HostMain.cpp` (GDI 横幅, RDP/远程会话分层子窗口不可用时
+  自动退普通子窗口); macOS 在 `WinHost.mm` (说明条 + 判定横幅, 关窗取消同款; 本机无
+  macOS 未实测, 待真机过一遍); Android APK (PlayMatrixActivity) / iOS (avoxtest) 已有
+  判定横幅, 用例说明的接入点是 `RunOptions.onCaseStart` (共享头已备好), 待接。
+- 实测 (Windows 11, RDP 会话): `--only=file` 7/7 PASS 横幅逐条刷新; 关窗即停生效;
+  `--offline` 无头回归与改动前基线完全一致 (18/5/17, 同一失败集合)。
 
 ## 各平台宿主
 

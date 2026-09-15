@@ -13,6 +13,7 @@
 // 各平台宿主入口见 platform/<plat>/playtest; 一键驱动见 script/testenv/play_regress.py
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -48,6 +49,17 @@ struct Endpoints {
   // HDR10 素材 (script/testenv/gen_hdr10_asset.py 生成); 缺失时相关用例自动 off
   std::string fileHdr10;
   std::string fileHdr10Aud;
+  // 字幕测试素材 (assets/gen/gen_subtitle.py 生成; 经 --file-sub-* 传入)
+  // 外挂字幕统一用暗色背景视频 sub_bg_640x360.mp4 作载体; 内嵌字幕各自带视频
+  std::string fileSubBg;        // 外挂字幕对应背景视频(暗色底)
+  std::string fileSubSrtUtf8;   // 外挂 SRT(UTF-8)
+  std::string fileSubSrtBom;    // 外挂 SRT(UTF-8 + BOM)
+  std::string fileSubSrtGbk;    // 外挂 SRT(GBK)
+  std::string fileSubSrtRich;   // 外挂 SRT(emoji/重叠/超长行)
+  std::string fileSubAss;       // 外挂 ASS(定位+粗体+淡入)
+  std::string fileSubSrtEmbed;  // 内嵌 SRT(mkv, 自带视频)
+  std::string fileSubAssEmbed;  // 内嵌 ASS(mkv, 自带视频)
+  std::string fileSubMovText;   // 内嵌 mov_text(mp4, 自带视频)
 
   std::string appName(const std::string& key) const {
     size_t p = key.find('/');
@@ -82,6 +94,7 @@ enum class CaseKind {
   recordCopy,       // getMuxer(false) 直通录制 (原流拷贝)
   recordTranscode,  // getMuxer(true) 转码录制 (+ 中途 seek)
   yuvOut,           // 无vulkan直取: enableYuvOut 帧类型契约 (硬解 nv12 / 软解解码格式)
+  subtitle,         // 字幕: 外挂 loadSubtitle / 内嵌 setSubtitleTrack → 字幕带亮像素取证
 };
 
 struct PlayCase {
@@ -100,6 +113,13 @@ struct PlayCase {
   std::string expectType;
   // false = 默认不跑 (已知未修/环境依赖), 需 --all 显式打开
   bool enabled = true;
+  // 字幕用例专用 (kind == subtitle)
+  std::string subPath;   // 外挂字幕文件路径 (非空=外挂 loadSubtitle; 空=内嵌)
+  int32_t subTrack = 0;  // 内嵌字幕轨 index (setSubtitleTrack 用)
+  bool subStyle = false;  // true = loadSubtitle 后套用观感样式 (字号/颜色/缩放/透明度), 验样式链路
+  // 界面走查说明 (--win 左上角横幅 / --list 展示): 用例在做什么 + 人该看到什么,
+  // 供人工照着判断画面是否正常。空 = 宿主回退显示 url
+  std::string desc;
 };
 
 // ── 用例表: 29 条, 轴 + 固定交叉 (不做全笛卡尔) ──
@@ -107,8 +127,13 @@ inline std::vector<PlayCase> buildCases(const Endpoints& ep) {
   std::vector<PlayCase> cases;
   const std::string k264 = ep.h264Key;
   const std::string k265 = ep.h265Key;
+  // 走查基语 (frame.py 自校验测试图的长相): --win 左上角横幅显示 desc,
+  // 人照着逐项对照画面是否正常; 离屏用例明确写"窗口无画面"免得人等一个不来的图
+  const std::string kChart =
+      "标准自校验测试图: 四角定位标+色块灰阶色准正常, 左上时间码走动, "
+      "底部帧号条码连续跳变, 有运动元素不卡帧";
   auto pull = [&cases](const std::string& id, const std::string& url, IoPlan io,
-                       bool hard, int32_t seconds) {
+                       bool hard, int32_t seconds, const std::string& desc) {
     PlayCase c;
     c.id = id;
     c.kind = CaseKind::pull;
@@ -116,11 +141,12 @@ inline std::vector<PlayCase> buildCases(const Endpoints& ep) {
     c.io = io;
     c.hardDecode = hard;
     c.seconds = seconds;
+    c.desc = desc;
     cases.push_back(c);
   };
   // 本地素材用例: 素材缺失自动 off (平台没同步素材不拖垮整表)
   auto pullFile = [&cases](const std::string& id, const std::string& url, bool hard,
-                           int32_t seconds) {
+                           int32_t seconds, const std::string& desc) {
     PlayCase c;
     c.id = id;
     c.kind = CaseKind::pull;
@@ -128,46 +154,71 @@ inline std::vector<PlayCase> buildCases(const Endpoints& ep) {
     c.hardDecode = hard;
     c.seconds = seconds;
     c.enabled = !url.empty();
+    c.desc = desc;
     cases.push_back(c);
   };
   auto special = [&cases](const std::string& id, CaseKind kind, const std::string& url,
-                          int32_t seconds) {
+                          int32_t seconds, const std::string& desc) {
     PlayCase c;
     c.id = id;
     c.kind = kind;
     c.url = url;
     c.seconds = seconds;
+    c.desc = desc;
     cases.push_back(c);
   };
   // A 协议 × 编码 (默认口径: ffmpeg IO + 硬解 + 上屏/离屏)
-  pull("file-h264", ep.fileH264, IoPlan::ffmpeg, true, 15);
-  pull("file-h265", ep.fileH265, IoPlan::ffmpeg, true, 15);
-  pull("rtsp-h264", ep.rtsp(k264), IoPlan::ffmpeg, true, 15);
-  pull("rtsp-h265", ep.rtsp(k265), IoPlan::ffmpeg, true, 15);
-  pull("rtmp-h264", ep.rtmp(k264), IoPlan::ffmpeg, true, 15);
-  pull("rtmp-h265", ep.rtmp(k265), IoPlan::ffmpeg, true, 15);
-  pull("hls-h264", ep.http("/" + k264 + "/hls.m3u8"), IoPlan::ffmpeg, true, 20);
-  pull("hls-h265", ep.http("/" + k265 + "/hls.m3u8"), IoPlan::ffmpeg, true, 20);
-  pull("ts-h264", ep.http("/" + k264 + ".live.ts"), IoPlan::ffmpeg, true, 15);
-  pull("ts-h265", ep.http("/" + k265 + ".live.ts"), IoPlan::ffmpeg, true, 15);
+  pull("file-h264", ep.fileH264, IoPlan::ffmpeg, true, 15,
+       "本地文件 H264 硬解基线: " + kChart);
+  pull("file-h265", ep.fileH265, IoPlan::ffmpeg, true, 15,
+       "本地文件 H265 硬解基线: " + kChart);
+  pull("rtsp-h264", ep.rtsp(k264), IoPlan::ffmpeg, true, 15,
+       "RTSP 拉流 H264 硬解: " + kChart + "; 起播前短暂黑屏属正常");
+  pull("rtsp-h265", ep.rtsp(k265), IoPlan::ffmpeg, true, 15,
+       "RTSP 拉流 H265 硬解: " + kChart + "; 起播前短暂黑屏属正常");
+  pull("rtmp-h264", ep.rtmp(k264), IoPlan::ffmpeg, true, 15,
+       "RTMP 拉流 H264 硬解: " + kChart);
+  pull("rtmp-h265", ep.rtmp(k265), IoPlan::ffmpeg, true, 15,
+       "RTMP 拉流 H265 硬解: " + kChart);
+  pull("hls-h264", ep.http("/" + k264 + "/hls.m3u8"), IoPlan::ffmpeg, true, 20,
+       "HLS 拉流 H264 硬解 (分片协议, 起播稍慢属正常): " + kChart);
+  pull("hls-h265", ep.http("/" + k265 + "/hls.m3u8"), IoPlan::ffmpeg, true, 20,
+       "HLS 拉流 H265 硬解 (分片协议, 起播稍慢属正常): " + kChart);
+  pull("ts-h264", ep.http("/" + k264 + ".live.ts"), IoPlan::ffmpeg, true, 15,
+       "HTTP-TS 拉流 H264 硬解: " + kChart);
+  pull("ts-h265", ep.http("/" + k265 + ".live.ts"), IoPlan::ffmpeg, true, 15,
+       "HTTP-TS 拉流 H265 硬解: " + kChart);
   // B IO 方案对照 (只挂 RTSP, 避免组合爆炸; A 组已覆盖 ffmpeg)
-  pull("rtsp-h264-zm", ep.rtsp(k264), IoPlan::zlmediakit, true, 15);
-  pull("rtsp-h265-zm", ep.rtsp(k265), IoPlan::zlmediakit, true, 15);
+  pull("rtsp-h264-zm", ep.rtsp(k264), IoPlan::zlmediakit, true, 15,
+       "RTSP 拉流 H264 硬解 (zlmediakit IO 方案对照): 画面应与 rtsp-h264 完全一致");
+  pull("rtsp-h265-zm", ep.rtsp(k265), IoPlan::zlmediakit, true, 15,
+       "RTSP 拉流 H265 硬解 (zlmediakit IO 方案对照): 画面应与 rtsp-h265 完全一致");
   // C 解码模式对照 (软解; 硬解由 A 组覆盖; 同时覆盖本地文件与网络)
-  pull("file-h264-soft", ep.fileH264, IoPlan::ffmpeg, false, 15);
-  pull("file-h265-soft", ep.fileH265, IoPlan::ffmpeg, false, 15);
-  pull("rtsp-h264-soft", ep.rtsp(k264), IoPlan::ffmpeg, false, 15);
-  pull("rtsp-h265-soft", ep.rtsp(k265), IoPlan::ffmpeg, false, 15);
+  pull("file-h264-soft", ep.fileH264, IoPlan::ffmpeg, false, 15,
+       "本地文件 H264 软解: 画面应与硬解完全一致 (CPU 解码, 占用偏高属正常)");
+  pull("file-h265-soft", ep.fileH265, IoPlan::ffmpeg, false, 15,
+       "本地文件 H265 软解: 画面应与硬解完全一致 (CPU 解码, 占用偏高属正常)");
+  pull("rtsp-h264-soft", ep.rtsp(k264), IoPlan::ffmpeg, false, 15,
+       "RTSP 拉流 H264 软解: 画面应与硬解完全一致");
+  pull("rtsp-h265-soft", ep.rtsp(k265), IoPlan::ffmpeg, false, 15,
+       "RTSP 拉流 H265 软解: 画面应与硬解完全一致");
   // C2 HDR10 本地素材: 软解 tone map 链路 / [AUD][SEI][IDR] 合并边界。
   // 硬解 10bit 已闭环: win DX11CS P010, mac VT 输出 x420 由 Metal 前端 tone map
-  pullFile("file-hdr10-soft", ep.fileHdr10, false, 15);
-  pullFile("file-hdr10-hard", ep.fileHdr10, true, 15);
-  pullFile("file-hdr10-aud", ep.fileHdr10Aud, false, 15);
+  pullFile("file-hdr10-soft", ep.fileHdr10, false, 15,
+           "本地 HDR10(PQ) 软解 tone map: 画面亮度应正常 —— 发灰=tone map 缺失, "
+           "过曝=PQ 直通");
+  pullFile("file-hdr10-hard", ep.fileHdr10, true, 15,
+           "本地 HDR10(PQ) 硬解 tone map (GPU 车道): 亮度应正常, 与 hdr10-soft 一致");
+  pullFile("file-hdr10-aud", ep.fileHdr10Aud, false, 15,
+           "本地 HDR10(PQ,[AUD] 分帧) 软解: 画面同 hdr10-soft, 验帧边界不花屏不断流");
   // D WebRTC (独立通道, 不经 IO 方案)
-  special("webrtc-h264", CaseKind::rtc, ep.rtc(k264), 15);
-  special("webrtc-h265", CaseKind::rtc, ep.rtc(k265), 15);
+  special("webrtc-h264", CaseKind::rtc, ep.rtc(k264), 15,
+          "WebRTC 拉流 H264, 判数据通路 (连接+首帧+帧率); 本用例不出画面到窗口");
+  special("webrtc-h265", CaseKind::rtc, ep.rtc(k265), 15,
+          "WebRTC 拉流 H265, 判数据通路 (连接+首帧+帧率); 本用例不出画面到窗口");
   // E 帧契约 / 截图 / 录制
-  special("frame-contract", CaseKind::frameContract, ep.rtsp(k264), 8);
+  special("frame-contract", CaseKind::frameContract, ep.rtsp(k264), 8,
+          "离屏帧契约用例: 窗口无画面; 抽帧落 <outdir>/pm_frame0/1.png 可事后人工复看");
   {
     // 截图走平台原生渲染 (关 vulkan): 原生车道基线。
     // 用本地文件而不是网络源: 截图能力与协议无关, 这样它也能进离线子集(CI 覆盖)
@@ -177,6 +228,8 @@ inline std::vector<PlayCase> buildCases(const Endpoints& ep) {
     c.url = ep.fileH264;
     c.seconds = 6;
     c.nativeRender = true;
+    c.desc = "离屏截图用例 (原生车道): 窗口无画面; 产物 pm_shot.png 应为标准测试图"
+             " (自动判废图)";
     cases.push_back(c);
   }
   {
@@ -188,6 +241,8 @@ inline std::vector<PlayCase> buildCases(const Endpoints& ep) {
     c.url = ep.fileHdr10;
     c.seconds = 6;
     c.nativeRender = true;
+    c.desc = "离屏 HDR10 截图 (原生车道): 窗口无画面; pm_shot.png 亮度应正常"
+             " (过曝/发灰 = tone map 断链)";
     cases.push_back(c);
   }
   {
@@ -198,6 +253,7 @@ inline std::vector<PlayCase> buildCases(const Endpoints& ep) {
     c.kind = CaseKind::screenShot;
     c.url = ep.fileH264;
     c.seconds = 6;
+    c.desc = "离屏截图 (vulkan 中转车道): 窗口无画面; 产物应与 shot 同为标准测试图";
     cases.push_back(c);
   }
   {
@@ -209,11 +265,15 @@ inline std::vector<PlayCase> buildCases(const Endpoints& ep) {
     c.url = ep.fileHdr10;
     c.seconds = 6;
     c.enabled = !ep.fileHdr10.empty();
+    c.desc = "离屏 HDR10 截图 (中转车道): 窗口无画面; 亮度应与 shot-hdr 一致 (双车道对照)";
     cases.push_back(c);
   }
-  special("rec-copy-h264", CaseKind::recordCopy, ep.rtsp(k264), 8);
+  special("rec-copy-h264", CaseKind::recordCopy, ep.rtsp(k264), 8,
+          "直通录制用例: 窗口无画面; 产物 pm_copy.mp4 ≥8KB 且应可正常播放");
   // 转码录制中途 seek 需要可 seek 的源, 用本地文件
-  special("rec-transcode-h264", CaseKind::recordTranscode, ep.fileH264, 8);
+  special("rec-transcode-h264", CaseKind::recordTranscode, ep.fileH264, 8,
+          "转码录制用例 (中途 seek 到半长): 窗口无画面; 产物 pm_trans.mp4 应可播,"
+          " 后半段画面应跳至源片长一半");
   // F 无vulkan直取 (车道B): 关 vulkan 走平台原生渲染 + enableYuvOut, 严格判交付帧类型。
   // 硬解应交付解码直出 nv12 (DX11 staging / Metal readback), 类型不对 = 车道断裂或
   // 硬解回退软解, 都判 FAIL —— 这是"硬解组件被裁/回退"的哨兵 (ffmpeg9 裁 hwaccel 一类
@@ -226,6 +286,7 @@ inline std::vector<PlayCase> buildCases(const Endpoints& ep) {
     c.seconds = 6;
     c.nativeRender = true;
     c.expectType = "nv12";
+    c.desc = "无vulkan直取 (车道B) 硬解: 窗口无画面; 数据哨兵, 判交付帧类型 = nv12";
     cases.push_back(c);
   }
   {
@@ -238,6 +299,7 @@ inline std::vector<PlayCase> buildCases(const Endpoints& ep) {
     c.hardDecode = false;
     c.nativeRender = true;
     c.expectType = "yuv420P";
+    c.desc = "无vulkan直取 (车道B) 软解: 窗口无画面; 判交付帧类型 = yuv420P";
     cases.push_back(c);
   }
   {
@@ -252,6 +314,7 @@ inline std::vector<PlayCase> buildCases(const Endpoints& ep) {
     c.nativeRender = true;
     c.expectType = "yuv420P10";
     c.enabled = !ep.fileHdr10.empty();
+    c.desc = "10bit 帧契约哨兵: 窗口无画面; 判交付帧类型 = yuv420P10";
     cases.push_back(c);
   }
   {
@@ -264,8 +327,67 @@ inline std::vector<PlayCase> buildCases(const Endpoints& ep) {
     c.url = ep.fileH264;
     c.seconds = 8;
     c.nativeRender = true;
+    c.desc = "无vulkan转码录制: 窗口无画面; 产物 pm_trans.mp4 非空即通";
     cases.push_back(c);
   }
+  // G 字幕矩阵: 外挂 loadSubtitle / 内嵌 setSubtitleTrack → 字幕带亮像素取证。
+  // 背景 sub_bg_640x360.mp4 为暗色底(0x12141a), 字幕文字为亮色 → 该判据可测;
+  // 每个字幕测试都自带对应视频, 不依赖任何外部样本 (gen_subtitle.py 现生成)。
+  auto subExt = [&cases](const std::string& id, const std::string& video,
+                         const std::string& sub, const std::string& desc) {
+    PlayCase c;
+    c.id = id;
+    c.kind = CaseKind::subtitle;
+    c.url = video;       // 背景视频
+    c.subPath = sub;     // 外挂字幕文件
+    c.seconds = 8;
+    c.enabled = !video.empty() && !sub.empty();
+    c.desc = desc;
+    cases.push_back(c);
+  };
+  auto subEmbed = [&cases](const std::string& id, const std::string& file,
+                           int32_t track, const std::string& desc) {
+    PlayCase c;
+    c.id = id;
+    c.kind = CaseKind::subtitle;
+    c.url = file;        // 自带视频的字幕容器
+    c.subTrack = track;  // 内嵌字幕轨 index
+    c.seconds = 8;
+    c.enabled = !file.empty();
+    c.desc = desc;
+    cases.push_back(c);
+  };
+  // 外挂: 判渲染亮像素; 内嵌: 判选轨成功 (subrip/mov_text 渲染属 avox 待补)
+  subExt("sub-ext-srt-utf8", ep.fileSubBg, ep.fileSubSrtUtf8,
+         "外挂 SRT(UTF-8) 字幕取证: 窗口无画面; 暗底画面上应渲染出亮色字幕 (自动判亮像素)");
+  subExt("sub-ext-srt-bom",  ep.fileSubBg, ep.fileSubSrtBom,
+         "外挂 SRT(UTF-8+BOM) 字幕取证: 窗口无画面; 同 utf8, 验 BOM 不破坏解析");
+  subExt("sub-ext-srt-gbk",  ep.fileSubBg, ep.fileSubSrtGbk,
+         "外挂 SRT(GBK) 字幕取证: 窗口无画面; 编码转换错会整条乱码或不渲染");
+  subExt("sub-ext-srt-rich", ep.fileSubBg, ep.fileSubSrtRich,
+         "外挂 SRT 富文本 (emoji/重叠/超长行) 取证: 窗口无画面; 不崩、超长行不溢出");
+  subExt("sub-ext-ass",      ep.fileSubBg, ep.fileSubAss,
+         "外挂 ASS 字幕 (\\pos 定位+粗体+淡入) 取证: 窗口无画面; 渲染位置应随 \\pos, 不在默认底部");
+  {
+    // 观感样式用例(字幕样式设计.md P6): 同 utf8 素材, loadSubtitle 后套
+    // setFont/setColor/setScale/setOpacity, 应渲染出更大更黄的半透明字幕
+    PlayCase c;
+    c.id = "sub-style-srt";
+    c.kind = CaseKind::subtitle;
+    c.url = ep.fileSubBg;
+    c.subPath = ep.fileSubSrtUtf8;
+    c.subStyle = true;
+    c.seconds = 8;
+    c.enabled = !ep.fileSubBg.empty() && !ep.fileSubSrtUtf8.empty();
+    c.desc = "观感样式取证: setFont(64)+黄色+setScale(1.5)+setOpacity(0.8), 字幕带应出现更大更亮的黄色字 (自动判亮像素)";
+    cases.push_back(c);
+  }
+  subEmbed("sub-embed-srt",     ep.fileSubSrtEmbed, 0,
+           "内嵌 SRT 轨 (mkv) 字幕: 窗口无画面; 判字幕轨可见可选 (渲染属 avox 待补)");
+  subEmbed("sub-embed-ass",     ep.fileSubAssEmbed, 0,
+           "内嵌 ASS 轨 (mkv) 字幕: 窗口无画面; 应渲染出定位字幕 (ASS 经 libass)");
+  subEmbed("sub-embed-movtext", ep.fileSubMovText,  0,
+           "内嵌 mov_text 轨 (mp4) 字幕: 窗口无画面; 判字幕轨可见可选 (渲染属 avox 待补)");
   // AVOX_PM_SOFT=1 (Apple 宿主启动参数 --soft): 全部用例强制软解。
   // 逃生门: 真机硬解服务被系统状态楔死时 (iOS 26 实测 VTDecompressionSessionCreate
   // 挂死不返回), 仍能跑完整矩阵验证 app/判定/日志链路。yuvout-h264 会因
@@ -384,6 +506,83 @@ inline bool imageLooksAlive(const ImageStats& st, std::string& why) {
   }
   return true;
 }
+
+// 字幕带取证观察者: 复用 avox subtitletexttest 的机制 —— 字幕经 VkCanvasLayer 合成进
+// 输出帧, 通过 ISurfaceRenderOb::onFrame 拿到的已是合成后帧; 转 RGBA 后统计下 1/4 亮像素。
+// (注意: screenShot 拿的是合成前的原始解码帧, 不含字幕, 故不能用于字幕取证)
+class SubtitleOb : public ISurfaceRenderOb {
+ public:
+  SubtitleOb() = default;
+  ~SubtitleOb() override = default;
+  void arm() {
+    std::lock_guard<std::mutex> l(mtx);
+    armed = true;
+  }
+  int32_t maxBrightCount() {
+    std::lock_guard<std::mutex> l(mtx);
+    return maxBright;
+  }
+  int64_t subtitleFrameCount() {
+    std::lock_guard<std::mutex> l(mtx);
+    return subFrames;
+  }
+  int64_t totalFrameCount() {
+    std::lock_guard<std::mutex> l(mtx);
+    return totalFrames;
+  }
+
+ private:
+  void onFrame(IImageBuffer* buf, YuvType yuvType) override {
+    {
+      std::lock_guard<std::mutex> l(mtx);
+      if (!armed) return;
+      ++frames;
+      ++totalFrames;
+    }
+    IImageBuffer* tmp = createImageBuffer();
+    YUVFrame frame = {};
+    IImageBuffer* rgba = createImageBuffer();
+    if (!image2SplitYUVFrame(buf, yuvType, frame, tmp) ||
+        !yuvframe2Rgba(frame, rgba)) {
+      delete tmp;
+      delete rgba;
+      return;
+    }
+    delete tmp;
+    const ImageFormat fmt = rgba->getImageFormat();
+    const uint8_t* base = rgba->getPointer();
+    if (!base || fmt.width <= 0 || fmt.height <= 0) {
+      delete rgba;
+      return;
+    }
+    const int32_t pitch = fmt.rowPitch > 0 ? fmt.rowPitch : fmt.width * 4;
+    // 字幕可能出现在本帧任意位置(ASS 支持 \pos 定位), 背景为暗色底(0x12141a,
+    // 绿通道=0x1a=26<<120), 故扫整帧统计亮像素即可, 不会误命中背景。
+    const int32_t stripY = 0;  // 扫整帧: 定位字幕也能命中
+    int32_t count = 0;
+    for (int32_t y = stripY; y < fmt.height; y += 2) {
+      const uint8_t* row = base + (size_t)y * pitch;
+      for (int32_t x = 0; x < fmt.width; x += 2) {
+        const uint8_t* px = row + (size_t)x * 4;
+        if (px[1] > 120) ++count;  // 绿通道(亮色字幕文字)
+      }
+    }
+    delete rgba;
+    std::lock_guard<std::mutex> l(mtx);
+    if (count > 40) ++subFrames;
+    if (count > maxBright) maxBright = count;
+  }
+  void onSurface() override {}
+  void onRender() override {}
+  void onWinSizeChange(int32_t, int32_t) override {}
+
+  std::mutex mtx;
+  bool armed = false;
+  int32_t maxBright = 0;
+  int64_t frames = 0;
+  int64_t subFrames = 0;
+  int64_t totalFrames = 0;
+};
 
 struct Attempt {
   bool pass = false;
@@ -912,6 +1111,116 @@ inline Attempt recordAttempt(const PlayCase& c, bool transcode, const std::strin
   return r;
 }
 
+// ── 字幕取证: 外挂 loadSubtitle / 内嵌 setSubtitleTrack → 字幕带(下1/4)亮像素(绿>120)>40 ──
+// 机制同 avox subtitletexttest: 字幕经 VkCanvasLayer 合成进输出帧, 用 ISurfaceRenderOb::onFrame
+// 拿到合成后帧, 转 RGBA 后统计下 1/4 亮像素。screenShot 拿的是合成前原始帧, 不含字幕。
+inline Attempt subtitleAttempt(const PlayCase& c) {
+  Attempt r;
+  IMediaPlayer* player = createMediaPlayer();
+  if (!player) {
+    r.note = "createMediaPlayer-null";
+    return r;
+  }
+  CaseOb iob;
+  addMediaPlayerOb(player, &iob);
+  ISurfaceRender* sr = player->getSurfaceRender();
+  sr->setOffSurface(YuvType::yuv420P);
+  SubtitleOb sob;
+  addSurfaceRenderOb(sr, &sob);
+  // 注意: 不要在此 setIoPlan/setHardDecode —— 字幕用例是本地文件, 走默认 ffmpeg 计划
+  // 即可; 官方 subtitletexttest 也是直接 open, 不调这俩, 调了反而与已验证链路不一致。
+  player->open(c.url.c_str());
+  // 起播等待严格复刻官方: 仅判 playing(不卡 fps>0, 离屏场景更稳, 也避免无谓等待)
+  bool playing = false;
+  for (int i = 0; i < 150; ++i) {
+    if (player->getState() == PlayerState::playing) {
+      playing = true;
+      break;
+    }
+    if (iob.hasIoError()) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
+  if (!playing) {
+    removeMediaPlayerOb(player, &iob);
+    player->close();
+    delete player;
+    r.note = "no-frames";
+    return r;
+  }
+  bool subOk = true;
+  bool embeddedTrackOk = false;  // 内嵌: 选轨后 subtitleSize()>0 即管线通
+  std::string subNote;
+  if (!c.subPath.empty()) {
+    // 外挂: 必须显式加载, 返回 bool —— 加载失败说明 API/文件路径/解码链有问题
+    bool loaded = player->loadSubtitle(c.subPath.c_str());
+    if (!loaded) {
+      subOk = false;
+      subNote = "loadSubtitle-failed";
+    }
+  } else {
+    // 内嵌: 选轨 (void); 直接选声明的 track, 再确认该轨确实被解封装暴露出来
+    player->setSubtitleTrack(c.subTrack);
+    ISourceInfo* info = player->getSourceInfo();
+    embeddedTrackOk = info && info->subtitleSize() > 0;
+  }
+  if (subOk && c.subStyle) {
+    // 样式链路取证(字幕样式设计.md 验收 1/3): 字号放大 + 黄色 + CPU 清晰
+    // 缩放 + 半透明。黄(255)*0.8=204 仍高于亮像素阈值(120), 判据不受影响;
+    // 几何样式(align/position/margin)由 test_subtitle_style 单测覆盖。
+    // 走宿主唯一入口 getSubtitle()(IMediaPlayer 不继承 ISubtitle)
+    ISubtitle* sub = player->getSubtitle();
+    if (sub) {
+      sub->setFont("simhei.ttf", 64);
+      sub->setColor(1.f, 1.f, 0.f);
+      sub->setScale(1.5f);
+      sub->setOpacity(0.8f);
+    }
+  }
+  sob.arm();  // 字幕槽激活后再开始统计字幕带亮像素
+  for (int32_t i = 0; i < c.seconds; ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+  }
+  int32_t maxBright = sob.maxBrightCount();
+  int64_t subFrames = sob.subtitleFrameCount();
+  int64_t totalFrames = sob.totalFrameCount();
+  // 析构顺序严格复刻官方(先 close 再 remove 观察者): 否则离屏渲染线程在
+  // removeSurfaceRenderOb 后可能仍回调/close 内部引用已摘除的 observer → 段错误。
+  player->close();
+  removeSurfaceRenderOb(sr, &sob);
+  removeMediaPlayerOb(player, &iob);
+  delete player;
+  bool rendered = maxBright > 40;
+  bool pass;
+  if (c.subPath.empty()) {
+    // 内嵌: 选轨成功(subtitleSize>0)即证明内嵌字幕管线(解封装+选轨)通;
+    // 能渲染(maxBright>40)则更强 —— ASS 经 libass 会渲染, subrip/mov_text
+    // 当前 avox 仅选轨不渲染, 故以"选轨成功"为通过判据(渲染待 avox 补齐)
+    pass = subOk && embeddedTrackOk;
+  } else {
+    // 外挂: 必须加载成功且字幕带出现亮像素(渲染链路通)
+    pass = subOk && rendered;
+  }
+  char buf[384];
+  std::snprintf(buf, sizeof(buf),
+                "subOk=%d rendered=%d maxBright=%d subFrames=%lld totalFrames=%lld trackOk=%d sub=%s",
+                (int)subOk, (int)rendered, maxBright, (long long)subFrames,
+                (long long)totalFrames, (int)embeddedTrackOk,
+                c.subPath.empty() ? ("track#" + std::to_string(c.subTrack)).c_str()
+                                 : c.subPath.c_str());
+  if (!pass) {
+    if (!subOk) r.note = subNote + " ";
+    else if (c.subPath.empty() && !embeddedTrackOk)
+      r.note = "embedded-track-not-selectable ";
+    else if (maxBright <= 40)
+      r.note = "no-subtitle-band(<=40) ";
+  }
+  r.note += buf;
+  r.pass = pass;
+  return r;
+}
+
 // ── 运行选项 ──
 struct RunOptions {
   std::string outDir;             // 录制/截图产物目录 (空 = 当前目录)
@@ -919,8 +1228,15 @@ struct RunOptions {
   int32_t retries = 3;            // 拉流失败重开次数
   std::vector<std::string> skip;  // 跳过的 case id
   bool includeDisabled = false;   // 是否连 enabled=false 的用例一起跑
+  std::string only;              // 非空时只跑 id 以此前缀开头的用例 (快速筛选, 如 "sub")
   // 每条用例结束回调 (宿主用于上屏/落盘); 空 = 不打
   void (*onCase)(const std::string& id, bool pass, const std::string& note) = nullptr;
+  // 每条用例开始回调 (界面走查宿主更新左上角说明横幅);
+  // idx/total = 实跑用例的序号(0-based)与总数, 跳过的不计
+  void (*onCaseStart)(const PlayCase& c, int32_t idx, int32_t total) = nullptr;
+  // 非空时: 宿主置位 (如界面走查关窗) 后, 当前用例跑完即停矩阵, 剩余不再开跑。
+  // 只影响"还跑不跑下一条", 判定行口径不变
+  const std::atomic<bool>* cancel = nullptr;
 };
 
 inline bool isSkipped(const RunOptions& opt, const std::string& id) {
@@ -942,12 +1258,35 @@ inline int runAll(const std::vector<PlayCase>& cases, void* surface, const RunOp
   int32_t skipped = 0;
   std::vector<std::string> failed;
   std::vector<std::string> skippedIds;
+  // 跳过与否的判据只此一份 (预统计 total 与主循环共用)
+  auto runnable = [&opt](const PlayCase& c) {
+    return !isSkipped(opt, c.id) && (opt.only.empty() || c.id.rfind(opt.only, 0) == 0) &&
+           (c.enabled || opt.includeDisabled);
+  };
+  int32_t total = 0;
   for (const PlayCase& c : cases) {
-    if (isSkipped(opt, c.id) || (!c.enabled && !opt.includeDisabled)) {
+    if (runnable(c)) {
+      ++total;
+    }
+  }
+  int32_t idx = 0;
+  for (const PlayCase& c : cases) {
+    if (!runnable(c)) {
       ++skipped;
       skippedIds.push_back(c.id);
       continue;
     }
+    // 界面走查关窗取消: 当前用例跑完后不再开新的 (判定行口径不变, 只补一行 info)
+    if (opt.cancel && opt.cancel->load()) {
+      std::printf("[info] matrix canceled before case=%s (walkthrough window closed)\n",
+                  c.id.c_str());
+      std::fflush(stdout);
+      break;
+    }
+    if (opt.onCaseStart) {
+      opt.onCaseStart(c, idx, total);
+    }
+    ++idx;
     Attempt r;
     switch (c.kind) {
       case CaseKind::pull: {
@@ -982,6 +1321,9 @@ inline int runAll(const std::vector<PlayCase>& cases, void* surface, const RunOp
       case CaseKind::yuvOut:
         r = yuvOutAttempt(c, joinPath(opt.outDir, opt.prefix));
         break;
+      case CaseKind::subtitle:
+        r = subtitleAttempt(c);
+        break;
     }
     verdict(c.id, r.pass, r.note);
     if (opt.onCase) {
@@ -1014,15 +1356,18 @@ inline int runAll(const std::vector<PlayCase>& cases, void* surface, const RunOp
   return fail == 0 ? 0 : 1;
 }
 
-// ── 用例表打印 (--list, 也用于生成文档) ──
+// ── 用例表打印 (--list, 也用于生成文档); desc 单独一行缩进展示 ──
 inline void printCases(const std::vector<PlayCase>& cases) {
   static const char* kKinds[] = {"pull",     "rtc",      "frame",   "shot",
-                                 "rec-copy", "rec-trans", "yuv-out"};
+                                 "rec-copy", "rec-trans", "yuv-out", "sub"};
   for (const PlayCase& c : cases) {
     const char* kind = kKinds[(int)c.kind];
     std::printf("%-20s %-10s io=%-11s dec=%-4s %2ds %s %s\n", c.id.c_str(), kind,
                 getIoPlanStr(c.io), c.hardDecode ? "hard" : "soft", c.seconds,
                 c.enabled ? "   " : "(off)", c.url.c_str());
+    if (!c.desc.empty()) {
+      std::printf("%22s # %s\n", "", c.desc.c_str());
+    }
   }
 }
 
