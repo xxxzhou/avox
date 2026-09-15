@@ -119,6 +119,7 @@ void SourcePlayer::cmdReady() {
     VideoDesc vdesc = vtracks[0].desc;
     LOGFLF(LogLevel::info, "video track: ", vdesc);
     subtitleView->setWindowRender(windowRender.get());
+    subtitleView->setStorageSize(vdesc.width, vdesc.height);
   }
   if (atracks.size() > 0) {
     AudioDesc adesc = atracks[0].desc;

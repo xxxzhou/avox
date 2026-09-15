@@ -33,8 +33,6 @@ bool SubtitleFile::loadFile(const char* path) {
     item.startMs = raw.startMs;
     item.endMs = raw.endMs;
     item.text = raw.text;
-    item.original = raw.text;
-    item.language = Language::none;
     items.push_back(item);
   }
   bool bHave = !items.empty();  

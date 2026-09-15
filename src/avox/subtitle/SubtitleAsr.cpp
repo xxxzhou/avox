@@ -36,8 +36,7 @@ void SubtitleAsr::onRunTask() {
     audioStt->start();
   }
   while (running()) {
-    checkTranslationState();
-    // 从结果队列取，翻译后存入字幕队列
+    // 从结果队列取，存入字幕队列
     SttTextResult item = {};
     if (resultQueue.dequeue(item)) {
       processResult(item);
@@ -47,9 +46,6 @@ void SubtitleAsr::onRunTask() {
   }
   if (audioStt) {
     audioStt->stop();
-  }
-  if (translator) {
-    translator->close();
   }
 }
 
@@ -68,45 +64,6 @@ void SubtitleAsr::setAudioDesc(AudioDesc desc) {
   if (audioStt) {
     audioStt->setAudioDesc(desc);
   }
-}
-
-void SubtitleAsr::enableTranslation() { translationEnabled = true; }
-
-void SubtitleAsr::disableTranslation() { translationEnabled = false; }
-
-void SubtitleAsr::checkTranslationState() {
-  if (!translator) {
-    // 通过 AvoxManager 工厂表拿翻译器(avox_translation 组件 loadModule 时注册),
-    // 解除对 avox_translation 的编译期 include 依赖; 组件未加载返回 nullptr, 翻译降级
-    translator = std::unique_ptr<BaseTranslator>(AvoxManager::Get().translatorHub.create("http"));
-    if (translator) {
-      bHttp = translator->open();
-    }
-    // http 不可用或加载失败(如无密钥), 改用 onnx
-    if (!bHttp) {
-      translator = std::unique_ptr<BaseTranslator>(AvoxManager::Get().translatorHub.create("onnx"));
-    }
-    std::string msg = bHttp ? "load http translator" : "load onnx translator";
-    LOGFLF(LogLevel::info, msg);
-  }
-  if (!translator) {
-    return;
-  }
-  if (translationEnabled && !translator->ready()) {
-    translator->open();
-  } else if (!translationEnabled && translator->ready()) {
-    translator->close();
-  }
-}
-
-const char* SubtitleAsr::translateText(const char* text) {
-  if (translator && translator->ready() && text) {
-    const char* result = translator->translate(text);
-    if (result && result[0] != '\0') {
-      return result;
-    }
-  }
-  return text;
 }
 
 const char* SubtitleAsr::getStreamingText() {
@@ -194,22 +151,7 @@ void SubtitleAsr::processResult(const SttTextResult& item) {
   SubtitleItem sub = {};
   sub.startMs = item.result.startPts;
   sub.endMs = item.result.endPts;
-  sub.original = item.text;
-  sub.language = item.result.lang;
   sub.text = item.text;
-  if (translationEnabled) {
-    bool btrans = bHttp || (!bHttp && item.result.lang == Language::ja);
-    if (translator && btrans) {
-      translator->setSourceLanguage(item.result.lang);
-      const char* translated = translateText(item.text.c_str());
-      // LOGFLF(LogLevel::info, "translated lang:", getLangCode(item.result.lang), "
-      // ",
-      //        item.text, "->", translated);
-      if (translated && translated[0] != '\0') {
-        sub.text = translated;
-      }
-    }
-  }
   std::lock_guard<std::mutex> lock(queueMutex);
   subtitleQueue.push_back(sub);
 }

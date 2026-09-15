@@ -20,6 +20,20 @@
 
 namespace avox {
 
+class MediaPlayer;
+
+// ASR 激活仲裁桥(getSubtitle 返回它): enableAsr 前先清内封轨/外挂槽,
+// 三槽位(内封轨/外挂文件/ASR)后激活者胜 — 计划 doc/plan/player/字幕模块合并计划.md
+class MPSubtitleProxy : public ISubtitle {
+ public:
+  explicit MPSubtitleProxy(MediaPlayer* p) : player(p) {}
+  void enableAsr() override;
+  void close() override;
+
+ private:
+  MediaPlayer* player = nullptr;
+};
+
 // 把所有播放相关对象，track,render创建与释放都尽量统一到播放器自身线程上执行
 // 减少相关对象需要同步导致的问题
 // 注意一定要先调用onOpen，然后再能调用onPacket
@@ -49,6 +63,8 @@ class MediaPlayer : public IMediaPlayer,
   std::vector<AudioTrackPtr> audioTracks;
   // 字幕显示
   std::unique_ptr<SubtitleView> subtitleView;
+  // ISubtitle 出口(enableAsr 方向的槽位仲裁桥)
+  std::unique_ptr<MPSubtitleProxy> subtitleProxy;
   // ASS/PGS 内封字幕轨视图(计划 §3.5): 选轨(setSubtitleTrack)后建通道,
   // 与 SRT/ASR 通道的互斥由调用方保证。extradata 由 IO 线程经 onPacket 存表,
   // 锁只护表本身; subTrackIndex 两线程读, atomic
@@ -64,8 +80,8 @@ class MediaPlayer : public IMediaPlayer,
   std::mutex subMetaMtx;
   std::vector<std::vector<char>> subExtradata;  // 局部轨索引 → ASS 剧本头
   std::atomic<int32_t> subTrackIndex{-1};
-  // cmdLoadSubtitleFile 的同步回执(命令在播放器线程执行)
-  bool loadSubFileResult = false;
+  // cmdLoadSubtitle 的同步回执(命令在播放器线程执行)
+  bool loadSubtitleResult = false;
   // 当前选中轨的剧本头是否已喂(选轨可能早于 IO 线程 parseStream)
   bool subTrackFeeded = false;
   // 相对于track的外部时钟
@@ -234,7 +250,7 @@ class MediaPlayer : public IMediaPlayer,
 
   virtual ISourceInfo* getSourceInfo() override;
   virtual void setSubtitleTrack(int32_t index) override;
-  virtual bool loadSubtitleFile(const char* path) override;
+  virtual bool loadSubtitle(const char* path) override;
   virtual int32_t subtitleTrackInfo(int32_t index, char* lang, int32_t langCap,
                                     char* title, int32_t titleCap,
                                     int32_t* outForced) override;
@@ -275,7 +291,12 @@ class MediaPlayer : public IMediaPlayer,
   void cmdIFrameMode(IFrameModeCommandPtr cmd);
   void cmdSetSubtitleTrack(int32_t index);
   void replayPendingSubs();
-  void cmdLoadSubtitleFile(const std::string& path);
+  void cmdLoadSubtitle(const std::string& path);
+
+ public:
+  // 三槽位仲裁(计划 字幕模块合并计划.md): ASR 激活(MPSubtitleProxy 调)时
+  // 清内封轨与外挂文件槽 — 后激活者胜, 空窗不回落
+  void onSubtitleActivate();
 
  public:
   // 解码队列遇到结束信号，调用

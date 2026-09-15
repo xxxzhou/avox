@@ -35,7 +35,7 @@ struct UpdateWindow {
   XX(SetRemoteSdp, 14, "setRemoteSdp", std::string)   \
   XX(IFrameMode, 15, "iframeMode", bool) \
   XX(SetSubtitleTrack, 16, "setSubtitleTrack", int32_t) \
-  XX(LoadSubtitleFile, 17, "loadSubtitleFile", std::string)
+  XX(LoadSubtitle, 17, "loadSubtitle", std::string)
 
 // 命令类型枚举
 enum class MPCommandType {

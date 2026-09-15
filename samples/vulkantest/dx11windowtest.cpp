@@ -119,10 +119,8 @@ int main(int argc, char** argv) {
   sr->setSurface(g_hwnd);
   mp->open(video);
   // 字幕联动 (Vulkan 合成层, 与 Unity 时序一致: enable 后加载)
-  if (mp->getSubtitle()) {
-    printf("srt load: %d\n",
-           (int)mp->getSubtitle()->loadSrt("D:/Work/github/avox/assets/video/avox_electron.srt"));
-  }
+  printf("srt load: %d\n",
+         (int)mp->loadSubtitle("D:/Work/github/avox/assets/video/avox_electron.srt"));
 
   // ── 路B: D3D11 NT 共享纹理导出 (图异步构建, 幂等重声明直到句柄就绪) ──
   uint64_t texHandle = 0;

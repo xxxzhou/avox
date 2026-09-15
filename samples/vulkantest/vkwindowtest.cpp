@@ -48,7 +48,7 @@ int main() {
   mp->setIoPlan(IoPlan::ffmpeg);
   mp->open("D://Back//美好.mp4");
   // 字幕渲染验证: 加载同目录 SRT
-  mp->getSubtitle()->loadSrt("D://Back//美好.srt");
+  mp->loadSubtitle("D://Back//美好.srt");
   // mp->setIoPlan(IoPlan::zlmediakit);
   // mp->open("D://Back//2.mp4");
   // 多播放器

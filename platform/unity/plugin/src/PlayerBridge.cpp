@@ -457,9 +457,8 @@ int32_t PlayerBridge::recordState() {
   return muxer ? (int32_t)muxer->getState() : 0;
 }
 
-bool PlayerBridge::loadSrt(const char* path) {
-  auto* sub = player ? player->getSubtitle() : nullptr;
-  return sub && path && path[0] ? sub->loadSrt(path) : false;
+bool PlayerBridge::loadSubtitle(const char* path) {
+  return player && path && path[0] ? player->loadSubtitle(path) : false;
 }
 
 void PlayerBridge::closeSubtitle() {

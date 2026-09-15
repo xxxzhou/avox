@@ -131,8 +131,8 @@ class PlayerBridge : public avox::IMediaPlayerOb, public avox::ISurfaceRenderOb 
   void stopRecord();
   // avox::RecorderState 数值 (0 none 1 opening 2 recording 3 completed)
   int32_t recordState();
-  // ── 字幕 (SRT 文件; ASR/翻译依赖可选模块, 未集成时 getSubtitle 为空) ──
-  bool loadSrt(const char* path);
+  // ── 字幕 (外挂文件 .ass/.srt, 引擎内部分流; ASR 依赖可选模块) ──
+  bool loadSubtitle(const char* path);
   void closeSubtitle();
 
  private:

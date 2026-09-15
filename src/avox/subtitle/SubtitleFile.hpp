@@ -18,7 +18,6 @@ class SubtitleFile {
  private:
   std::vector<SubtitleItem> items;
   int32_t currentIndex = -1;
-  bool translationEnabled = false;
 
  public:
   bool loadFile(const char* path);

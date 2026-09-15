@@ -104,12 +104,7 @@ namespace AvoxCommon
                 }
                 // 启用 ASR (MediaPlayer 内部固定使用 ptsSync 模式)
                 subtitle.enableAsr();
-                // 启用翻译（日转中）
-                if (config.EnableTranslation)
-                {
-                    subtitle.enableTranslation();
-                }
-                AvoxWrapper.logMsg(LogLevel.info, $"语音识别已启用: AsrMode=ptsSync, 翻译={config.EnableTranslation}");
+                AvoxWrapper.logMsg(LogLevel.info, "语音识别已启用: AsrMode=ptsSync");
             }
             catch (Exception ex)
             {

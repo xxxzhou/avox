@@ -48,7 +48,6 @@ int main(int argc, char* argv[]) {
   mp->open("D://Back//美好02.mp4");
   // mp->open("rtsp://127.0.0.1/live/test");
   subtitle = mp->getSubtitle();
-  subtitle->enableTranslation();
   subtitle->enableAsr();
   // win32 消息循环
   bool m_running = true;

@@ -216,7 +216,7 @@ AVOX_UNITY_API int32_t avoxPlayerGetRecordState(avox_player_t player) {
 // ── 字幕 ──
 
 AVOX_UNITY_API int32_t avoxPlayerLoadSrt(avox_player_t player, const char* path) {
-  return player ? (((PlayerBridge*)player)->loadSrt(path) ? 1 : 0) : 0;
+  return player ? (((PlayerBridge*)player)->loadSubtitle(path) ? 1 : 0) : 0;
 }
 
 AVOX_UNITY_API void avoxPlayerCloseSubtitle(avox_player_t player) {

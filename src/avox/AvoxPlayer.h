@@ -12,17 +12,13 @@ enum class AsrMode {
   ptsSync     // PTS同步模式：队列查找
 };
 
-// 字幕视图接口
+// 字幕视图接口(ASR 实时识别控制; 外挂字幕文件走 IMediaPlayer::loadSubtitle,
+// 内封字幕轨走 IMediaPlayer::setSubtitleTrack — 三槽位互斥由引擎内仲裁)
 class ISubtitle {
  public:
   virtual ~ISubtitle() = default;
-  // 字幕文件
-  virtual bool loadSrt(const char* path) = 0;
   // ASR 控制
   virtual void enableAsr() = 0;
-  // 翻译
-  virtual void enableTranslation() = 0;
-  virtual void disableTranslation() = 0;
   // 关闭加载的字幕或是ASR
   virtual void close() = 0;
 };
@@ -182,8 +178,9 @@ class IMediaPlayer {
   // 走 avox_ass 插件渲染(计划 ASS字幕渲染计划.md); 未装插件时选轨无效(降级)。
   // 带默认实现: 既有 IMediaPlayer 实现者零影响
   virtual void setSubtitleTrack(int32_t index) {}
-  // 外挂字幕文件(.ass 直载/.srt 转 ASS): 走同一 overlay 通道; 无插件返回 false
-  virtual bool loadSubtitleFile(const char* path) {
+  // 外挂字幕文件唯一入口(.ass/.srt, 内部按扩展名分流渲染路径), 激活外挂槽
+  // (清内封轨与 ASR — 三槽位后激活者胜); 无插件且非文本文件返回 false
+  virtual bool loadSubtitle(const char* path) {
     (void)path;
     return false;
   }

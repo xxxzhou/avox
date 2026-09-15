@@ -79,9 +79,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   // 字幕联动验证 (与 Unity 时序一致: enable 后加载)
-  if (mp->getSubtitle()) {
-    printf("srt load: %d\n", (int)mp->getSubtitle()->loadSrt("D:/Work/github/avox/assets/video/avox_electron.srt"));
-  }
+  printf("srt load: %d\n", (int)mp->loadSubtitle("D:/Work/github/avox/assets/video/avox_electron.srt"));
   // ── 轮询共享句柄 (图异步构建) ──
   // 字幕加载等会触发图重建并丢失 dx11 声明, 轮询期幂等重声明 (同 Unity/Godot 桥)
   uint64_t texHandle = 0;

@@ -320,7 +320,7 @@ String MediaPlayer::getUrl() const {
 bool MediaPlayer::loadSubtitle(const String &p_path) {
     if (!player) return false;
     // 同目录扫描/自动加载/多候选选择在 GDScript 侧 (同 Unity 的 C# 层), 桥接只管加载
-    return player->getSubtitle()->loadSrt(p_path.utf8().get_data());
+    return player->loadSubtitle(p_path.utf8().get_data());
 }
 
 void MediaPlayer::closeSubtitle() {

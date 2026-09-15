@@ -1,5 +1,7 @@
 #include "MediaPlayer.hpp"
 
+#include <cctype>
+#include <cstring>
 #include <thread>
 
 #include "../AvoxVersion.h"
@@ -39,6 +41,7 @@ MediaPlayer::MediaPlayer() {
   }
   subtitleView = std::make_unique<SubtitleView>();
   subtitleView->setAsrMode(AsrMode::ptsSync);
+  subtitleProxy = std::make_unique<MPSubtitleProxy>(this);
   clock = std::make_unique<Clock>();
   // 埋点单独线程
   mpPingback = std::make_unique<MPPingQueue>();
@@ -471,37 +474,64 @@ void MediaPlayer::setSubtitleTrack(int32_t index) {
   pushPB<MPPBType::MediaAction>(mpPingback.get(), pb);
 }
 
-bool MediaPlayer::loadSubtitleFile(const char* path) {
+// 后缀匹配(大小写不敏感)
+static bool hasExt(const std::string& path, const char* ext) {
+  const size_t n = path.size();
+  const size_t m = strlen(ext);
+  if (n < m) {
+    return false;
+  }
+  for (size_t i = 0; i < m; ++i) {
+    if (tolower((unsigned char)path[n - m + i]) != tolower((unsigned char)ext[i])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool MediaPlayer::loadSubtitle(const char* path) {
   if (!path) {
     return false;
   }
-  auto cmd = createCommand<MPCommandType::LoadSubtitleFile>(std::string(path));
+  auto cmd = createCommand<MPCommandType::LoadSubtitle>(std::string(path));
   mpCommands.enqueueWait(cmd);
-  return loadSubFileResult;
+  return loadSubtitleResult;
 }
 
-void MediaPlayer::cmdLoadSubtitleFile(const std::string& path) {
-  loadSubFileResult = false;
-  if (!assOverlayView) {
-    assOverlayView = std::make_unique<AssOverlayView>();
+void MediaPlayer::cmdLoadSubtitle(const std::string& path) {
+  loadSubtitleResult = false;
+  // 外挂激活(后激活者胜): 清内封轨通道与旧文件/ASR 槽
+  if (assOverlayView) {
+    assOverlayView->close();
   }
+  subtitleView->close();
   // 外挂模式: 无内封轨号, 内封包按 subTrackIndex 过滤全丢弃(-2 不等于任何局部轨)
   subTrackIndex = -2;
-  bool attached = false;
-  for (const auto& vtrack : videoTracks) {
-    if (vtrack && vtrack->vaild()) {
-      vtrack->attachAssOverlay(assOverlayView.get());
-      attached = true;
+  // 扩展名分流: .ass/.ssa → libass 插件; 其余(.srt) → 文件路径(P2 切光栅化器)
+  if (hasExt(path, ".ass") || hasExt(path, ".ssa")) {
+    if (!assOverlayView) {
+      assOverlayView = std::make_unique<AssOverlayView>();
     }
+    bool attached = false;
+    for (const auto& vtrack : videoTracks) {
+      if (vtrack && vtrack->vaild()) {
+        vtrack->attachAssOverlay(assOverlayView.get());
+        attached = true;
+      }
+    }
+    if (!attached) {
+      LOGFLF(LogLevel::warn, "loadSubtitle: no valid video track");
+      return;
+    }
+    loadSubtitleResult = assOverlayView->loadFile(path.c_str());
+    replayPendingSubs();
+  } else {
+    loadSubtitleResult = subtitleView->loadFile(path.c_str());
+    // 内封包不再回放, 丢弃排队残留
+    std::lock_guard<std::mutex> lock(subMetaMtx);
+    pendingSubs.clear();
   }
-  if (!attached) {
-    LOGFLF(LogLevel::warn, "loadSubtitleFile: no valid video track");
-    return;
-  }
-  loadSubFileResult = assOverlayView->loadFile(path.c_str());
-  replayPendingSubs();
-  LOGFLF(LogLevel::info, "loadSubtitleFile:", path,
-         " ok:", loadSubFileResult);
+  LOGFLF(LogLevel::info, "loadSubtitle:", path, " ok:", loadSubtitleResult);
 }
 
 void MediaPlayer::replayPendingSubs() {
@@ -567,6 +597,8 @@ void MediaPlayer::cmdSetSubtitleTrack(int32_t index) {
     LOGFLF(LogLevel::info, "subtitle track off");
     return;
   }
+  // 选轨激活(后激活者胜): 清外挂文件与 ASR 槽
+  subtitleView->close();
   if (!assOverlayView) {
     assOverlayView = std::make_unique<AssOverlayView>();
   }
@@ -645,7 +677,26 @@ IMediaMuxer* MediaPlayer::getMuxer(bool bTranscode) {
   return mediaMuxer.get();
 }
 
-ISubtitle* MediaPlayer::getSubtitle() { return subtitleView.get(); }
+ISubtitle* MediaPlayer::getSubtitle() { return subtitleProxy.get(); }
+
+void MPSubtitleProxy::enableAsr() {
+  // ASR 激活(后激活者胜): 先清内封轨/外挂槽, 再开 ASR
+  player->onSubtitleActivate();
+  player->getSubtitleView()->enableAsr();
+}
+
+void MPSubtitleProxy::close() { player->getSubtitleView()->close(); }
+
+void MediaPlayer::onSubtitleActivate() {
+  subTrackIndex = -1;
+  if (ioSource) {
+    ioSource->setSelectedSubtitle(-1);
+  }
+  if (assOverlayView) {
+    assOverlayView->close();
+  }
+  subtitleView->closeFile();
+}
 
 PlayerState MediaPlayer::getState() { return state; }
 
@@ -1003,8 +1054,8 @@ void MediaPlayer::onRunTask() {
           cmdSetSubtitleTrack(getCommand<MPCommandType::SetSubtitleTrack>(cmd)->getData());
           break;
         }
-        case MPCommandType::LoadSubtitleFile: {
-          cmdLoadSubtitleFile(getCommand<MPCommandType::LoadSubtitleFile>(cmd)->getData());
+        case MPCommandType::LoadSubtitle: {
+          cmdLoadSubtitle(getCommand<MPCommandType::LoadSubtitle>(cmd)->getData());
           break;
         }
         default:
