@@ -310,28 +310,22 @@ Android commercial 构建 (LGPL 无 libx264) 没有注册任何 FF 软编, 转�
   (`maxDequeue`), 解码线程被反压到 `enqueueWait` 阻塞同量级(`maxEnqueue`)。整场只解出
   46 帧 / 消费 36 帧。这不影响判定(产物仍正确), 但解释了两件事: ①为何一次 seek 就能让
   编码器一包不出; ②转码录制的实际帧率远低于源帧率, 需要时另开用例量化。
-- **录制中途 seek 之后 IO 不再投包 (Windows, 09-16 定位, 必现)**: 哨兵用例
-  `rec-transcode-seek` (默认 off)。**每轮清空产物后 4/4 必现** `bytes=-1` —— 此前判为
-  "偶发/竞态"是错的, 那是下一条「产物残留」缺陷造成的假象。取证: `cmdSeek` 全程 371ms
-  正常返回 (`seekTo=1 seekType=1`), 但 `pkts/frames` 计数**在 seek 处冻结**
-  (`pkts=19 frames=12 consumed=10`, 渲染循环仍空转 235 次 `sync=nodata`) → seek 之后
-  IO 层不再投递任何包 → 解码器无输入 → 编码器无包 → io 层
-  `IOMuxer::onRunTask` 等不到首个 I 帧包 (`packtype=video && frameType=1`) → `onInit()` 不执行
-  → `avio_open2`/`write_header` 从未跑过 → **文件从未创建** → `bytes=-1`。
-  `IOMuxer::onRunTask` 等不到首个 I 帧包 (`packtype=video && frameType=1`) → `onInit()` 不执行
-  → `avio_open2`/`write_header` 从未跑过 → **文件从未创建** → `bytes=-1`。
-  对照实验 (同二进制同素材, 仅去掉那次 seek): 真 PASS, 产出 1.2MB mp4; 同期取证
-  `setVideoDesc ... pick=h264_mf` (按名精确命中, 无 fallback)、`avcodec_open2 ret=0 pix=0
-  (yuv420P) 640x360`、`send ret=0` —— **编码器白名单 / 像素格式 / 描述尺寸 / muxer 类型都已排除**,
-  且 `onResetDecoder` 全程未触发 (`setResetDecoderFlag` 只由 `cmdResetDecode` 调用, seek 路径
-  不经过它) —— 早先怀疑的"解码器重启握手"也不是原因。
-  指控区间已收窄到 **IO 层 seek 握手** (`IOParseFF::seekTo`): `pauseTask()` 后靠读循环顶的
-  `pauseing()` 分支置 `bIoPausedAck`, 等待最多 10×20ms; 若读线程当时正阻塞在下游
-  `enqueueWait`/`dispatch` 而不是循环顶, 这次 ack 会等不到 → 超时直接放行(只是"没能独占
-  fmtCtx", 不报错), 随后 `resumeTask()`; 之后 IO 线程若无唤醒就**永久停住**, 与观测到的
-  "seek 后 pkts 冻结"一致。待下一步在此处插桩确认(确定性复现已具备: 也可用故障注入 ——
-  在帧队列锁内的渲染临界区插 120ms 延时, 该临界区实测本就有 ~180~280ms)。
-  另: 该用例同样必现于不注入延时的普通构建 (4/4)，注入只是把竞态窗口放大到必中。
+- **录制中途 seek 后不再出数据 (Windows, 09-16 定位并修复)**: 用例 `rec-transcode-seek`
+  (修复后默认跑)。根因既不在 seek 也不在编码器: **本地短文件的包数(886) ≤ 点播包队列上限
+  (1000)** → 起播阶段无背压, 读线程 ~2ms 读完整个 12s 文件 → `EOF` → `IOParseFF` 读循环
+  `break` **拆掉读线程** → 1.4s 后的 seek 只挪了 demuxer 位置却已无人读 → 编码器 0 包 →
+  io 层 `IOMuxer::onRunTask` 等不到首个 I 帧包 (`packtype=video && frameType=1`) →
+  `onInit()` 不执行 → `avio_open2` 从未跑 → 文件从未创建 (`bytes=-1`)。
+  取证: IO 侧 `878 包 / ~2ms 读完` 且 `EOF -> onComplete` 比 `preSeek` 早 1.4s; 分层计数证明
+  **零丢包** (`IO dispatch=878 / MP::onPacket push=886 / AVTrack::pushPacket in=886`, 队列填不满
+  故读线程毫无背压)。同期排除: 编码器白名单 (`pick=h264_mf` 精确命中) / 像素格式
+  (`avcodec_open2 ret=0 pix=yuv420P`) / 描述尺寸 / muxer 类型 / 解码器重启握手
+  (`onResetDecoder` 全程未触发 —— `setResetDecoderFlag` 只由 `cmdResetDecode` 调用)。
+  修法 (`IOParseFF`): **EOF 停放** —— 读到尾不再 `break` 拆线程, 停在循环里等 `seekTo` 成功后的
+  `bEofReset` 复位继续读(或 `running()==false` 由 `close` 退出); `onComplete` 每次 EOF 只报一次。
+  同族影响: 队列容量 ≥ 整文件包数时"读满即 EOF"不再是终态, 因此 seek 到已缓冲区间之后仍能续读。
+  验证: `rec-transcode-seek` 3/3 PASS (1.02~1.08MB, 大小各异 = 真写出而非残留); 无 seek 转码录制
+  与完整离线子集无回归 (`pass=25 fail=0 skip=17`); `ctest` 2/2。
 - **macOS 无头跑 LAN 全 FAIL 的新手坑**: `nohup`/脱离会话的进程, macOS 26 静默拒绝其
   本地网络访问 (errno 65, 无弹窗不进 TCC), 全部 LAN 用例报 *No route to host* ——
   不是权限没授 (列表里永远找不到它), 把 runner 挂在存活会话里跑即解。

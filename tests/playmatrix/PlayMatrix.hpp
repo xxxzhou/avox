@@ -278,19 +278,18 @@ inline std::vector<PlayCase> buildCases(const Endpoints& ep) {
   special("rec-transcode-h264", CaseKind::recordTranscode, ep.fileH264, 8,
           "转码录制用例: 窗口无画面; 产物 pm_trans.mp4 ≥8KB 且应可正常播放");
   {
-    // 录制中途 seek: 独立成 case, 塞进 rec-transcode-* 会把"seek 后视频帧是否
-    // 恢复"这条另一链路的缺陷混进转码录制的判定里。Windows 实测: seek 后帧流
-    // 不再恢复 → 编码器只收到 1~2 帧 → 无包 → io 层永不建文件 → 产物缺失
-    // (bytes=-1); 但同一台机器重复跑也有通过的一次 (bytes=2.1MB) → 竞态/偶发,
-    // 故默认 off 单独跟踪 (flaky 用例不能当 CI 门禁), --all 显式打开
+    // 录制中途 seek: 与 rec-transcode-* 分开, 让"转码录制"与"seek 后能否继续出数据"
+    // 两条链路各自独立判定。09-16 定位并修复的缺陷: 本地短文件包数(886) ≤ 点播包队列
+    // 上限(1000) → 起播无背压毫秒级读满 → EOF → 读循环 break 拆掉读线程 → 之后 seek
+    // 只挪了 demuxer 位置却无人再读 → 编码器 0 包 → 产物缺失(bytes=-1)。
+    // 修法: IOParseFF "EOF 停放"(不拆线程, seekTo 成功后 bEofReset 复位继续读)
     PlayCase c;
     c.id = "rec-transcode-seek";
     c.kind = CaseKind::recordTranscode;
     c.url = ep.fileH264;
     c.seconds = 8;
     c.seekMid = true;
-    c.enabled = false;
-    c.desc = "偶发缺陷 (Windows, 竞态): 录制中途 seek 后视频帧流不恢复 → 产物缺失";
+    c.desc = "转码录制中途 seek 到半长: 窗口无画面; 产物 pm_trans.mp4 ≥8KB (seek 后仍持续出数据)";
     cases.push_back(c);
   }
   // F 无vulkan直取 (车道B): 关 vulkan 走平台原生渲染 + enableYuvOut, 严格判交付帧类型。
