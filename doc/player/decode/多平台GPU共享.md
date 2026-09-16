@@ -1,5 +1,8 @@
 # 多平台GPU共享 (GPU 直通)
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 管线分工: 硬解可能是 DX11/MediaCodec/VT, 但图像处理与字幕渲染统一在 Vulkan
 合成层 → 前台交互的本质是 **Vulkan(合成结果) ↔ 前台宿主** 的 GPU 直通。
 unity/godot 插件是两个参考消费端 (`platform/unity/plugin/src/GpuPassthrough.cpp`,

@@ -1,5 +1,8 @@
 # ASS/SSA 字幕渲染计划(avox_ass 磁力模块)
 
+> 状态: 进行中 · 上次核对: 2026-09-16 · 权威源: -
+
+
 > 2026-09-13 调研与规划,同日启动实施。
 > **M1 已完成**:四库产物出全并入库 **avc_library** `3rdparty/library/windows/ass/`
 > (Windows: ass-9.dll/ass.lib、fribidi-0.dll、harfbuzz.dll、freetype.dll;

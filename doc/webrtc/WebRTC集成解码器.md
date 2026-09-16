@@ -1,5 +1,8 @@
 # WebRTC集成本地播放器解码器实践
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 如下是现在实现效果，windows 平台拉 WebRTC 的H264数据，调用当前播放器已封装的 dx11va 硬解并渲染出来。
 
 ![webrtc decoder](../../assets/images/media/webrtc%20decoder.png)

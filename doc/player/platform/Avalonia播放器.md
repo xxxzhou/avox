@@ -1,5 +1,8 @@
 # Avalonia跨平台播放器开发
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 在差不多完成各个平台播放器的功能后,想重新写个相对完整的demo,用来演示与测试完成的各个功能,之前各平台如windows用win32/winform,ios用objc,android用java实现了各自原生界面播放流媒体的测试,之后在音频源,视频源,推拉流,双向通话等各个功能越来越多的基础上,每个平台都需要扩展测试,并且之后还要加入linux/mac,太麻烦了,不想用C++写界面相关的,首先AI生成的C++没别的语言好用,二是麻烦,这样就不考虑QT了,刚好前不久看到avalonia,仔细查看[avalonia的文档](https://docs.avaloniaui.net/zh-Hans/docs/overview/supported-platforms)及用avalonia实现的开源项目后,认为可行,如下是当前用avalonia在各平台调用底层C++实现的播放器前端,前期用来验证方案可行性.
 
 <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">

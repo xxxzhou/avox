@@ -1,5 +1,8 @@
 # WSL编译WebRTC
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 [WebRTC M137 Android版本编译](https://blog.csdn.net/rosyrays1/article/details/148355150)
 [WebRTC安卓编译](https://blog.jianchihu.net/webrtc-android-build-guide.html)
 [编译源码](https://webrtc.mthli.com/basic/webrtc-compilation/)

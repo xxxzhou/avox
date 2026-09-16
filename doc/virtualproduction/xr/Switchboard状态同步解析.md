@@ -2,6 +2,9 @@
 
 # Switchboard状态同步解析
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 作为管理UE4使用多台机器nDisplay合作渲染工具,包含文件同步,多台机器状态监控等功能.
 
 具主要代码在Engine\Source\Programs\SwitchboardListener模块里,此模块实现大部分功能,包含多台机器TCP连接,机器GPU/CPU信息获取,消息传递,文件同步更新等.

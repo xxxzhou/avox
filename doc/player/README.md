@@ -1,5 +1,8 @@
 # 播放器文档子集
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 avox 播放器 (IMediaPlayer/ISourcePlayer) 相关文档总索引。架构总览见 [Code Wiki](../code-wiki/README.md), 虚拟制片相关见 [virtualproduction](../virtualproduction/README.md)。
 
 ## 阅读顺序建议

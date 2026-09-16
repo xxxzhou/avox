@@ -1,5 +1,8 @@
 # IOS硬解经IOSurface高效到Vulkan管线
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 在Andoird有[Android硬解经AHardwareBuffer高效到Vulkan管线](https://zhuanlan.zhihu.com/p/1933240978434679422)，windows有[播放器FFmpeg](https://zhuanlan.zhihu.com/p/1924537408311001536)/[Vulkan与DX11交互](https://zhuanlan.zhihu.com/p/349534525)，都能把硬解出来的原生GPU纹理映射到Vulkan纹理。现在就差一个Apple平台了，和Android一样，原来硬解出来后GPU数据要给Vulkan管线，通过CVPixelBufferLockBaseAddress把数据mpa到内存，比较低效，和windows/android平台一样，搜索相应的跨线程/进程图像共享方案，windows是纹理共享句柄，android是AHardwareBuffer，而IOS就是IOSurface，相比前二者文档还有一些，而IOSurface本身资料较少，其Metal/IOSurface/Vulkan交互的资料就更少了，花了一天时间，串联各个AI提供的资料与代码，总算把这个流程跑起来了。
 
 ## 输出到IOSurface

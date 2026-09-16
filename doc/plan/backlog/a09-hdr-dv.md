@@ -1,5 +1,8 @@
 # A-9 HDR/DV:P5 兼容层 + 高质量 tone mapping + HDR 直通 + SDR↔HDR
 
+> 状态: 进行中 · 上次核对: 2026-09-16 · 权威源: -
+
+
 优先级 P1 · 里程碑 M4 · 计划状态:就绪(基线比 backlog 想象的好)
 对标 libplacebo 关键路径;SDR↔HDR 转换是 SenPlayer 同款卖点。
 

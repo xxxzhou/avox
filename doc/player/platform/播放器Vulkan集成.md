@@ -1,5 +1,8 @@
 # 播放器多平台Vulkan集成
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 Vulkan在当前项目做为Windows/Android/IOS的通用渲染层，承接所有平台软解后的渲染，有完善的滤境处理图[Vulkan滤镜处理管线](https://zhuanlan.zhihu.com/p/388055520)，其windows平台硬解的dx11纹理可以直接通过GPU对接到vulkan中，而Android/IOS平台的硬解数据除了对接opengles/metal的渲染外，还对接硬解数据map下来后到vulkan渲染管线中，在这修正下，已完成[Android硬解对接Vulkan](../../platforms/android/Android硬解Vulkan.md)/[IOS硬解对接Vulkan](../../platforms/ios/IOS硬解Vulkan.md)，意思所有平台的硬解都能高效直接到vulkan中。可以看到Vulkan在当前项目使用非常广泛。并且vulkan已经有个各平台的统一硬解方案，这样后续可以得到一个多平台统一vulkan硬解+渲染的高性方案。
 
 当前项目先实现的windows平台，引入vulkan的方案就是在cmake使用find_library引入vulkan的库，然后在代码中使用vulkan的函数，后面在android和ios平台接入vulkan，都是动态加载库的方式，所以为了统一所有平台vulkan的函数调用，都使用了动态加载库的方式。

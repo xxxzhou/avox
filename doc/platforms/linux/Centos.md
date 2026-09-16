@@ -1,5 +1,8 @@
 # 管理员
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 [Linux命令之修改/etc/sudoers文件visudo](https://blog.csdn.net/cnds123321/article/details/125162222)
 进入超级用户模式，输入su -,后面加-表示切换到根目录下。
 提示不是is not in the sudoers file。

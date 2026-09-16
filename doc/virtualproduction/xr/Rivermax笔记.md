@@ -1,3 +1,6 @@
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 > 整理自 aocec 仓库 `doc/virtualproduction/Rivermax开发.md`, 2026-09 同步。文中残留的 `../../code/`、`../../glsl/`、`../../assets/`、`../../UE4Test/` 等相对路径指向 aocec 仓库对应文件。两篇合并(开发笔记 + 传输实现分析)。
 
 ## Rivermax开发
@@ -8,7 +11,7 @@
 
 [Rivermax模块代码](../../code/aoce_rivermax)
 
-[Demo](../../samples/rivermaxtest)
+Demo: `samples/rivermaxtest` (aocec 仓库同名样例, 本仓无)
 
 ## SDK解析
 

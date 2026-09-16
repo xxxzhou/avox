@@ -1,5 +1,8 @@
 # FFmpeg
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 ## 文档
 
 [在Windows上编译FFmpeg库](https://zhuanlan.zhihu.com/p/16550406805)

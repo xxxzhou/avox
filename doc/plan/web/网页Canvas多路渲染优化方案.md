@@ -1,5 +1,8 @@
 # 网页 Canvas 多路渲染优化方案
 
+> 状态: 进行中 · 上次核对: 2026-09-16 · 权威源: -
+
+
 > 适用场景:Electron 内嵌 `<canvas>` 多路播放(Intel UHD 770 集显,10 路 1080P 起卡顿)。
 > 本文只做方案分析与取舍,不改代码。相关现状见 [播放器Electron](../../player/platform/播放器Electron.md)、[OffscreenCanvas自适应分辨率设计](./OffscreenCanvas自适应分辨率设计.md)、[多平台GPU共享](../../player/decode/多平台GPU共享.md)。
 

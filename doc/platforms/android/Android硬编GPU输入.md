@@ -1,5 +1,8 @@
 # Android MediaCodec GPU编码实践
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 集成ffmpeg的软编后,在windows/android/ios/linux都很容易适配,不过硬编和硬解一样,不同的平台原生实现差别还是比较大,记录下在android平台硬编的实现.
 
 如果是传入NV12的CPU数据,网上有不少实现,让AI写也能快速实现,但是如果是[NdkCamera2使用OES纹理渲染](NdkCamera2使用OES纹理.md)编码相机直出的OES纹理就有些麻烦了,更进一步,相机数据处理后,如加入AI识别,字体渲染,大小变化后的GPU数据直接给硬编,就更复杂了,本文记录了如何使用android原生硬编对接GPU输入.

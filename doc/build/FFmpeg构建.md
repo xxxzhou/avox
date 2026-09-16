@@ -1,5 +1,8 @@
 # 编译FFmpeg
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 ## windows
 
 [在Windows上编译FFmpeg库](https://zhuanlan.zhihu.com/p/16550406805)
@@ -62,4 +65,4 @@ ffmpeg -hwaccel d3d11va -i D:/Back/美好.mp4 -c:v h264_qsv output1.mp4
 
 ## android
 
-[交叉编译](../android/交叉编译.md)
+[交叉编译](../platforms/android/交叉编译.md)

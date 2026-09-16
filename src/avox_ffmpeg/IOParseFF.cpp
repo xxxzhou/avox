@@ -656,8 +656,18 @@ bool IOParseFF::seekTo(int64_t pos) {
   // 等 IO 线程确认已退出 av_read_frame (最多约200ms), 之后再独占 fmtCtx 做
   // seek, 避免 avformat_seek_file 与 av_read_frame 并发操作同一 fmtCtx 崩溃
   bIoPausedAck.store(false);
-  for (int i = 0; i < 10 && !bIoPausedAck.load(); ++i) {
+  int32_t ackWait = 0;
+  for (; ackWait < 10 && !bIoPausedAck.load(); ++ackWait) {
     sleepTask(false, 20);
+  }
+  const bool bIoAcked = bIoPausedAck.load();
+  if (!bIoAcked) {
+    // 静默超时是历史盲点: 读线程当时不在循环顶(多半正阻塞在下游 enqueueWait /
+    // dispatch 里, 例如消费端卡住), 此时继续 avformat_seek_file 与 av_read_frame
+    // 并发操作 fmtCtx 有风险, 而现场只会看到"seek 后没数据"这种无痕症状。
+    // 留痕并带上等待时长/目标位置, 便于定位
+    LOGFLF(LogLevel::warn, "seek: IO thread not paused in ", ackWait * 20,
+           "ms (no bIoPausedAck), seeking fmtCtx anyway. pos:", pos);
   }
   // IO 线程已确认不在读, 清除打断标记, 让 avformat_seek_file 自身不被中断
   bInterruptRead.store(false);

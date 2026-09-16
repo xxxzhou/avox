@@ -1,5 +1,8 @@
 # 播放器 IOS
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 ## VideoToolbox 硬解
 
 VideoToolbox 是 IOS 的硬解接口。

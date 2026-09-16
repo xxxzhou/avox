@@ -1,5 +1,8 @@
 # 基于C++与NodeJs的Electron播放器Demo
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 如下是现在效果图:
 
 [视频](../../assets/video/avc_electron.mp4)

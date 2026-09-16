@@ -1,5 +1,8 @@
 # Android Studio
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 ## Mediacodec 硬解码
 
 1. 得到SurfaceTexture 里的纹理，Surface。GLWindow需要包含Surface,GLContext.

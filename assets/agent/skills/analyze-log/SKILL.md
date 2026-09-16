@@ -1,7 +1,7 @@
 ---
 name: analyze-log
-description: 分析已采集的 avox 播放日志(渲染日志)。**仅在用户提供了具体日志名/路径**(如 play_*.log / renderer.log / 完整文件路径)时使用;严禁基于"为什么下不来 / 播放失败 / 卡顿"等宽泛描述自动加载。判定 IO 成败、流信息、解码、耗时、音视频同步、playing↔buffering、[ZL]/[FF] 根因。avox_cli 的 play_*.log 在 <运行目录>/logs/, hysp_pc 的 renderer.log 在 %APPDATA%/hysp_pc/logs/。
-whenToUse: **仅当用户明确给出日志路径或文件名**(如 play_*.log / renderer.log 等)且要求分析根因时使用。若用户只描述问题现象("为什么下不来 / 卡顿 / 失败"),不要自动加载本 skill —— 应先询问用户日志位置,或在用户提供路径后再加载。不涉及重新采集/播放。
+description: 分析已采集的 avox 播放日志(渲染日志)。**仅在用户提供了具体日志名/路径**(如 play_*.log / renderer.log / 完整文件路径)时使用;严禁基于"为什么下不来 / 播放失败 / 卡顿"等宽泛描述自动加载。判定 IO 成败、流信息、解码、耗时、音视频同步、playing↔buffering、[ZL]/[FF] 根因。avox_cli 的 play_*.log 在 <运行目录>/logs/。
+whenToUse: **仅当用户明确给出日志路径或文件名**(如 play_*.log)且要求分析根因时使用。若用户只描述问题现象("为什么下不来 / 卡顿 / 失败"),不要自动加载本 skill —— 应先询问用户日志位置,或在用户提供路径后再加载。不涉及重新采集/播放。
 ---
 
 # avox 播放日志分析

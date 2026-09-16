@@ -1,5 +1,8 @@
 # 计划与设计文档
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 avox 各模块的计划、设计与调研文档索引。已完成的方案随功能落地, 对应实现文档见 [INDEX.md](../INDEX.md)。
 
 ## backlog/ — panvox backlog 施工计划集 (A-1 ~ A-19)
@@ -60,7 +63,7 @@ avox 各模块的计划、设计与调研文档索引。已完成的方案随功
 
 | 文档 | 说明 |
 |------|------|
-| [虚拟制片标定移植方案](virtualproduction/虚拟制片标定移植方案.md) | aoce 标定模块向 avox_calib 的移植整合 |
+| 规划占位 (aoce 标定移植方案尚未落稿, doc/plan/virtualproduction/ 待建) | aoce 标定模块向 avox_calib 的移植整合 |
 
 ## 其他
 

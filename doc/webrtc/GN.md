@@ -1,5 +1,8 @@
 # GN编译
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 ## 文档
 
 [OpenHarmony开发——GN快速上手](https://zhuanlan.zhihu.com/p/679846981)

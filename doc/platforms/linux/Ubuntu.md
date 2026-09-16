@@ -1,5 +1,8 @@
 # WSL2/Ubuntu
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 ## 文档
 
 [超详细Windows10/Windows11 子系统（WSL2）安装Ubuntu20.04（带桌面环境）](https://blog.csdn.net/weixin_44301630/article/details/122390018)

@@ -2,6 +2,9 @@
 
 # LED虚拟拍摄-跟踪算法
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 ![Track追踪](https://file.digitaling.com/eImg/uimages/20220211/1644567875200258.gif)
 
 图引用[拍摄黑科技，LED虚拟影棚揭秘](https://www.digitaling.com/articles/699635.html)

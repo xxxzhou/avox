@@ -1,5 +1,8 @@
 # Android硬解经AHardwareBuffer高效到Vulkan管线
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 在[播放器Android](https://zhuanlan.zhihu.com/p/1924537652897625121)篇里，集成Android原生硬解，以及把硬解的数据通过二个不同的EGLContext渲染出来，当时提过如果把要把硬解结果给Vulkan渲染，只能把硬解出来的数据通过AMediaCodec_getOutputBuffer函数map到内存中，然后提交到Vulkan管线，这种方式比较低效，在原来[android下vulkan与opengles纹理互通](https://zhuanlan.zhihu.com/p/302285687)把Vulkan的纹理直接输出到opengles上，本文介绍如何Android硬解出来的数据直接通过AHardwareBuffer对象映射到Vulkan的纹理中，不需要map到内存，这样就和Window平台一样，又能硬解，又能高效使用[Vulkan移植GPUImage总结](https://zhuanlan.zhihu.com/p/373137758)Vulkan图像计算管线。
 
 ## 输出到FBO

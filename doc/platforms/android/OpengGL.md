@@ -1,5 +1,8 @@
 # OpenGL
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 ## 文档
 
 [OpenGL ES 共享上下文实现多线程渲染](https://cloud.tencent.com/developer/article/1831382)

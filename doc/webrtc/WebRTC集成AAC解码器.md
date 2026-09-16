@@ -1,5 +1,8 @@
 # WebRTC 集成 AAC 解码器
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 > 注: faad2(GPL) 已从工程整体移除(闭源商业渠道合规), 文中 FaadDecoder 相关实现为历史方案存档。
 > 现行 AAC 解码走 fdk-aac(Fraunhofer 许可, `src/avox_aac/FdkaacDecoder`)或 FFmpeg 原生解码器兜底,
 > 下述 adts/asc 头初始化、WebRTC 强制 S16 输出等注意事项同样适用于 fdk-aac。

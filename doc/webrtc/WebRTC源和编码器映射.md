@@ -1,5 +1,8 @@
 # WebRTC 原生编码解码与数据源集成
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 ## 概述
 
 在完成播放器核心数据源框架(IVideoSource/IAudioSource)与跨平台硬件编解码器(VideoEncoder/AudioEncoder)的实现后,本项目已能够通过 zlmediakit/FFmpeg 等工具,向各平台推送 RTSP, RTMP 等通用协议流.

@@ -1,5 +1,8 @@
 # NDK开发
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 ## 文档
 
 [Android NDK 开发中正确释放 JNI 对象](https://www.jianshu.com/p/5cde114159d4)

@@ -1,5 +1,8 @@
 # OffscreenCanvas 自适应分辨率设计
 
+> 状态: 进行中 · 上次核对: 2026-09-16 · 权威源: -
+
+
 ## 1. 问题
 
 当前 canvas 缓冲区固定 1280×720（`<canvas width="1280" height="720">`），`transferControlToOffscreen()` 后 offscreen 大小也固定。

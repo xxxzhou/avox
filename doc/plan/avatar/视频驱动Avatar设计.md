@@ -1,5 +1,8 @@
 # 视频驱动 Avatar 设计（ONNX 路线）
 
+> 状态: 进行中 · 上次核对: 2026-09-16 · 权威源: -
+
+
 > 状态：设计稿 / 未实现
 > 关联：`avox_avatar`(音频→ARKit52)、`avox_onnx`(IONNXSession)、`avox_vulkan`(ISurfaceRender/VkVideoRender)
 > 前置阅读：`doc/plan/yolo26图像检测.md`（IImageBuffer→ONNX 喂推理范式）、`src/avox/AvoxAudio.h`（IAudioFace，本设计的镜像模板）

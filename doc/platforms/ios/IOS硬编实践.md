@@ -1,5 +1,8 @@
 # IOS硬编实践
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 和前面[Android MediaCodec GPU编码实践](../android/Android硬编GPU输入.md)一样,主要记录如何在IOS使用硬编,以及把相机直出的帧,再经Vulkan处理后的GPU数据直接硬编.
 
 ## 获取相机帧

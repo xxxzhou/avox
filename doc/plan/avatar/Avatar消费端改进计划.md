@@ -1,5 +1,8 @@
 # Avatar 消费端改进计划（参考 AIRI）
 
+> 状态: 进行中 · 上次核对: 2026-09-16 · 权威源: -
+
+
 > 衔接 [视频驱动Avatar设计.md](视频驱动Avatar设计.md) 的 Phase 3/4：感知管线（Phase 1/2 帧管线 + ONNX 推理）已交付，
 > 本计划把"消费端渲染"补齐。参考项目 AIRI（../airi，Web/TS）的消费端完整度约 85%，逐件移植其架构与参数；
 > 感知管线本身 avox 领先（AIRI 的 mediapipe 驱动未开 blendshape 头、仅 devtools 实验页），不作参考。

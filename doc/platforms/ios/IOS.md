@@ -1,5 +1,8 @@
 # IOS
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 ## 文档
 
 [Objective-C 入门教程](https://www.runoob.com/w3cnote/objective-c-tutorial.html)

@@ -1,5 +1,8 @@
 # Wireshark
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 ## 文档
 
 [使用Wireshark对手机抓包设置说明](https://www.cnblogs.com/liu-Test/p/10818140.html)

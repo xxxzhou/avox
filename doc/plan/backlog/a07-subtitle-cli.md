@@ -1,5 +1,8 @@
 # A-7 avox_subtitle 管线 CLI
 
+> 状态: 进行中 · 上次核对: 2026-09-16 · 权威源: -
+
+
 优先级 P1 · 里程碑 M3(M3 主菜,panvox P-6 AI 字幕嵌入化硬依赖) · 计划状态:就绪
 VAD 切分 → sherpa 批量 STT → agent 翻译 → SRT 写出 → 缓存;断点续跑 + 批量队列。
 

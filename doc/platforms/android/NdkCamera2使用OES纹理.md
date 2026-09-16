@@ -1,5 +1,8 @@
 # NdkCamera2使用OES纹理渲染
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 网上很多NdkCamera2的例子，但是都是通过AImageReader读取图像，然后map到opengles/vulkan渲染，图像资源占用大，有些浪费，这里讲下如下通过OES纹理渲染读取并使用opengles/vulkan渲染，现在效果，上次的字体渲染在android里也可以直接用。
 
 ![相机](../../assets/images/android/相机.jpg)

@@ -1,5 +1,8 @@
 # A-4 GPU 直通三平台
 
+> 状态: 进行中 · 上次核对: 2026-09-16 · 权威源: -
+
+
 优先级 P0 · 里程碑 M4(建议提前,panvox P-1 零拷贝路径切换等它) · 计划状态:就绪
 Windows 已通;本计划覆盖 Android AHB→Flutter Texture 与 iOS/macOS CVPixelBuffer 桥。
 

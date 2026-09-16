@@ -1,5 +1,8 @@
 # VkDevice-VkDevice 交互
 
+> 状态: 进行中 · 上次核对: 2026-09-16 · 权威源: -
+
+
 > 不同 VkDevice 实例间零拷贝共享 VkImage，GPU 结果直接作为另一 Device 的输入/输出，无需 CPU 中转。
 
 ## 1. 现状与缺失

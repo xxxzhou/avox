@@ -1,5 +1,8 @@
 # 播放器Android
 
+> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+
+
 ## MediaCodec硬解
 
 MediaCodec是android提供的硬解接口。
@@ -18,7 +21,7 @@ MediaCodec是android提供的硬解接口。
 
 1. 创建一个独立的JniSurfaceTexture，对java的SurfaceTexture的C++封装，提供给MediaCodec解码的EGLContext用于渲染表面及挂接生成的渲染纹理。
 2. 然后就是AMediaCode文档里的解码流程。
-3. 如果使用vulkan渲染，暂时还没找到直接把解码后的opengl纹理直接转vulkan纹理方法，因此需要map数据，然后走vulkan渲染的cpu数据提交流程，vulkan渲染会把各YUV格式转RGBA数据。[播放器FFmpeg](../播放器FFmpeg.md)这里有介绍。
+3. 如果使用vulkan渲染，暂时还没找到直接把解码后的opengl纹理直接转vulkan纹理方法，因此需要map数据，然后走vulkan渲染的cpu数据提交流程，vulkan渲染会把各YUV格式转RGBA数据。[播放器FFmpeg](../decode/播放器FFmpeg.md)这里有介绍。
 4. 如果是用opengl渲染，保存相应的AMediaCodec_dequeueOutputBuffer得到的索引，然后在opengl渲染线程中使用。先看代码。
 
 ``` C++

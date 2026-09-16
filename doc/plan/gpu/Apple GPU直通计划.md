@@ -1,5 +1,8 @@
 # Apple GPU 直通计划 (macOS/iOS IOSurface 导出)
 
+> 状态: 进行中 · 上次核对: 2026-09-16 · 权威源: -
+
+
 > 2026-09-14 调研与规划, 同日 M1 SDK 侧落地。
 > **已完成**: VkSharedHandle 扩展 ioSurface/ioSurfaceId(非所有权契约) +
 > enableVkOutput/getVkOutputHandle Apple 分支(Avox.cpp) + VkOutputLayer/
@@ -40,7 +43,7 @@
   [IOSVEncoder.mm:140](../../../src/avox_apple/IOSVEncoder.mm#L140)
   `getIOSurface()` → `CVPixelBufferCreateWithIOSurface` → VideoToolbox。
   即「包装成 CVPixelBuffer 喂给苹果生态」这半步有现成产线代码可抄。
-- 反方向导入在位: [VkIosImage.mm:90](../../../src/avox_vulkan/layer/VkIosImage.mm#L90)
+- 反方向导入在位: [VkIosImage.mm:90](../../../src/avox_vulkan/ios/VkIosImage.mm#L90)
   `VkImportMetalIOSurfaceInfoEXT` (VK_EXT_metal_objects, 标准扩展)。
 - Metal 直渲路径同样产 IOSurface: [MetalRender.mm:356](../../../src/avox_apple/MetalRender.mm#L356)。
 
