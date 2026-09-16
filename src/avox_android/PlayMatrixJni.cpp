@@ -1,22 +1,32 @@
 // 播放回归矩阵的 Android APK 宿主入口: 手写 JNI 导出自 libavox.so, 供
 // platform/android/AvoxJava 的 JNIHelper/PlayMatrixActivity 调起, SurfaceView 出画面。
-// 与 tests/playmatrix/HostMain.cpp (console 宿主) 共用同一份用例表与判定口径;
-// 本文件由 add_sub_path GLOB 自动编进 avox (仅 ANDROID), 无需改 CMake
+// 与 avox-test 的 l1_avox/playmatrix/HostMain.cpp (console 宿主) 共用同一份用例表与判定
+// 口径; 本文件由 add_sub_path GLOB 自动编进 avox (仅 ANDROID)。
+//
+// 用例表只有一份, 在 avox-test 仓 (本仓不再留副本): include 根 ${AVOX_TEST_ROOT}/l1_avox
+// 由 src/CMakeLists.txt 在 avox-test 存在时加上。该仓不在就把矩阵入口降级成空实现(Java
+// 侧拿失败码, 不是 UnsatisfiedLinkError) —— 不让"没有测试仓"把构建绑死。
 #include <jni.h>
 #include <android/native_window.h>
 #include <android/native_window_jni.h>  // ANativeWindow_fromSurface
 
+#include <cstdio>
 #include <filesystem>
 #include <string>
 #include <vector>
 
-#include "../../../tests/playmatrix/PlayMatrix.hpp"
-#include "../../../tests/playmatrix/PlayTee.hpp"
+#if __has_include("playmatrix/PlayMatrix.hpp")
+#define AVOX_HAVE_PLAYMATRIX 1
 #include "avox/module/AvoxManager.hpp"
+#include "playmatrix/PlayMatrix.hpp"
+#include "playmatrix/PlayTee.hpp"
+#endif
 #include "avox/module/ModuleMgr.hpp"
 
+#ifdef AVOX_HAVE_PLAYMATRIX
 using namespace avox;
 using namespace avox::playmatrix;
+#endif
 
 namespace {
 
@@ -40,6 +50,7 @@ std::vector<std::string> pmSplitComma(const std::string& text) {
 
 }  // namespace
 
+#ifdef AVOX_HAVE_PLAYMATRIX
 extern "C" JNIEXPORT jint JNICALL
 Java_avox_android_library_JNIHelper_pmRunMatrix(
     JNIEnv* env, jclass, jobject surface, jstring jHost, jstring jOutDir,
@@ -134,6 +145,15 @@ Java_avox_android_library_JNIHelper_pmRunMatrix(
   }
   return code;
 }
+#else  // 无 avox-test: 同名空实现, Java 侧拿到失败码而不是 UnsatisfiedLinkError
+extern "C" JNIEXPORT jint JNICALL
+Java_avox_android_library_JNIHelper_pmRunMatrix(
+    JNIEnv*, jclass, jobject, jstring, jstring, jstring, jstring, jstring, jobject) {
+  std::printf("[AVOX][TEST] case=play-matrix result=FAIL "
+              "reason=no-avox-test(matrix lives in avox-test repo)\n");
+  return 1;
+}
+#endif
 
 extern "C" JNIEXPORT void JNICALL
 Java_avox_android_library_JNIHelper_pmSetPluginsDir(

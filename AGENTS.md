@@ -40,8 +40,9 @@ ctest --test-dir build/windows/avox --output-on-failure -C Release
 
 **功能开发/修复完成后的测试验证，一律去同级 `../avox-test` 仓跑**（统一测试仓，收拢 avox/panvox/三引擎的全部测试，入口见 [avox-test/README.md](../avox-test/README.md)）。
 
-- **已迁入 avox-test**（规范版本在那边维护）：`script/testenv/` 推流与回归脚本、`tests/playmatrix/` 播放回归矩阵用例表、`doc/test/` 测试文档、`assets/video/test/` 标准测试源、`platform/godot/tools/tests/` headless 用例。本仓同名目录只是**过渡期副本，不再更新**
-- **留在本仓**：`tests/test_*.cpp`（doctest 白盒单测，直接编本仓源码，随主构建编译）；`platform/*/playtest` 宿主与 `samples/` 属第二批迁移，过渡期仍归本仓
+- **已迁入 avox-test**（规范版本在那边维护）：`script/testenv/` 推流与回归脚本、播放回归矩阵用例表与宿主 `l1_avox/playmatrix/`、`doc/test/` 测试文档、`assets/video/` 标准测试源、`platform/godot/tools/tests/` headless 用例。本仓同名目录只是**过渡期副本，不再更新**
+- **矩阵副本已删（2026-09-16）**：`tests/playmatrix/` 不再存在；本仓 `platform/*/playtest` 与 `platform/ios/avoxtest` 只是**宿主壳**，用例表与 `HostMain.cpp` 都取自 `../avox-test/l1_avox/playmatrix`（CMake 变量 `AVOX_TEST_ROOT`，可 `-DAVOX_TEST_ROOT=<路径>` 指定）。**同级没有 avox-test 时 playtest 目标自动跳过**（Android `PlayMatrixJni.cpp` 走 `__has_include` 降级成空实现），构建不受影响 —— 改矩阵只改 avox-test 一处
+- **留在本仓**：`tests/test_*.cpp`（doctest 白盒单测，直接编本仓源码，随主构建编译）；`samples/` 属第二批迁移
 - **新增/修改测试用例一律写到 avox-test**，不要再往本仓加
 
 ```bash
@@ -52,7 +53,7 @@ python script/testenv/play_regress.py             # 全量 (需本机 ZLM MediaS
 python script/build_runner.py --target playtest   # 只重建 runner (avox 主树编不过时用它绕过)
 ```
 
-提交门禁 (pre-push) 过渡期仍跑本仓 ctest + 本仓离线子集副本 (已装 core.hooksPath=.githooks)；跳过: `AVOX_SKIP_GATE=1 git push`，全量: `AVOX_GATE_FULL=1 git push`。
+**提交/推送不与测试绑定**（2026-09-16 口径）：pre-push 只做文档治理 doc_check（`AVOX_SKIP_GATE=1 git push` 跳过），ctest 与播放矩阵都不卡提交也不卡推送 —— 改完按需自己跑上面的命令，发布流由 CI 跑（`.github/workflows/release.yml`：ctest + 离线子集，失败即整体失败）。想在本机推送前顺手过一遍：`AVOX_GATE_TEST=1 git push`（再加 `AVOX_GATE_FULL=1` 走含网络用例的全量，需本机 ZLM）。
 
 ## 平台支持
 

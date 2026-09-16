@@ -1,5 +1,11 @@
 # 模块之间目录的对位相对于code,导出到外部相对于统一位置
 include_directories("./")
+# 播放矩阵用例表在 avox-test 仓 (l1_avox/playmatrix, 本仓不再留副本):
+# src/avox_android/PlayMatrixJni.cpp 以 playmatrix/PlayMatrix.hpp 引用; 该仓不在时
+# 那边走 __has_include 降级为空实现, 构建不受影响。
+if(EXISTS "${AVOX_TEST_PLAYMATRIX_DIR}/PlayMatrix.hpp")
+    include_directories("${AVOX_TEST_ROOT}/l1_avox")
+endif()
 
 # 源码下所有模块添加导出符号
 add_definitions(-DAVOX_EXPORT_DEFINE)

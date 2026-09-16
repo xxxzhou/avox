@@ -285,6 +285,14 @@ if(MSVC)
 endif()
 
 # 库文件
+# 播放矩阵用例表与宿主只有一份, 在 avox-test 仓的 l1_avox/playmatrix —— 本仓不再留副本,
+# 免得两边手工同步。AVOX_TEST_ROOT 缺省取同级 ../avox-test; 该仓不在时下面各处
+# (src 的 include 根 / playtest 目标) 自动降级, 不让"没有测试仓"变成构建/提交的阻塞。
+set(AVOX_TEST_ROOT "$ENV{AVOX_TEST_ROOT}" CACHE PATH "avox-test 仓根 (播放矩阵用例表与宿主)")
+if(NOT AVOX_TEST_ROOT)
+    get_filename_component(AVOX_TEST_ROOT "${CMAKE_SOURCE_DIR}/../avox-test" ABSOLUTE)
+endif()
+set(AVOX_TEST_PLAYMATRIX_DIR "${AVOX_TEST_ROOT}/l1_avox/playmatrix")
 add_subdirectory(src) 
 
 # 插件(组件)模块: 独立编译为 avox_<name>.dll, 输出到 plugins/
@@ -298,9 +306,14 @@ if(AVOX_ENABLE_SAMPLES)
     add_subdirectory(samples)
 endif()
 
-# 播放回归矩阵 runner (每平台一个, 用例表与判定复用 tests/playmatrix)
-# iOS 不建 (无窗口宿主, 走 platform/ios/avoxtest 工程)
-option(AVOX_ENABLE_PLAYTEST "build play regression matrix runner (每平台一个)" ON)
+# 播放回归矩阵 runner (每平台一个; iOS 不建, 走 platform/ios/avoxtest 工程)
+# 用例表与判定逻辑取自 avox-test (AVOX_TEST_ROOT 见上); 仓不在就跳过 runner
+option(AVOX_ENABLE_PLAYTEST "build play regression matrix runner (用例表取自 avox-test)" ON)
+if(AVOX_ENABLE_PLAYTEST AND NOT EXISTS "${AVOX_TEST_PLAYMATRIX_DIR}/HostMain.cpp")
+    message(STATUS "[playtest] 跳过: 未找到 ${AVOX_TEST_PLAYMATRIX_DIR}/HostMain.cpp "
+                   "(avox-test 不在同级? 用 -DAVOX_TEST_ROOT=<路径> 指定)")
+    set(AVOX_ENABLE_PLAYTEST OFF)
+endif()
 if(AVOX_ENABLE_PLAYTEST)
     if(WIN32)
         add_subdirectory(platform/windows/playtest)

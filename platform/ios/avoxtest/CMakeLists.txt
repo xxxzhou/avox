@@ -35,6 +35,11 @@ set(TEAM_ID "Y96Y9F6CFS" CACHE STRING "Apple 开发者团队 ID")
 # ZLM 头路径默认取本仓库 3rdparty (mk_mediakit.h + Common/config.h 事件名自检)
 get_filename_component(AVOX_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
 set(ZLM_DIR "${AVOX_REPO_ROOT}/3rdparty/ZLMediaKit")
+# 播放矩阵用例表在 avox-test 仓 (本仓不再留副本); 缺省同级 ../avox-test
+set(AVOX_TEST_ROOT "$ENV{AVOX_TEST_ROOT}" CACHE PATH "avox-test 仓根 (播放矩阵用例表)")
+if(NOT AVOX_TEST_ROOT)
+  get_filename_component(AVOX_TEST_ROOT "${AVOX_REPO_ROOT}/../avox-test" ABSOLUTE)
+endif()
 
 # SDK 公共头: 直接引用源码树各模块目录 (install 目录不含 include)
 function(avoxtest_include_dirs)
@@ -42,8 +47,8 @@ function(avoxtest_include_dirs)
     "${ZLM_DIR}/src"
     "${ZLM_DIR}/3rdpart/ZLToolKit/src"
     "${ZLM_DIR}/api/include"
-    # 播放回归矩阵共享用例表 (playmatrix/PlayMatrix.hpp)
-    "${AVOX_REPO_ROOT}/tests")
+    # 播放回归矩阵共享用例表 (playmatrix/PlayMatrix.hpp), 取自 avox-test 仓
+    "${AVOX_TEST_ROOT}/l1_avox")
   foreach(d avox avox_apple avox_ffmpeg avox_vulkan avox_zlmediakit avox_freetype
            avox_egl avox_agent)
     target_include_directories(avoxtest PRIVATE "${AVOX_REPO_ROOT}/src/${d}")
