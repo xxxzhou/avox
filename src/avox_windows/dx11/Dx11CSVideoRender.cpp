@@ -196,6 +196,14 @@ bool Dx11CSVideoRender::vaildAndInitGraph() {
   }
   // 使用解码的D3D11设备
   setDevice(context->getDevice());
+  // 换分辨率要重传 constBuf: CS 按 inputSize 裁剪线程, 不重传会按旧尺寸只填左上角
+  if (imageWidth != gpuFrame.format.width ||
+      imageHeight != gpuFrame.format.height) {
+    LOGFLF(LogLevel::info, "cs render size change, constBuf re-upload from:",
+           imageWidth, "x", imageHeight, " to:", gpuFrame.format.width, "x",
+           gpuFrame.format.height);
+    bParamsDirty = true;
+  }
   imageWidth = gpuFrame.format.width;
   imageHeight = gpuFrame.format.height;
   yuvDesc = desc;
@@ -324,6 +332,8 @@ void Dx11CSVideoRender::createProgram() {
   // 设置输出纹理的 UAV
   ID3D11UnorderedAccessView* uavArray[1] = {outTexture->uavView.Get()};
   d3dcontext->CSSetUnorderedAccessViews(0, 1, uavArray, nullptr);
+  // constBuf 刚重建, 至少要上传一次, 否则 CS 的 inputSize 是旧值
+  bParamsDirty = true;
 }
 
 void Dx11CSVideoRender::renderToTexture(const GpuFrame& gpuFrame) {
