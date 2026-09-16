@@ -29,14 +29,15 @@ cbuffer CBParameters : register(b0)
     float maxLuminance;  // 内容峰值亮度 nits
     float sdrWhiteNits;  // SDR 白点 nits
     float _pad;
+    // YUV(limited, [0,1], UV 未居中) -> RGB: setColorSpace 注入, 含标准系数 +
+    // limited 量程展开, 行优先 16 浮点, 与 Vulkan yuv2rgbaV1.comp 同源
+    float4x4 colorMat;
 };
 
-// YUV 转 RGB 函数 (NV12 现状路径: full-range 近似系数, 保持既有行为不动)
+// YUV 转 RGB: 用 setColorSpace 注入的矩阵(标准 + limited 量程), 与 Vulkan V1/V5 同源
 float4 yuv2Rgb(float y, float u, float v, float a) {
-    float r = y + 1.402 * v;
-    float g = y - 0.344136 * u - 0.714136 * v;
-    float b = y + 1.772 * u;
-    return float4(clamp(r, 0, 1), clamp(g, 0, 1), clamp(b, 0, 1), a);
+    float4 rgb = mul(float4(y, u, v, 1.0f), colorMat);
+    return float4(clamp(rgb.rgb, 0.0f, 1.0f), a);
 }
 
 // ---- HDR 处理: 与 glsl/yuv2rgbaV5.comp 同源 ----
@@ -149,7 +150,8 @@ void main(uint2 DTid : SV_DispatchThreadID)
     float y2 = yTex.Load(int3(DTid.x*2+1,DTid.y*2, 0)).r;
     float y3 = yTex.Load(int3(DTid.x*2,DTid.y*2+1, 0)).r;
     float y4 = yTex.Load(int3(DTid.x*2+1,DTid.y*2+1, 0)).r;
-    float2 uv = uvTex.Load(int3(DTid.x, DTid.y, 0)).rg - float2(0.5f, 0.5f);
+    // UV 不在此 -0.5: 居中偏移已折进 colorMat 第4列(与 Vulkan V1 一致)
+    float2 uv = uvTex.Load(int3(DTid.x, DTid.y, 0)).rg;
 
     float4 rgba1 = yuv2Rgb(y1, uv.x, uv.y, 1.0f);
     float4 rgba2 = yuv2Rgb(y2, uv.x, uv.y, 1.0f);
@@ -268,7 +270,7 @@ void Dx11CSVideoRender::createProgram() {
   if (FAILED(hr)) {
     return;
   }
-  // 创建常量缓冲区(32B: 尺寸+格式+transfer+hdrMode+峰值)
+  // 创建常量缓冲区(96B: 8 标量 + colorMat, 与 cbuffer 布局对齐)
   constBuf = std::make_unique<Dx11Constant>();
   constBuf->setBufferSize(sizeof(constData));
   constBuf->cpuData = (uint8_t*)constData;
@@ -346,6 +348,10 @@ void Dx11CSVideoRender::renderToTexture(const GpuFrame& gpuFrame) {
     memcpy(&constData[5], &peakNits, sizeof(float));
     memcpy(&constData[6], &sdrWhite, sizeof(float));
     constData[7] = 0u;
+    // 颜色矩阵: buildYuvToRgb 已含标准系数 + limited 量程展开, 行优先 16 浮点,
+    // 与 float4x4 列主序一致, mul(vec4, colorMat) 结果等同于 Vulkan V1/V5
+    Mat4x4f mat = buildYuvToRgb(cs);
+    memcpy(&constData[8], &mat, 16 * sizeof(float));
     constBuf->updateResource(d3dcontext.Get());
   }
   if (desc.ArraySize > 1) {

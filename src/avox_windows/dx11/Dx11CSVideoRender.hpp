@@ -37,7 +37,7 @@ class Dx11CSVideoRender : public VideoRender, public Dx11Context {
   HdrMeta hdrMeta = {};
   HdrMode hdrMode = HdrMode::follow;
   bool bParamsDirty = true;
-  uint32_t constData[8] = {};
+  uint32_t constData[24] = {};  // 8 标量(32B) + colorMat(64B) = 96B, 与 cbuffer 对齐
   // CPU NV12直取(bOutCpuYuv时): 复用staging纹理,映射指针零拷发布
   // Unmap顺延到下一帧回读,消费者须在当帧窗口内使用
   MComPtr<ID3D11Texture2D> stagingTexture = nullptr;
