@@ -133,8 +133,24 @@ subtitleView->inputSpeech(audioData, pts);
 | `SubtitleView` | 统一视图: 三槽位仲裁, canvas 生产调度, 唯一混合出口 |
 | `SubtitleSlots` | 槽位仲裁状态机(header-only, 单测覆盖) |
 | `SubtitleFile` | .srt 解析(SrtParser), 按时间查当前文本 |
+| `CharsetConvert` | 外挂文本编码归一(UTF-8 BOM 剥离 / GBK → UTF-8, 见下节) |
 | `SubtitleAsr` | ASR 模式管理, 识别结果按 PTS 查找/流式文本 |
 | `TextRasterizer` | 文本 → RGBA8 bbox canvas(FreeType, 样式参数化) |
 | `IAssOverlay` | libass 插件通道接口(assOverlayHub 工厂, 缺插件降级) |
 | `AudioStt` | 语音识别(内部线程) |
 | `Clock` | 统一时钟(AVTrack::updateClock 每帧 sync) |
+
+## 外挂文本编码
+
+外挂 `.srt` 按原始字节读入, 先过 `CharsetConvert::normalizeSubtitleText`
+再解析 —— 非 UTF-8 的字幕直接进光栅化会查不到字形(整屏无字):
+
+| 输入 | 处理 |
+|------|------|
+| UTF-8(含 BOM) | 剥 BOM 原样返回(留着会让首条序号行判不出数字被丢) |
+| GBK/GB18030 | 转 UTF-8: Windows=CP936, Apple=CoreFoundation, 其它=iconv |
+| UTF-16 BOM(FF FE / FE FF) | 原样返回(未支持, 避免误按 GBK 转) |
+| 无法判定 / 平台无 iconv | 原样返回 + warn 日志(部分 Android NDK 无 `<iconv.h>`) |
+
+`.ass/.ssa` 的编码不走这里: 外挂文件由 libass 插件直读(`ass_read_file`),
+编码能力在插件侧。

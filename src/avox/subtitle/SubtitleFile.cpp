@@ -3,6 +3,9 @@
 #include <cstring>
 #include <fstream>
 
+#include "../module/LogHelper.hpp"
+#include "CharsetConvert.hpp"
+
 namespace avox {
 
 SubtitleFile::SubtitleFile() { }
@@ -23,9 +26,21 @@ bool SubtitleFile::loadFile(const char* path) {
   content.resize(size);
   file.read(&content[0], size);
   file.close();
+  // 编码归一: 外挂字幕常见 GBK(非 UTF-8), 直接按 UTF-8 走会被 TextRasterizer
+  // 判成查不到字形 → 整屏无字。这里转成 UTF-8 再解析(UTF-8 则只剥 BOM)
+  std::string text;
+  const bool bConverted = normalizeSubtitleText(content, text);
+  if (bConverted) {
+    LOGFLF(LogLevel::info, "subtitle text converted to UTF-8: ", path);
+  } else if (!isUtf8Text(text.c_str(), text.size())) {
+    LOGFLF(LogLevel::warn,
+           "subtitle text is not UTF-8 and cannot be converted on this "
+           "platform: ",
+           path);
+  }
   // Parse SRT
   std::vector<SrtParser::RawItem> rawItems;
-  SrtParser::parse(content.c_str(), content.size(), rawItems);
+  SrtParser::parse(text.c_str(), text.size(), rawItems);
   // Convert to stored format
   items.clear();
   for (const auto& raw : rawItems) {

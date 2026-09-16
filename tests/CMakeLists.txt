@@ -27,9 +27,13 @@ add_executable(avox_tests
   ${AVOX_TESTS_SRC}/test_pipenode.cpp
   ${AVOX_TESTS_SRC}/test_subtitle_slots.cpp
   ${AVOX_TESTS_SRC}/test_subtitle_style.cpp
+  ${AVOX_TESTS_SRC}/test_charset.cpp
   ${AVOX_TESTS_SRC}/log_sink.cpp
   # 被测源码 (自包含编译)
   ${AVOX_SRC}/module/AvoxMath.cpp
+  # 外挂字幕编码归一 + SRT 解析(GBK 端到端)
+  ${AVOX_SRC}/subtitle/CharsetConvert.cpp
+  ${AVOX_SRC}/subtitle/SrtParser.cpp
   ${AVOX_SRC}/codec/H26XHelper.cpp
   ${AVOX_SRC}/codec/H264Parse.cpp
   ${AVOX_SRC}/codec/H265Parse.cpp
@@ -67,7 +71,9 @@ endif()
 
 if(APPLE)
   # VideoBuffer.cpp 的 Apple 分支用 CoreVideo (CVBufferRelease), 直编进测试需链其 framework
-  target_link_libraries(avox_tests PRIVATE "-framework CoreVideo")
+  # CharsetConvert.cpp 的 Apple 分支用 CoreFoundation 做 GB18030 解码
+  target_link_libraries(avox_tests PRIVATE "-framework CoreVideo"
+                                           "-framework CoreFoundation")
 endif()
 
 add_test(NAME avox_tests COMMAND avox_tests)
