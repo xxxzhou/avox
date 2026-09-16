@@ -445,6 +445,7 @@ void IOParseFF::onRunTask() {
   // 已经解析配置信息，如SPS,PPS后,开始读取IO数据
   AVPacketPtr bsfPkt = getUniquePtr(av_packet_alloc());
   AVPacketPtr adtsPkt = getUniquePtr(av_packet_alloc());
+  bool bEof = false;
   while (running()) {
     // 检查暂停
     if (pauseing()) {
@@ -453,11 +454,26 @@ void IOParseFF::onRunTask() {
       sleepTask(false, 10);
       continue;
     }
+    if (bEof) {
+      // EOF 停放: 不 break(拆线程)。尾包可能还有几十秒数据没被消费, 且之后很可能
+      // seek —— 线程一退, seek 只挪了 demuxer 位置却无人再读, 管道从此静止。
+      // 这里等 seekTo 复位(bEofReset)或 running() 变假(close), 不再调 av_read_frame
+      if (bEofReset.exchange(false)) {
+        bEof = false;
+        ioDbgCount = 0;
+        continue;
+      }
+      sleepTask(false, 10);
+      continue;
+    }
     AVPacketPtr pkt = getUniquePtr(av_packet_alloc());
     if ((ret = av_read_frame(fmtCtx.get(), pkt.get())) < 0) {
       if (ret == AVERROR_EOF) {
-        dispatch(&IAVSourceOb::onComplete);
-        break;
+        bEof = true;
+        if (!bEofNotified.exchange(true)) {
+          dispatch(&IAVSourceOb::onComplete);
+        }
+        continue;
       }
       // 被 seek 打断(interrupt_callback 返回1)或非阻塞暂无数据: 继续循环,
       // 循环顶会处理暂停. 打断窗口(preSeek→pauseTask 之间约 50ms)内循环顶尚
@@ -663,6 +679,11 @@ bool IOParseFF::seekTo(int64_t pos) {
       }
       bSeek = (ret == 0);
     }
+  }
+  // 读线程若已 EOF 停放: 复位让它从新位置继续读(否则 seek 无人读, 管道静止)
+  if (bSeek) {
+    bEofNotified.store(false);
+    bEofReset.store(true);
   }
   // 恢复IO线程
   resumeTask();

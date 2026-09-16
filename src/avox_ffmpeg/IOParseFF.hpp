@@ -31,6 +31,11 @@ protected:
   std::atomic<bool> bStopIo{false};
   // IO 线程已退出 av_read_frame 的确认 (seekTo 等它再操作 fmtCtx)
   std::atomic<bool> bIoPausedAck{false};
+  // EOF 停放(见 onRunTask): 读到尾不拆读线程 —— 拆了之后 seek 就是"无人读"的
+  // 僵尸态。本地短文件最容易踩: 点播包队列上限 1000 包 ≥ 整文件包数, 起播毫秒级
+  // 读满 → EOF → 之后任何 seek 都再也拿不到数据(录制产物缺失/画面静止)。
+  std::atomic<bool> bEofReset{false};     // seekTo 成功后置位: 叫醒停放的读线程
+  std::atomic<bool> bEofNotified{false};  // onComplete 每次 EOF 只报一次
   // PGS 解码器(选中该轨时建): 局部轨索引 → 解码器
   std::unique_ptr<PgsDecoder> pgsDec = nullptr;
   int32_t pgsTrackLocal = -1;  // 解码器对应的局部轨索引
