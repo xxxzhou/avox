@@ -52,11 +52,16 @@ public:
   ColorSpaceDesc cs;
   HdrMeta hdrMeta;
   HdrMode hdrMode = HdrMode::follow;
+  // 颜色矩阵: buildYuvToRgb 已含标准系数+limited 量程展开, 行优先 16 浮点,
+  // 逐帧经 setFragmentBytes(buffer 1)下发, 替换 shader 内硬编码的 BT.601
+  float colorMatData[16] = {};
   virtual void setColorSpace(const ColorSpaceDesc& c) override;
   virtual void setHdrMeta(const HdrMeta& meta) override;
   virtual void setHdrMode(HdrMode mode) override;
 
- private:
+private:
+  // 把 buildYuvToRgb(cs) 展开成行优先 16 浮点, 写入 colorMatData
+  void updateColorMat();
   void createPipelineState();
   void createTextureCache();
   void closePipelineState();

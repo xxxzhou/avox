@@ -133,7 +133,8 @@ NSString *const nv12trgbBody = AVOX_SHADER_STRING(
                                    texture2d<float> yTexture [[texture(0)]],
                                    texture2d<float> uvTexture [[texture(1)]],
                                    sampler sampler [[sampler(0)]],
-                                   constant FragParams& params [[buffer(0)]]) {
+                                   constant FragParams& params [[buffer(0)]],
+                                   constant float colorMat[16] [[buffer(1)]]) {
       float y = yTexture.sample(sampler, in.texCoord).r;
       float2 uv = uvTexture.sample(sampler, in.texCoord).rg;
       float3 rgb;
@@ -151,12 +152,13 @@ NSString *const nv12trgbBody = AVOX_SHADER_STRING(
         rgb = float3(yy + 1.4746 * vv, yy - 0.164553 * uu - 0.571353 * vv,
                      yy + 1.8814 * uu);
       } else {
-        const float yOffset = 16.0 / 255.0;
-        const float uvOffset = 128.0 / 255.0;
-        float3 yuv = float3(y - yOffset, uv - uvOffset);
-        float3x3 conversionMatrix = float3x3(1.164, 0.000, 1.596, 1.164, -0.392,
-                                             -0.813, 1.164, 2.017, 0.000);
-        rgb = yuv * conversionMatrix;
+        // 颜色矩阵由 buildYuvToRgb(cs) 逐帧下发, 行优先: row0/1/2=R/G/B 输出系数,
+        // 末列是 range 偏移(limited 已含 Y*(255/219)-16/219 等); 输入 y/uv 为 raw [0,1]
+        float4 yuv = float4(y, uv, 1.0);
+        rgb = float3(
+          yuv.x * colorMat[0] + yuv.y * colorMat[4] + yuv.z * colorMat[8] + colorMat[12],
+          yuv.x * colorMat[1] + yuv.y * colorMat[5] + yuv.z * colorMat[9] + colorMat[13],
+          yuv.x * colorMat[2] + yuv.y * colorMat[6] + yuv.z * colorMat[10] + colorMat[14]);
       }
       rgb = processColor(rgb, params);
       return float4(clamp(rgb, 0.0, 1.0), 1.0);
@@ -177,7 +179,7 @@ void regIOSVRender() {
   AvoxManager::Get().initFuncs.push_back(metalRenderReg);
 }
 
-MetalRender::MetalRender() { renderType = RenderType::Metal; }
+MetalRender::MetalRender() { renderType = RenderType::Metal; updateColorMat(); }
 
 MetalRender::~MetalRender() { releaseGraph(); }
 
@@ -528,6 +530,20 @@ void MetalRender::setColorSpace(const ColorSpaceDesc &c) {
     return;
   }
   cs = c;
+  updateColorMat();
+}
+
+void MetalRender::updateColorMat() {
+  // buildYuvToRgb 行优先: row0/1/2 = R/G/B 输出通道系数(末列为 range 偏移), row3 恒固定
+  Mat4x4f m = buildYuvToRgb(cs);
+  colorMatData[0] = m.row0.x;  colorMatData[1] = m.row0.y;
+  colorMatData[2] = m.row0.z;  colorMatData[3] = m.row0.w;
+  colorMatData[4] = m.row1.x;  colorMatData[5] = m.row1.y;
+  colorMatData[6] = m.row1.z;  colorMatData[7] = m.row1.w;
+  colorMatData[8] = m.row2.x;  colorMatData[9] = m.row2.y;
+  colorMatData[10] = m.row2.z; colorMatData[11] = m.row2.w;
+  colorMatData[12] = m.row3.x; colorMatData[13] = m.row3.y;
+  colorMatData[14] = m.row3.z; colorMatData[15] = m.row3.w;
 }
 
 void MetalRender::setHdrMeta(const HdrMeta &meta) {
@@ -618,6 +634,8 @@ void MetalRender::renderCVPixelBuffer(CVImageBufferRef imageBuffer) {
     params.peakNits = (float)hdrPeakNits(hdrMeta);
     params.sdrWhiteNits = 100.0f;
     [commandEncoder setFragmentBytes:&params length:sizeof(params) atIndex:0];
+    // 颜色矩阵(行优先 16 浮点): 替换 shader 旧硬编码 BT.601, 尊重 cs.standard/range
+    [commandEncoder setFragmentBytes:colorMatData length:sizeof(colorMatData) atIndex:1];
     // 设置纹理
     [commandEncoder setFragmentTexture:yTexture atIndex:0];
     [commandEncoder setFragmentTexture:uvTexture atIndex:1];
