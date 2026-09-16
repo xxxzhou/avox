@@ -73,6 +73,10 @@ void SubtitleView::teardownSlot(Slot slot) {
   switch (slot) {
     case Slot::track:
       closeTrackChannel();
+      // 轨槽被顶掉: 通知播放器复位 IO 侧(轨号 + PGS 解码路由)
+      if (trackResetCb) {
+        trackResetCb();
+      }
       break;
     case Slot::file:
       closeFileContent();

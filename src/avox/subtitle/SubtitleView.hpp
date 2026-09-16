@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <deque>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -71,8 +72,12 @@ class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
   void setAudioDesc(AudioDesc desc);
   void inputSpeech(const AvoxData& data, int64_t pts);
 
-  // ---- 三槽位仲裁(视图侧拆除内聚执行; 返回被顶掉槽, 轨槽需播放器复位
-  // IO 路由: 轨号 + PGS 解码开关) ----
+  // ---- 三槽位仲裁(视图侧拆除内聚执行; 返回被顶掉槽) ----
+  // 轨槽被顶掉时回调(播放器构造时注册一次): 复位 IO 侧轨号与 PGS 解码路由
+  // (视图不持有 IO 对象; 回调内只碰 atomic 槽位与 IO 开关, 任意线程安全)
+  void setTrackResetCb(std::function<void()> cb) {
+    trackResetCb = std::move(cb);
+  }
   // 激活轨槽; 重复激活免拆除(内容由 loadTrack 换)
   Slot activateTrack();
   // 激活外挂槽: 先清两路文件内容态(.srt/.ass 换路径), 再拆被顶掉槽
@@ -132,6 +137,7 @@ class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
   int32_t storageW = 0;
   int32_t storageH = 0;
   SubtitleSlots slots;
+  std::function<void()> trackResetCb;  // 轨槽被顶掉时通知播放器复位 IO 侧
 
   // ---- 观感样式(权威副本): setter 任意线程写(styleMtx), 渲染线程拷贝消费;
   // 不触发图重建 ----

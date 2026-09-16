@@ -42,6 +42,13 @@ MediaPlayer::MediaPlayer() {
   }
   subtitleView = std::make_unique<SubtitleView>();
   subtitleView->setAsrMode(AsrMode::ptsSync);
+  // 轨槽被顶掉(外挂/ASR 后激活者胜)时复位 IO 侧轨号与 PGS 解码路由
+  subtitleView->setTrackResetCb([this]() {
+    subTrackIndex = -1;
+    if (ioSource) {
+      ioSource->setSelectedSubtitle(-1);
+    }
+  });
   clock = std::make_unique<Clock>();
   // 埋点单独线程
   mpPingback = std::make_unique<MPPingQueue>();
@@ -510,15 +517,9 @@ bool MediaPlayer::unloadSubtitle() {
 }
 
 void MediaPlayer::cmdLoadSubtitle(const std::string& path) {
-  // 外挂激活(后激活者胜): 视图内完成被顶掉槽的视图侧拆除 + 两路文件内容清
-  const SubtitleSlots::Slot prev = subtitleView->activateFile();
-  if (prev == SubtitleSlots::Slot::track) {
-    // 被顶掉的是轨槽: 复位 IO 侧(轨号 + PGS 解码路由)
-    subTrackIndex = -1;
-    if (ioSource) {
-      ioSource->setSelectedSubtitle(-1);
-    }
-  }
+  // 外挂激活(后激活者胜): 视图内完成被顶掉槽拆除(轨槽 IO 侧经 trackResetCb
+  // 复位) + 两路文件内容清
+  subtitleView->activateFile();
   // 外挂模式: 无内封轨号, 内封包按 subTrackIndex 过滤全丢弃(-2 不等于任何局部轨)
   subTrackIndex = -2;
   // 扩展名分流: .ass/.ssa → libass 插件; 其余(.srt) → 文本光栅化器
@@ -672,62 +673,7 @@ IMediaMuxer* MediaPlayer::getMuxer(bool bTranscode) {
   return mediaMuxer.get();
 }
 
-ISubtitle* MediaPlayer::getSubtitle() { return this; }
-
-void MediaPlayer::enableAsr() {
-  // ASR 激活(后激活者胜): 视图内拆被顶掉槽并启动识别, 这里复位轨槽 IO 侧。
-  // 任意线程可调(只碰 atomic 槽位与视图内部锁), 与既有 proxy 行为一致
-  onSubtitleActivate();
-}
-
-void MediaPlayer::disableAsr() {
-  // 关 ASR 槽(仅当它是胜者, 不影响内封轨/外挂槽)
-  if (subtitleView->deactivateAsr()) {
-    LOGFLF(LogLevel::info, "asr off");
-  }
-}
-
-void MediaPlayer::onSubtitleActivate() {
-  const SubtitleSlots::Slot prev = subtitleView->activateAsr();
-  if (prev == SubtitleSlots::Slot::track) {
-    subTrackIndex = -1;
-    if (ioSource) {
-      ioSource->setSelectedSubtitle(-1);
-    }
-  }
-}
-
-// ---- ISubtitle 观感设置: 全部转发 subtitleView(任意线程可调) ----
-
-void MediaPlayer::setScale(float s) { subtitleView->setScale(s); }
-
-void MediaPlayer::setOffset(float offsetX, float offsetY) {
-  subtitleView->setOffset(offsetX, offsetY);
-}
-
-void MediaPlayer::setOpacity(float o) { subtitleView->setOpacity(o); }
-
-void MediaPlayer::setFont(const char* fontName, int32_t fontSize) {
-  subtitleView->setFont(fontName, fontSize);
-}
-
-void MediaPlayer::setColor(float r, float g, float b) {
-  subtitleView->setColor(r, g, b);
-}
-
-void MediaPlayer::setAlign(HAlignType h, VAlignType v) {
-  subtitleView->setAlign(h, v);
-}
-
-void MediaPlayer::setPosition(float anchorX, float anchorY) {
-  subtitleView->setPosition(anchorX, anchorY);
-}
-
-void MediaPlayer::setPositionMargin(float marginX, float marginY) {
-  subtitleView->setPositionMargin(marginX, marginY);
-}
-
-void MediaPlayer::setMaxWidth(float ratio) { subtitleView->setMaxWidth(ratio); }
+ISubtitle* MediaPlayer::getSubtitle() { return subtitleView.get(); }
 
 PlayerState MediaPlayer::getState() { return state; }
 
