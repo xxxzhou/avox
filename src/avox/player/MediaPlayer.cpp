@@ -1470,7 +1470,9 @@ void MediaPlayer::cmdComplete() {
 }
 
 void MediaPlayer::cmdSeek(SeekCommandPtr cmd) {
-  if (!normalState()) {
+  // ready 态放行: 断点续播在 ready 瞬间发起 seek, 旧判据会静默丢弃它
+  // (bSeeking 却已置位 → 位置被钉在目标、画面从 0 播)
+  if (!normalState() && state != PlayerState::ready) {
     return;
   }
   setState(PlayerState::seek);
