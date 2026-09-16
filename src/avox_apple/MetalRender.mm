@@ -194,13 +194,14 @@ void MetalRender::onSetSurface() {
 }
 
 bool MetalRender::vaildAndInitGraph() {
+  // 原子读+清重置标志: 释放决策用捕获值, 只清本次读到的值 —— 读-清分离期间宿主
+  // 新置的请求不会被盲写抹掉, 留到下一帧再重建一次(见 VideoRender.hpp 契约)
+  const bool bNeedReset = bResetFlag.exchange(false);
   // 如果没有窗口，但是大小变化了，需要重置
-  if (!metalLayer && bResetFlag) {
+  if (!metalLayer && bNeedReset) {
     releaseGraph();
   }
-  // 重建入口消费重置标志(读它做释放决策之后, 建资源之前): 重建期间宿主线程新置
-  // 的请求留到下一帧再重建一次; 建不建由 pipelineState/cacheTexture 是否为空驱动
-  bResetFlag = false;
+  // 建不建由 pipelineState/cacheTexture 是否为空驱动, 不依赖本标志
   if (pipelineState != nil && cacheTexture != nil) {
     return true;
   }

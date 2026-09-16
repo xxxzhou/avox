@@ -172,18 +172,18 @@ bool Dx11CSVideoRender::vaildAndInitGraph() {
   ID3D11Texture2D* yuvTexture = (ID3D11Texture2D*)gpuFrame.buffer;
   D3D11_TEXTURE2D_DESC desc = {};
   yuvTexture->GetDesc(&desc);
+  // 原子读+清重置标志: 释放决策用捕获值, 只清本次读到的值 —— 读-清分离期间宿主
+  // 新置的请求不会被盲写抹掉, 留到下一帧再重建一次(见 VideoRender.hpp 契约)
+  const bool bNeedReset = bResetFlag.exchange(false);
   // 如果上下文或是大小变化，重新创建
-  if (device != context->getDevice() || bResetFlag) {
+  if (device != context->getDevice() || bNeedReset) {
     releaseGraph();
   }
   // NV12/P010 流切换: SRV 视图与着色器分支都不同, 必须重建
   if (yuvDesc.Format != desc.Format && desc.Format != DXGI_FORMAT_UNKNOWN) {
     releaseGraph();
   }
-  // 重建入口消费重置标志: 读完它做释放决策之后、建资源之前置回 false, 重建期间
-  // 宿主线程新置的请求会留到下一帧再重建一次。早退的重试由 computeShader 是否
-  // 为空驱动, 不依赖本标志(末尾清零会吞掉重建期间到达的请求, 见 VideoRender.hpp)
-  bResetFlag = false;
+  // 早退/失败的重试由 computeShader 是否为空驱动, 不依赖本标志
   if (computeShader) {
     return true;
   }

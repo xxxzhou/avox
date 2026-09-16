@@ -19,12 +19,12 @@ bool VideoProcessRender::vaildAndInitGraph() {
   }
   Dx11Context* context = static_cast<Dx11Context*>(gpuFrame.context);
   // 如果上下文或是大小变化，重新创建
-  if (device != context->getDevice() || bResetFlag) {
+  // 原子读+清重置标志: 释放决策用捕获值, 只清本次读到的值(见 VideoRender.hpp 契约)
+  const bool bNeedReset = bResetFlag.exchange(false);
+  if (device != context->getDevice() || bNeedReset) {
     releaseGraph();
   }
-  // 重建入口消费重置标志(读它做释放决策之后, 建资源之前): 重建期间宿主线程新置
-  // 的请求留到下一帧再重建一次; 早退的重试由 videoProcessor 是否为空驱动
-  bResetFlag = false;
+  // 早退/失败的重试由 videoProcessor 是否为空驱动, 不依赖本标志
   if (videoProcessor) {
     return true;
   }
