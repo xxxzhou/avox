@@ -192,6 +192,11 @@ SCodecId ffSCodec(AVCodecID codecId) {
       return SCodecId::ass;
     case AV_CODEC_ID_SUBRIP:
       return SCodecId::srt;
+    case AV_CODEC_ID_MOV_TEXT:
+      // mp4/mov 内嵌文本轨(tx3g): 样本是"2 字节大端长度 + UTF-8 文本"(可带
+      // 尾随样式 atom), 与 subrip 同归文本轨。注意该前缀在渲染前要剥掉 ——
+      // 内嵌文本轨当前只到"可枚举/可选中"(渲染缺口见字幕计划)
+      return SCodecId::srt;
     case AV_CODEC_ID_HDMV_PGS_SUBTITLE:
       return SCodecId::pgs;
     default:

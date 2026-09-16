@@ -372,7 +372,7 @@ void IOParseFF::onRunTask() {
       // 单独给AAC配置头文件使用
       audioDesc = adesc.desc;
     } else if (st->codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE) {
-      // 字幕流入轨枚举(计划 §3.2): 只登记 ASS/SSA/SRT/PGS, 其余跳过。
+      // 字幕流入轨枚举(计划 §3.2): 只登记 ASS/SSA/SRT/MOV_TEXT/PGS, 其余跳过。
       // 数据包经 PackType::subtitles 旁路下发, 不进音视频同步时钟。
       const SCodecId subCodec = ffSCodec(st->codecpar->codec_id);
       if (subCodec == SCodecId::none) {
