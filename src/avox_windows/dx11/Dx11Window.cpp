@@ -1,4 +1,5 @@
 #include "Dx11Window.hpp"
+#include "Dx11ShaderCache.hpp"
 #include "avox/AvoxMath.h"
 #include <dxgi1_6.h>
 // 老SDK的 DXGI_COLOR_SPACE_TYPE 枚举缺 PQ 值(12), 兜底补齐
@@ -306,14 +307,12 @@ void Dx11Window::initShader() {
     return;
   }
   HRESULT hr;
-  ID3DBlob* vsBlob = nullptr;
-  ID3DBlob* psBlob = nullptr;
+  // 编译走进程内 DXBC 缓存(见 Dx11ShaderCache.hpp): blob 由缓存持有, 本函数内
+  // 不要 Release(vsBlob 后面还要喂 CreateInputLayout)
   ID3DBlob* errorBlob = nullptr;
-  // 编译顶点着色器
-  hr =
-      D3DCompile(vertexShaderSource, strlen(vertexShaderSource), nullptr,
-                 nullptr, nullptr, "main", "vs_5_0", 0, 0, &vsBlob, &errorBlob);
-  if (FAILED(hr)) {
+  ID3DBlob* vsBlob =
+      Dx11ShaderCache::get(vertexShaderSource, "main", "vs_5_0", &errorBlob);
+  if (!vsBlob) {
     if (errorBlob) errorBlob->Release();
     return;
   }
@@ -321,25 +320,21 @@ void Dx11Window::initShader() {
                                   vsBlob->GetBufferSize(), nullptr,
                                   &vertexShader);
   if (FAILED(hr)) {
-    vsBlob->Release();
     return;
   }
 
   // 编译像素着色器
-  hr =
-      D3DCompile(pixelShaderSource, strlen(pixelShaderSource), nullptr, nullptr,
-                 nullptr, "main", "ps_5_0", 0, 0, &psBlob, &errorBlob);
-  if (FAILED(hr)) {
+  errorBlob = nullptr;
+  ID3DBlob* psBlob =
+      Dx11ShaderCache::get(pixelShaderSource, "main", "ps_5_0", &errorBlob);
+  if (!psBlob) {
     if (errorBlob) errorBlob->Release();
-    vsBlob->Release();
     return;
   }
   hr =
       device->CreatePixelShader(psBlob->GetBufferPointer(),
                                 psBlob->GetBufferSize(), nullptr, &pixelShader);
   if (FAILED(hr)) {
-    psBlob->Release();
-    vsBlob->Release();
     return;
   }
 
@@ -352,8 +347,7 @@ void Dx11Window::initShader() {
   };
   hr = device->CreateInputLayout(layout, 2, vsBlob->GetBufferPointer(),
                                  vsBlob->GetBufferSize(), &inputLayout);
-  vsBlob->Release();
-  psBlob->Release();
+  // vsBlob/psBlob 由 Dx11ShaderCache 持有, 此处不 Release
   if (FAILED(hr)) return;
 
   // 创建顶点缓冲区（全屏四边形）

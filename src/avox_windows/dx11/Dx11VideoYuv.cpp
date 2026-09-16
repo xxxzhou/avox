@@ -1,5 +1,6 @@
 #include "Dx11VideoYuv.hpp"
 
+#include "Dx11ShaderCache.hpp"
 #include "avox/module/AvoxManager.hpp"
 
 #pragma comment(lib, "D3DCompiler.lib")
@@ -100,32 +101,25 @@ void Dx11VideoYuv::createProgram() {
   if (!device || !d3dcontext) {
     return;
   }
-  // 编译着色器
-  ID3DBlob* shaderBlob = nullptr;
+  // 编译走进程内 DXBC 缓存(见 Dx11ShaderCache.hpp); blob 所有权在缓存, 不要 Release
   ID3DBlob* errorBlob = nullptr;
-  HRESULT hr =
-      D3DCompile(rgbaToNv12Shader, strlen(rgbaToNv12Shader), nullptr, nullptr,
-                 nullptr, "main", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
-  if (FAILED(hr)) {
+  ID3DBlob* shaderBlob =
+      Dx11ShaderCache::get(rgbaToNv12Shader, "main", "cs_5_0", &errorBlob);
+  if (!shaderBlob) {
     if (errorBlob) {
       log(LogLevel::warn, "Dx11VideoYuv D3DCompile error: ",
           (char*)errorBlob->GetBufferPointer());
       errorBlob->Release();
     }
-    if (shaderBlob) {
-      shaderBlob->Release();
-    }
     return;
   }
-  // 创建计算着色器
-  hr = device->CreateComputeShader(shaderBlob->GetBufferPointer(),
-                                   shaderBlob->GetBufferSize(), nullptr,
-                                   &computeShader);
+  // 创建计算着色器(设备相关, 每 device 一份)
+  HRESULT hr = device->CreateComputeShader(shaderBlob->GetBufferPointer(),
+                                           shaderBlob->GetBufferSize(), nullptr,
+                                           &computeShader);
   if (FAILED(hr)) {
-    shaderBlob->Release();
     return;
   }
-  shaderBlob->Release();
   // 创建常量缓冲区
   constBuf = std::make_unique<Dx11Constant>();
   constBuf->setBufferSize(sizeof(uint32_t) * 2);

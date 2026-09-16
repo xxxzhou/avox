@@ -2,6 +2,7 @@
 
 #include "Dx11CSVideoRender.hpp"
 
+#include "Dx11ShaderCache.hpp"
 #include "Dx11Window.hpp"
 #include "avox/module/AvoxManager.hpp"
 #include "avox/video/ColorSpace.hpp"
@@ -247,32 +248,26 @@ void Dx11CSVideoRender::createProgram() {
   if (!device || !d3dcontext) {
     return;
   }
-  // 编译着色器
-  ID3DBlob* shaderBlob = nullptr;
+  // 编译走进程内 DXBC 缓存: 源码是常量, 重建图直接命中, 省掉每次 ~100ms 的
+  // D3DCompile; blob 所有权在缓存, 这里(以及任何调用点)都不要 Release
   ID3DBlob* errorBlob = nullptr;
-  HRESULT hr =
-      D3DCompile(yuvToRgbaShader, strlen(yuvToRgbaShader), nullptr, nullptr,
-                 nullptr, "main", "cs_5_0", 0, 0, &shaderBlob, &errorBlob);
-  if (FAILED(hr)) {
+  ID3DBlob* shaderBlob =
+      Dx11ShaderCache::get(yuvToRgbaShader, "main", "cs_5_0", &errorBlob);
+  if (!shaderBlob) {
     if (errorBlob) {
       log(LogLevel::warn,
           "Dx11Graph D3DCompile error: ", (char*)errorBlob->GetBufferPointer());
       errorBlob->Release();
     }
-    if (shaderBlob) {
-      shaderBlob->Release();
-    }
     return;
   }
-  // 创建计算着色器
-  hr = device->CreateComputeShader(shaderBlob->GetBufferPointer(),
-                                   shaderBlob->GetBufferSize(), nullptr,
-                                   &computeShader);
+  // 创建计算着色器(设备相关, 每 device 一份)
+  HRESULT hr = device->CreateComputeShader(shaderBlob->GetBufferPointer(),
+                                           shaderBlob->GetBufferSize(), nullptr,
+                                           &computeShader);
   if (FAILED(hr)) {
-    shaderBlob->Release();
     return;
   }
-  shaderBlob->Release();
   // 创建常量缓冲区(32B: 尺寸+格式+transfer+hdrMode+峰值)
   constBuf = std::make_unique<Dx11Constant>();
   constBuf->setBufferSize(sizeof(constData));
