@@ -14,7 +14,7 @@
 | A-1 ASS/PGS 链收尾 | P0 | M1 | 计划就绪 | 接口面与内封链已齐,剩外挂样式/编码自愈/PGS e2e | [a01](a01-ass-pgs.md) |
 | A-2 秒起播/seek 秒响应 | P0 | M1 | 计划就绪 | probe 无降档、全链无指标打点 | [a02](a02-fast-start-seek.md) |
 | A-3 VP9/WEBM 硬解排查 | P0 | M1 | 需复现 | 三平台硬解注册表均无 VP9,全落软解;**W38 仓内零记录** | [a03](a03-vp9-webm.md) |
-| A-4 GPU 直通三平台 | P0 | M4 | 计划就绪 | Windows 全链通;Android AHB 基建在但解码不直出;Apple 缺 Metal 导出 | [a04](a04-gpu-passthrough.md) |
+| A-4 GPU 直通三平台 | P0 | M4 | 计划就绪(**Windows 分辨率变化已修, 待实测验证, 见 T5**) | Windows 全链通;分辨率变化不跟随已修(换片后旧画布 1:1 落新纹理左上角问题消除);Android AHB 基建在但解码不直出;Apple 缺 Metal 导出 | [a04](a04-gpu-passthrough.md) |
 | A-5 可 seek 虚拟文件系统 | P0 | M2 | 计划就绪(建议提前) | 插件在但 DAV 无自有播放 IO 源、无重试/缓存/authExpired 无契约 | [a05](a05-remote-vfs.md) |
 | A-6 FFmpeg 9.0.1 换代 | P0 | 独立 | **适配已完成,待收口** | 五平台库均 9.0.1、源码已新 API,剩回归验证 | [a06](a06-ffmpeg9.md) |
 | A-7 avox_subtitle CLI | P1 | M3 | 计划就绪 | sherpa/翻译/CLI 骨架在,批量管线与 SRT 写出为零 | [a07](a07-subtitle-cli.md) |
