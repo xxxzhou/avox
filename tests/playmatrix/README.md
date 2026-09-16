@@ -300,20 +300,38 @@ Android commercial 构建 (LGPL 无 libx264) 没有注册任何 FF 软编, 转�
 - **软解只在 file/rtsp 对照**, 未铺满全协议 —— 控制耗时; 需要时按 `buildCases` 加行即可。
 - **转码录制固定软编** (`setHardEncode(false)`): Windows 硬编 h264_mf 对 profile 敏感, 本矩阵只兜
   "播放 + 录制能出正确产物", 不做编码器矩阵。
-- **录制中途 seek 后视频帧流不恢复 (Windows, 09-16 定位, 偶发/竞态)**: 哨兵用例
-  `rec-transcode-seek` (默认 off)。**可复现性是概率性的**: 同一台机器先跑出 `bytes=-1`
-  失败, 后跑出 `bytes=2130905` 通过; 失败时的运行时取证是 seek 之前 `VideoTrack::onWinUpdate`
-  稳定 30fps; seek 之后取帧链路整体停摆, 且失败形态也不固定 (一次 `onWinUpdate` 时间线彻底
-  中断, 一次循环照跑但一直 `sync=nodata`) —— 正因如此它不当 CI 门禁, 只在 `--all` 下跟踪。
-  后果链: 编码器只收到 1~2 帧 → `encode done pkts=0` → io 层
+- **产物残留会让"零产出"判 PASS (09-16 修)**: `recordAttempt` 过去不删产物, 而 io 层只在
+  流初始化成功时才 `avio_open2` 创建/截断文件 —— 编码器吐不出包时文件根本不会被创建,
+  于是**上一轮的 `pm_trans.mp4` 让本轮 `bytes=2128742` 假 PASS**(实测同一份残留文件让 4 次
+  零产出全部判 PASS, 并直接导致上面那条缺陷被误判成"偶发")。已改为 `muxer->open()` 前
+  `std::remove(outPath)`; 结论口径: **本日期之前所有 `rec-*` 的 PASS 都需要按此重新审视**。
+- **record 帧泵实测只有 ~4.5fps**: 结构原因 —— `RingBuffer::dequeueAction` 的回调
+  (`windowRender->render`) 在**队列锁内**执行, record/离屏路径下该临界区 180~280ms
+  (`maxDequeue`), 解码线程被反压到 `enqueueWait` 阻塞同量级(`maxEnqueue`)。整场只解出
+  46 帧 / 消费 36 帧。这不影响判定(产物仍正确), 但解释了两件事: ①为何一次 seek 就能让
+  编码器一包不出; ②转码录制的实际帧率远低于源帧率, 需要时另开用例量化。
+- **录制中途 seek 之后 IO 不再投包 (Windows, 09-16 定位, 必现)**: 哨兵用例
+  `rec-transcode-seek` (默认 off)。**每轮清空产物后 4/4 必现** `bytes=-1` —— 此前判为
+  "偶发/竞态"是错的, 那是下一条「产物残留」缺陷造成的假象。取证: `cmdSeek` 全程 371ms
+  正常返回 (`seekTo=1 seekType=1`), 但 `pkts/frames` 计数**在 seek 处冻结**
+  (`pkts=19 frames=12 consumed=10`, 渲染循环仍空转 235 次 `sync=nodata`) → seek 之后
+  IO 层不再投递任何包 → 解码器无输入 → 编码器无包 → io 层
   `IOMuxer::onRunTask` 等不到首个 I 帧包 (`packtype=video && frameType=1`) → `onInit()` 不执行
   → `avio_open2`/`write_header` 从未跑过 → **文件从未创建** → `bytes=-1`。
-  对照实验 (同二进制同素材, 仅去掉那次 seek): 立刻 PASS, 产出 1.2MB mp4; 同期取证
+  `IOMuxer::onRunTask` 等不到首个 I 帧包 (`packtype=video && frameType=1`) → `onInit()` 不执行
+  → `avio_open2`/`write_header` 从未跑过 → **文件从未创建** → `bytes=-1`。
+  对照实验 (同二进制同素材, 仅去掉那次 seek): 真 PASS, 产出 1.2MB mp4; 同期取证
   `setVideoDesc ... pick=h264_mf` (按名精确命中, 无 fallback)、`avcodec_open2 ret=0 pix=0
   (yuv420P) 640x360`、`send ret=0` —— **编码器白名单 / 像素格式 / 描述尺寸 / muxer 类型都已排除**,
-  唯一嫌疑是 seek 与解码器重启的握手 (`MediaPlayer::seek` → `setResetDecoderFlag`/
-  `onResetDecoder`「真实重置需等到 I 帧包前」+ `frameQueue.clear()`)。macOS 同类用例通过
-  → 平台相关, 待查 (影响面: 录制态下 seek; 是否波及普通播放的 seek 尚无对应用例)。
+  且 `onResetDecoder` 全程未触发 (`setResetDecoderFlag` 只由 `cmdResetDecode` 调用, seek 路径
+  不经过它) —— 早先怀疑的"解码器重启握手"也不是原因。
+  指控区间已收窄到 **IO 层 seek 握手** (`IOParseFF::seekTo`): `pauseTask()` 后靠读循环顶的
+  `pauseing()` 分支置 `bIoPausedAck`, 等待最多 10×20ms; 若读线程当时正阻塞在下游
+  `enqueueWait`/`dispatch` 而不是循环顶, 这次 ack 会等不到 → 超时直接放行(只是"没能独占
+  fmtCtx", 不报错), 随后 `resumeTask()`; 之后 IO 线程若无唤醒就**永久停住**, 与观测到的
+  "seek 后 pkts 冻结"一致。待下一步在此处插桩确认(确定性复现已具备: 也可用故障注入 ——
+  在帧队列锁内的渲染临界区插 120ms 延时, 该临界区实测本就有 ~180~280ms)。
+  另: 该用例同样必现于不注入延时的普通构建 (4/4)，注入只是把竞态窗口放大到必中。
 - **macOS 无头跑 LAN 全 FAIL 的新手坑**: `nohup`/脱离会话的进程, macOS 26 静默拒绝其
   本地网络访问 (errno 65, 无弹窗不进 TCC), 全部 LAN 用例报 *No route to host* ——
   不是权限没授 (列表里永远找不到它), 把 runner 挂在存活会话里跑即解。

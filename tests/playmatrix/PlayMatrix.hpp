@@ -1084,6 +1084,10 @@ inline Attempt recordAttempt(const PlayCase& c, bool transcode, const std::strin
     // Windows 硬编 h264_mf 对 profile 敏感, 软编更稳 (与 transcoderecordertest 同口径)
     muxer->setHardEncode(false);
   }
+  // 产物先删再用例判"产物 ≥8KB": io 层只在**初始化成功**时才 avio_open2 创建/截断
+  // 文件, 编码器吐不出包时文件根本不会被创建 —— 留着上一轮的产物会让"本次零产出"
+  // 被判 PASS (09-16 实测: 同一份残留文件让 4 次零产出都报 bytes=2128742)
+  std::remove(outPath.c_str());
   bool opened = muxer->open(outPath.c_str());
   if (!opened) {
     removeMediaPlayerOb(player, &ob);
