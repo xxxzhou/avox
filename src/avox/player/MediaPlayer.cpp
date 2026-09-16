@@ -343,23 +343,13 @@ void MediaPlayer::onPacket(const AvoxPacket& packet) {
     if (ptype == PackType::subtitles) {
       // -1=未选轨(先排队, 选轨后回放该轨); -2=外挂字幕模式(内封包丢弃);
       // >=0=已选轨, 只留选中的
-      static std::atomic<int64_t> subDbg{0};
-      if (subDbg.fetch_add(1) < 12) {
-        LOGFLF(LogLevel::info, "[dbg] sub arrive idx:", packet.index,
-               " sel:", subTrackIndex.load(), " pts:", packet.pts);
-      }
       const int32_t sel = subTrackIndex.load();
       if (sel == -2 || (sel >= 0 && index != sel)) {
         return;
       }
       if (subtitleView->trackOpened() && subtitleView->isTrackLoaded()) {
-        const int64_t t0 = timeStampMS();
         subtitleView->pushChunk((const char*)packet.data.data,
                                 packet.data.size, packet.pts, packet.duration);
-        const int64_t dt = timeStampMS() - t0;
-        if (dt > 100) {
-          LOGFLF(LogLevel::warn, "[dbg] pushChunk blocked ms:", dt);
-        }
       } else {
         // 选轨/轨加载前到达: 排队(有界, 丢最旧), 加载后回放
         std::lock_guard<std::mutex> lock(subMetaMtx);
