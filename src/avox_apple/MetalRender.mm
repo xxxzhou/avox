@@ -198,19 +198,15 @@ bool MetalRender::vaildAndInitGraph() {
   if (!metalLayer && bResetFlag) {
     releaseGraph();
   }
+  // 重建入口消费重置标志(读它做释放决策之后, 建资源之前): 重建期间宿主线程新置
+  // 的请求留到下一帧再重建一次; 建不建由 pipelineState/cacheTexture 是否为空驱动
+  bResetFlag = false;
   if (pipelineState != nil && cacheTexture != nil) {
-    // 快路径消费重置标志(原由调用方清, 现契约: 各后端 vaildAndInitGraph
-    // 内部消费; 与调用方清的时机等价, Metal 语义不变)
-    bResetFlag = false;
     return true;
   }
   initContext();
   createPipelineState();
   createTextureCache();
-  // 重建成功才消费; 失败保留标志, 下一帧重试(与原调用方"通过后清"一致)
-  if (pipelineState != nil && cacheTexture != nil) {
-    bResetFlag = false;
-  }
   return pipelineState != nil && cacheTexture != nil;
 }
 

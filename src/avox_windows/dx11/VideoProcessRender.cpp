@@ -22,7 +22,10 @@ bool VideoProcessRender::vaildAndInitGraph() {
   if (device != context->getDevice() || bResetFlag) {
     releaseGraph();
   }
-  if (videoProcessor && !bResetFlag) {
+  // 重建入口消费重置标志(读它做释放决策之后, 建资源之前): 重建期间宿主线程新置
+  // 的请求留到下一帧再重建一次; 早退的重试由 videoProcessor 是否为空驱动
+  bResetFlag = false;
+  if (videoProcessor) {
     return true;
   }
   ID3D11Texture2D* yuvTexture = (ID3D11Texture2D*)gpuFrame.buffer;

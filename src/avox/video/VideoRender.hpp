@@ -39,7 +39,10 @@ class AVOX_EXPORT VideoRender : public OptionLink {
   // 窗口为空，渲染离屏的大小
   ImageFormat imageFormat = {};
   // 重置标志，窗口大小改变，GPU上下文改变可能都需要重置。
-  // 宿主线程置位/渲染线程消费, 原子化避免丢请求与数据竞态
+  // 宿主线程置位/渲染线程消费, 原子化避免丢请求与数据竞态。
+  // 契约: 派生类必须在 vaildAndInitGraph() 的**重建入口**消费它(读完它做释放
+  // 决策之后、建资源之前置回 false)。末尾清零会把重建期间新置的请求一起抹掉;
+  // 完全不消费则会退化成每帧重建。早退/失败的重试由资源空指针驱动, 不依赖本标志
   std::atomic<bool> bResetFlag{false};
   // 渲染类型，opengles/vulkan/metal/dx11
   RenderType renderType = RenderType::other;
@@ -134,6 +137,7 @@ class AVOX_EXPORT VideoRender : public OptionLink {
  protected:
   virtual void onSetSurface() {};
   virtual void onSurfaceSizeChange(int32_t wdWidth, int32_t wdHeight) {};
+  // 实现约定: 内部消费 bResetFlag(见 bResetFlag 注释), 返回 true 表示本帧可渲染
   virtual bool vaildAndInitGraph() { return false; };
   virtual void releaseGraph() {};
   virtual void renderGpuFrame(const GpuFrame& frame) {};

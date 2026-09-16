@@ -180,7 +180,11 @@ bool Dx11CSVideoRender::vaildAndInitGraph() {
   if (yuvDesc.Format != desc.Format && desc.Format != DXGI_FORMAT_UNKNOWN) {
     releaseGraph();
   }
-  if (computeShader && !bResetFlag) {
+  // 重建入口消费重置标志: 读完它做释放决策之后、建资源之前置回 false, 重建期间
+  // 宿主线程新置的请求会留到下一帧再重建一次。早退的重试由 computeShader 是否
+  // 为空驱动, 不依赖本标志(末尾清零会吞掉重建期间到达的请求, 见 VideoRender.hpp)
+  bResetFlag = false;
+  if (computeShader) {
     return true;
   }
   // 纹理可能无效，比如源纹理重建了，在渲染线程中指针还在
