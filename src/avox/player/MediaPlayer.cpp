@@ -856,6 +856,8 @@ void MediaPlayer::renderFrame(AVTrack* track, bool bGetFrame) {
       });
       return;
     }
+    // IO 已结束, 剩的只是尾包在解码/渲染管线里播放(音频尾包可长达数秒), 不是真卡顿.
+    return;
   }
   if (state == PlayerState::playing) {
     // 记录播放器队列状态,这时一般是音频或是视频队列有个空了
@@ -1532,6 +1534,9 @@ void MediaPlayer::cmdBuffering() {
       cmdComplete();
       return;
     }
+    // IO 已结束但尾包未放完: 不要进 buffering(pauseRender 会停掉音频、看门狗 10s
+
+    return;
   }
   // 渲染暂停,等IO与解码把数据存够
   pauseRender(true);
