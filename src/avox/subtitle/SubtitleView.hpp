@@ -13,7 +13,7 @@
 #include "IAssOverlay.hpp"
 #include "Subtitle.hpp"
 #include "SubtitleAsr.hpp"
-#include "SubtitleCanvas.h"
+#include "SubtitleCanvas.hpp"
 #include "SubtitleFile.hpp"
 #include "SubtitleSlots.hpp"
 

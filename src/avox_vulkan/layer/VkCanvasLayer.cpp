@@ -17,8 +17,13 @@ VkCanvasLayer::VkCanvasLayer() {
 
 VkCanvasLayer::~VkCanvasLayer() {}
 
-void VkCanvasLayer::updateCanvas(const uint8_t* rgba, int32_t w, int32_t h,
-                                 int32_t stride, int32_t x, int32_t y) {
+void VkCanvasLayer::updateCanvas(const AssCanvas& canvas) {
+  const uint8_t* rgba = canvas.rgba;
+  const int32_t w = canvas.width;
+  const int32_t h = canvas.height;
+  const int32_t stride = canvas.stride;
+  const int32_t x = canvas.x;
+  const int32_t y = canvas.y;
   if (!rgba || w <= 0 || h <= 0) {
     return;
   }
@@ -144,7 +149,7 @@ void VkCanvasLayer::applyPending() {
   const int32_t x = pendingX, y = pendingY;
   hasPending = false;
   pendingW = pendingH = pendingStride = pendingX = pendingY = 0;
-  updateCanvas(data.data(), w, h, stride, x, y);
+  updateCanvas(AssCanvas{data.data(), w, h, stride, x, y});
 }
 
 void VkCanvasLayer::onPreFrame() {

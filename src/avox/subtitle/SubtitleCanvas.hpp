@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include "IAssOverlay.hpp"
+
 namespace avox {
 
 class ISurfaceRender;
@@ -18,9 +20,8 @@ class ICanvasLayer {
   virtual ~ICanvasLayer() {}
 
  public:
-  // 上传画布(bbox 裁剪, 整帧坐标系): x/y 为画布相对视频帧的偏移
-  virtual void updateCanvas(const uint8_t* rgba, int32_t w, int32_t h,
-                            int32_t stride, int32_t x, int32_t y) = 0;
+  // 上传画布(bbox 裁剪, 整帧坐标系): canvas 为 RGBA8 子图, x/y 为其相对视频帧的偏移
+  virtual void updateCanvas(const AssCanvas& canvas) = 0;
   // 清空(无字幕帧): 层走直通, 不采样画布
   virtual void clearCanvas() = 0;
 

@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "VkLayer.hpp"
-#include "avox/subtitle/SubtitleCanvas.h"
+#include "avox/subtitle/SubtitleCanvas.hpp"
 #include "avox_vulkan/vulkan/VkTexture.hpp"
 
 namespace avox {
@@ -70,8 +70,7 @@ class VkCanvasLayer : public VkLayer, public ICanvasLayer {
 
  public:
   // ICanvasLayer
-  virtual void updateCanvas(const uint8_t* rgba, int32_t w, int32_t h,
-                            int32_t stride, int32_t x, int32_t y) override;
+  virtual void updateCanvas(const AssCanvas& canvas) override;
   virtual void clearCanvas() override;
   // 全局变换(字幕轨槽路径): 存成员, 下个 onPreFrame 合成进 UBO
   void setCanvasTransform(float scale, float offsetX, float offsetY,
@@ -96,20 +95,20 @@ class CanvasRender : public ICanvasLayer {
   ~CanvasRender() override { setCanvasLayer(nullptr); }
 
   // ICanvasLayer: 转发到当前层; 未绑定层时暂存最新一帧(建图后补发)
-  virtual void updateCanvas(const uint8_t* rgba, int32_t w, int32_t h,
-                            int32_t stride, int32_t x, int32_t y) override {
+  virtual void updateCanvas(const AssCanvas& canvas) override {
     std::lock_guard<std::mutex> lock(mtx);
     if (layer) {
-      layer->updateCanvas(rgba, w, h, stride, x, y);
+      layer->updateCanvas(canvas);
       hasStash = false;
       return;
     }
-    if (!rgba || w <= 0 || h <= 0) {
+    if (!canvas.rgba || canvas.width <= 0 || canvas.height <= 0) {
       return;
     }
-    stash.resize((size_t)h * stride);
-    memcpy(stash.data(), rgba, (size_t)h * stride);
-    sw = w; sh = h; sstride = stride; sx = x; sy = y;
+    stash.resize((size_t)canvas.height * canvas.stride);
+    memcpy(stash.data(), canvas.rgba, (size_t)canvas.height * canvas.stride);
+    sw = canvas.width; sh = canvas.height; sstride = canvas.stride;
+    sx = canvas.x; sy = canvas.y;
     hasStash = true;
   }
   virtual void clearCanvas() override {
@@ -149,7 +148,14 @@ class CanvasRender : public ICanvasLayer {
     layer = l;
     if (layer) {
       if (hasStash) {
-        layer->updateCanvas(stash.data(), sw, sh, sstride, sx, sy);
+        AssCanvas c;
+        c.rgba = stash.data();
+        c.width = sw;
+        c.height = sh;
+        c.stride = sstride;
+        c.x = sx;
+        c.y = sy;
+        layer->updateCanvas(c);
         hasStash = false;
         contentStale = false;  // 内容已随暂存迁到新层
       } else {

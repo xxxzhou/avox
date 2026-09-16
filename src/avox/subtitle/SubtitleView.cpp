@@ -496,8 +496,7 @@ void SubtitleView::renderTrack(int64_t ptsMs) {
   }
   lastSeq = canvas->seq;
   if (canvas->rgba) {
-    canvasLayer->updateCanvas(canvas->rgba, canvas->width, canvas->height,
-                              canvas->stride, canvas->x, canvas->y);
+    canvasLayer->updateCanvas(*canvas);
   } else {
     canvasLayer->clearCanvas();
   }
@@ -552,9 +551,9 @@ void SubtitleView::renderText(int64_t ptsMs) {
     return;
   }
   lastSeq = seq;
-  canvasLayer->updateCanvas(rasterizer.rgba(), rasterizer.width(),
-                            rasterizer.height(), rasterizer.stride(),
-                            rasterizer.offsetX(), rasterizer.offsetY());
+  canvasLayer->updateCanvas(AssCanvas{rasterizer.rgba(), rasterizer.width(),
+                                      rasterizer.height(), rasterizer.stride(),
+                                      rasterizer.offsetX(), rasterizer.offsetY()});
 #else
   (void)ptsMs;
 #endif
