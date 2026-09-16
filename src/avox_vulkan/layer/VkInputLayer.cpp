@@ -246,36 +246,38 @@ void VkInputLayer::inputGpuData(IRenderContext* context) {
   ImageFormat imageFormat = inFormats[0];
 #ifdef WIN32
   winImage->updateInputContext(context);
-  // 根据DX11/DX12的输入
-  if (imageFormat.width == 0 || imageFormat.height == 0) {
-    RenderType renderType = context->getRenderType();
-    ImageFormat newFormat = {};
-    if (renderType == RenderType::D3D11) {
-      IDx11Context* contextDX11 = (IDx11Context*)context;
-      ID3D11Texture2D* dxtexture = contextDX11->getTexture();
-      if (!dxtexture) {
-        return;
-      }
-      getImageFormat(dxtexture, newFormat);
-    } else if (renderType == RenderType::D3D12) {
-      IDx12Context* contextDX12 = (IDx12Context*)context;
-      ID3D12Resource* dxtexture = contextDX12->getTexture();
-      if (!dxtexture) {
-        return;
-      }
-      getImageFormat(dxtexture, newFormat);
+  // 外部DX纹理尺寸每帧读一次(GetDesc, 不做GPU同步), 只在尺寸/格式真正变化时
+  // 重设输入槽(setLayerFormat 内部 resetGraph 整图按新尺寸重建); 未变化不动,
+  // 不会每帧重建。原先只在 inFormats 为 0 时读一次, 换源改分辨率后管线一直停在
+  // 旧尺寸, 导出/互操作面按新尺寸时拷贝被静默截断(表现为左上角一块 + 其余黑)
+  RenderType renderType = context->getRenderType();
+  ImageFormat newFormat = {};
+  if (renderType == RenderType::D3D11) {
+    IDx11Context* contextDX11 = (IDx11Context*)context;
+    ID3D11Texture2D* dxtexture = contextDX11->getTexture();
+    if (!dxtexture) {
+      return;
     }
-    LOGFLF(LogLevel::info,
-           "dx texture render type:", getVRenderTypeStr(renderType),
-           " width:", newFormat.width, " height:", newFormat.height,
-           " image type:", getImageTypeStr(newFormat.imageType));
+    getImageFormat(dxtexture, newFormat);
+  } else if (renderType == RenderType::D3D12) {
+    IDx12Context* contextDX12 = (IDx12Context*)context;
+    ID3D12Resource* dxtexture = contextDX12->getTexture();
+    if (!dxtexture) {
+      return;
+    }
+    getImageFormat(dxtexture, newFormat);
+  }
+  // 尺寸为0表示没取到有效纹理(非DX上下文/纹理无效), 交给后续帧
+  if (newFormat.width > 0 && newFormat.height > 0 &&
+      (imageFormat.width != newFormat.width ||
+       imageFormat.height != newFormat.height ||
+       imageFormat.imageType != newFormat.imageType)) {
+    LOGFLF(LogLevel::info, "dx texture change, render type:",
+           getVRenderTypeStr(renderType), " from:", imageFormat.width, "x",
+           imageFormat.height, " ", getImageTypeStr(imageFormat.imageType),
+           " to:", newFormat.width, "x", newFormat.height, " ",
+           getImageTypeStr(newFormat.imageType));
     setLayerFormat(this, newFormat);
-    // if (winImage->getRenderType() != context->getRenderType()) {
-    //   winImage->setRenderType(context->getRenderType());
-    //   // 需要重置重新生成DX共享交互资源
-    //   resetGraph();
-    //   return;
-    // }
   }
   // 管线资源已经准备完成
   // if (vkPipeGraph->resourceReady()) {
@@ -287,29 +289,39 @@ void VkInputLayer::inputGpuData(IRenderContext* context) {
 #endif
 #ifdef __ANDROID__
   GLESContext* glesContext = static_cast<GLESContext*>(context);
-  if (imageFormat.width == 0 || imageFormat.height == 0) {
-    imageFormat = glesContext->getImageFormat();
-    if (imageFormat.imageType == ImageType::other) {
-      imageFormat.imageType = ImageType::rgba8;
-    }
-    textureId = glesContext->getImage();
-    LOGFLF(LogLevel::info, "gles context textureId:", textureId,
-           " width:", imageFormat.width, " height:", imageFormat.height,
-           " image type:", getImageTypeStr(imageFormat.imageType));
-    setLayerFormat(this, imageFormat);
+  // 只在GLES纹理尺寸/格式换新时重设, 尺寸不变不动(避免每帧重建)
+  ImageFormat glesFormat = glesContext->getImageFormat();
+  if (glesFormat.imageType == ImageType::other) {
+    glesFormat.imageType = ImageType::rgba8;
+  }
+  uint32_t glesTextureId = glesContext->getImage();
+  if (glesFormat.width > 0 && glesFormat.height > 0 &&
+      (imageFormat.width != glesFormat.width ||
+       imageFormat.height != glesFormat.height ||
+       imageFormat.imageType != glesFormat.imageType ||
+       textureId != glesTextureId)) {
+    textureId = glesTextureId;
+    LOGFLF(LogLevel::info, "gles texture change, textureId:", textureId,
+           " width:", glesFormat.width, " height:", glesFormat.height,
+           " image type:", getImageTypeStr(glesFormat.imageType));
+    setLayerFormat(this, glesFormat);
   }
 #endif
 #ifdef __APPLE__
   MetalContext* metalContext = static_cast<MetalContext*>(context);
-  if (imageFormat.width == 0 || imageFormat.height == 0) {
-    imageFormat = metalContext->getImageFormat();
-    IOSurfaceRef ioSurface = metalContext->getIOSurface();
+  // 只在尺寸/面换新时重设(setIOSurface 对同一个面幂等), 避免每帧重建
+  IOSurfaceRef ioSurface = metalContext->getIOSurface();
+  ImageFormat metalFormat = metalContext->getImageFormat();
+  if (metalFormat.width > 0 && metalFormat.height > 0 &&
+      (imageFormat.width != metalFormat.width ||
+       imageFormat.height != metalFormat.height ||
+       imageFormat.imageType != metalFormat.imageType ||
+       vkIosImage->getIOSurface() != ioSurface)) {
     vkIosImage->setIOSurface(ioSurface);
-    log(LogLevel::info,
-        "VkInputLayer::inputGpuData metal context ioSurface:", ioSurface,
-        " width:", imageFormat.width, " height:", imageFormat.height,
-        " image type:", getImageTypeStr(imageFormat.imageType));
-    setLayerFormat(this, imageFormat);
+    log(LogLevel::info, "metal surface change, ioSurface:", ioSurface,
+        " width:", metalFormat.width, " height:", metalFormat.height,
+        " image type:", getImageTypeStr(metalFormat.imageType));
+    setLayerFormat(this, metalFormat);
   }
 #endif
 }

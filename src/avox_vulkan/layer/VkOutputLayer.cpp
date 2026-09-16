@@ -66,9 +66,24 @@ void VkOutputLayer::onInitVkBuffer() {
   outBuffer->initResoure(BufferUsage::store, size,
                          VK_BUFFER_USAGE_TRANSFER_DST_BIT);
   // cpuData.resize(size);
-  if (outFormat.height == 0 || outFormat.width == 0) {
+#if defined(__ANDROID__)
+  // Android: outFormat 由外部 GL 纹理尺寸驱动(见 outputGpuData), 只在未设置时
+  // 用上游尺寸兜底(建立期 createAndroidBuffer 不能拿到 0)
+  if (outFormat.width == 0 || outFormat.height == 0) {
     outFormat = inFormats[0];
   }
+#else
+  // 输出尺寸每次重建都跟随上游: 原先只在 0x0 时取一次, 换源改分辨率后
+  // viewRect / Apple IOSurface 重建会一直沿用旧尺寸
+  if (outFormat.width != inFormats[0].width ||
+      outFormat.height != inFormats[0].height ||
+      outFormat.imageType != inFormats[0].imageType) {
+    LOGFLF(LogLevel::info, "outFormat sync, from:", outFormat.width, "x",
+           outFormat.height, " to:", inFormats[0].width, "x",
+           inFormats[0].height);
+  }
+  outFormat = inFormats[0];
+#endif
 #ifdef WIN32
   if (paramet.bGpu && bWinInterop) {
     LOGFLF(LogLevel::info, "[dx11dbg] onInitVkBuffer call bindD3D, dx11Output:",
@@ -191,9 +206,24 @@ void VkOutputLayer::onCommand() {
                    VK_PIPELINE_STAGE_TRANSFER_BIT,
                    VK_PIPELINE_STAGE_TRANSFER_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 #ifdef WIN32
-      // 因为dx窗口是直接使用CS的纹理,viewport
-      copyImage(cmd, inTexs[0].get(), winImage->getImage());
-      // blitFillImage(cmd, inTexs[0].get(), winImage->getImage(), viewRect);
+      // 源(上游节点纹理)与本层输出纹理尺寸不等时 1:1 copyImage 只覆盖左上角重叠区
+      // (不报错也不缩放), 换分辨率后表现为左上角一块 + 其余黑; 尺寸不等改走带 rect
+      // 的 blit 缩放铺满, 并打日志, 不再静默截断。尺寸一致仍走拷贝(等价且更快)
+      const ImageFormat& dstFormat = winImage->getFormat();
+      bool bSizeMismatch =
+          dstFormat.width > 0 && dstFormat.height > 0 &&
+          (inTexs[0]->width != (uint32_t)dstFormat.width ||
+           inTexs[0]->height != (uint32_t)dstFormat.height);
+      if (bSizeMismatch) {
+        LOGFLF(LogLevel::warn, "dx11 output size mismatch, src:",
+               (int32_t)inTexs[0]->width, "x", (int32_t)inTexs[0]->height,
+               " dst:", dstFormat.width, "x", dstFormat.height, " blit to fit");
+        vec4i dstRect = {0, 0, dstFormat.width, dstFormat.height};
+        blitFillImage(cmd, inTexs[0].get(), winImage->getImage(), dstRect);
+      } else {
+        // 因为dx窗口是直接使用CS的纹理,viewport
+        copyImage(cmd, inTexs[0].get(), winImage->getImage());
+      }
       changeLayout(cmd, destImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                    VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_TRANSFER_BIT,
                    VK_PIPELINE_STAGE_TRANSFER_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
@@ -222,7 +252,22 @@ void VkOutputLayer::onCommand() {
                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                  VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                  VK_PIPELINE_STAGE_TRANSFER_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
-    copyImage(cmd, inTexs[0].get(), exportImage);
+    // 导出面尺寸由调用方声明(enableVkOutput 的 w/h), 与图内出图尺寸不等时
+    // 1:1 copyImage 会静默截断到左上角, 改走 blit 缩放铺满导出面
+    const VkSharedImageDesc& exportDesc = sharedImage->getDesc();
+    bool bSizeMismatch =
+        exportDesc.width > 0 && exportDesc.height > 0 &&
+        (inTexs[0]->width != (uint32_t)exportDesc.width ||
+         inTexs[0]->height != (uint32_t)exportDesc.height);
+    if (bSizeMismatch) {
+      LOGFLF(LogLevel::warn, "vkshare output size mismatch, src:",
+             (int32_t)inTexs[0]->width, "x", (int32_t)inTexs[0]->height,
+             " dst:", exportDesc.width, "x", exportDesc.height, " blit to fit");
+      vec4i dstRect = {0, 0, exportDesc.width, exportDesc.height};
+      blitFillImage(cmd, inTexs[0].get(), exportImage, dstRect);
+    } else {
+      copyImage(cmd, inTexs[0].get(), exportImage);
+    }
     // 拷入后留在 GENERAL: 跨 VkDevice 共享的标准约定, 外部设备拷出/采样
     // 不经过 UNDEFINED 丢弃语义 (UE 直通读黑问题, 2026-09-05)
     changeLayout(cmd, exportImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,

@@ -720,6 +720,15 @@ bool enableVkOutput(ISurfaceRender* sr, int32_t w, int32_t h) {
   }
   return true;
 #endif
+  // 声明尺寸与图内出图尺寸不等时告警: 拷贝会按导出面缩放适配
+  // (换片改分辨率后调用方仍传旧尺寸, 或反过来, 都从这里暴露)
+  const ImageFormat& outFormat = outputLayer->getOutFormat();
+  if (outFormat.width > 0 && outFormat.height > 0 &&
+      (outFormat.width != w || outFormat.height != h)) {
+    LOGFLF(LogLevel::warn, "enableVkOutput: declared size differs from pipeline,",
+           " declared:", w, "x", h, " pipeline:", outFormat.width, "x",
+           outFormat.height);
+  }
   // 幂等: 已建立直接返回。图重建(功能开关等)后新层未激活, 会重新走建立流程
   if (outputLayer->isInteropActive()) {
     return true;
