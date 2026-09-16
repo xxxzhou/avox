@@ -548,6 +548,16 @@ class SubtitleOb : public ISurfaceRenderOb {
     std::lock_guard<std::mutex> l(mtx);
     return totalFrames;
   }
+  // 走查落图: 设成 PNG 路径后, 每帧"字幕亮像素更多"就覆盖一次 → 最后留下字幕最清楚的
+  // 那帧; 一帧都没命中时至少留首帧(FAIL 也有图可看)。空串 = 不落盘。
+  void setShotPath(const std::string& path) {
+    std::lock_guard<std::mutex> l(mtx);
+    shotPath = path;
+  }
+  std::string shotSavedPath() {
+    std::lock_guard<std::mutex> l(mtx);
+    return shotSaved;
+  }
 
  private:
   void onFrame(IImageBuffer* buf, YuvType yuvType) override {
@@ -585,10 +595,26 @@ class SubtitleOb : public ISurfaceRenderOb {
         if (px[1] > 120) ++count;  // 绿通道(亮色字幕文字)
       }
     }
+    // 走查落图: 亮像素更多的帧覆盖上一张(最后留下字幕最清楚的那帧); 首帧无条件先落
+    // 一张, 这样一条字幕都没渲染出来时也有图可看。存盘放锁外, 不拖渲染回调。
+    bool save = false;
+    std::string path;
+    {
+      std::lock_guard<std::mutex> l(mtx);
+      if (count > 40) ++subFrames;
+      if (count > maxBright) maxBright = count;
+      if (!shotPath.empty() && (count > shotBright || bestSaved == 0)) {
+        shotBright = count;
+        ++bestSaved;
+        save = true;
+        path = shotPath;
+      }
+    }
+    if (save && saveImagePath(path.c_str(), rgba)) {
+      std::lock_guard<std::mutex> l(mtx);
+      shotSaved = path;
+    }
     delete rgba;
-    std::lock_guard<std::mutex> l(mtx);
-    if (count > 40) ++subFrames;
-    if (count > maxBright) maxBright = count;
   }
   void onSurface() override {}
   void onRender() override {}
@@ -600,12 +626,63 @@ class SubtitleOb : public ISurfaceRenderOb {
   int64_t frames = 0;
   int64_t subFrames = 0;
   int64_t totalFrames = 0;
+  std::string shotPath;     // 走查落图路径 (空 = 不落盘)
+  std::string shotSaved;    // 实际落过盘的路径 (供判定行 img= 引用)
+  int32_t shotBright = -1;  // 已落图那帧的亮像素数 (新帧更多才覆盖)
+  int32_t bestSaved = 0;    // 已落图张数 (0 = 首帧无条件落)
 };
 
 struct Attempt {
   bool pass = false;
   std::string note;
 };
+
+// ── 界面走查(有头, --win)落图 ──
+// 离屏用例(截图/帧契约/直取/录制/字幕取证)按设计"窗口无画面", 走查时人眼只能看横幅,
+// 事后也没有图可复核。走查模式额外把代表帧落成 <outDir>/<prefix>win_<case id>.png,
+// 让每条用例都留一张"表示成功"的画面; 判定口径不变, 只多一个旁路产物 —— 无头跑不落,
+// CI 产物不受影响。宿主(HostMain)在 --win 分支调 setWalkShot 打开。
+struct WalkShot {
+  bool on = false;               // HostMain --win 时置位
+  std::string dir;               // 落盘目录 (空 = 当前目录)
+  std::string prefix = "pm_";
+};
+
+inline WalkShot& walkShot() {
+  static WalkShot s;
+  return s;
+}
+
+inline void setWalkShot(bool on, const std::string& dir, const std::string& prefix) {
+  WalkShot& s = walkShot();
+  s.on = on;
+  s.dir = dir;
+  s.prefix = prefix;
+}
+
+// 走查图路径; 未开启走查返回空串, 调用方据此跳过落盘
+inline std::string walkShotPath(const std::string& id) {
+  const WalkShot& s = walkShot();
+  if (!s.on) {
+    return "";
+  }
+  const std::string name = s.prefix + "win_" + id + ".png";
+  if (s.dir.empty()) {
+    return name;
+  }
+  const char last = s.dir[s.dir.size() - 1];
+  return (last == '/' || last == '\\') ? s.dir + name : s.dir + "/" + name;
+}
+
+// 走查模式下产物(抽帧 PNG / 录制 mp4)的文件名前缀/名: 同一轮里多条用例共用固定名字
+// 会互相覆盖(4 条 shot 抢 pm_shot.png、3 条录制抢 pm_trans.mp4), 走查时按 case id 分开
+inline std::string walkShotPrefix(const std::string& id, const std::string& base) {
+  return walkShot().on ? base + "win_" + id + "_" : base;
+}
+
+inline std::string walkArtifactName(const std::string& id, const std::string& base) {
+  return walkShot().on ? "win_" + id + "_" + base : base;
+}
 
 // ── 播放器观察者: 只记 IO 错误 (首帧前解码报错属正常, 不判失败) ──
 class CaseOb : public IMediaPlayerOb {
@@ -938,6 +1015,9 @@ inline Attempt frameContractAttempt(const PlayCase& c, const std::string& prefix
                        : fob.why() + " ");
   }
   r.note += buf;
+  if (fob.dumpedCount() > 0) {
+    r.note += " img=" + prefix + "frame0.png";  // 走查落图(抽帧转 RGBA): 人眼复核入口
+  }
   r.pass = ok;
   return r;
 }
@@ -989,6 +1069,11 @@ inline Attempt yuvOutAttempt(const PlayCase& c, const std::string& prefix) {
     }
   }
   r.note += buf;
+  if (fob.dumpedCount() > 0) {
+    r.note += " img=" + prefix + "frame0.png";  // 走查落图: 人眼复核入口
+  } else if (walkShot().on) {
+    r.note += " img=none(该像素格式无 RGBA 转换)";  // 10bit 只有交付契约, 没有可看的图
+  }
   r.pass = ok;
   return r;
 }
@@ -1149,6 +1234,7 @@ inline Attempt subtitleAttempt(const PlayCase& c) {
   ISurfaceRender* sr = player->getSurfaceRender();
   sr->setOffSurface(YuvType::yuv420P);
   SubtitleOb sob;
+  sob.setShotPath(walkShotPath(c.id));  // 走查模式: 落一张字幕已合成的帧供人眼复核
   addSurfaceRenderOb(sr, &sob);
   // 注意: 不要在此 setIoPlan/setHardDecode —— 字幕用例是本地文件, 走默认 ffmpeg 计划
   // 即可; 官方 subtitletexttest 也是直接 open, 不调这俩, 调了反而与已验证链路不一致。
@@ -1240,6 +1326,10 @@ inline Attempt subtitleAttempt(const PlayCase& c) {
       r.note = "no-subtitle-band(<=40) ";
   }
   r.note += buf;
+  const std::string shot = sob.shotSavedPath();
+  if (!shot.empty()) {
+    r.note += " img=" + shot;  // 走查落图: 人眼复核入口(合成帧已含字幕)
+  }
   r.pass = pass;
   return r;
 }
@@ -1330,19 +1420,26 @@ inline int runAll(const std::vector<PlayCase>& cases, void* surface, const RunOp
         r = rtcAttempt(c);
         break;
       case CaseKind::frameContract:
-        r = frameContractAttempt(c, joinPath(opt.outDir, opt.prefix));
+        // 走查模式每条用例各一套产物名 (固定名会在同一轮里互相覆盖)
+        r = frameContractAttempt(c, joinPath(opt.outDir, walkShotPrefix(c.id, opt.prefix)));
         break;
-      case CaseKind::screenShot:
-        r = screenShotAttempt(c, joinPath(opt.outDir, opt.prefix + "shot.png"));
+      case CaseKind::screenShot: {
+        // 4 条 shot 用例共用 pm_shot.png, 走查时只看得到最后一条 —— 按 case id 分开
+        std::string shot = walkShotPath(c.id);
+        r = screenShotAttempt(c, shot.empty() ? joinPath(opt.outDir, opt.prefix + "shot.png")
+                                              : shot);
         break;
+      }
       case CaseKind::recordCopy:
-        r = recordAttempt(c, false, joinPath(opt.outDir, opt.prefix + "copy.mp4"));
+        r = recordAttempt(c, false,
+                          joinPath(opt.outDir, opt.prefix + walkArtifactName(c.id, "copy.mp4")));
         break;
       case CaseKind::recordTranscode:
-        r = recordAttempt(c, true, joinPath(opt.outDir, opt.prefix + "trans.mp4"));
+        r = recordAttempt(c, true,
+                          joinPath(opt.outDir, opt.prefix + walkArtifactName(c.id, "trans.mp4")));
         break;
       case CaseKind::yuvOut:
-        r = yuvOutAttempt(c, joinPath(opt.outDir, opt.prefix));
+        r = yuvOutAttempt(c, joinPath(opt.outDir, walkShotPrefix(c.id, opt.prefix)));
         break;
       case CaseKind::subtitle:
         r = subtitleAttempt(c);

@@ -113,8 +113,8 @@ namespace {
 struct WalkBanner {
   std::mutex mtx;
   std::string head = "avoxtest 界面走查 — 等待用例…";
-  std::string desc = "拉流用例的画面出在本窗口; 离屏用例(截图/录制/字幕取证)无画面。"
-                     "随时关窗终止矩阵";
+  std::string desc = "拉流用例的画面出在本窗口; 离屏用例(截图/帧契约/直取/录制/字幕取证)"
+                     "无画面, 但会落 win_<id>.png 供复核 (判定行 img= 指路)。随时关窗终止矩阵";
   std::vector<std::string> verdicts;  // 最近 2 条 [AVOX][TEST] 判定行
   std::atomic<bool> cancel{false};    // 关窗置位 → runAll 下一条前退出
   HWND hwnd = nullptr;
@@ -470,6 +470,9 @@ int main(int argc, char* argv[]) {
         g_walk->setCase(c, idx, total);
       };
       wopt.cancel = &walk.cancel;
+      // 走查落图: 离屏用例(字幕取证/截图/帧契约/直取/录制)窗口无画面 —— 打开代表帧落盘,
+      // 每条用例留一张 <outdir>/<prefix>win_<id>.png, 判定行里带 img= 指路 (见 WalkShot)
+      setWalkShot(true, opt.outDir, opt.prefix);
       int code = 0;
       std::thread runner([&] {
         code = runAll(cases, (void*)hwnd, wopt);
