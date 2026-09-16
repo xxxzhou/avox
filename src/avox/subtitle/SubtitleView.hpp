@@ -122,6 +122,8 @@ class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
   void teardownSlot(Slot slot);
   void renderTrack(int64_t ptsMs);
   void renderText(int64_t ptsMs);
+  // 外挂槽是否由 libass 通道驱动(.ass/.ssa; 其余 .srt 走文本光栅化)
+  bool fileUseLibass() const { return overlay != nullptr && trackLoaded.load(); }
   // 全局变换按当前胜者槽位下发(文本槽=单位值避免双份, 轨槽=用户值);
   // 变换 setter/槽位变化/画布层挂载时调
   void pushCanvasTransform();

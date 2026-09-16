@@ -253,8 +253,8 @@ void SubtitleView::setMaxWidth(float ratio) {
 }
 
 // 全局变换按胜者槽位二选一下发到画布层前端: 文本槽的 scale/offset/opacity
-// 已被 CPU 侧重栅格化消费, 层侧必须置单位值, 否则双份缩放; 轨槽(ASS/PGS)
-// 由 canvas 合成消费, 直发用户值
+// 已被 CPU 侧重栅格化消费, 层侧必须置单位值, 否则双份缩放; 轨槽(ASS/PGS)与
+// 外挂 .ass/.ssa(libass 通道)由 canvas 合成消费, 直发用户值
 void SubtitleView::pushCanvasTransform() {
   if (!canvasLayer) {
     return;
@@ -268,7 +268,10 @@ void SubtitleView::pushCanvasTransform() {
     op = opacity;
   }
   const Slot cur = slots.active();
-  if (cur == Slot::file || cur == Slot::asr) {
+  // 外挂槽要看内容在哪: .ass/.ssa 在 libass 通道里(走 GPU), 其余是纯文本(CPU)
+  const bool bTextSlot =
+      (cur == Slot::asr) || (cur == Slot::file && !fileUseLibass());
+  if (bTextSlot) {
     canvasLayer->setCanvasTransform(1.f, 0.f, 0.f, 1.f);
   } else {
     canvasLayer->setCanvasTransform(s, ox, oy, op);
@@ -331,7 +334,9 @@ bool SubtitleView::loadTrack(const char* extradata, int32_t size) {
   }
   bool ok = overlay->loadTrack(extradata, size);
   chunks.clear();  // 换轨: 旧事件作废
-  overlay->flush();
+  // 不 flush: 插件侧 loadTrack 已 unload + ass_new_track, 这里再 flush
+  // (ass_flush_events) 会把 extradata 里可能带的事件一并清掉; 只有
+  // resetEvents(seek 后旧事件作废) 才需要 flush
   lastSeq = -1;  // 强制清层
   trackLoaded = ok;
   return ok;
@@ -344,7 +349,8 @@ bool SubtitleView::loadTrackFile(const char* path) {
   }
   bool ok = overlay->loadFile(path);
   chunks.clear();
-  overlay->flush();
+  // 不 flush: 外挂 .ass 的事件就是 loadFile(ass_read_file) 载进来的, 这里 flush
+  // 会当场清空 —— 曾导致"加载成功(subOk=1)却零渲染"; 清层交给 lastSeq=-1
   lastSeq = -1;
   trackLoaded = ok;
   return ok;
@@ -433,9 +439,15 @@ void SubtitleView::onRender() {
       break;
     case Slot::file:
     case Slot::asr:
+      // 外挂 .ass/.ssa 的内容在 libass 通道里(loadTrackFile 只喂 overlay),
+      // 必须走 track 渲染; 纯文本 .srt 与 ASR 走文本光栅化
+      if (cur == Slot::file && fileUseLibass()) {
+        renderTrack(pts);
+      } else {
 #ifdef AVOX_ENABLE_FREETYPE
-      renderText(pts);
+        renderText(pts);
 #endif
+      }
       break;
     default:
       break;
