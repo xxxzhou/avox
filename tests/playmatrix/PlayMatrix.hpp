@@ -92,7 +92,7 @@ enum class CaseKind {
   frameContract,    // 离屏 yuv420P: packed 契约 + packed→split→RGBA 落 PNG
   screenShot,       // 离屏截图落 PNG
   recordCopy,       // getMuxer(false) 直通录制 (原流拷贝)
-  recordTranscode,  // getMuxer(true) 转码录制 (+ 中途 seek)
+  recordTranscode,  // getMuxer(true) 转码录制 (中途 seek 见 PlayCase::seekMid)
   yuvOut,           // 无vulkan直取: enableYuvOut 帧类型契约 (硬解 nv12 / 软解解码格式)
   subtitle,         // 字幕: 外挂 loadSubtitle / 内嵌 setSubtitleTrack → 字幕带亮像素取证
 };
@@ -107,6 +107,9 @@ struct PlayCase {
   int32_t seconds = 15;
   // 录制用例: 录制时长与产物字节下限 (空文件/仅文件头会被判掉)
   int32_t minBytes = 8192;
+  // 录制中途 seek 一次 (rec-transcode-seek 专用): 其余录制用例不 seek,
+  // 让"转码录制"与"seek 后帧流恢复"两条链路各自独立判定
+  bool seekMid = false;
   // true = 关掉 vulkan 管线走平台原生渲染 (截图的稳定路线)
   bool nativeRender = false;
   // yuvOut 用例: 期望的首帧类型 (getYuvTypeStr 口径), 空 = 不判型
@@ -270,10 +273,26 @@ inline std::vector<PlayCase> buildCases(const Endpoints& ep) {
   }
   special("rec-copy-h264", CaseKind::recordCopy, ep.rtsp(k264), 8,
           "直通录制用例: 窗口无画面; 产物 pm_copy.mp4 ≥8KB 且应可正常播放");
-  // 转码录制中途 seek 需要可 seek 的源, 用本地文件
+  // 转码录制 (本地文件源): 与 seek 解耦 —— 中途 seek 单独成 case (见下),
+  // 本用例只判"转码录制"本身 (硬编名解析 / 编码器打开 / io 层建文件 / 产物可播)
   special("rec-transcode-h264", CaseKind::recordTranscode, ep.fileH264, 8,
-          "转码录制用例 (中途 seek 到半长): 窗口无画面; 产物 pm_trans.mp4 应可播,"
-          " 后半段画面应跳至源片长一半");
+          "转码录制用例: 窗口无画面; 产物 pm_trans.mp4 ≥8KB 且应可正常播放");
+  {
+    // 录制中途 seek: 独立成 case, 塞进 rec-transcode-* 会把"seek 后视频帧是否
+    // 恢复"这条另一链路的缺陷混进转码录制的判定里。Windows 实测: seek 后帧流
+    // 不再恢复 → 编码器只收到 1~2 帧 → 无包 → io 层永不建文件 → 产物缺失
+    // (bytes=-1); 但同一台机器重复跑也有通过的一次 (bytes=2.1MB) → 竞态/偶发,
+    // 故默认 off 单独跟踪 (flaky 用例不能当 CI 门禁), --all 显式打开
+    PlayCase c;
+    c.id = "rec-transcode-seek";
+    c.kind = CaseKind::recordTranscode;
+    c.url = ep.fileH264;
+    c.seconds = 8;
+    c.seekMid = true;
+    c.enabled = false;
+    c.desc = "偶发缺陷 (Windows, 竞态): 录制中途 seek 后视频帧流不恢复 → 产物缺失";
+    cases.push_back(c);
+  }
   // F 无vulkan直取 (车道B): 关 vulkan 走平台原生渲染 + enableYuvOut, 严格判交付帧类型。
   // 硬解应交付解码直出 nv12 (DX11 staging / Metal readback), 类型不对 = 车道断裂或
   // 硬解回退软解, 都判 FAIL —— 这是"硬解组件被裁/回退"的哨兵 (ffmpeg9 裁 hwaccel 一类
@@ -1075,8 +1094,9 @@ inline Attempt recordAttempt(const PlayCase& c, bool transcode, const std::strin
   }
   int64_t seekTo = -1;
   for (int32_t i = 0; i < c.seconds; ++i) {
-    // 转码录制中途 seek 到一半, 验证 seek + 输出 PTS 单调
-    if (transcode && seekTo < 0) {
+    // 中途 seek 只在 rec-transcode-seek (PlayCase::seekMid) 打开:
+    // 其余录制用例不 seek, 判定口径各自独立
+    if (transcode && c.seekMid && seekTo < 0) {
       int64_t duration = player->getDuration();
       if (duration > 0) {
         seekTo = duration / 2;

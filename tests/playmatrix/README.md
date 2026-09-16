@@ -14,7 +14,7 @@
 
 三者叠加: 改完 → `ctest` 秒级兜逻辑 → **本矩阵兜播放** → 需要看画面再开 samples。
 
-## 用例表 (26 条, 默认跑 25 条)
+## 用例表 (27 条, 默认跑 25 条)
 
 轴: 取流方式 × 编码 × 解码模式 × 帧/录制输出。**不做全笛卡尔**, 用固定交叉控制耗时。
 
@@ -35,7 +35,8 @@
 | | `shot-hdr` | 本地 mp4 | HDR10 截图 + luma (原生车道) |
 | | `shot-hdr-vk` | 本地 mp4 | HDR10 截图 + luma (中转车道, 与 shot-hdr 双车道对照) |
 | | `rec-copy-h264` | ZLM | 直通录制 (原流拷贝) |
-| | `rec-transcode-h264` | 本地 mp4 | 转码录制 + 中途 seek |
+| | `rec-transcode-h264` | 本地 mp4 | 转码录制 (与 seek 解耦, 只判录制本身) |
+| | `rec-transcode-seek` | 本地 mp4 | 录制中途 seek (**已知缺陷**, 默认 off, `--all` 打开) |
 | F 无vulkan直取<br>(车道B) | `yuvout-h264` | 本地 mp4 | 硬解直出 **nv12** 类型契约 (DX11 staging / Metal readback) |
 | | `yuvout-h264-soft` | 本地 mp4 | 软解 cpuIn 零拷 packed 视图 (交付解码格式) |
 | | `rec-transcode-novk` | 本地 mp4 | 无vulkan转码录制 (`pushFrame` 非vk分支, 车道B前该分支不存在) |
@@ -51,7 +52,7 @@
 | `frame-contract` | 帧数 ≥10 且 `rowPitch ≥ width`、缓冲容纳整帧, 且抽 2 帧 packed→split→RGBA 的 PNG 非空 |
 | `yuvout-*` | 帧数 ≥10 且 packed 契约过, 且**首帧类型 = 期望值** (`yuvout-h264` 判 `nv12`, `-soft` 判 `yuv420P`); 类型不对 = 车道断裂或硬解回退软解, 都 FAIL |
 | `shot` | 取到图 + PNG 落盘非空 + **不是废图** (见下节): 灰度均值 12~243、标准差 ≥6、最常见颜色占比 ≤95% |
-| `rec-*` | 产物 ≥8KB (空文件/仅文件头判掉); 转码用例额外走一次中途 seek |
+| `rec-*` | 产物 ≥8KB (空文件/仅文件头判掉); 中途 seek 只在 `rec-transcode-seek` (已知缺陷, 默认 off) |
 
 统一输出 `[AVOX][TEST] case=<id> result=PASS|FAIL [k=v ...]`, 末尾一行
 `case=play-matrix result=... pass=/fail=/skip=`; 进程退出码 0=全过。
@@ -275,7 +276,7 @@ Android commercial 构建 (LGPL 无 libx264) 没有注册任何 FF 软编, 转�
 | 帧布局 / 帧契约 | `frame-contract` + `yuvout-*` + `ctest` |
 | 无vulkan直取 (车道B) | `yuvout-h264` + `yuvout-h264-soft` + `rec-transcode-novk`; Apple 侧同 id 覆盖 Metal readback |
 | 渲染后端 | 各平台窗口样例 (headless 覆盖不到 GPU 直通) |
-| 录制 / 封装 | `rec-copy-h264` + `rec-transcode-h264` + `rec-transcode-novk` |
+| 录制 / 封装 | `rec-copy-h264` + `rec-transcode-h264` + `rec-transcode-novk` (+ `rec-transcode-seek` `--all`) |
 
 ## 已知取舍与悬案
 
@@ -299,6 +300,20 @@ Android commercial 构建 (LGPL 无 libx264) 没有注册任何 FF 软编, 转�
 - **软解只在 file/rtsp 对照**, 未铺满全协议 —— 控制耗时; 需要时按 `buildCases` 加行即可。
 - **转码录制固定软编** (`setHardEncode(false)`): Windows 硬编 h264_mf 对 profile 敏感, 本矩阵只兜
   "播放 + 录制能出正确产物", 不做编码器矩阵。
+- **录制中途 seek 后视频帧流不恢复 (Windows, 09-16 定位, 偶发/竞态)**: 哨兵用例
+  `rec-transcode-seek` (默认 off)。**可复现性是概率性的**: 同一台机器先跑出 `bytes=-1`
+  失败, 后跑出 `bytes=2130905` 通过; 失败时的运行时取证是 seek 之前 `VideoTrack::onWinUpdate`
+  稳定 30fps; seek 之后取帧链路整体停摆, 且失败形态也不固定 (一次 `onWinUpdate` 时间线彻底
+  中断, 一次循环照跑但一直 `sync=nodata`) —— 正因如此它不当 CI 门禁, 只在 `--all` 下跟踪。
+  后果链: 编码器只收到 1~2 帧 → `encode done pkts=0` → io 层
+  `IOMuxer::onRunTask` 等不到首个 I 帧包 (`packtype=video && frameType=1`) → `onInit()` 不执行
+  → `avio_open2`/`write_header` 从未跑过 → **文件从未创建** → `bytes=-1`。
+  对照实验 (同二进制同素材, 仅去掉那次 seek): 立刻 PASS, 产出 1.2MB mp4; 同期取证
+  `setVideoDesc ... pick=h264_mf` (按名精确命中, 无 fallback)、`avcodec_open2 ret=0 pix=0
+  (yuv420P) 640x360`、`send ret=0` —— **编码器白名单 / 像素格式 / 描述尺寸 / muxer 类型都已排除**,
+  唯一嫌疑是 seek 与解码器重启的握手 (`MediaPlayer::seek` → `setResetDecoderFlag`/
+  `onResetDecoder`「真实重置需等到 I 帧包前」+ `frameQueue.clear()`)。macOS 同类用例通过
+  → 平台相关, 待查 (影响面: 录制态下 seek; 是否波及普通播放的 seek 尚无对应用例)。
 - **macOS 无头跑 LAN 全 FAIL 的新手坑**: `nohup`/脱离会话的进程, macOS 26 静默拒绝其
   本地网络访问 (errno 65, 无弹窗不进 TCC), 全部 LAN 用例报 *No route to host* ——
   不是权限没授 (列表里永远找不到它), 把 runner 挂在存活会话里跑即解。
