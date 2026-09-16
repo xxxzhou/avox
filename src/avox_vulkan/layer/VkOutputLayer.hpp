@@ -83,6 +83,7 @@ class VkOutputLayer : public VOutputLayer, public VkLayer {
   VkWinImage* getWinImage() { return winImage.get(); }
   // 开关底层自建 NT 共享纹理输出 (VK 每帧拷入, 外部 DX11 设备打开复制)
   void setDx11Output(bool bDx11);
+  bool getDx11Output() const { return bDx11Output; }
 #endif
 #ifdef __APPLE__
   // IOSurface 导出访问 (enableVkOutput/getVkOutputHandle 用)

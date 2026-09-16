@@ -837,6 +837,9 @@ bool enableVkOutputDx11(ISurfaceRender* sr) {
     LOGFLF(LogLevel::warn, "enableVkOutputDx11: outputLayer is null");
     return false;
   }
+  if (outputLayer->getDx11Output()) {
+    return true;   // 已启用, 幂等返回, 不再刷日志 (宿主按 ~0.5s 轮询)
+  }
   outputLayer->setDx11Output(true);
   LOGFLF(LogLevel::info, "enableVkOutputDx11: ok");
   return true;
