@@ -279,11 +279,13 @@ bool playOnce(const char* url, bool hard, HdrOb& ob,
 }
 
 int main(int argc, char* argv[]) {
+  // 默认素材取自同级 avox-test 仓 (私有): 本仓 assets/video/test/ 副本已删 (2026-09-16),
+  // 素材只有一份; 没有该仓时按提示传参: hdrtest <hdr.mp4> <sdr.mp4>
   const char* hdrUrl = argc > 1 ? argv[1]
-                                : "assets/video/test/test_h265_hdr10_pq_640x360.mp4";
+                                : "../avox-test/assets/video/test_h265_hdr10_pq_640x360.mp4";
   const char* sdrUrl = argc > 2 && argv[2][0] != '-'
                            ? argv[2]
-                           : "assets/video/test/test_h265_sdr_640x360.mp4";
+                           : "../avox-test/assets/video/test_h265_sdr_640x360.mp4";
   bool hard = false;
   std::string prefix = "hdrtest_";
   for (int i = 1; i < argc; i++) {

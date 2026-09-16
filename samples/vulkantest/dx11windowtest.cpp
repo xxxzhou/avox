@@ -102,8 +102,9 @@ static void dumpPpm(ID3D11DeviceContext* ctx, ID3D11Texture2D* staging,
 }
 
 int main(int argc, char** argv) {
+  // 默认素材取自同级 avox-test 仓 (私有): 本仓 assets/video/test/ 副本已删 (2026-09-16)
   const char* video = argc > 1 ? argv[1]
-                               : "D:/Work/github/avox/assets/video/test/test_h264_aac_640x360.mp4";
+                               : "../avox-test/assets/video/test_h264_aac_640x360.mp4";
   int durationSec = argc > 2 ? atoi(argv[2]) : 10;
   printf("video: %s, duration: %ds\n", video, durationSec);
   if (!createWindow(960, 600)) {
