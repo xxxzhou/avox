@@ -332,6 +332,12 @@ onRender 渲染线程直读事件——图在而无共享句柄时幂等重申 e
 - 验证: `build_windows.py` 全量过, avox_godot.dll / avox_unity.dll 均出产物;
   运行时验证待各引擎宿主跑 resize TS 素材（事件→重导正是杀手用例）。
 
-**剩余**: avox-ue 迁移（独立仓, 需 UE 环境）+ 各引擎宿主实机走查。另注意:
-avox 增量构建不刷新 `install/include` 旧头（`copy_head` 在 cmake 重新配置时
-才拷）, 跨仓编译前先 `cmake .` 重配置一次。
+**剩余**: ~~avox-ue 迁移~~（**已完成 2026-09-17, avox-ue 仓 e81813e**）:
+FAvoxVideoBridge 加 onRender——世代变化→重导请求且**同尺寸重建也强制重导**
+（修复字幕/锐化开关重建后一直采旧图的缺口）; 事件 format 为输出尺寸权威源;
+D3D11 通道句柄随事件缓存, updateGpuDx11 不再每帧跨 dll 轮询, 图在而无句柄时
+幂等重申 enableVkOutputDx11（修复重建后声明丢失句柄永不再现的缺口, 与 Unity
+renderDx11Copy 修复前同款）。**编译验证待 UE 环境（本机未装）, 实测待排**。
+至此三端 + panvox 迁移全部完成。剩余: 各引擎宿主实机走查 resize TS 素材
+（事件→重导正是杀手用例）。另注意: avox 增量构建不刷新 `install/include`
+旧头（`copy_head` 在 cmake 重新配置时才拷）, 跨仓编译前先 `cmake .` 重配置一次。
