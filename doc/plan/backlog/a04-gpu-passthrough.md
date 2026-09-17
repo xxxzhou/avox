@@ -11,6 +11,9 @@ Windows 已通(分辨率变化不跟随已修并实测通过; 见「已知缺陷
 1. Android:播放帧经 AHB 进 Flutter Texture,panvox 播放页零拷贝出图。
 2. iOS/macOS:播放帧以 CVPixelBuffer/IOSurface 进 Flutter Texture,零拷贝出图。
 3. 三平台 CPU 占用对比 CPU 帧泵有可测改善;帧可用通知与尺寸变化时序无黑屏。
+   (「帧可用通知」已由渲染输出事件化承接: `ISurfaceRenderOb::onRender` 携带
+   SurfaceRenderEvent 世代/尺寸/重建信号, 见 `doc/plan/player/open出图时延与渲染输出事件化.md`;
+   「无黑屏」的换片重建间隔仍开放)
 
 ## 现状(代码落点)
 
@@ -103,6 +106,15 @@ to:960x540`、`outFormat sync ... to:960x540`、`bindD3D w:960 h:540`、`Pipegra
 | 960x540 → 320x240 | — | 满高 2916x2157 居中(4:3 左右留边,正确) |
 
 对照组(单路直接播 960x540)同样是满宽 3391x2041,与修复后一致 → 判定通过。
+
+### 新发现(2026-09-17, 渲染输出事件化测试抓到):硬解在流中段分辨率变化处停帧(未修)
+
+与上面「换片」缺陷不同断面:同一媒体流**中段**换分辨率(TS AnnexB, 640x360→960x540),
+DX11VA 硬解播到切换点前帧/事件即停(~168 帧后无输出, 输出尺寸不更新); 软解同素材完整
+走完且事件契约全对。上面 T5/CS constBuf 修复全在**渲染侧**且对换片场景实测通过, 此缺陷
+在**解码/送渲侧**, 渲染侧修复覆盖不到。复现: avox-test `playtest --only=file-resize-event`
+(用例已临时切硬解, avox-test 3d20159); 记录: avox-test README「已知取舍与悬案」+
+`doc/plan/player/open出图时延与渲染输出事件化.md` §8。
 
 ## 任务拆解
 

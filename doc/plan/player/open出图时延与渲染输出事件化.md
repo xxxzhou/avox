@@ -291,9 +291,18 @@ python avox/build/run_open_timing.py D:/Work/build/test_4k_hevc_30s.mp4 15 0 PAN
   `640x360->960x540`, 首事件 rebuilt=1 + 世代递增信号对全部命中, PASS。
 
 **新发现缺陷（测试抓到, 待修）**: **硬解(DX11VA)在流中段分辨率变化处停帧**——
-播到切换点前事件即止（~168 帧）且尺寸不更新; 软解同素材正常。用例因此固定软解
-（`c.hardDecode=false` + 注释），硬解修复后改回 true 对照。详见
-`avox-test/l1_avox/playmatrix/README.md`「已知取舍与悬案」。
+播到切换点前事件即止（~168 帧）且尺寸不更新; 软解同素材正常。与 A-4 已闭环的
+「换片分辨率」缺陷（渲染侧 extent/常量, backlog/a04-gpu-passthrough.md）不同断面:
+本缺陷在解码/送渲侧, 已挂账 A-4「已知缺陷」节。用例默认软解, 现临时切硬解复现中
+（avox-test 3d20159）, 定位后改回。
+
+**与 A-4 凌晨修复（T5 输入层重检 6f2c0e2 + 输出 blit 兜底 + CS constBuf 86e1234）的关系**:
+互补不重复——A-4 管**渲染正确性**（分辨率变了, 画的内容跟着变）, 事件机制管**重建通知**
+（重建发生了, 消费端怎么知道）, 正好承接 A-4 出口判据③的「帧可用通知」半句。
+已逐项核过无冲突: `setDx11Output` 同值早返回（VkOutputLayer.cpp:456）→ shim 每帧
+重申 enable 不会引发重建风暴; T5 的 blitFillImage 兜底不走 onInitVkBuffer → 不推
+generation → 不产生假 rebuilt; T5 输入层重检引发的 resetGraph → generation+1 →
+事件通知, 正是想要的联动。
 
 **待施工**: ~~施工项 2~~（**已完成 2026-09-17, panvox 仓 94b74d0**）: FrameOb::
 onRender 渲染线程直读事件——图在而无共享句柄时幂等重申 enable, 句柄变化置
