@@ -315,7 +315,23 @@ onRender 渲染线程直读事件——图在而无共享句柄时幂等重申 e
 §4.1 的 cv 方案简化成了纯原子标志（桥线程节拍本身就是消费者, 无需唤醒）。
 `pvx_set_texture_ready_cb` ABI 1→2（Dart 校验同步抬到 2）, 注册即推 id+尺寸,
 挂回调时已有纹理立即补发, 5s 无注册报一次 error 兜底; Dart 事件缓存 + 轮询兜底。
-`flutter analyze` 零问题, shim 全量编译过。**剩余**: 施工项 3（引擎插件迁移）+
-shim 行为的宿主实机走查（flutter run 全链路）。另注意: avox 增量构建不刷新
-`install/include` 旧头（`copy_head` 在 cmake 重新配置时才拷）, 跨仓编译前先
-`cmake .` 重配置一次。
+`flutter analyze` 零问题, shim 全量编译过。
+
+~~施工项 3 的 Godot/Unity~~（**已完成 2026-09-17, ae74cf4**）:
+
+- **Godot** `SurfaceTextureBridge`: 世代变化置 needReimport（补上此前只有窗口
+  变化才重导的缺口）; 输出图真实尺寸随事件持续发布并为**权威源**——
+  `setVideoSize`（流尺寸, applySourceInfo 每帧喂）退化为首建前引导
+  （`lastGeneration != 0` 即忽略, 两源并存会每帧互相拆重建）; 未导入窗口的
+  每帧 import 重试**保留**（§5.1 偏差: 3 次失败降级 CPU 的兜底依赖它,
+  事件门控会让降级失效）; 每帧 enableVkOutput 幂等声明保留（消费契约）。
+- **Unity** `PlayerBridge`: 世代变化置 pendingGpuResize——顺带修了 flavor 1
+  「图重建后不重导」的旧缺口（此前只有 onWinSizeChange 触发, 字幕/锐化开关
+  重建后一直采旧图）; videoW/H 事件喂入; dx11 拷贝通道句柄随事件缓存进
+  `dx11EventHandle`, renderDx11Copy 不再每帧跨 dll 轮询句柄; 15s 重试窗口保留。
+- 验证: `build_windows.py` 全量过, avox_godot.dll / avox_unity.dll 均出产物;
+  运行时验证待各引擎宿主跑 resize TS 素材（事件→重导正是杀手用例）。
+
+**剩余**: avox-ue 迁移（独立仓, 需 UE 环境）+ 各引擎宿主实机走查。另注意:
+avox 增量构建不刷新 `install/include` 旧头（`copy_head` 在 cmake 重新配置时
+才拷）, 跨仓编译前先 `cmake .` 重配置一次。
