@@ -82,6 +82,7 @@ class AVOX_EXPORT SurfaceRenderVk : public ISurfaceRender,
   virtual void resetView() override;
   virtual void getViewAngles(float* yaw, float* pitch, float* fov) override;
   virtual void setVrOutMode(VrOutMode mode) override;
+  virtual void setVrStereoStrength(float strengthDeg) override;
   // 颜色空间(矩阵), 转发 VkVideoRender, 不重建 graph
   void setColorSpace(const ColorSpaceDesc& c);
   // HDR 静态元数据(峰值亮度), 转发 VkVideoRender, 不重建 graph

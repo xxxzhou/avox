@@ -290,6 +290,14 @@ void SurfaceRenderVk::setVrOutMode(VrOutMode mode) {
 #endif
 }
 
+void SurfaceRenderVk::setVrStereoStrength(float strengthDeg) {
+#ifdef AVOX_ENABLE_VULKAN
+  if (vkVideoRender) {
+    vkVideoRender->setVrStereoStrength(strengthDeg);
+  }
+#endif
+}
+
 void SurfaceRenderVk::setColorSpace(const ColorSpaceDesc& c) {
 #ifdef AVOX_ENABLE_VULKAN
   if (vkVideoRender) {

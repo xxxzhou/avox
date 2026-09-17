@@ -8,7 +8,7 @@ namespace avox {
 struct VrUbo {
   float view[4];  // yawDeg, pitchDeg, fovDeg(垂直), outMode
   float lens[4];  // fisheyeFovDeg, mapSpanDeg, projMode(0鱼眼,1等距柱状), outAspect
-  float rect[4];  // 每眼矩形宽高(全帧uv), 0, 0
+  float rect[4];  // 每眼矩形宽高(全帧uv), 立体强度(度), 0
   float eyeL[4];  // 左眼 u0, v0, 圆心cx, cy(局部)
   float eyeR[4];  // 右眼 u0, v0, 圆心cx, cy
   float radii[4]; // 左眼ru,rv, 右眼ru,rv
@@ -74,6 +74,8 @@ void VkVrLayer::pushUbo() {
   ubo.lens[3] = (float)paramet.outWidth / (float)paramet.outHeight;
   ubo.rect[0] = paramet.eyeW;
   ubo.rect[1] = paramet.eyeH;
+  ubo.rect[2] = viewState.stereo;
+  ubo.rect[3] = 0.0f;
   ubo.eyeL[0] = paramet.eyeLu;
   ubo.eyeL[1] = paramet.eyeLv;
   ubo.eyeL[2] = paramet.cLu;

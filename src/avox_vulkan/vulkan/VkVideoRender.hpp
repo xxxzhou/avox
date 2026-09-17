@@ -199,6 +199,7 @@ class VkVideoRender : public VideoRender, public IVOutputLayerOb {
   void resetView();
   void getViewAngles(float* yaw, float* pitch, float* fov);
   void setVrOutMode(VrOutMode mode);
+  void setVrStereoStrength(float strengthDeg);
   // 应用大小变化后,返回变化后的大小
   vec2i getOutSize();
 

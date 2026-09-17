@@ -3,6 +3,8 @@
 // 双击/R复位视角, 1/2/3切输出模式(单眼/红蓝3D/SBS预览)
 // 用法: vrplaytest [url]  (默认源改 kDefaultUrl)
 
+#include <algorithm>
+
 #include <thread>
 
 #include "avox/AvoxPlayer.h"
@@ -28,6 +30,8 @@ static const float kWheelFovStep = 5.0f;
 static IMediaPlayer* mp = nullptr;
 static bool bDragging = false;
 static POINT lastPt = {};
+// 立体强度(度), '-'/'=' 调节, anaglyph/sbs 模式下生效
+static float s_stereo = 0.0f;
 
 // 播完回绕: EOF后渲染循环停走, 视角/模式交互会失去即时生效的帧载体;
 // seek(0)后须resume, 否则播放停在暂停态不出帧
@@ -134,6 +138,18 @@ int main(int argc, char** argv) {
             case '3': {
               render->setVrOutMode(VrOutMode::sbsPreview);
               log(LogLevel::info, "vr out mode: sbs preview");
+              break;
+            }
+            case VK_OEM_MINUS: {  // '-' 键(VK非ASCII码)
+              s_stereo = std::max(s_stereo - 0.25f, 0.0f);
+              render->setVrStereoStrength(s_stereo);
+              log(LogLevel::info, "vr stereo strength:", s_stereo, "deg");
+              break;
+            }
+            case VK_OEM_PLUS: {  // '=' 键
+              s_stereo = std::min(s_stereo + 0.25f, 5.0f);
+              render->setVrStereoStrength(s_stereo);
+              log(LogLevel::info, "vr stereo strength:", s_stereo, "deg");
               break;
             }
             case 'R': {

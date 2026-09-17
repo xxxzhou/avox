@@ -11,9 +11,10 @@ struct VrViewState {
   float pitch = 0.0f;  // 度, 上正
   float fov = 90.0f;   // 度, 垂直视野
   int32_t outMode = 0; // VrOutMode
+  float stereo = 0.0f; // 立体强度(度), 双眼水平反向各偏一半, mono无效
   inline bool operator==(const VrViewState& r) const {
     return yaw == r.yaw && pitch == r.pitch && fov == r.fov &&
-           outMode == r.outMode;
+           outMode == r.outMode && stereo == r.stereo;
   }
   inline bool operator!=(const VrViewState& r) const { return !(*this == r); }
 };

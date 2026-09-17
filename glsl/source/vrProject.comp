@@ -13,7 +13,7 @@ layout (std140, binding = 2) uniform UBO {
     vec4 view;
     // fisheyeFovDeg, mapSpanDeg(等距柱状横向跨角), projMode(0鱼眼,1等距柱状), outAspect
     vec4 lens;
-    // 每眼矩形归一化宽高(sbs各0.5x1, ou各1x0.5), 0, 0
+    // 每眼矩形归一化宽高(sbs各0.5x1, ou各1x0.5), 立体强度(度,双眼反向外偏), 0
     vec4 rect;
     // 左眼: u0, v0, 圆心cx, cy(eye局部uv)
     vec4 eyeL;
@@ -51,11 +51,11 @@ vec4 equirectUv(vec3 d) {
     return vec4(u, v, 0.0, 1.0);
 }
 
-// 视线方向: 屏幕ndc(上为+y)按相机yaw/pitch旋转到世界
-vec3 viewDir(vec2 ndc) {
+// 视线方向: 屏幕ndc(上为+y)按相机yaw/pitch旋转到世界; yawOffDeg 为该眼的水平偏转(立体强度)
+vec3 viewDir(vec2 ndc, float yawOffDeg) {
     float t = tan(ubo.view.z * 0.5 * D2R);
     vec3 d = normalize(vec3(ndc.x * t * ubo.lens.w, ndc.y * t, -1.0));
-    float yaw = ubo.view.x * D2R;
+    float yaw = (ubo.view.x + yawOffDeg) * D2R;
     float pitch = ubo.view.y * D2R;
     float cy = cos(yaw), sy = sin(yaw);
     float cp = cos(pitch), sp = sin(pitch);
@@ -64,9 +64,9 @@ vec3 viewDir(vec2 ndc) {
     return d;
 }
 
-// 单眼采样: ndc -> 源图rgba, 出界返回黑
-vec4 sampleEye(vec2 ndc, vec4 eye, vec2 r) {
-    vec3 d = viewDir(ndc);
+// 单眼采样: ndc -> 源图rgba, 出界返回黑; yawOffDeg 该眼水平偏转
+vec4 sampleEye(vec2 ndc, vec4 eye, vec2 r, float yawOffDeg) {
+    vec3 d = viewDir(ndc, yawOffDeg);
     vec2 uv;
     if (ubo.lens.z < 0.5) {
         vec4 f = fisheyeUv(d, eye.zw, r);
@@ -90,20 +90,23 @@ void main() {
     vec2 uv01 = (vec2(pix) + 0.5) / vec2(size);
     vec2 ndc = vec2(uv01.x * 2.0 - 1.0, 1.0 - uv01.y * 2.0);
     int mode = int(ubo.view.w + 0.5);
+    // 立体强度: 双眼水平反向偏转各一半(立体视差角); mono 单眼不偏转
+    float s = ubo.rect.z;
     vec4 color;
     if (mode == 2) {
         // sbs预览: 左半屏取左眼, 右半屏取右眼
         vec2 halfNdc = vec2(ndc.x < 0.0 ? ndc.x * 2.0 + 1.0 : ndc.x * 2.0 - 1.0, ndc.y);
         bool bLeft = ndc.x < 0.0;
         color = sampleEye(halfNdc, bLeft ? ubo.eyeL : ubo.eyeR,
-                          bLeft ? vec2(ubo.radii.xy) : vec2(ubo.radii.zw));
+                          bLeft ? vec2(ubo.radii.xy) : vec2(ubo.radii.zw),
+                          bLeft ? -s * 0.5 : s * 0.5);
     } else if (mode == 1) {
         // 红蓝3D: R取左眼, GB取右眼
-        vec4 l = sampleEye(ndc, ubo.eyeL, vec2(ubo.radii.xy));
-        vec4 r = sampleEye(ndc, ubo.eyeR, vec2(ubo.radii.zw));
+        vec4 l = sampleEye(ndc, ubo.eyeL, vec2(ubo.radii.xy), -s * 0.5);
+        vec4 r = sampleEye(ndc, ubo.eyeR, vec2(ubo.radii.zw), s * 0.5);
         color = vec4(l.r, r.g, r.b, 1.0);
     } else {
-        color = sampleEye(ndc, ubo.eyeL, vec2(ubo.radii.xy));
+        color = sampleEye(ndc, ubo.eyeL, vec2(ubo.radii.xy), 0.0);
     }
     imageStore(outTex, pix, color);
 }

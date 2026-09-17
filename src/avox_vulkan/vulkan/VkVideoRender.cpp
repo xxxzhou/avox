@@ -454,6 +454,12 @@ void VkVideoRender::setVrOutMode(VrOutMode mode) {
   bVrViewDirty = true;
 }
 
+void VkVideoRender::setVrStereoStrength(float strengthDeg) {
+  std::lock_guard<std::mutex> lock(vrViewMutex);
+  vrViewPending.stereo = std::min(std::max(strengthDeg, 0.0f), 5.0f);
+  bVrViewDirty = true;
+}
+
 vec2i VkVideoRender::getOutSize() {
   vec2i size = {imageFormat.width, imageFormat.height};
   if (bEnableVr) {
