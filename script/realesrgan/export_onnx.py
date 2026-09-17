@@ -87,6 +87,30 @@ def load_weights(pth_path, denoise_strength=1.0):
     return state
 
 
+def _check_single_file(onnx_path):
+    """校验导出的 .onnx 是自包含单文件(所有 initializer 内嵌, 无 external_data)。
+
+    踩坑史: torch 2.14 默认把权重写到同目录 <name>.onnx.data, 主图仅 112KB →
+    运行期按单文件读时权重全零/加载失败, 且不报错。此处硬校验, 不通过即中止。
+    """
+    try:
+        import onnx
+    except ImportError:
+        print("WARN: onnx 未安装, 跳过单文件校验")
+        return
+    m = onnx.load(onnx_path, load_external_data=False)
+    ext = [i.name for i in m.graph.initializer
+           if i.data_location == onnx.TensorProto.EXTERNAL]
+    if ext:
+        raise RuntimeError(
+            f"导出非自包含: {len(ext)} 个 initializer 仍引用外置数据 "
+            f"(如 {ext[0]}); 运行期按单文件读取会失败")
+    total = sum(1 for _ in m.graph.initializer)
+    if total == 0:
+        raise RuntimeError("导出 ONNX 无 initializer(权重缺失)")
+    print(f"  single-file check OK: {total} initializers embedded")
+
+
 def export_fp32(denoise_strength=1.0, opset=14):
     # 下载权重
     os.makedirs(WEIGHTS_DIR, exist_ok=True)
@@ -107,13 +131,28 @@ def export_fp32(denoise_strength=1.0, opset=14):
     # 导出 ONNX (动态 H/W)
     onnx_path = os.path.normpath(ONNX_OUTPUT)
     os.makedirs(os.path.dirname(onnx_path), exist_ok=True)
-    torch.onnx.export(
-        model, torch.rand(1, 3, 64, 64), onnx_path,
+    # torch>=2.6 新导出器默认把 >2GB 权重外置; 实测 2.14 对 4.6MB 也外置成
+    # <name>.onnx.data, 而运行期只按单文件 .onnx 读取(OnnxModel.hpp 里只有
+    # wav2arkit 走 external-data 双文件) → 必须强制内嵌, 否则模型静默不可用。
+    _export_kwargs = dict(
         input_names=["image"], output_names=["output"],
         opset_version=opset,
         dynamic_axes={"image": {0: "batch", 2: "height", 3: "width"},
                       "output": {0: "batch", 2: "height", 3: "width"}},
     )
+    try:
+        torch.onnx.export(model, torch.rand(1, 3, 64, 64), onnx_path,
+                          external_data=False, **_export_kwargs)
+    except TypeError:
+        # 旧版 torch 无 external_data 参数 (本就内嵌), 忽略
+        torch.onnx.export(model, torch.rand(1, 3, 64, 64), onnx_path,
+                          **_export_kwargs)
+    # 清掉可能残留的外置权重文件, 并校验单文件可用
+    _ext = onnx_path + ".data"
+    if os.path.exists(_ext):
+        os.remove(_ext)
+        print(f"Removed external data file: {_ext}")
+    _check_single_file(onnx_path)
     print(f"Exported FP32: {onnx_path} ({os.path.getsize(onnx_path) / 1024 / 1024:.1f} MB)")
     return onnx_path
 

@@ -210,8 +210,12 @@ void CpuQEnhancer::unpackToYuv(YUVFrame& out) {
         r /= 4;
         g /= 4;
         b /= 4;
-        uint8_t u = clamp255((b - r) / 1.772f + 128.0f);
-        uint8_t v = clamp255((r - b) / 1.402f + 128.0f);
+        // BT601 full-range 色差(U/V)必须以亮度为基准: U∝(B-Y), V∝(R-Y)。
+        // 曾误用 (B-R)/(R-B) —— 当 R==B 时恒等 128(纯灰), 于是纯绿/品红这类
+        // R==B 的色被整段打成灰(RED 也一起丢), 黄/青/蓝则严重失色。
+        int32_t yy = (299 * r + 587 * g + 114 * b) / 1000;
+        uint8_t u = clamp255((b - yy) / 1.772f + 128.0f);
+        uint8_t v = clamp255((r - yy) / 1.402f + 128.0f);
         if (yuvType == YuvType::nv12) {
           uint8_t* uv = yuvBuf.data() + (size_t)w * h + (size_t)uvY * uw * 2 + uvX * 2;
           uv[0] = u;
