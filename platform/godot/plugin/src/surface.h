@@ -78,9 +78,14 @@ public:
     void onFrame(avox::IImageBuffer *buf, avox::YuvType yuvType) override;
     void onSurface() override {}
     void onWinSizeChange(int32_t w, int32_t h) override;
+    // 渲染输出事件: 世代变化→请求重导(换片/功能开关/中段分辨率变化, 窗口变化仍走
+    // onWinSizeChange); format 持续发布输出图真实尺寸, 事件流动后成为尺寸权威源
+    void onRender(const avox::SurfaceRenderEvent *ev) override;
 
     // ── Godot 主线程调用 ──
-    void setVideoSize(int32_t w, int32_t h);  // onReady 后喂入真实尺寸, 触发 enableVkOutput
+    // onReady 后喂入视频流尺寸, 触发 enableVkOutput。仅作首建前引导: 渲染输出
+    // 事件开始流动后, 尺寸以事件携带的输出图真实尺寸为准(本入口忽略)。
+    void setVideoSize(int32_t w, int32_t h);
     // 源色彩空间 (onReady 后喂入)。同源驱动 avox 的 yuv2RGBA/rgba2YUV 矩阵与本类
     // shader 的解码矩阵; 幂等, 未变化直接返回。不喂则用默认 BT.601 full。
     void setColorSpace(const avox::ColorSpaceDesc &cs);
@@ -96,6 +101,10 @@ private:
     bool gpuOutputEnabled = false;  // enableVkOutput 已调用
     int importFailCount = 0;        // GPU 模式导入连续失败计数 (达阈值降级 CPU)
     std::atomic<bool> needReimport{false};  // avox 线程 onWinSizeChange 请求主线程重导 VkImage
+    // ── 渲染输出事件 (avox 渲染线程写, 主线程 update 读) ──
+    std::atomic<uint64_t> lastGeneration{0};
+    std::atomic<int32_t> evW{0};
+    std::atomic<int32_t> evH{0};
 
     // 导入的外部 memory image (来自 avox 的 NT 句柄/AHB, usage=TRANSFER_SRC|DST|SAMPLED)
     VkImage importedImage = VK_NULL_HANDLE;
@@ -112,8 +121,9 @@ private:
     int32_t gpuW = 0, gpuH = 0;
 
     bool importSharedImage();   // 导入 NT 句柄 + 收养 importedImage
-    void releaseSharedImage();  // 释放所有 GPU 资源 (并清 gpuW/H, 等待 setVideoSize 重新喂入)
+    void releaseSharedImage();  // 释放所有 GPU 资源 (并清 gpuW/H, 等待尺寸重新喂入)
     void releaseImport();       // 仅释放导入资源, 保留 gpuW/H (图重建后同尺寸重导用)
+    void applyGpuSize(int32_t w, int32_t h);  // setVideoSize 的实际体(事件与流尺寸共用)
 
     // ── CPU 回退模式 (YUV 上传 + shader 转换) ──
     // 布局统一为紧凑 NV12: [Y: h 行 × w] + [UV: h/2 行 × w (U/V 交错)],

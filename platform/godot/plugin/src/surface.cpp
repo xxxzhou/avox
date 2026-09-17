@@ -150,9 +150,32 @@ void SurfaceTextureBridge::onWinSizeChange(int32_t w, int32_t h) {
     }
 }
 
-// ── 主线程: onReady 后喂入真实视频尺寸, 启动 GPU 直通 ──
+// avox 渲染线程: 每帧渲染输出事件。只置原子, 不碰任何 Godot 对象 ——
+// 重导/喂尺寸的实际动作全在主线程 update()。
+void SurfaceTextureBridge::onRender(const avox::SurfaceRenderEvent *ev) {
+    if (!ev || ev->generation == 0 || !ev->format.bVailid()) return;
+    // 世代变化: 图重建过(换片/字幕锐化等开关/中段分辨率变化), 已导入的
+    // VkImage 属旧图, 请求主线程重导
+    const uint64_t gen = ev->generation;
+    const uint64_t prev = lastGeneration.exchange(gen);
+    if (prev != 0 && prev != gen) {
+        needReimport.store(true, std::memory_order_release);
+    }
+    // 输出图真实尺寸持续发布(含中段分辨率变化), 事件流动后为尺寸权威源
+    evW.store(ev->format.width, std::memory_order_relaxed);
+    evH.store(ev->format.height, std::memory_order_relaxed);
+}
+
+// ── 主线程: onReady 后喂入视频流尺寸, 启动 GPU 直通 ──
 
 void SurfaceTextureBridge::setVideoSize(int32_t w, int32_t h) {
+    // 渲染输出事件已流动: 尺寸以事件携带的输出图真实尺寸为准(update 每帧喂入),
+    // 流尺寸只作首建前引导 —— 两源并存时不一致会每帧互相拆重建
+    if (lastGeneration.load(std::memory_order_relaxed) != 0) return;
+    applyGpuSize(w, h);
+}
+
+void SurfaceTextureBridge::applyGpuSize(int32_t w, int32_t h) {
     if (!gpuMode || !surfaceRender || w <= 0 || h <= 0) return;
     if (!gpuOutputEnabled) {
         gpuW = w;
@@ -489,6 +512,13 @@ void SurfaceTextureBridge::update() {
         // 主线程: 处理 avox 线程请求的尺寸变化 (释放旧 VkImage, 下次重新导入)
         if (needReimport.exchange(false)) {
             releaseSharedImage();
+        }
+        // 渲染输出事件喂尺寸: 输出图真实尺寸(含中段分辨率变化)。放在 enable
+        // 之前 —— releaseSharedImage 清掉的维度下一帧即由此恢复
+        const int32_t nw = evW.load(std::memory_order_relaxed);
+        const int32_t nh = evH.load(std::memory_order_relaxed);
+        if (nw > 0 && nh > 0 && (nw != gpuW || nh != gpuH)) {
+            applyGpuSize(nw, nh);
         }
         // 等渲染线程泵入首帧后, VkVideoRender 才有 outputLayer。
         // enableVkOutput 幂等(已激活直接 true), 每帧调用安全:

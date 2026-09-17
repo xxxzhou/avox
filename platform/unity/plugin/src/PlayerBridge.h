@@ -146,6 +146,10 @@ class PlayerBridge : public avox::IMediaPlayerOb, public avox::ISurfaceRenderOb 
   // ── avox::ISurfaceRenderOb (avox 渲染线程) ──
   void onFrame(avox::IImageBuffer* buf, avox::YuvType yuvType) override;
   void onWinSizeChange(int32_t width, int32_t height) override;
+  // 渲染输出事件: 世代变化→pendingGpuResize(换片/功能开关/中段分辨率变化);
+  // format→videoW/H(事件流动后为输出尺寸权威源); dx11 通道句柄随事件缓存,
+  // 图在而无句柄时幂等重申 enableVkOutputDx11
+  void onRender(const avox::SurfaceRenderEvent* ev) override;
 
   void createPlayer();
   void destroyPlayer();
@@ -182,6 +186,11 @@ class PlayerBridge : public avox::IMediaPlayerOb, public avox::ISurfaceRenderOb 
   std::atomic<bool> pendingGpuResize{false};  // 尺寸变化待主线程重导
   std::atomic<int32_t> videoW{0};
   std::atomic<int32_t> videoH{0};
+  // 渲染输出事件状态 (avox 渲染线程写)
+  std::atomic<uint64_t> lastGpuGeneration{0};
+  // D3D11 拷贝通道: 共享纹理句柄随事件缓存 (onRender 写, renderDx11Copy 读),
+  // 0=图在而未绑定(首建/重建丢声明, onRender 已幂等重申 enable)
+  std::atomic<uint64_t> dx11EventHandle{0};
   uint64_t importedImage = 0;  // VkImage (Unity CreateExternalTexture 收养)
   uint64_t importedMemory = 0;
   void* importedAhb = nullptr;  // Android: avox 转移来的 AHardwareBuffer (release 随 releaseGpuImport)

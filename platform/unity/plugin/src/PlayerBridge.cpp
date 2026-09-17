@@ -318,20 +318,21 @@ void PlayerBridge::renderDx11Copy() {
       unityDx11Close(&dx11);
     }
   }
-  // 管线重建 (字幕层启停/分辨率变化等) 重造 outputLayer, dx11 声明随旧对象
-  // 丢失 (新层句柄读回 0): 重新幂等声明触发重绑导出 (同 Godot 桥每帧重调);
-  // 有句柄时每帧刷新: 变化即重开, C# 侧检测原生指针变化自动重建外部纹理包裹
+  // 句柄感知已事件化: onRender (avox 渲染线程) 把 dx11Handle 缓存进
+  // dx11EventHandle, 图在而无句柄(首建/重建丢声明)时已在幂等重申 enable。
+  // 这里只读原子, 省每帧跨 dll 调用; 变化即重开语义与原逐帧轮询等价,
+  // C# 侧检测原生指针变化自动重建外部纹理包裹
   if (surface) {
-    const uint64_t fresh = avox::getVkOutputDx11Handle(surface);
+    const uint64_t fresh = dx11EventHandle.load(std::memory_order_relaxed);
     if (fresh != 0) {
       if (fresh != dx11Handle.load()) {
         dx11Handle.store(fresh);
         dxFenceHandle.store(avox::getVkOutputDx11FenceHandle(surface));
       }
     } else if (dx11Handle.load() != 0) {
-      // 曾有句柄而读不到了: 重建把绑定丢了, 声明后等新句柄 (重建窗口内层为
-      // 空, enableVkOutputDx11 内部拒绝, 下帧重试)
-      avox::enableVkOutputDx11(surface);
+      // 曾有句柄而事件报 0: 重建把绑定丢了 (onRender 已在重申 enable), 等新句柄
+      dx11Handle.store(0);
+      dxFenceHandle.store(0);
       return;
     }
   }
@@ -554,6 +555,32 @@ void PlayerBridge::onWinSizeChange(int32_t width, int32_t height) {
   }
   (void)width;
   (void)height;
+}
+
+// 渲染输出事件 (avox 渲染线程): 只置原子/幂等声明, 导入动作回 Unity 侧线程。
+// pendingGpuResize 在 !ready 时 updateGpu 的 exchange 短路不消费, 总是置位安全。
+void PlayerBridge::onRender(const avox::SurfaceRenderEvent* ev) {
+  if (!ev || ev->generation == 0 || !ev->format.bVailid()) return;
+  const uint64_t gen = ev->generation;
+  const uint64_t prev = lastGpuGeneration.exchange(gen);
+  // 世代变化: 图重建过(换片/字幕锐化等开关/中段分辨率变化), 旧导入/旧句柄作废
+  if (prev != 0 && prev != gen) {
+    pendingGpuResize.store(true, std::memory_order_release);
+  }
+  if (bGpuMode) {
+    // 输出图真实尺寸(含中段分辨率变化), 事件流动后为权威源
+    videoW.store(ev->format.width, std::memory_order_relaxed);
+    videoH.store(ev->format.height, std::memory_order_relaxed);
+  }
+  // D3D11 拷贝通道(flavor 2/3): 句柄随事件缓存, renderDx11Copy 只读本原子;
+  // 图在而无句柄(首建未声明/重建丢声明)时幂等重申 enable, bindD3D 下帧完成
+  if (surface && unityGpuImportFlavor() != 1) {
+    const uint64_t h = ev->dx11Handle;
+    dx11EventHandle.store(h, std::memory_order_relaxed);
+    if (h == 0) {
+      avox::enableVkOutputDx11(surface);
+    }
+  }
 }
 
 // ── 内部 ──
