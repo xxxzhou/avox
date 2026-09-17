@@ -133,6 +133,10 @@ class IRecorder {
   virtual void setVideoDesc(const VideoDesc& desc) {};
   // 转码录制器: 声明输出音频格式(重采样目标, open前设置)
   virtual void setAudioDesc(const AudioDesc& desc) {};
+  // 离线画质增强(Real-ESRGAN, 转码录制器专用; 队列消费侧逐帧推理, 队列满反压解码;
+  // 与实时轨 ISurfaceRender::enableQualityEnhance 图内层无关, open前设置)
+  virtual void enableQualityEnhance(const QualityEnhanceParamet& paramet) {};
+  virtual void disableQualityEnhance() {};
   // 转码录制器才有的,针对图像处理
   virtual ISurfaceRender* getSurfaceRender() = 0;
   // 获取音频渲染器(用于 AudioTap 读取音频数据)

@@ -5,6 +5,7 @@
 #include "../module/AvoxManager.hpp"
 #include "../module/LogHelper.hpp"
 #include "../module/OptionKey.hpp"
+#include "../video/CpuQEnhancer.hpp"
 
 namespace avox {
 
@@ -72,6 +73,15 @@ void TranscodeRecorder::setAudioDesc(const AudioDesc& desc) {
   outAudioDesc = desc;
   bSetOutAudio = true;
 }
+
+void TranscodeRecorder::enableQualityEnhance(const QualityEnhanceParamet& paramet) {
+  qparamet = paramet;
+  bQEnhance = true;
+  LOGFLF(LogLevel::info, "quality enhance on, mode:",
+         (int32_t)paramet.outputMode);
+}
+
+void TranscodeRecorder::disableQualityEnhance() { bQEnhance = false; }
 
 ISurfaceRender* TranscodeRecorder::getSurfaceRender() {
   return surfaceRender.get();
@@ -142,6 +152,9 @@ void TranscodeRecorder::close() {
   }
   // 停止编码线程(编码线程排空队列并关源后join返回)
   stopTask();
+  // 增强器/RGBA缓冲随open重建(下次open重新init)
+  qenhancer.reset();
+  rgbaBuffer.reset();
   LOGFLF(LogLevel::info, "encode thread stopped, recorder close done");
 }
 
@@ -152,6 +165,11 @@ void TranscodeRecorder::onReady() {
   }
   const auto& vTracks = source->getVideoTracks();
   const auto& aTracks = source->getAudioTracks();
+  // 空输出(离屏直出)无编码消费, 增强无意义
+  if (bQEnhance && !muxer) {
+    LOGFLF(LogLevel::warn, "quality enhance needs output file, off");
+    bQEnhance = false;
+  }
   // 打开muxer(空输出不建 muxer)
   if (muxer) {
     muxer->open(outputFile.c_str());
@@ -167,15 +185,73 @@ void TranscodeRecorder::onReady() {
     if (muxer) {
       muxer->setVideoCodec(vCodecId);
     }
-    // 硬编给NV12,软编给YUV420P;空输出(无编码)用YUV420P对外
-    if (bHardEncode && muxer) {
-      surfaceRender->setOffSurface(YuvType::nv12);
-      vdesc.desc.type = YuvType::nv12;
-    } else {
-      surfaceRender->setOffSurface(YuvType::yuv420P);
-      vdesc.desc.type = YuvType::yuv420P;
+    if (bQEnhance) {
+      // 离线画质增强: 图只做 yuv→rgba(enableImage 独立输出分支), rgba 帧入队,
+      // 编码线程侧推理; 输出尺寸由增强器决定, yuv 分支不开。
+      // 增强输出 yuv 类型必须与编码模式匹配(硬编 nv12/软编 yuv420P), 否则
+      // FFVEncoder 按(codecCtx->pix_fmt)nv12 读 yuv420p 平面 → 越界崩溃
+      qenhancer = std::make_unique<CpuQEnhancer>();
+      YuvType enhanceOut = bHardEncode ? YuvType::nv12 : YuvType::yuv420P;
+      if (qenhancer->init(qparamet, vdesc.desc.width, vdesc.desc.height,
+                          enhanceOut)) {
+        rgbaBuffer = std::make_shared<ImageBuffer>();
+        ImageFormat fmt = {};
+        // [dbg] 稳定性实验: rgba 缓冲回退源分辨率(GPU resize 无缩放), 推理
+        // 分辨率的降采样由 CpuQEnhancer 的 box filter 在 CPU 侧完成
+        fmt.width = vdesc.desc.width;
+        fmt.height = vdesc.desc.height;
+        fmt.imageType = ImageType::rgba8;
+        rgbaBuffer->setImageFormat(fmt);
+        static const bool noImg = std::getenv("ENH_NOIMG") != nullptr;
+        surfaceRender->setOffSurface(YuvType::other);
+        if (!noImg) {
+          surfaceRender->enableImage(rgbaBuffer.get());
+        }
+        // 关键: enableImage 的图重建延迟到下一次 render, 首个真帧的 render 期间
+        // 重建会销毁旧 cpuBuffer, rgbaBuffer(引用旧映射内存)在重建后到下一帧输出
+        // 前是悬存的 → 拷贝帧时读已释放内存。此处先渲染一张空帧, 让「带 image
+        // 分支的重建」同步完成且 rgbaBuffer 引用落位, 之后的真帧拷贝安全
+        static const bool noDummy = std::getenv("ENH_NODUMMY") != nullptr;
+        if (!noDummy) {
+          int32_t sw = vdesc.desc.width, sh = vdesc.desc.height;
+          size_t ySize = (size_t)sw * sh;
+          size_t uvSize = (size_t)(sw / 2) * (sh / 2);
+          std::vector<uint8_t> dummy(ySize + uvSize * 2, 0);
+          YUVFrame dummyFrame = {};
+          dummyFrame.format.width = sw;
+          dummyFrame.format.height = sh;
+          dummyFrame.format.type = YuvType::nv12;
+          dummyFrame.data[0] = dummy.data();
+          dummyFrame.stride[0] = sw;
+          dummyFrame.data[1] = dummy.data() + ySize;
+          dummyFrame.stride[1] = sw;
+          surfaceRender->render(dummyFrame);
+          LOGFLF(LogLevel::info, "quality enhance dummy frame rendered, ",
+                 "graph rebuilt with image branch");
+        }
+        vdesc.desc.width = qenhancer->outWidth();
+        vdesc.desc.height = qenhancer->outHeight();
+        vdesc.desc.type = enhanceOut;
+        LOGFLF(LogLevel::info, "quality enhance path, out:", vdesc.desc.width,
+               "x", vdesc.desc.height);
+      } else {
+        // 模型/后端缺失: 回退普通转码, 队列走原 YUV 路径
+        LOGFLF(LogLevel::warn, "quality enhance init failed, fallback plain");
+        qenhancer.reset();
+        rgbaBuffer.reset();
+      }
     }
-    if (bSetOutVideo) {
+    if (!qenhancer) {
+      // 硬编给NV12,软编给YUV420P;空输出(无编码)用YUV420P对外
+      if (bHardEncode && muxer) {
+        surfaceRender->setOffSurface(YuvType::nv12);
+        vdesc.desc.type = YuvType::nv12;
+      } else {
+        surfaceRender->setOffSurface(YuvType::yuv420P);
+        vdesc.desc.type = YuvType::yuv420P;
+      }
+    }
+    if (bSetOutVideo && !qenhancer) {
       if (outVideoDesc.width > 0 && outVideoDesc.height > 0 &&
           (outVideoDesc.width != vdesc.desc.width ||
            outVideoDesc.height != vdesc.desc.height)) {
@@ -229,6 +305,18 @@ void TranscodeRecorder::onVideoFrame(const YUVFrame& frame, int32_t trackId) {
   surfaceRender->render(frame);
   // 空输出:仅对外回调,不入编码队列
   if (bNoOutput) {
+    return;
+  }
+  // 增强模式: 图已出 rgba(enableImage 缓冲, 上面那次 render 已写入), 深拷贝入队
+  // (满则阻塞解码=反压), 推理在编码线程消费侧做
+  if (qenhancer && rgbaBuffer) {
+    // [dbg] 竞态排查: ENH_NOQUEUE=1 跳过入队, 仅验 render/图分支稳定性
+    static const bool noQueue = std::getenv("ENH_NOQUEUE") != nullptr;
+    if (noQueue) {
+      return;
+    }
+    RgbaFrameRef ref = {rgbaBuffer.get(), frame.pts, frame.dts};
+    vFrameQueue.enqueueWait<RgbaFrameRef>(ref, copyBufRgba);
     return;
   }
   // 得到处理后的帧,入队给编码线程
@@ -351,14 +439,22 @@ void TranscodeRecorder::processVideo(VideoFramePtr vframe) {
   std::shared_ptr<SwVideoBuffer> hostBuffer =
       std::static_pointer_cast<SwVideoBuffer>(vframe->buffer);
   YUVFrame yframe = {};
-  if (!splitBuffer) {
-    splitBuffer = std::make_unique<ImageBuffer>();
+  // 增强模式: 编码线程逐帧推理(慢则队列满反压解码, 整线节拍化)
+  if (qenhancer) {
+    if (!qenhancer->process(hostBuffer.get(), vframe->pts, vframe->dts,
+                            yframe)) {
+      return;
+    }
+  } else {
+    if (!splitBuffer) {
+      splitBuffer = std::make_unique<ImageBuffer>();
+    }
+    if (!hostBuffer->to(yframe, splitBuffer.get())) {
+      return;
+    }
+    yframe.pts = vframe->pts;
+    yframe.dts = vframe->dts;
   }
-  if (!hostBuffer->to(yframe, splitBuffer.get())) {
-    return;
-  }
-  yframe.pts = vframe->pts;
-  yframe.dts = vframe->dts;
   muxer->pushFrame(yframe);
   // 更新进度
   updateProgress();

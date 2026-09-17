@@ -32,6 +32,10 @@ void SwVideoBuffer::form(const YUVFrame& frame, bool bCopy) {
       frame.stride[0] != tempFormat.width;
   // 要求复制,以及平面格式如果不紧湊也需要重新排列
   if (bCopy || (bPlane && !bTightlyPacked(frame)) || bPaddedSplit) {
+    // 拷贝分支必须显式回写 data: 上一帧若走引用分支(data=外部帧指针,如离线
+    // 增强的 dummy 帧), 同格式 setImageFormat 早退不修复, data 仍指已析构内存,
+    // 后续 getPointer()/memcpy 全部落到释放块 → 黑帧直至随机段错误
+    data = buffer.data();
     uint8_t* bdata = buffer.data();
     uint8_t* idata = frame.data[0];
     int32_t rowPitch = imageFormat.rowPitch;

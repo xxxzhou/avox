@@ -29,4 +29,12 @@ class VideoFrame {
 
 void copyBufHost(VideoFramePtr& frame, const YUVFrame& curframe);
 void copyBufGpu(VideoFramePtr& frame, const GpuFrame& gpuFrame);
+
+// rgba 帧(离线画质增强: Vulkan 管线 yuv→rgba 后入队)的引用与深拷贝
+struct RgbaFrameRef {
+  IImageBuffer* buf = nullptr;
+  int64_t pts = 0;
+  int64_t dts = 0;
+};
+void copyBufRgba(VideoFramePtr& frame, const RgbaFrameRef& ref);
 }

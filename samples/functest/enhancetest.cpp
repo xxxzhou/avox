@@ -6,9 +6,13 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <string>
 #include <thread>
+
+#include <windows.h>
+#include <dbghelp.h>
 
 #include "avox/AvoxLayer.h"
 #include "avox/AvoxMuxer.h"
@@ -17,6 +21,88 @@
 using namespace avox;
 
 namespace {
+
+// 段错误现场: 捕获异常并解析调用栈(带符号), 定位 heisenbug 用
+LONG WINAPI segvHandler(EXCEPTION_POINTERS* info) {
+  fprintf(stderr, "\n[SEGV] code=0x%lX addr=%p tid=%lu\n",
+          (unsigned long)info->ExceptionRecord->ExceptionCode,
+          info->ExceptionRecord->ExceptionAddress,
+          GetCurrentThreadId());
+  // AV 细节: [0]=0读/1写/8执行(DEP), [1]=目标地址 → 一眼分辨 src/dst 失效
+  if (info->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION &&
+      info->ExceptionRecord->NumberParameters >= 2) {
+    ULONG_PTR op = info->ExceptionRecord->ExceptionInformation[0];
+    void* target = (void*)info->ExceptionRecord->ExceptionInformation[1];
+    fprintf(stderr, "  access=%s target=%p\n",
+            op == 0 ? "READ" : (op == 1 ? "WRITE" : "EXEC"), target);
+    HMODULE tmod = nullptr;
+    char tmodName[MAX_PATH] = {};
+    if (target && GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                         GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                     (LPCSTR)target, &tmod)) {
+      GetModuleFileNameA(tmod, tmodName, MAX_PATH);
+      fprintf(stderr, "  target in module: %s (base=%p offset=0x%llX)\n",
+              tmodName, (void*)tmod,
+              (unsigned long long)((uintptr_t)target - (uintptr_t)tmod));
+    } else {
+      fprintf(stderr, "  target in module: <heap/unmapped>\n");
+    }
+  }
+  void* stack[24] = {};
+  WORD n = CaptureStackBackTrace(0, 24, stack, nullptr);
+  SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS | SYMOPT_LOAD_LINES);
+  SymInitialize(GetCurrentProcess(), nullptr, TRUE);
+  // 崩溃地址落在哪个模块 (坏函数指针的常见定位手段)
+  {
+    HMODULE mod = nullptr;
+    char modName[MAX_PATH] = {};
+    if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                               GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           (LPCSTR)info->ExceptionRecord->ExceptionAddress,
+                           &mod)) {
+      GetModuleFileNameA(mod, modName, MAX_PATH);
+      fprintf(stderr, "  crash addr in module: %s\n", modName);
+    } else {
+      fprintf(stderr, "  crash addr in module: <unknown>\n");
+    }
+  }
+  // 沿 ContextRecord 回溯故障线程真实调用栈 (CaptureStack 只能看到 handler 帧)
+  {
+    CONTEXT ctx = *info->ContextRecord;
+    STACKFRAME64 frame = {};
+    const DWORD machine = IMAGE_FILE_MACHINE_AMD64;
+    frame.AddrPC.Offset = ctx.Rip;
+    frame.AddrFrame.Offset = ctx.Rsp;
+    frame.AddrStack.Offset = ctx.Rsp;
+    frame.AddrPC.Mode = AddrModeFlat;
+    frame.AddrFrame.Mode = AddrModeFlat;
+    frame.AddrStack.Mode = AddrModeFlat;
+    HANDLE thread = GetCurrentThread();
+    for (int i = 0; i < 24; ++i) {
+      if (!StackWalk64(machine, GetCurrentProcess(), thread, &frame, &ctx,
+                       nullptr, SymFunctionTableAccess64, SymGetModuleBase64,
+                       nullptr)) {
+        break;
+      }
+      if (frame.AddrPC.Offset == 0) {
+        break;
+      }
+      char buf[512] = {};
+      SYMBOL_INFO* sym = (SYMBOL_INFO*)buf;
+      sym->SizeOfStruct = sizeof(SYMBOL_INFO);
+      sym->MaxNameLen = 400;
+      DWORD64 off = 0;
+      if (SymFromAddr(GetCurrentProcess(), frame.AddrPC.Offset, &off, sym)) {
+        fprintf(stderr, "  #%02d %s +0x%llX\n", i, sym->Name,
+                (unsigned long long)off);
+      } else {
+        fprintf(stderr, "  #%02d pc=%p\n", i, (void*)frame.AddrPC.Offset);
+      }
+    }
+  }
+  fflush(stderr);
+  return EXCEPTION_EXECUTE_HANDLER;
+}
 
 int64_t nowMs() {
   return std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -114,6 +200,7 @@ class EnhanceOb : public IRecorderOb, public ISurfaceRenderOb {
 }  // namespace
 
 int main(int argc, char* argv[]) {
+  SetUnhandledExceptionFilter(segvHandler);
   std::string input = argc > 1 ? argv[1] : "";
   if (input.empty()) {
     std::printf(
@@ -129,7 +216,13 @@ int main(int argc, char* argv[]) {
 
   int32_t srcW = 0, srcH = 0;
   int64_t srcDurationMs = 0;
-  if (!probeResolution(input.c_str(), srcW, srcH, srcDurationMs)) {
+  // [dbg] 竞态排查: ENH_NOPROBE=1 跳过 MediaPlayer 探测(用假尺寸), 验证探测
+  // 的快速 open/close 是否与后续 recorder 打开同一文件冲突
+  static const bool noProbe = std::getenv("ENH_NOPROBE") != nullptr;
+  if (noProbe) {
+    srcW = 640;
+    srcH = 360;
+  } else if (!probeResolution(input.c_str(), srcW, srcH, srcDurationMs)) {
     std::printf("[enh] probe failed: %s\n", input.c_str());
     return 1;
   }
@@ -145,25 +238,28 @@ int main(int argc, char* argv[]) {
     return 1;
   }
   recorder->setVideoCodec(codec == "h265" ? VCodecId::h265 : VCodecId::h264);
-  // 音频重采显式 48k(转码器默认 32k 是历史值, 产品不直用)
-  AudioDesc adesc = {};
-  adesc.channels = 2;
-  adesc.format = AudioFormat::AVOX_AUDIO_S16;
-  adesc.sampleRate = 48000;
-  recorder->setAudioDesc(adesc);
-  // 声明档位输出尺寸: onReady 据此 enableSizeChange + 改编码器描述(2x 编码 2x)
-  // 注意: 图链顺序是 resize(sizeChange)→超分, 声明 2x 会先放大再叠超分变成 4x。
-  // 超分场景不声明输出尺寸, 由超分层出 2x/4x, 编码器跟随实际帧尺寸自愈
-  // (FFVEncoder::encode 尺寸变化即重置), 故这里不调 setVideoDesc
+  // [dbg] 竞态排查: ENH_NOAUD=1 丢弃音轨, 验证音频重采样链路
+  static const bool noAud = std::getenv("ENH_NOAUD") != nullptr;
+  if (noAud) {
+    recorder->setAudioCodec(ACodecId::none);
+  } else {
+    AudioDesc adesc = {};
+    adesc.channels = 2;
+    adesc.format = AudioFormat::AVOX_AUDIO_S16;
+    adesc.sampleRate = 48000;
+    recorder->setAudioDesc(adesc);
+  }
+  // 离线增强: 走录制器级 API(队列消费侧推理), 不往渲染图里挂层。
+  // 图只做 yuv→rgba, rgba 帧入队(满则反压解码), 编码线程逐帧推理→yuv→编码;
+  // 输出尺寸由增强器按档位在 onReady 自动声明(setVideoDesc 不用)
   recorder->getOption()->setBool("rec.hard.encode", hardEnc);
-  // Real-ESRGAN 逐帧: skipFrames=0(实时轨抽帧语义在离线不适用)
-  ISurfaceRender* render = recorder->getSurfaceRender();
   QualityEnhanceParamet qparamet = {};
   qparamet.model = QualityModel::RealESRGanX4V3;
   qparamet.outputMode = outputModeOf(mode);
   qparamet.skipFrames = 0;
-  render->enableQualityEnhance(qparamet);
+  recorder->enableQualityEnhance(qparamet);
   addRecorderOb(recorder, &ob);
+  ISurfaceRender* render = recorder->getSurfaceRender();
   addSurfaceRenderOb(render, &ob);
 
   int64_t wallStart = nowMs();
