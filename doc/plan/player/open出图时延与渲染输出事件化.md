@@ -198,6 +198,58 @@ void onRender(const avox::SurfaceRenderEvent* ev) override {
 `addSurfaceRenderOb` 现成。跨线程纪律同 2.5: 事件回调只置原子，导入动作回
 各引擎自己的渲染线程做。
 
+### 5.1 施工清单（行级, 2026-09-17 摸底备妥）
+
+**共同前提（摸底结论）**: 三端消费类已实现 ISurfaceRenderOb 并注册在 avox 上——
+Unity `PlayerBridge`（PlayerBridge.cpp:104 `addSurfaceRenderOb(surface, this)`，
+:153-155 已有 onFrame/onWinSizeChange 覆写）、Godot `SurfaceTextureBridge`
+（surface.h:59 直接继承，onFrame/onWinSizeChange 已有）、UE `FAvoxVideoBridge`
+（AvoxVideoBridge.h:20）。迁移 = 各加一个 onRender 覆写 + 把轮询触发改事件置位，
+不改注册链路。
+
+**Godot（本仓 platform/godot/plugin/src/，优先做——可随本仓编译验证）**
+
+1. surface.h SurfaceTextureBridge: 加 `void onRender(const SurfaceRenderEvent*) override;`
+   + 原子 `lastGen` / `needImport` / `evW`/`evH`。
+2. surface.cpp onRender（avox 渲染线程，只置原子）:
+   - generation 变化且 gpuOutputEnabled → `needReimport=true`（与现
+     onWinSizeChange:146-153 并存，后者兜窗口变化，视频尺寸变化由事件覆盖）；
+   - format 有效且与当前喂入不同 → 置原子 evW/evH（gpuW/gpuH 主线程写，勿直写）；
+   - `gpuOutputEnabled && importedImage==NULL` → `needImport=true`——
+     getVkOutputHandle 是转移语义（Windows 每次 export 新 NT / Android AHB 引用），
+     现状未就绪窗口每帧 export 一次，事件化后只在需要时做。
+3. surface.cpp update()（:487 主线程）: 每帧 enableVkOutput 幂等声明**保留**
+   （消费契约 + 重建窗口期重试）；import 尝试改由 needImport 消费；evW/evH
+   非零时经 setVideoSize 喂入。
+4. 素材: `avox-test/assets/video/test_h264_resize_640x360_960x540.ts`，
+   中段分辨率变化正是"事件→重导"的杀手用例。
+
+**Unity（本仓 platform/unity/plugin/src/）**
+
+1. PlayerBridge 加 `void onRender(const avox::SurfaceRenderEvent* ev) override;`
+   （注册已在 :104）。
+2. onRender: videoW/videoH 原子 ← ev->format（现只由 onReady 喂流尺寸，
+   事件补上输出图真实尺寸——含中段变化）；generation 变化且 gpuOutputOn →
+   `pendingGpuResize=true`（:551 窗口路径并存）；dx11 通道缓存
+   `dx11EventHandle` ← ev->dx11Handle，==0 时幂等重申 enableVkOutputDx11
+   （替代 renderDx11Copy:334 "读到 0 再重申"晚一拍）。
+3. renderDx11Copy（:324-337）: 每帧 `getVkOutputDx11Handle` 跨 dll 调用改读
+   dx11EventHandle 原子，变化检测语义等价。
+4. flavor 1 updateGpu（:186）: pending 标志改由事件置位；15s 重试窗口**保留**
+   （enable/导入失败仍是瞬态可能）；C# 侧零改动（AvoxPlayer.cs:119 每帧
+   updateGpu 保留，内部变轻）。
+
+**avox-ue（独立仓，最后做——需 UE 环境验证）**
+
+1. FAvoxVideoBridge 加 onRender override。
+2. VK 直通（AvoxVideoBridge.cpp:121-155）: onReady→requestGpuInit 保留；
+   事件 generation 变化追加 Reimport 请求；w/h 改事件 format。
+3. D3D11 拷贝（:172-200）: enableVkOutputDx11 声明改事件驱动（句柄 0 重申）；
+   每帧 getVkOutputDx11Handle 轮询改读事件缓存。
+4. 独立仓独立提交；编译需 UE，验证排后。
+
+**顺带（可选项，收益小）**: Unity 拷贝模式每帧比句柄本就是渲染节拍，可不改。
+
 ## 6. 验收
 
 ```bash
