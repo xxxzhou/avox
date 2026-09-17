@@ -27,7 +27,7 @@ BSD-3-Clause 可商用), 配合 panvox 媒体库「画质增强」挂机任务 �
 
 平面屏 VR 播放（fisheye/equirect 立体片源自动识别 + 拖动视角/缩放 + 红蓝 3D），只走 Vulkan 图像处理路径，不做头显 → [VR播放支持计划.md](VR播放支持计划.md)
 
-- [ ] V-1 一期: API + 投影 shader + 管线挂接 + 自动参数 + 样例交互 + shot-vr 矩阵用例已落地并实机验证; 剩 Android 实测 + Hough 圆检测(增强项)
+- [x] V-1 一期: API + 投影 shader + 管线挂接 + 自动参数 + 样例交互 + shot-vr 用例落地, Windows/Android 真机均验证; 剩 Hough 圆检测与 equirect 用例(增强项)
 - [x] V-2 二期: 红蓝 3D + 立体强度已落地实测; 画质补偿已砍(离线超分另立方案)
 
 ## 2026.04 计划 (已过期, 待归档)
