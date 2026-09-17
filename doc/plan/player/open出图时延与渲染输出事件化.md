@@ -165,6 +165,26 @@ void onRender(const avox::SurfaceRenderEvent* ev) override {
 与 HUD 400ms 的 texture id 拉取。CPU 读回兜底模式（PANVOX_GPU_SHARED=0）不受影响，
 照走桥线程。
 
+### 4.1 施工清单（行级, 2026-09-17 备妥, 可直接开工）
+
+**实测修正**: Dart 侧 texture id 的实际感知路径是 VideoView 自有 33ms 轮询
+（video_view.dart:44 `Timer.periodic(33ms → _poll)` + build() 直读
+`engine.gpuTextureId`），engine_controller 的 250ms `_tick` 只拉 pos/state/size
+不拉 texture id——§1 表里「250ms tick」的表述已过时; texture-ready 事件的收益
+是去掉 33ms 拍梗 + HUD/probe 页即时, 主收益仍在 native 侧 enable+句柄事件化。
+
+| # | 落点 | 改动 |
+|---|---|---|
+| 1 | panvox_c_api.h | 尾部追加 `pvx_set_texture_ready_cb(pvx_player_t*, void (*cb)(int64_t tex_id, int32_t w, int32_t h, void* user), void* user)`; `PVX_ABI_VERSION` 1→2（Dart 不匹配即拒绑, 现成防线） |
+| 2 | panvox_native.cpp FrameOb(:208) | 加 `sr_`(create 时从 pl->sr 注入, :884 addSurfaceRenderOb 同点)、`dx11Enabled_`/`lastHandle_` 原子、cv+flag; `onRender` 按 §4 首击 enable + 句柄变化 notify |
+| 3 | panvox_native.cpp gpuThreadMain(:646) | 删 500ms enable 块与 16ms 句柄轮询; 桥线程保留 16ms **交付节拍**（fence→blit→mark 是 D3D 查询+拷贝, 非感知轮询）+ CPU 读回路径原样; openSrc 触发改由 cv 唤醒（seenSrc 环形/AMD 防重试随行） |
+| 4 | panvox_native.cpp registerTex 成功处(:720-725) | 发 texture-ready 事件（沿用 StateOb 的「引擎线程直调 cb, Dart 经 NativeCallable.listener 异步收」模式, panvox_api.dart:706-732 照抄）; 换片 texDirty 重注册同样触发 |
+| 5 | panvox_api.dart | `setTextureReadyCb`/`closeTextureReadyCb`, 照 setStateCb 模板; holder 字段保活防 GC |
+| 6 | engine_controller.dart | 收事件更新 `_gpuTextureId` 缓存 + `notifyListeners()`; VideoView 33ms 轮询降级为兜底可后删 |
+| 7 | 诊断兜底 | shim 在 open 成功时刻起 N=5s 无 texture-ready → 一条 error 日志（只报警不拉取） |
+
+验收走 §6（enable→reset 间隔 <50ms、Dart 事件 <30ms、SWITCH/RESUME/读回回归）。
+
 ## 5. 施工项 3: 引擎插件迁移（一次设计，三端 + UE 同构）
 
 | 端 | 现状 | 迁移后 |
