@@ -144,6 +144,18 @@ class IAudioStt {
   virtual RecognizerType getRecognizerType() = 0;
 };
 
+// 批量转写反压控制(可选能力,独立接口不动 IAudioStt 的 vtable):
+// 实现了它的后端可开阻塞式喂料。离线批量转写(STT 产出慢于解码)必须打开,
+// 否则解码不限速会灌满内部队列、按"丢最旧"持续丢音频 → 识别结果大量缺行
+// (PTS jump 恒正就是丢帧的直接证据);实时口播保持默认关闭,不能阻塞解码。
+class IAudioSttFeedControl {
+ public:
+  virtual ~IAudioSttFeedControl() = default;
+  // true: 内部队列满时阻塞 recognize 的调用方(tap/解码线程),音频零丢弃;
+  // false: 丢最旧(默认)。
+  virtual void setFeedBlocking(bool b) = 0;
+};
+
 // ============== 语音合成 ==============
 
 // 合成器后端类型(创建实例用,内部映射到工厂表字符串 key)
@@ -246,12 +258,17 @@ AVOX_EXPORT void ascHeader(const AudioDesc& audioDesc, uint8_t* data,
 AVOX_EXPORT int32_t getSampleRateByIndex(uint8_t index);
 AVOX_EXPORT void addAudioTapOb(IAudioRender* r, IAudioTapOb* ob);
 AVOX_EXPORT void removeAudioTapOb(IAudioRender* r, IAudioTapOb* ob);
+// tap 满队列策略: true 阻塞反压到解码线程(离线转写零丢帧), false 丢最旧(默认)。
+// 与 addAudioTapOb 同样式导出: IAudioRender 是引擎内唯一实现 AudioRender 的薄口。
+AVOX_EXPORT void setAudioRenderTapBlock(IAudioRender* r, bool b);
 AVOX_EXPORT IWavSave* createWavSave();
 // 创建语音识别器(后端未注册/none 返回 nullptr)
 AVOX_EXPORT IAudioStt* createAudioStt(AudioSttType type);
 
 AVOX_EXPORT void addAudioSttOb(IAudioStt* stt, IAudioSttOb* ob);
 AVOX_EXPORT void removeAudioSttOb(IAudioStt* stt, IAudioSttOb* ob);
+// 批量转写反压开关: 实例实现 IAudioSttFeedControl 时生效,否则静默忽略(旧行为)。
+AVOX_EXPORT void setAudioSttFeedBlocking(IAudioStt* stt, bool b);
 
 // 创建语音合成器(后端未注册/none 返回 nullptr)
 AVOX_EXPORT IAudioTts* createAudioTts(AudioTtsType type);
