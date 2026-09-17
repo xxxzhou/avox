@@ -2,6 +2,8 @@
 
 #include <cstring>
 
+#include <algorithm>
+
 #include "avox/AvoxVideo.h"
 #include "avox/module/AvoxManager.hpp"
 #include "avox/player/MediaPlayer.hpp"
@@ -309,15 +311,169 @@ void VkVideoRender::disableFSR() {
   bResetFlag = true;
 }
 
+// 视角钳位(SDK内持视角真相): 180°族yaw/pitch各±90°(1°边界余量,出界即无内容),
+// 360°族yaw取模包绕; fov钳[30,120](防超源分辨率极限/畸变不可看)
+static void clampVrView(const VrParamet& p, VrViewState& s) {
+  bool bFull = p.projection == VrProjection::fisheye360 ||
+               p.projection == VrProjection::equirect360;
+  if (bFull) {
+    if (s.yaw < -180.0f) {
+      s.yaw += 360.0f;
+    }
+    if (s.yaw >= 180.0f) {
+      s.yaw -= 360.0f;
+    }
+  } else {
+    s.yaw = std::min(std::max(s.yaw, -89.0f), 89.0f);
+  }
+  s.pitch = std::min(std::max(s.pitch, -89.0f), 89.0f);
+  s.fov = std::min(std::max(s.fov, 30.0f), 120.0f);
+}
+
+// VrParamet(全帧uv) + 源尺寸 -> VrLayerGeom(eye局部uv);
+// 圆心/半径全零用默认(内切每眼画幅高、居中), 半径默认0.5×眼高
+static VrLayerGeom buildVrGeom(const VrParamet& p, int32_t srcW, int32_t srcH,
+                               int32_t outW, int32_t outH) {
+  VrLayerGeom g = {};
+  g.projection = (int32_t)p.projection;
+  g.fisheyeFov = p.fisheyeFov;
+  bool bSbs = p.eyeLayout == VrEyeLayout::sbs;
+  float eyePxW = bSbs ? srcW * 0.5f : (float)srcW;
+  float eyePxH = bSbs ? (float)srcH : srcH * 0.5f;
+  g.eyeW = bSbs ? 0.5f : 1.0f;
+  g.eyeH = bSbs ? 1.0f : 0.5f;
+  g.eyeLu = 0.0f;
+  g.eyeLv = 0.0f;
+  g.eyeRu = bSbs ? 0.5f : 0.0f;
+  g.eyeRv = bSbs ? 0.0f : 0.5f;
+  float defLu = g.eyeLu + g.eyeW * 0.5f;
+  float defLv = g.eyeLv + g.eyeH * 0.5f;
+  float defRu = g.eyeRu + g.eyeW * 0.5f;
+  float defRv = g.eyeRv + g.eyeH * 0.5f;
+  bool bHasL = p.centerL[0] != 0.0f || p.centerL[1] != 0.0f;
+  bool bHasR = p.centerR[0] != 0.0f || p.centerR[1] != 0.0f;
+  float lu = bHasL ? p.centerL[0] : defLu;
+  float lv = bHasL ? p.centerL[1] : defLv;
+  float ru = bHasR ? p.centerR[0] : defRu;
+  float rv = bHasR ? p.centerR[1] : defRv;
+  g.cLu = (lu - g.eyeLu) / g.eyeW;
+  g.cLv = (lv - g.eyeLv) / g.eyeH;
+  g.cRu = (ru - g.eyeRu) / g.eyeW;
+  g.cRv = (rv - g.eyeRv) / g.eyeH;
+  float rLpx = p.radiusL > 0.0f ? p.radiusL * (float)srcH : 0.5f * eyePxH;
+  float rRpx = p.radiusR > 0.0f ? p.radiusR * (float)srcH : 0.5f * eyePxH;
+  g.rLu = rLpx / eyePxW;
+  g.rLv = rLpx / eyePxH;
+  g.rRu = rRpx / eyePxW;
+  g.rRv = rRpx / eyePxH;
+  g.outWidth = outW;
+  g.outHeight = outH;
+  return g;
+}
+
+// VR输出尺寸: 有宿主设置(enableSizeChange/Scale)按其来,
+// 否则给显示级默认(VR输出是视口图, 不能按8K源尺寸走)
+static void resolveVrOutSize(bool bUseNewSize, float sizeScale, int32_t userW,
+                             int32_t userH, int32_t srcW, int32_t srcH,
+                             int32_t& outW, int32_t& outH) {
+  if (bUseNewSize) {
+    if (sizeScale != 1.0f) {
+      outW = (int32_t)(srcW * sizeScale);
+      outH = (int32_t)(srcH * sizeScale);
+    } else {
+      outW = userW;
+      outH = userH;
+    }
+    return;
+  }
+#if __ANDROID__
+  outW = 1280;
+  outH = 720;
+#else
+  outW = 1920;
+  outH = 1080;
+#endif
+}
+
+void VkVideoRender::enableVr(const VrParamet& paramet) {
+  std::lock_guard<std::mutex> lock(vrViewMutex);
+  if (bEnableVr && vrParamet == paramet) {
+    return;
+  }
+  vrParamet = paramet;
+  bEnableVr = true;
+  bResetFlag = true;
+}
+
+void VkVideoRender::disableVr() {
+  std::lock_guard<std::mutex> lock(vrViewMutex);
+  if (!bEnableVr) {
+    return;
+  }
+  bEnableVr = false;
+  bResetFlag = true;
+}
+
+void VkVideoRender::rotateView(float deltaYaw, float deltaPitch) {
+  std::lock_guard<std::mutex> lock(vrViewMutex);
+  vrViewPending.yaw += deltaYaw;
+  vrViewPending.pitch += deltaPitch;
+  clampVrView(vrParamet, vrViewPending);
+  bVrViewDirty = true;
+}
+
+void VkVideoRender::zoomView(float deltaFov) {
+  std::lock_guard<std::mutex> lock(vrViewMutex);
+  vrViewPending.fov += deltaFov;
+  clampVrView(vrParamet, vrViewPending);
+  bVrViewDirty = true;
+}
+
+void VkVideoRender::resetView() {
+  std::lock_guard<std::mutex> lock(vrViewMutex);
+  vrViewPending = {};
+  bVrViewDirty = true;
+}
+
+void VkVideoRender::getViewAngles(float* yaw, float* pitch, float* fov) {
+  std::lock_guard<std::mutex> lock(vrViewMutex);
+  if (yaw) {
+    *yaw = vrViewPending.yaw;
+  }
+  if (pitch) {
+    *pitch = vrViewPending.pitch;
+  }
+  if (fov) {
+    *fov = vrViewPending.fov;
+  }
+}
+
+void VkVideoRender::setVrOutMode(VrOutMode mode) {
+  std::lock_guard<std::mutex> lock(vrViewMutex);
+  vrViewPending.outMode = (int32_t)mode;
+  bVrViewDirty = true;
+}
+
 vec2i VkVideoRender::getOutSize() {
   vec2i size = {imageFormat.width, imageFormat.height};
-  if (bUseNewSize) {
+  if (bEnableVr) {
+    size = {vrGeom.outWidth, vrGeom.outHeight};
+  } else if (bUseNewSize) {
     size = {resizeParamet.newWidth, resizeParamet.newHeight};
   }
   return size;
 }
 
 void VkVideoRender::onParametUpdate() {
+  // VR视角快速通道: 渲染线程消费宿主线程的 pending(rotateView 入队侧)
+  if (vrLayer) {
+    std::lock_guard<std::mutex> lock(vrViewMutex);
+    if (bVrViewDirty) {
+      vrView = vrViewPending;
+      bVrViewDirty = false;
+    }
+    vrLayer->get()->setViewState(vrView);
+  }
   if (basicAdjustLayer) {
     basicAdjustLayer->get()->updateParamet(basicAdjustValue);
   }
@@ -388,6 +544,27 @@ bool VkVideoRender::vaildAndInitGraph() {
     fsrLayer = graph->addNode<VkFSRLayer>();
     fsrLayer->get()->updateParamet(fsrParamet);
   }
+  if (bEnableVr) {
+    vrLayer = graph->addNode<VkVrLayer>();
+    int32_t vrOutW = 0;
+    int32_t vrOutH = 0;
+    {
+      std::lock_guard<std::mutex> lock(vrViewMutex);
+      resolveVrOutSize(bUseNewSize, sizeScale, userWidth, userHeight,
+                       imageFormat.width, imageFormat.height, vrOutW, vrOutH);
+      vrGeom = buildVrGeom(vrParamet, imageFormat.width, imageFormat.height,
+                           vrOutW, vrOutH);
+      if (bVrViewDirty) {
+        vrView = vrViewPending;
+        bVrViewDirty = false;
+      }
+      vrLayer->get()->updateParamet(vrGeom);
+      vrLayer->get()->setViewState(vrView);
+    }
+    LOGFLF(LogLevel::info, "enable VR proj:", (int32_t)vrParamet.projection,
+           " layout:", (int32_t)vrParamet.eyeLayout, " out:", vrOutW, "x",
+           vrOutH);
+  }
 #ifdef AVOX_ENABLE_FREETYPE
   if (fontRender->enabled()) {
     fontLayer = graph->addNode<VkFontLayer>();
@@ -420,7 +597,11 @@ bool VkVideoRender::vaildAndInitGraph() {
   } else {
     outNode = inputLayer;
   }
-  if (bUseNewSize) {
+  if (bEnableVr) {
+    // VR投影自带视口尺寸, 替代 resize; 后续画质层作用于透视后的视口图
+    // (= 输出端增强, 上采样发软由 FSR/Anime4K 在视口分辨率补偿)
+    outNode = outNode->addLine(vrLayer);
+  } else if (bUseNewSize) {
     resizeParamet.bLinear = 1;
     // 优化使用scale
     if (sizeScale != 1.0f) {

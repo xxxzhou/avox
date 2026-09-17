@@ -13,11 +13,13 @@
 #include "../layer/VkPipeGraph.hpp"
 #include "../layer/VkRGBA2YUVLayer.hpp"
 #include "../layer/VkResizeLayer.hpp"
+#include "../layer/VkVrLayer.hpp"
 #include "../layer/VkYUV2RGBALayer.hpp"
 #include "avox/module/RunTask.hpp"
 #include "avox/video/VideoRender.hpp"
 
 #include <atomic>
+#include <mutex>
 
 #ifdef AVOX_ENABLE_FREETYPE
 #include "avox_freetype/FontRender.hpp"
@@ -78,6 +80,17 @@ class VkVideoRender : public VideoRender, public IVOutputLayerOb {
   bool bSharpen = false;
   SharpenVideo sharpenParamet = {};
   VKTNodePtr<VkSharpenLayer> sharpenLayer = nullptr;
+  // VR投影重映射: 与 resize 互替(挂载位在 yuv2RGBA 之后、画质层之前,
+  // 使 Anime4K/FSR 作用在透视后的视口图 = 输出端增强)
+  bool bEnableVr = false;
+  VrParamet vrParamet = {};
+  VrViewState vrView = {};
+  // 宿主线程 rotateView/zoomView 先入 pending, 渲染线程 onParametUpdate 消费
+  std::mutex vrViewMutex;
+  VrViewState vrViewPending = {};
+  bool bVrViewDirty = false;
+  VrLayerGeom vrGeom = {};
+  VKTNodePtr<VkVrLayer> vrLayer = nullptr;
   // 软编一般要求输出为YUV420P格式,硬编是NV12格式
   // IOutFrame里的bOutCpu用来控制是否输出YUV420P格式的CPU资源
   VKTNodePtr<VkRGBA2YUVLayer> rgba2YUV = nullptr;
@@ -178,6 +191,14 @@ class VkVideoRender : public VideoRender, public IVOutputLayerOb {
   // 实时增强 (FSR+双边, 与 Anime4K/QualityEnhance 互斥)
   void enableFSR(const FSRParamet& paramet);
   void disableFSR();
+  // VR投影重映射
+  void enableVr(const VrParamet& paramet);
+  void disableVr();
+  void rotateView(float deltaYaw, float deltaPitch);
+  void zoomView(float deltaFov);
+  void resetView();
+  void getViewAngles(float* yaw, float* pitch, float* fov);
+  void setVrOutMode(VrOutMode mode);
   // 应用大小变化后,返回变化后的大小
   vec2i getOutSize();
 

@@ -74,6 +74,14 @@ class AVOX_EXPORT SurfaceRenderVk : public ISurfaceRender,
   virtual void disableBasicAdjust() override;
   virtual void updateSharpen(const SharpenVideo& paramet) override;
   virtual void disableSharpen() override;
+  // VR播放: 投影重映射+视角交互(仅Vulkan车道)
+  virtual void enableVr(const VrParamet& paramet) override;
+  virtual void disableVr() override;
+  virtual void rotateView(float deltaYaw, float deltaPitch) override;
+  virtual void zoomView(float deltaFov) override;
+  virtual void resetView() override;
+  virtual void getViewAngles(float* yaw, float* pitch, float* fov) override;
+  virtual void setVrOutMode(VrOutMode mode) override;
   // 颜色空间(矩阵), 转发 VkVideoRender, 不重建 graph
   void setColorSpace(const ColorSpaceDesc& c);
   // HDR 静态元数据(峰值亮度), 转发 VkVideoRender, 不重建 graph

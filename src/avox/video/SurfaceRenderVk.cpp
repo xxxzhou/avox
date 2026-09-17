@@ -234,6 +234,62 @@ void SurfaceRenderVk::disableSharpen() {
   vkVideoRender->disableSharpen();
 }
 
+void SurfaceRenderVk::enableVr(const VrParamet& paramet) {
+#ifdef AVOX_ENABLE_VULKAN
+  if (vkVideoRender) {
+    vkVideoRender->enableVr(paramet);
+  }
+#endif
+}
+
+void SurfaceRenderVk::disableVr() {
+#ifdef AVOX_ENABLE_VULKAN
+  if (vkVideoRender) {
+    vkVideoRender->disableVr();
+  }
+#endif
+}
+
+void SurfaceRenderVk::rotateView(float deltaYaw, float deltaPitch) {
+#ifdef AVOX_ENABLE_VULKAN
+  if (vkVideoRender) {
+    vkVideoRender->rotateView(deltaYaw, deltaPitch);
+  }
+#endif
+}
+
+void SurfaceRenderVk::zoomView(float deltaFov) {
+#ifdef AVOX_ENABLE_VULKAN
+  if (vkVideoRender) {
+    vkVideoRender->zoomView(deltaFov);
+  }
+#endif
+}
+
+void SurfaceRenderVk::resetView() {
+#ifdef AVOX_ENABLE_VULKAN
+  if (vkVideoRender) {
+    vkVideoRender->resetView();
+  }
+#endif
+}
+
+void SurfaceRenderVk::getViewAngles(float* yaw, float* pitch, float* fov) {
+#ifdef AVOX_ENABLE_VULKAN
+  if (vkVideoRender) {
+    vkVideoRender->getViewAngles(yaw, pitch, fov);
+  }
+#endif
+}
+
+void SurfaceRenderVk::setVrOutMode(VrOutMode mode) {
+#ifdef AVOX_ENABLE_VULKAN
+  if (vkVideoRender) {
+    vkVideoRender->setVrOutMode(mode);
+  }
+#endif
+}
+
 void SurfaceRenderVk::setColorSpace(const ColorSpaceDesc& c) {
 #ifdef AVOX_ENABLE_VULKAN
   if (vkVideoRender) {

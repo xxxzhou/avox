@@ -126,4 +126,40 @@ void ImageRender::onRenderWindow() {
 
 IImageRender* createImageRender() { return new ImageRender(); }
 
+// 按帧宽高比猜VR参数(启发式, AvoxLayer.h 声明):
+//   >3:1 -> SBS等距柱状360        ~2:1 -> OU等距柱状360(单目全景)
+//   16:9等宽幅 -> SBS鱼眼180(VR180主流, 与2:1的分界取1.85)
+//   近方形 -> OU鱼眼180
+// 判错由宿主手改再 enableVr; 圆心/半径交默认值(内切每眼画幅高、居中)
+bool guessVrParamet(int32_t width, int32_t height, VrParamet* out) {
+  if (width <= 0 || height <= 0 || !out) {
+    return false;
+  }
+  float aspect = (float)width / (float)height;
+  if (aspect > 3.0f) {
+    out->projection = VrProjection::equirect360;
+    out->eyeLayout = VrEyeLayout::sbs;
+  } else if (aspect > 1.85f) {
+    out->projection = VrProjection::equirect360;
+    out->eyeLayout = VrEyeLayout::ou;
+  } else if (aspect > 1.3f) {
+    out->projection = VrProjection::fisheye180;
+    out->eyeLayout = VrEyeLayout::sbs;
+  } else if (aspect > 0.7f) {
+    out->projection = VrProjection::fisheye180;
+    out->eyeLayout = VrEyeLayout::ou;
+  } else {
+    out->projection = VrProjection::fisheye180;
+    out->eyeLayout = VrEyeLayout::sbs;
+  }
+  out->fisheyeFov = 180.0f;
+  out->centerL[0] = 0.0f;
+  out->centerL[1] = 0.0f;
+  out->centerR[0] = 0.0f;
+  out->centerR[1] = 0.0f;
+  out->radiusL = 0.0f;
+  out->radiusR = 0.0f;
+  return true;
+}
+
 }

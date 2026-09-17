@@ -306,6 +306,42 @@ struct FSRParamet {
   bool operator!=(const FSRParamet& r) const { return !(*this == r); }
 };
 
+// VR投影模式: 每眼画面到虚拟透视相机的重映射(声明序即 shader 分支依据)
+enum class VrProjection : int32_t {
+  fisheye180 = 0,  // 每眼180°鱼眼圆, 等距投影(VR180主流)
+  fisheye360 = 1,  // 每眼360°全圆鱼眼(少见)
+  equirect180 = 2, // 每眼180°经距等距柱状(VR180的equirect变体)
+  equirect360 = 3, // 每眼360°全景等距柱状
+};
+// VR眼布局
+enum class VrEyeLayout : int32_t { sbs = 0, ou = 1 };
+// VR输出模式(setVrOutMode, 运行时可切不重建graph)
+enum class VrOutMode : int32_t {
+  mono = 0,       // 单眼透视画面(平面屏标准观看, 恒取左眼)
+  anaglyph = 1,   // 红蓝3D(R取左眼, GB取右眼, 配红青眼镜)
+  sbsPreview = 2, // 左右眼并排各按当前视角重映射(对比/外接预览)
+};
+// VR播放参数(enableVr): center/radius 全零时按默认取值
+// (圆内切于每眼画幅高度、水平居中), 覆盖绝大多数片源; 个别镜头偏移的
+// 片源由宿主填全帧归一化uv修正
+struct VrParamet {
+  VrProjection projection = VrProjection::fisheye180;
+  VrEyeLayout eyeLayout = VrEyeLayout::sbs;
+  float fisheyeFov = 180.0f;  // 鱼眼镜头fov(度), equirect忽略
+  float centerL[2] = {0, 0};  // 左眼圆心, 全帧归一化uv; 全零=默认
+  float centerR[2] = {0, 0};  // 右眼圆心, 同上
+  float radiusL = 0.0f;       // 左眼圆半径, 帧高占比; 0=默认内切(0.5)
+  float radiusR = 0.0f;       // 右眼圆半径, 同上
+  inline bool operator==(const VrParamet& r) const {
+    return projection == r.projection && eyeLayout == r.eyeLayout &&
+           fisheyeFov == r.fisheyeFov && centerL[0] == r.centerL[0] &&
+           centerL[1] == r.centerL[1] && centerR[0] == r.centerR[0] &&
+           centerR[1] == r.centerR[1] && radiusL == r.radiusL &&
+           radiusR == r.radiusR;
+  }
+  inline bool operator!=(const VrParamet& r) const { return !(*this == r); }
+};
+
 // 渲染输出事件: 每帧随 onRender 在渲染线程派发, 回调来了即有图
 struct SurfaceRenderEvent {
   uint32_t structSize = sizeof(SurfaceRenderEvent);
@@ -406,6 +442,20 @@ class ISurfaceRender {
   // 锐度
   virtual void updateSharpen(const SharpenVideo& paramet) {};
   virtual void disableSharpen() {};
+  // VR播放: 投影重映射+视角交互(仅Vulkan车道实现), 参数见 VrParamet
+  virtual void enableVr(const VrParamet& paramet) {}
+  virtual void disableVr() {}
+  // 视角增量(度), 累加与钳位都在SDK内部(宿主勿自持视角状态):
+  // fisheye180/equirect180 yaw/pitch各钳±90°, 360格式yaw取模包绕, 到边界即停
+  virtual void rotateView(float deltaYaw, float deltaPitch) {}
+  // 视野增量(度), 钳位[30,120], 负值=放大
+  virtual void zoomView(float deltaFov) {}
+  // 视角复位(yaw=0,pitch=0,fov=90)
+  virtual void resetView() {}
+  // 取当前视角(度), 供宿主UI显示/记忆
+  virtual void getViewAngles(float* yaw, float* pitch, float* fov) {}
+  // VR输出模式, 快速通道不重建graph
+  virtual void setVrOutMode(VrOutMode mode) {}
 };
 
 // 静态图像渲染器 - 显示单张图片,不用RunTask循环
@@ -565,6 +615,10 @@ AVOX_EXPORT const char* getVRenderTypeStr(RenderType type);
 
 // 静态图像渲染器工厂
 AVOX_EXPORT IImageRender* createImageRender();
+// 按帧宽高比猜一份VR参数(启发式: ~2:1判OU全景, ~4:1判SBS全景,
+// 16:9判SBS鱼眼180), 覆盖大多数片源; 判错的由宿主手改后 enableVr
+AVOX_EXPORT bool guessVrParamet(int32_t width, int32_t height,
+                                VrParamet* out);
 }
 
 }

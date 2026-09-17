@@ -1,5 +1,6 @@
 if(WIN32)
     generatetest(vkwindowtest)
+    generatetest(vrplaytest)
     generatetest(enableimagetest)
     generatetest(anime4ktest)
     if(AVOX_ENABLE_FREETYPE)

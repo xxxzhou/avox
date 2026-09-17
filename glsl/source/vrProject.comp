@@ -1,0 +1,109 @@
+#version 450
+
+// VR投影重映射: 屏幕像素 -> 虚拟透视相机视线 -> 鱼眼/等距柱状源采样
+// 全部4种投影(VrProjection)由 UBO 运行时区分, 不用编译期分支
+// 依赖 VkLayer 的 sampler 输入通道(getSampled=true, 硬件双线性)
+
+layout (local_size_x = 16, local_size_y = 16) in;
+layout (binding = 0) uniform sampler2D inSampler;
+layout (binding = 1, rgba8) uniform image2D outTex;
+
+layout (std140, binding = 2) uniform UBO {
+    // yawDeg, pitchDeg, fovDeg(垂直视野), outMode(0 mono,1 anaglyph,2 sbs)
+    vec4 view;
+    // fisheyeFovDeg, mapSpanDeg(等距柱状横向跨角), projMode(0鱼眼,1等距柱状), outAspect
+    vec4 lens;
+    // 每眼矩形归一化宽高(sbs各0.5x1, ou各1x0.5), 0, 0
+    vec4 rect;
+    // 左眼: u0, v0, 圆心cx, cy(eye局部uv)
+    vec4 eyeL;
+    // 右眼: u0, v0, 圆心cx, cy
+    vec4 eyeR;
+    // 左眼圆半径(ru,rv), 右眼圆半径(ru,rv); ru/rv 不同是因矩形宽高像素比
+    vec4 radii;
+} ubo;
+
+const float PI = 3.14159265358979;
+const float D2R = PI / 180.0;
+
+// 方向 -> 鱼眼uv(eye局部), 等距投影; v.w<=0 表出界(取不到的半球外区域)
+vec4 fisheyeUv(vec3 d, vec2 c, vec2 r) {
+    float theta = acos(clamp(-d.z, -1.0, 1.0));
+    float halfFov = ubo.lens.x * 0.5 * D2R;
+    if (theta > halfFov) {
+        return vec4(0.0, 0.0, 0.0, -1.0);
+    }
+    float rho = (theta / halfFov);
+    float phi = atan(d.x, d.y);
+    vec2 uv = c + vec2(sin(phi) * rho * r.x, -cos(phi) * rho * r.y);
+    return vec4(uv, 0.0, 1.0);
+}
+
+// 方向 -> 等距柱状uv(eye局部); 横向跨角 lens.y, 出横向界返回负
+vec4 equirectUv(vec3 d) {
+    float lon = atan(d.x, -d.z);
+    float lat = asin(clamp(d.y, -1.0, 1.0));
+    float u = 0.5 + lon / (ubo.lens.y * D2R);
+    if (u < 0.0 || u > 1.0) {
+        return vec4(0.0, 0.0, 0.0, -1.0);
+    }
+    float v = 0.5 - lat / PI;
+    return vec4(u, v, 0.0, 1.0);
+}
+
+// 视线方向: 屏幕ndc(上为+y)按相机yaw/pitch旋转到世界
+vec3 viewDir(vec2 ndc) {
+    float t = tan(ubo.view.z * 0.5 * D2R);
+    vec3 d = normalize(vec3(ndc.x * t * ubo.lens.w, ndc.y * t, -1.0));
+    float yaw = ubo.view.x * D2R;
+    float pitch = ubo.view.y * D2R;
+    float cy = cos(yaw), sy = sin(yaw);
+    float cp = cos(pitch), sp = sin(pitch);
+    d = vec3(cy * d.x + sy * d.z, d.y, -sy * d.x + cy * d.z);
+    d = vec3(d.x, cp * d.y - sp * d.z, sp * d.y + cp * d.z);
+    return d;
+}
+
+// 单眼采样: ndc -> 源图rgba, 出界返回黑
+vec4 sampleEye(vec2 ndc, vec4 eye, vec2 r) {
+    vec3 d = viewDir(ndc);
+    vec2 uv;
+    if (ubo.lens.z < 0.5) {
+        vec4 f = fisheyeUv(d, eye.zw, r);
+        if (f.w <= 0.0) { return vec4(0.0, 0.0, 0.0, 1.0); }
+        uv = f.xy;
+    } else {
+        vec4 f = equirectUv(d);
+        if (f.w <= 0.0) { return vec4(0.0, 0.0, 0.0, 1.0); }
+        uv = f.xy;
+    }
+    vec2 tuv = vec2(eye.x, eye.y) + uv * vec2(ubo.rect.x, ubo.rect.y);
+    return textureLod(inSampler, tuv, 0);
+}
+
+void main() {
+    ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(outTex);
+    if (pix.x >= size.x || pix.y >= size.y) {
+        return;
+    }
+    vec2 uv01 = (vec2(pix) + 0.5) / vec2(size);
+    vec2 ndc = vec2(uv01.x * 2.0 - 1.0, 1.0 - uv01.y * 2.0);
+    int mode = int(ubo.view.w + 0.5);
+    vec4 color;
+    if (mode == 2) {
+        // sbs预览: 左半屏取左眼, 右半屏取右眼
+        vec2 halfNdc = vec2(ndc.x < 0.0 ? ndc.x * 2.0 + 1.0 : ndc.x * 2.0 - 1.0, ndc.y);
+        bool bLeft = ndc.x < 0.0;
+        color = sampleEye(halfNdc, bLeft ? ubo.eyeL : ubo.eyeR,
+                          bLeft ? vec2(ubo.radii.xy) : vec2(ubo.radii.zw));
+    } else if (mode == 1) {
+        // 红蓝3D: R取左眼, GB取右眼
+        vec4 l = sampleEye(ndc, ubo.eyeL, vec2(ubo.radii.xy));
+        vec4 r = sampleEye(ndc, ubo.eyeR, vec2(ubo.radii.zw));
+        color = vec4(l.r, r.g, r.b, 1.0);
+    } else {
+        color = sampleEye(ndc, ubo.eyeL, vec2(ubo.radii.xy));
+    }
+    imageStore(outTex, pix, color);
+}

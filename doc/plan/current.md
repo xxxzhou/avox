@@ -15,12 +15,20 @@ backlog 全景与逐项施工方案见 [backlog/README.md](backlog/README.md)。
 - [ ] A-6 FFmpeg 9.0.1 收口: 适配已完成, 剩五平台回归 + UE 链路验证 → [a06](backlog/a06-ffmpeg9.md)
 - [ ] A-5 avox_remote(建议提前): panvox P-4 刮削硬依赖, M1 末期启动 → [a05](backlog/a05-remote-vfs.md)
 
+## 2026.09 计划 (离线超分转码)
+
+实时超分上限不足, 改走 `createRecorder(true)` 离线解码→增强→编码出片 (只走 Real-ESRGAN,
+BSD-3-Clause 可商用), 配合 panvox 媒体库「画质增强」挂机任务 → [ai/离线超分转码方案.md](ai/离线超分转码方案.md)
+
+- [ ] P0 avox 管线验证: enhancetest 样例 + 色彩空间透传 + 离屏空输出崩溃复核
+- [ ] P1 panvox 集成: pvx_enhance shim (镜像 pvx_aisub job 模型) + Dart 任务队列
+
 ## 2026.09 计划 (VR 播放支持)
 
 平面屏 VR 播放（fisheye/equirect 立体片源自动识别 + 拖动视角/缩放 + 红蓝 3D），只走 Vulkan 图像处理路径，不做头显 → [VR播放支持计划.md](VR播放支持计划.md)
 
 - [ ] V-1 一期: API + 投影 shader + 管线挂接 + 自动参数(圆检测) + 样例交互 + 回归用例 (约 2 周)
-- [ ] V-2 二期: 红蓝 3D 输出 + 立体强度滑杆 (约 3 天)
+- [ ] V-2 二期: 红蓝 3D 输出 + 立体强度滑杆 + 画质补偿(FSR/Anime4K) (约 3~4 天)
 
 ## 2026.04 计划 (已过期, 待归档)
 
