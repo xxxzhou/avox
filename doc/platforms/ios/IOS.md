@@ -1,6 +1,6 @@
 # IOS
 
-> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+> 状态: 有效 · 上次核对: 2026-09-17 · 权威源: -
 
 
 ## 文档
@@ -19,7 +19,7 @@
 
 ## ffmpeg
 
-[ffmpeg-ios](https://github.com/guanweidong/ffmpeg7.0)
+iOS 的 FFmpeg 为仓内自建 LGPL 9.0.1 (五平台统一口径, 见 [a06-ffmpeg9](../../plan/backlog/a06-ffmpeg9.md) 与 [3rdparty/library/README.md](../../../3rdparty/library/README.md)): 产物在 `3rdparty/library/ios/ffmpeg/`, Mac 上用 `script/ffmpeg/build_ffmpeg_apple.sh ios` 构建。旧记录 `guanweidong/ffmpeg7.0` fork 已废弃, 勿再作为现状参考。
 
 2. 查找 .tbd 文件
 找到 iOS SDK 路径后，在该路径下的 usr/lib 目录里查找 libz.tbd、libbz2.tbd 和 libiconv.tbd 文件。你可以使用 find 命令进行查找：

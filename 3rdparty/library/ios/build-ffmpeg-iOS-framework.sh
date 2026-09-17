@@ -7,8 +7,8 @@ PROJECT_ROOT=$(dirname "$(dirname "$(dirname "$(pwd)")")")
 SCRATCH=$(pwd)/"scratch"
 ARCHS="arm64"
 
-# 设置 FFmpeg 版本为 7.0
-FFMPEG_VERSION="7.0"
+# 设置 FFmpeg 版本为 9.0.1 (与 3rdparty/library/ios/ffmpeg 预编译产物一致)
+FFMPEG_VERSION="9.0.1"
 export FFMPEG_VERSION
 HEADER_SUFFIX=".h"
 CURRENT_FOLDER=$(pwd)

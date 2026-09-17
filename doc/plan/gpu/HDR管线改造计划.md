@@ -1,6 +1,6 @@
 # HDR 管线改造计划
 
-> 状态: 进行中 · 上次核对: 2026-09-16 · 权威源: -
+> 状态: 进行中 · 上次核对: 2026-09-17 · 权威源: -
 
 
 > 2026-09 全链路现状调查结论 + 分阶段改造计划。调查基线 commit `70cc2cc`,行号仅作定位参考。
@@ -66,7 +66,7 @@
 
 ### 2.7 有利条件
 
-- 3rdparty ffmpeg 8.0 预编译(LGPL)HDR API 齐全:`mastering_display_metadata.h`、hwcontext 各平台头均在,纯 SDK 未使用。
+- 3rdparty ffmpeg 预编译(LGPL; 调查基线时为 8.0, 现统一口径 9.0.1)HDR API 齐全:`mastering_display_metadata.h`、hwcontext 各平台头均在,纯 SDK 未使用。
 - SEI 解析器现成(2.1),接上即可拿到无封装流的静态元数据。
 - `yuv420P10` 软解→Vulkan 通路闭环,`ImageType` 已有 `rgba16f`,D3D11↔Vk external memory 互操作现成。
 - FSR 链有 rgba16f 线性段先例可参考。
@@ -210,7 +210,7 @@ YUV→RGB 与 tone map 数学在各渲染后端为独立实现,Vulkan 先做,其
 
 ### 6.9 首次真实 E2E 验证(2026-09-14 下午,补真素材打通)
 
-阶段 0 的「无 x265 ffmpeg」缺口已破:PATH 上的 ffmpeg 7.0.2 full build 自带 QSV,`hevc_qsv -profile:v main10` 在本机 UHD 770 实测可用(注意:只吃 `p010le` 直喂,带滤镜图的上传路径报 -22;zscale 在 7.0.2 各组合均 no path,libplacebo 需 Vulkan 设备本机不可用)。素材内容保持 SDR 采样值,靠 VUI+SEI 标签声明 PQ/BT.2020——SDR 值按 PQ 解码中间调仍在 SDR 白附近,高光(码值 1.0)落 10000nit,足以触发/验证 tone map。生成器:`script/testenv/gen_hdr10_asset.py`(QSV 编码 → Python 手注 SEI 137/144 NAL(带 emulation prevention,插首个 IRAP 前)→ remux;ffmpeg<7.1 的 hevc_metadata BSF 无 master_display 选项)。产出 `assets/video/test/test_h265_hdr10_pq_640x360.mp4`(Main 10/PQ/BT.2020/bt2020nc + mastering SEI + CLL)与 SDR 参考伴生文件。
+阶段 0 的「无 x265 ffmpeg」缺口已破:PATH 上的 ffmpeg 7.0.2 full build(本机命令行工具, 非 SDK 的 FFmpeg, SDK 现统一口径 9.0.1)自带 QSV,`hevc_qsv -profile:v main10` 在本机 UHD 770 实测可用(注意:只吃 `p010le` 直喂,带滤镜图的上传路径报 -22;zscale 在 7.0.2 各组合均 no path,libplacebo 需 Vulkan 设备本机不可用)。素材内容保持 SDR 采样值,靠 VUI+SEI 标签声明 PQ/BT.2020——SDR 值按 PQ 解码中间调仍在 SDR 白附近,高光(码值 1.0)落 10000nit,足以触发/验证 tone map。生成器:`script/testenv/gen_hdr10_asset.py`(QSV 编码 → Python 手注 SEI 137/144 NAL(带 emulation prevention,插首个 IRAP 前)→ remux;ffmpeg<7.1 的 hevc_metadata BSF 无 master_display 选项)。产出 `assets/video/test/test_h265_hdr10_pq_640x360.mp4`(Main 10/PQ/BT.2020/bt2020nc + mastering SEI + CLL)与 SDR 参考伴生文件。
 
 **E2E 首跑即揪出两个存量断点:**
 
