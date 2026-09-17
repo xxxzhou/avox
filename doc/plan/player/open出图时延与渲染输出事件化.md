@@ -243,7 +243,13 @@ python avox/build/run_open_timing.py D:/Work/build/test_4k_hevc_30s.mp4 15 0 PAN
 （`c.hardDecode=false` + 注释），硬解修复后改回 true 对照。详见
 `avox-test/l1_avox/playmatrix/README.md`「已知取舍与悬案」。
 
-**待施工**: 施工项 2（panvox shim 事件化重构: 删 500ms/16ms 轮询 + texture-ready
-事件 + Dart 侧接事件删 tick）与施工项 3（引擎插件迁移）。本轮 shim 仅做了
-编译适配, 行为未切换。另注意: avox 增量构建不刷新 `install/include` 旧头
-（`copy_head` 在 cmake 重新配置时才拷）, 跨仓编译前先 `cmake .` 重配置一次。
+**待施工**: ~~施工项 2~~（**已完成 2026-09-17, panvox 仓 94b74d0**）: FrameOb::
+onRender 渲染线程直读事件——图在而无共享句柄时幂等重申 enable, 句柄变化置
+原子标志由桥线程 16ms 交付节拍消费, 500ms/16ms 两个感知轮询已删; 开工时把
+§4.1 的 cv 方案简化成了纯原子标志（桥线程节拍本身就是消费者, 无需唤醒）。
+`pvx_set_texture_ready_cb` ABI 1→2（Dart 校验同步抬到 2）, 注册即推 id+尺寸,
+挂回调时已有纹理立即补发, 5s 无注册报一次 error 兜底; Dart 事件缓存 + 轮询兜底。
+`flutter analyze` 零问题, shim 全量编译过。**剩余**: 施工项 3（引擎插件迁移）+
+shim 行为的宿主实机走查（flutter run 全链路）。另注意: avox 增量构建不刷新
+`install/include` 旧头（`copy_head` 在 cmake 重新配置时才拷）, 跨仓编译前先
+`cmake .` 重配置一次。
