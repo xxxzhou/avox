@@ -11,7 +11,10 @@
 #elif defined(__APPLE__)
 #include <CoreFoundation/CoreFoundation.h>
 #elif defined(__has_include)
-#if __has_include(<iconv.h>)
+// 注意 NDK 的 iconv.h 按 __ANDROID_API__ >= 28 才暴露声明: 头文件存在
+// (__has_include 为真)但声明被隐藏, 只查头文件会编译失败 → 加 API 条件,
+// android-26 平台落 #else 回退(GBK 字幕原样透传); 升 android-28 平台即恢复
+#if __has_include(<iconv.h>) && (!defined(__ANDROID__) || __ANDROID_API__ >= 28)
 #include <iconv.h>
 #define AVOX_SUBTITLE_HAVE_ICONV 1
 #endif
