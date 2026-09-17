@@ -829,6 +829,20 @@ double MediaPlayer::getSpeed() { return cspeed; }
 void MediaPlayer::renderFrame(AVTrack* track, bool bGetFrame) {
   // ready状态不进入buffering
   if (bGetFrame) {
+    // 首帧指标 (a02-T1): 每次 open 与每次 seek 各记首个视频帧, 值与 runner 的
+    // first_frame_ms 外部基线可对照
+    if (track && track->getTrackType() == TrackType::video) {
+      const int64_t now = localTimeStampMS();
+      if (openStartMs.load() > 0 && openFirstFrameMs.load() < 0) {
+        openFirstFrameMs = now - openStartMs.load();
+        log(LogLevel::info, "[metrics] open_to_first_video_frame_ms:",
+            openFirstFrameMs.load());
+      }
+      if (bSeekPending.exchange(false)) {
+        log(LogLevel::info, "[metrics] seek_to_first_video_frame_ms:",
+            now - seekStartMs.load());
+      }
+    }
     // 渲染拿到数据，进入playing状态
     if (state == PlayerState::ready) {
       auto playCmd = createCommand<MPCommandType::Play>();
@@ -1256,6 +1270,9 @@ float MediaPlayer::getIoLossRate(TrackType type) {
 }
 
 void MediaPlayer::cmdOpen(OpenCommandPtr cmd) {
+  // 指标起点 (a02-T1): 打开→首帧
+  openStartMs = localTimeStampMS();
+  openFirstFrameMs = -1;
   // 如果播放器已经打开,先清空资源
   if (state != PlayerState::none && state != PlayerState::stopped) {
     // 先关闭之前对象
@@ -1476,6 +1493,9 @@ void MediaPlayer::cmdSeek(SeekCommandPtr cmd) {
     return;
   }
   setState(PlayerState::seek);
+  // 指标起点 (a02-T1): seek→首帧, 首个视频帧消费
+  seekStartMs = localTimeStampMS();
+  bSeekPending = true;
   // 记录当前时间
   int64_t spts = cmd->getData();
   // 先把解码器的线程暂停

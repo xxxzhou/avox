@@ -6,6 +6,7 @@
 #include <libavutil/log.h>
 
 #include <algorithm>
+#include <chrono>
 
 #include "avox/Avox.hpp"
 #include "avox/codec/H26XHelper.hpp"
@@ -316,6 +317,8 @@ void IOParseFF::onRunTask() {
   av_dict_set(&dict, "http_persistent", httpPersistent ? "1" : "0", 0);
   // 强制重复发送 SPS/PPS
   // av_dict_set(&dict, "repeat_headers", "1", 0);
+  // 起播耗时拆解 (a02-T1): open_input 与 find_stream_info 分段
+  const auto ioOpenStart = std::chrono::steady_clock::now();
   int ret = avformat_open_input(&temp, url.c_str(), nullptr, &dict);
   av_dict_free(&dict);
   if (ret < 0) {
@@ -324,15 +327,25 @@ void IOParseFF::onRunTask() {
     dispatch(&IAVSourceOb::onError, ffIoError(ret), "open input failed");
     return;
   }
+  const int64_t openInputMs =
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::steady_clock::now() - ioOpenStart)
+          .count();
   fmtCtx = getUniquePtr(temp);
   // 检查是否有全局头,相应的SPS/VPS/ATDS保存在extradata里
   if (fmtCtx->iformat->flags & AVFMT_GLOBALHEADER) {
   }
+  const auto findInfoStart = std::chrono::steady_clock::now();
   if ((ret = avformat_find_stream_info(fmtCtx.get(), nullptr)) < 0) {
     AVOX_FFMEPG_LOG(ret, "avformat_find_stream_info failed");
     dispatch(&IAVSourceOb::onError, ffIoError(ret), "open stream failed");
     return;
   }
+  LOGFLF(LogLevel::info, "[metrics] io open_input_ms:", openInputMs,
+         " find_stream_info_ms:",
+         std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::steady_clock::now() - findInfoStart)
+             .count());
   for (int32_t i = 0; i < fmtCtx->nb_streams; i++) {
     auto& st = fmtCtx->streams[i];
     // 跳过封面图等附加静态图流: 不是可播放的视频轨, 且其包会被误判污染

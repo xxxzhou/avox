@@ -111,6 +111,13 @@ class MediaPlayer : public IMediaPlayer,
   std::atomic<bool> bSeekSeenLanding = false;
   // 兜底解除起始墙钟(ms, 0=未生效): 落点恰好等于目标、无回落时, 防进度条永远钉在目标
   std::atomic<int64_t> bSeekingStartMs = 0;
+  // 起播指标 (a02-T1): 打开/seek → 首个视频帧, 命令线程写、渲染线程读
+  std::atomic<int64_t> openStartMs = 0;
+  // 首帧耗时(-1=未记): 只记一次, cmdOpen 重置
+  std::atomic<int64_t> openFirstFrameMs = -1;
+  // seek 起点墙钟与待决标志: seek 后首个视频帧消费掉
+  std::atomic<int64_t> seekStartMs = 0;
+  std::atomic<bool> bSeekPending = false;
   // 是否记录解帧信息,这个可能对音频渲染有影响,卡卡的
   bool bLogDFrame = false;
   // 是否记录渲染帧信息
