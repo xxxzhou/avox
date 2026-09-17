@@ -17,8 +17,8 @@
 > **进度（2026-09-17）：任务 1~5 已完成并实机验证**（Windows Vulkan 车道，
 > 4K 鱼眼 SBS 测试片实测：投影重映射正确、拖动转视角/滚轮变焦即时生效、
 > 猜测函数对 16:9 正确判 fisheye180 SBS）。任务 6 素材已入 avox-test
-> （assets/video/test/vr_fisheye180_sbs_3840.mp4，生成器
-> script/testenv/gen_vr_testasset.py），播放矩阵用例待加；Android 实测待做。
+> （assets/video/vr_fisheye180_sbs_3840.mp4，生成器
+> script/testenv/gen_vr_testasset.py），`shot-vr` 矩阵用例离线跑 PASS；Android 实测待做。
 
 | # | 任务 | 内容 | 估时 | 状态 |
 |---|------|------|------|------|
@@ -27,7 +27,7 @@
 | 3 | 管线挂接 | `VkVideoRender` 加投影 pass，位置与 sizeScale 同级；输出尺寸跟随窗口 | 2 天 | ✅ `VkVrLayer` 与 resize 互替（挂在 yuv2RGBA 后、画质层前，使 FSR/Anime4K 作用于视口图） |
 | 4 | 自动参数 | 宽高比粗猜格式 → 默认 profile → 首帧降采样 Hough 圆检测校准圆心/半径，按 URL 缓存一次 | 2 天 | ⚠️ 部分完成：`guessVrParamet`（宽高比启发式）已做；Hough 圆检测未做（默认 profile 已覆盖大多数片源，检测降为后续增强） |
 | 5 | 样例交互 | samples 播放器接鼠标拖动/滚轮/方向键，双击重置视角，右键菜单手选投影模式 + fov 微调 | 1 天 | ✅ 核心 + 简化：`samples/vulkantest/vrplaytest.cpp`（拖动/滚轮/双击/R复位/1-2-3切模式，argv 传 URL）；右键菜单与 fov 微调滑杆未做 |
-| 6 | 测试 | VR 素材与回归用例进 avox-test 仓（本仓不放测试资产），离线子集加 fisheye180/equirect 各一条 | 1 天 | ⚠️ 素材与生成器已入 avox-test；播放矩阵用例待加 |
+| 6 | 测试 | VR 素材与回归用例进 avox-test 仓（本仓不放测试资产），离线子集加 fisheye180 一条 | 1 天 | ✅ `shot-vr` 用例已入 playmatrix（46 条）并离线跑 PASS；equirect 用例待素材生成后补 |
 
 **验收：** 8K SBS fisheye180 片源打开即全屏可拖，60fps；格式误判时可右键手选。Windows Vulkan 先行，Android 同代码路径顺带验证。
 
