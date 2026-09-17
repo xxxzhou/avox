@@ -331,6 +331,15 @@ if(AVOX_ENABLE_OPENVINO)
   endif()
 endif()
 
+# Real-ESRGAN 模型权重 (VkQEnhanceLayer; 数据文件预置库仓, 类 libsmb2/libtorrent 库仓预置模式)
+# 找到即改写 QUALITY_MODELS 指向库仓目录, src/CMakeLists.txt 随 assets/models 拷进运行目录
+find_package(RealEsrgan QUIET)
+if(RealEsrgan_FOUND)
+  set(QUALITY_MODELS_FROM_LIB TRUE)
+else()
+  set(QUALITY_MODELS_FROM_LIB FALSE)
+endif()
+
 # sherpa-onnx可用（流式语音识别）
 if(AVOX_ENABLE_SHERPA)
   find_package(SherpaOnnx QUIET)
