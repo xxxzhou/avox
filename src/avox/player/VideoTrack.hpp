@@ -92,6 +92,8 @@ class VideoTrack : public TAVTrack<VideoFramePtr>,
   void pauseDecoder(bool pause);
   // 当队列数据无效时，需要清除队列中的数据
   void flush();
+  // 硬解重置丢旧GPU帧: 只清帧队列, 包队列必须保留(IO已EOF时清包无法补充)
+  void flushFrames();
   void updateSeekTime(int64_t seekTime);
   // 关闭解码与渲染对象
   void close();

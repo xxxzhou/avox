@@ -344,9 +344,15 @@ void VideoTrack::flush() {
   // 记录flush
   PBMediaAction pb = {};
   pb.mediaObject = MediaObject::track;
-  pb.trackType = trackType;
+  pb.trackType = TrackType::video;
   pb.action = MediaAction::flush;
   pushPB<MPPBType::MediaAction>(mpPingback, pb);
+}
+
+void VideoTrack::flushFrames() {
+  // 只丢已解帧(硬解重置后引用旧GPU上下文), 包队列是有限源的全部存货,
+  // IO 已读完全部包(EOF)后清掉无法补充, 解码线程会静默饿死
+  frameQueue.clear();
 }
 
 void VideoTrack::updateSeekTime(int64_t seekTime) { clock->update(seekTime); }

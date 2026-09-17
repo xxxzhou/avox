@@ -107,21 +107,20 @@ to:960x540`、`outFormat sync ... to:960x540`、`bindD3D w:960 h:540`、`Pipegra
 
 对照组(单路直接播 960x540)同样是满宽 3391x2041,与修复后一致 → 判定通过。
 
-### 新发现(2026-09-17, 渲染输出事件化测试抓到):硬解在流中段分辨率变化处停帧(根因已定位, 待修)
+### 新发现(2026-09-17, 渲染输出事件化测试抓到):硬解在流中段分辨率变化处停帧(已修复)
 
 与上面「换片」缺陷不同断面:同一媒体流**中段**换分辨率(TS AnnexB, 640x360→960x540),
 DX11VA 硬解播到切换点前帧/事件即停(~168 帧后无输出, 输出尺寸不更新); 软解同素材完整
 走完且事件契约全对。上面 T5/CS constBuf 修复全在**渲染侧**且对换片场景实测通过, 此缺陷
-在**解码/送渲侧**, 渲染侧修复覆盖不到。复现: avox-test `playtest --only=file-resize-event`
-(用例默认软解); 记录: avox-test README「已知取舍与悬案」+
+在**解码/送渲侧**, 渲染侧修复覆盖不到。记录: avox-test README「已知取舍与悬案」+
 `doc/plan/player/open出图时延与渲染输出事件化.md` §8。
 
 **根因(2026-09-17 定位, 与 DX11VA 解码本身无关, 是喂包链路缺陷)**:
 
 - `VDecoderTask::onRunTask` 收到 updateSize(参数集尺寸变化)时, 硬解分支先
-  `trackContext->flush()` 再 `onPreDecoder()` 重开解码器(VDecoderTask.cpp:147-155);
-  flush()(VideoTrack.cpp:335)把 packetQueue+frameQueue **一起清空**。
-- 本地文件 IO 无节奏限制, 包队列上限 1000 包(AVTrack.cpp:31, 点播), 小素材开场数秒内
+  `trackContext->flush()` 再 `onPreDecoder()` 重开解码器; flush() 把
+  packetQueue+frameQueue **一起清空**。
+- 本地文件 IO 无节奏限制, 包队列上限 1000 包(AVTrack 点播口径), 小素材开场数秒内
   IO 即读完全部包并 EOF。flush 清掉的后续包(含切换后 960x540 GOP)无处补充 —— IO 已
   EOF 不再推送, 解码线程在空队列上永久轮询, 无错误回调也无 complete, 表现为「静默停帧」。
   (停帧点数学: 已解 167 + 队列被清 185 ≈ 全部 354 个视频包)
@@ -130,8 +129,12 @@ DX11VA 硬解播到切换点前帧/事件即停(~168 帧后无输出, 输出尺�
   解码本身无缺陷。诊断探针 `samples/functest/resizediag.cpp`(全量日志+事件逐秒统计)。
 - 软解不触发是因为同分支 `if (bHardDecode)` 才 flush —— 本意只丢引用旧 GPU 上下文的
   已解帧(代码注释原话), 却连包队列一起清了。
-- **修复方向**: 该分支只清 frameQueue(旧 GPU 帧确需丢弃), 保留 packetQueue; 重置本就
-  仅在队列顶为关键帧时触发, 恢复解码的起点恰好是带新参数集的关键帧, 无需重排队列。
+
+**修复落地(2026-09-17)**: `VideoTrack` 新增 `flushFrames()`(只清 frameQueue, 包队列
+保留), updateSize 硬解分支改调它; 时钟不动(时间戳连续, 非 seek 语义)。重置本就仅在
+队列顶为关键帧时触发, 保留的包队列恢复解码起点恰是带新参数集的关键帧。验证:
+`file-resize-event` 硬解 PASS(346 事件, 640x360→960x540 世代+rebuilt 信号对齐全,
+修复前 167 帧静默挂死); ctest 2/2; 离线回归通过。
 
 ## 任务拆解
 

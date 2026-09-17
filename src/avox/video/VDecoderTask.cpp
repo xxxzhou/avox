@@ -146,9 +146,10 @@ void VDecoderTask::onRunTask() {
         // 配置帧变了,不需要退出当前线程
         if (bDecodeUpdate && topItem->frameType == 1) {
           // 如果是硬解，重置后相关GPU的上下文可能失效
-          // 原保存的frame也失效
+          // 原保存的frame也失效。只丢帧不丢包: 本地文件IO常在此时已读完全部
+          // 包(EOF), 清包队列会让切换分辨率后的包无处补充, 解码线程静默饿死
           if (bHardDecode) {
-            trackContext->flush();
+            trackContext->flushFrames();
           }
           DecodeResult result = decode->onPreDecoder();
           if (result == DecodeResult::success) {

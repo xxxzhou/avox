@@ -290,14 +290,15 @@ python avox/build/run_open_timing.py D:/Work/build/test_4k_hevc_30s.mp4 15 0 PAN
   已接入 `play_regress.py` 离线子集。实测: 软解 354 个有效事件,
   `640x360->960x540`, 首事件 rebuilt=1 + 世代递增信号对全部命中, PASS。
 
-**新发现缺陷（测试抓到, 根因已定位待修）**: **硬解(DX11VA)在流中段分辨率变化处停帧**——
+**新发现缺陷（测试抓到, 已修复）**: **硬解(DX11VA)在流中段分辨率变化处停帧**——
 播到切换点前事件即止（~168 帧）且尺寸不更新; 软解同素材正常。与 A-4 已闭环的
 「换片分辨率」缺陷（渲染侧 extent/常量, backlog/a04-gpu-passthrough.md）不同断面:
-本缺陷在解码/送渲侧, 已挂账 A-4「已知缺陷」节。用例默认软解。**根因（09-17 定位）**:
-updateSize 硬解分支 `trackContext->flush()` 连包队列一起清空（本意只丢旧 GPU 帧）,
-本地文件 IO 已提前读完全部包并 EOF, 清掉的包无处补充 → 解码线程静默饿死; 与 DX11VA
-解码无关（80s 长素材对照: reset 后正常出 960x540+世代信号）。机制与修复方向详见
-backlog/a04-gpu-passthrough.md「已知缺陷」节。
+本缺陷在解码/送渲侧, 已挂账 A-4「已知缺陷」节。**根因（09-17 定位）**: updateSize
+硬解分支 `trackContext->flush()` 连包队列一起清空（本意只丢旧 GPU 帧）, 本地文件 IO
+已提前读完全部包并 EOF, 清掉的包无处补充 → 解码线程静默饿死; 与 DX11VA 解码无关
+（80s 长素材对照: reset 后正常出 960x540+世代信号）。**修复（09-17）**: 硬解分支改调
+`VideoTrack::flushFrames()` 只丢帧不清包队列; `file-resize-event` 用例改回硬解对照
+（346 事件 PASS）。机制详见 backlog/a04-gpu-passthrough.md「已知缺陷」节。
 
 **与 A-4 凌晨修复（T5 输入层重检 6f2c0e2 + 输出 blit 兜底 + CS constBuf 86e1234）的关系**:
 互补不重复——A-4 管**渲染正确性**（分辨率变了, 画的内容跟着变）, 事件机制管**重建通知**
