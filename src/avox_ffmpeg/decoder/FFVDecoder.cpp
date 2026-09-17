@@ -127,9 +127,9 @@ DecodeResult FFVDecoder::decode(const AvoxPacket& packet) {
     return DecodeResult::noConfig;
   }
   if (!codecCtx) {
-    // 首包只建上下文就吞掉的话, 无带外参数集的容器(vp9/webm等)会丢掉起始
-    // 关键帧, 第一个GOP全部报"Not all references are available", 直到下一个
-    // 关键帧才出画面。创建成功后继续走下面流程把当前包喂进解码器。
+    // 无带外参数集容器(vp9/webm等): 首包建上下文后必须继续喂当前包,
+    // 在此吞掉会丢起始关键帧 → 首个GOP报"Not all references"直到下一关键帧
+    // (2026-09-18 实测 vp9 webm 首 GOP 正常出画, 本行为已验证)
     DecodeResult result = onPreDecoder();
     if (result != DecodeResult::success) {
       return result;

@@ -303,6 +303,9 @@ void TranscodeRecorder::onVideoFrame(const YUVFrame& frame, int32_t trackId) {
   }
   // 交给vulkan处理,render末尾自动dispatch onFrame给外部(离屏bCpuOut)
   surfaceRender->render(frame);
+  // 进度派发在空输出模式下无音频/编码路径可依赖(updateProgress 只在
+  // processVideo/processAudio 队列链上调用), 视频帧是所有模式共有的推进源
+  updateProgress();
   // 空输出:仅对外回调,不入编码队列
   if (bNoOutput) {
     return;
