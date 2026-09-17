@@ -1,6 +1,6 @@
 # 当前计划
 
-> 状态: 进行中 · 上次核对: 2026-09-16 · 权威源: -
+> 状态: 进行中 · 上次核对: 2026-09-17 · 权威源: -
 
 
 本文档记录当前正在进行的开发计划。
@@ -14,6 +14,13 @@ backlog 全景与逐项施工方案见 [backlog/README.md](backlog/README.md)。
 - [ ] A-3 VP9/WEBM: 先复现定性(W38 仓内无记录) → D3D11VA/MediaCodec/VT 按平台接入 → [a03](backlog/a03-vp9-webm.md)
 - [ ] A-6 FFmpeg 9.0.1 收口: 适配已完成, 剩五平台回归 + UE 链路验证 → [a06](backlog/a06-ffmpeg9.md)
 - [ ] A-5 avox_remote(建议提前): panvox P-4 刮削硬依赖, M1 末期启动 → [a05](backlog/a05-remote-vfs.md)
+
+## 2026.09 计划 (VR 播放支持)
+
+平面屏 VR 播放（fisheye/equirect 立体片源自动识别 + 拖动视角/缩放 + 红蓝 3D），只走 Vulkan 图像处理路径，不做头显 → [VR播放支持计划.md](VR播放支持计划.md)
+
+- [ ] V-1 一期: API + 投影 shader + 管线挂接 + 自动参数(圆检测) + 样例交互 + 回归用例 (约 2 周)
+- [ ] V-2 二期: 红蓝 3D 输出 + 立体强度滑杆 (约 3 天)
 
 ## 2026.04 计划 (已过期, 待归档)
 
