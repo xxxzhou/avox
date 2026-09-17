@@ -129,6 +129,10 @@ class IRecorder {
   virtual void setVideoCodec(VCodecId codecId) {};
   // 设置音频编码,设none丢弃音频轨(open前设置)
   virtual void setAudioCodec(ACodecId codecId) {};
+  // 转码录制器: 声明输出视频描述(尺寸变化/超分输出, onReady 据此改编码器描述, open前设置)
+  virtual void setVideoDesc(const VideoDesc& desc) {};
+  // 转码录制器: 声明输出音频格式(重采样目标, open前设置)
+  virtual void setAudioDesc(const AudioDesc& desc) {};
   // 转码录制器才有的,针对图像处理
   virtual ISurfaceRender* getSurfaceRender() = 0;
   // 获取音频渲染器(用于 AudioTap 读取音频数据)

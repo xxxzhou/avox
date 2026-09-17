@@ -70,6 +70,8 @@ class TranscodeRecorder : public IRecorder,
   virtual void setMuxerType(MuxerType type) override;
   virtual void setVideoCodec(VCodecId codecId) override;
   virtual void setAudioCodec(ACodecId codecId) override;
+  virtual void setVideoDesc(const VideoDesc& desc) override;
+  virtual void setAudioDesc(const AudioDesc& desc) override;
   virtual ISurfaceRender* getSurfaceRender() override ;
   virtual IAudioRender* getAudioRender();
   virtual bool open(const char* inputUrl, const char* outputFile) override;
@@ -85,10 +87,6 @@ class TranscodeRecorder : public IRecorder,
  public:
   // 有改动才同步成员,未设置的key走成员默认值
   virtual void onOptionChange(const char* key, ArgType option) override;
-
- public:
-  void setVideoDesc(const VideoDesc& desc);
-  void setAudioDesc(const AudioDesc& desc);
 
   // IRawSourceOb - 解码回调，enqueueWait入队
  public:
