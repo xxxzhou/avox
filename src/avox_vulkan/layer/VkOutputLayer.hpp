@@ -57,6 +57,8 @@ class VkOutputLayer : public VOutputLayer, public VkLayer {
   bool baspectChange = false;
   VkCommandBuffer winCmd = nullptr;
   int32_t clearCount = 3;
+  // 输出图世代: onInitVkBuffer 重建导出资源时取全局原子自增 (SurfaceRenderEvent 用)
+  uint64_t generation = 0;
 
  protected:
   virtual void onInitGraph() override;
@@ -103,6 +105,8 @@ class VkOutputLayer : public VOutputLayer, public VkLayer {
   }
   void requestRelease() { bPendingRelease = true; }
   const ImageFormat& getOutFormat() const { return outFormat; }
+  // 输出图世代(重建即+1, 跨帧比较判断GPU资源是否需重导)
+  uint64_t getGeneration() const { return generation; }
   // 设置外部输出 buffer: 每帧零拷贝引用 staging 映射内存写入它 (enableImage 用)
   // buf 由调用方持有, 生命周期需维持到 disableImage/setOutputBuffer(nullptr) 之后
   void setOutputBuffer(IImageBuffer* buf) { userOutBuffer = buf; }

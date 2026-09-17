@@ -1,6 +1,6 @@
 # 计划与设计文档
 
-> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+> 状态: 有效 · 上次核对: 2026-09-17 · 权威源: -
 
 
 avox 各模块的计划、设计与调研文档索引。已完成的方案随功能落地, 对应实现文档见 [INDEX.md](../INDEX.md)。
@@ -58,6 +58,7 @@ avox 各模块的计划、设计与调研文档索引。已完成的方案随功
 | [TranscodeRecorder设计](player/TranscodeRecorder设计.md) | 转码录制 |
 | [ASS字幕渲染计划](player/ASS字幕渲染计划.md) | ASS/SSA(含 PGS 位图)字幕 avox_ass 磁力模块方案 |
 | [字幕样式设计](player/字幕样式设计.md) | 字幕文本样式(字体/颜色/对齐/位置)与三层通用变换(scale/offset/opacity)公开 API |
+| [open出图时延与渲染输出事件化](player/open出图时延与渲染输出事件化.md) | onRender 携带 SurfaceRenderEvent(世代/尺寸/互操作句柄), open→出图全链路去轮询 |
 
 ## virtualproduction/ — 虚拟制片
 

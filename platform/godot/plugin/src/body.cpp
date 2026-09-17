@@ -115,7 +115,7 @@ class BodySurfaceOb : public avox::ISurfaceRenderOb {
 public:
     BodyNode *owner = nullptr;
     int counter = 0;
-    void onRender() override {
+    void onRender(const avox::SurfaceRenderEvent*) override {
         if (!owner) return;
         // stop 后(tapWanted=false)或 body 未就绪则不喂; feed 非阻塞入队 body worker。
         if (!owner->tapWanted || !owner->body || !owner->imgBuf) return;

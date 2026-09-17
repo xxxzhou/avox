@@ -60,7 +60,7 @@ class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
   void closeSubtitle();
 
   // ISurfaceRenderOb 接口
-  virtual void onRender() override;
+  virtual void onRender(const SurfaceRenderEvent* ev) override;
 
   // ---- 接线/公共 ----
   void setAsrMode(AsrMode mode);

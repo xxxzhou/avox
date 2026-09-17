@@ -306,6 +306,25 @@ struct FSRParamet {
   bool operator!=(const FSRParamet& r) const { return !(*this == r); }
 };
 
+// 渲染输出事件: 每帧随 onRender 在渲染线程派发, 回调来了即有图
+struct SurfaceRenderEvent {
+  uint32_t structSize = sizeof(SurfaceRenderEvent);
+  uint32_t rebuilt = 0;    // 1=相对上一帧输出图重建过(首帧/换片/分辨率变化/特效开关)
+  uint32_t hdr = 0;        // 1=本帧HDR直通(PQ落帧, forceHDR); 元数据走onHdrMeta
+  uint32_t nativeType = 0; // nativeTexture资源类型(0=无, 原生车道接入时定枚举)
+  // 输出图世代: 导出资源重建时+1, 全局单调, 跨帧比较判断GPU资源是否需重建
+  uint64_t generation = 0;
+  // 本帧输出图格式(宽高/rowPitch/像素类型), 消费端按它建纹理, 勿硬编码RGBA8
+  ImageFormat format = {};
+  // 稳定标识句柄(非转移语义, avox持有; 未启用对应通道为0/null)
+  uint64_t dx11Handle = 0;   // Windows: 共享纹理NT句柄(enableVkOutputDx11通道)
+  uint64_t dx11Fence = 0;    // Windows: 共享fence NT句柄
+  void* ioSurface = nullptr; // Apple: IOSurfaceRef(非所有权, 不得CFRelease)
+  uint64_t ioSurfaceId = 0;  // Apple: IOSurfaceGetID(), 换面探测
+  // 原生车道资源标识(HDR原生窗口对接预留, 本轮仅定义)
+  void* nativeTexture = nullptr; // Windows原生车道: ID3D11Texture2D*
+};
+
 class ISurfaceRenderOb {
  public:
   ISurfaceRenderOb() = default;
@@ -320,8 +339,8 @@ class ISurfaceRenderOb {
   // 需按stride等距逐行读(ffmpeg/CPU色转)时调image2SplitYUVFrame取split的YUVFrame。
   // buf生命周期仅限本回调内,要留用请自行拷贝
   virtual void onFrame(IImageBuffer* buf, YuvType yuvType) {};
-  // 每帧渲染插入,可以做一些每帧改变图像渲染的操作
-  virtual void onRender() {};
+  // 每帧渲染输出事件(渲染线程): 世代/格式/互操作句柄, 回调内禁止阻塞
+  virtual void onRender(const SurfaceRenderEvent* ev) {};
 };
 
 // 设置渲染窗口

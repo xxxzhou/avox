@@ -201,7 +201,7 @@ class SeekOb : public ISurfaceRenderOb {
     }
   }
   void onSurface() override {}
-  void onRender() override {}
+  void onRender(const SurfaceRenderEvent*) override {}
   void onWinSizeChange(int32_t width, int32_t height) override {}
 
   void dump(IImageBuffer* buf, YuvType yuvType, const std::string& tag) {

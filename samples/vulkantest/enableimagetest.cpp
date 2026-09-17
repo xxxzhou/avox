@@ -39,7 +39,7 @@ IImageBuffer* imgBuf = nullptr;
 class ImageVerifyOb : public ISurfaceRenderOb {
  public:
   std::atomic<int> frameCount{0};
-  void onRender() override {
+  void onRender(const SurfaceRenderEvent*) override {
     int n = ++frameCount;
     // 前 10 帧详细打印, 之后每 120 帧心跳一次
     bool bDetail = (n <= 10) || (n % 120 == 0);

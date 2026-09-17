@@ -128,7 +128,7 @@ class AssOutOb : public ISurfaceRenderOb {
     delete rgba;
   }
   void onSurface() override {}
-  void onRender() override {}
+  void onRender(const SurfaceRenderEvent*) override {}
   void onWinSizeChange(int32_t, int32_t) override {}
 
   // 进入下一个 seek 相位(调用方已持锁)

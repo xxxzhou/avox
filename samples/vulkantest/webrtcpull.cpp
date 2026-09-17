@@ -49,7 +49,7 @@ class TextRender : public ISurfaceRenderOb {
     fontLayer->setColor(1, 0, 0, 0);
 #endif
   }
-  virtual void onRender() override {
+  virtual void onRender(const SurfaceRenderEvent*) override {
     std::mt19937 gen(rd());
     std::uniform_int_distribution<> dis(0, charPool.size() - 1);
     std::string randomText = "";

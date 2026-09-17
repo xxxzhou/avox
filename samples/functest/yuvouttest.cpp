@@ -97,7 +97,7 @@ class YuvOutOb : public ISurfaceRenderOb {
     frames++;
   }
   void onSurface() override {}
-  void onRender() override {}
+  void onRender(const SurfaceRenderEvent*) override {}
   void onWinSizeChange(int32_t width, int32_t height) override {}
 
   std::mutex mtx;

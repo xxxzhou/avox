@@ -109,7 +109,7 @@ class RenderOb : public ISurfaceRenderOb {
   std::atomic<int> lastLmCount{0};
   int feedCounter = 0;
   int saveCount = 0;
-  void onRender() override {
+  void onRender(const SurfaceRenderEvent*) override {
     int n = ++frameCount;
     // 心跳: 前 5 帧 + 每 300 帧 (确认 onRender 持续触发 + landmark 刷新)
     if (n <= 5 || n % 300 == 0) {

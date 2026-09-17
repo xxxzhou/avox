@@ -128,7 +128,7 @@ class TextOutOb : public ISurfaceRenderOb {
     delete rgba;
   }
   void onSurface() override {}
-  void onRender() override {}
+  void onRender(const SurfaceRenderEvent*) override {}
   void onWinSizeChange(int32_t, int32_t) override {}
 
   void beginSeekPhaseLocked(bool wantText) {

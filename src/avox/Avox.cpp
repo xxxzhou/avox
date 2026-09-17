@@ -834,11 +834,16 @@ static VkOutputLayer* getVkOutputLayerDx11(ISurfaceRender* sr) {
 bool enableVkOutputDx11(ISurfaceRender* sr) {
   VkOutputLayer* outputLayer = getVkOutputLayerDx11(sr);
   if (!outputLayer) {
-    LOGFLF(LogLevel::warn, "enableVkOutputDx11: outputLayer is null");
+    // 图未建期间的正常窗口, 只告警一次防刷屏
+    static bool warnedNull = false;
+    if (!warnedNull) {
+      warnedNull = true;
+      LOGFLF(LogLevel::warn, "enableVkOutputDx11: outputLayer is null");
+    }
     return false;
   }
   if (outputLayer->getDx11Output()) {
-    return true;   // 已启用, 幂等返回, 不再刷日志 (宿主按 ~0.5s 轮询)
+    return true;   // 已启用, 幂等返回
   }
   outputLayer->setDx11Output(true);
   LOGFLF(LogLevel::info, "enableVkOutputDx11: ok");

@@ -99,7 +99,7 @@ class HdrOb : public ISurfaceRenderOb {
     frames++;
   }
   // enableImage 通道: V5 之后/rgba2yuv 之前的 RGBA 直读, 与 yuv 通道对比定位
-  void onRender() override {
+  void onRender(const SurfaceRenderEvent*) override {
     if (!imgBuf || !imgBuf->getPointer()) {
       return;
     }

@@ -122,6 +122,8 @@ class VkVideoRender : public VideoRender, public IVOutputLayerOb {
     }
     return inputLayer->get();
   }
+  // 当前 HDR 输出模式(SurfaceRenderEvent hdr 位用)
+  HdrMode getHdrMode() const { return hdrMode; }
 
   // 初始化图形管线
   virtual bool vaildAndInitGraph() override;

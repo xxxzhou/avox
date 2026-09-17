@@ -6,9 +6,14 @@
 #include "avox_egl/GLESContext.hpp"
 #endif
 
+#include <atomic>
+
 namespace avox {
 
 extern vec4i getTextureRect(int texWidth, int texHeight, float aspect);
+
+// 输出图世代全局计数: 层实例重造也不回退, 消费端跨帧比较用
+static std::atomic<uint64_t> s_outputGeneration{0};
 
 VkOutputLayer::VkOutputLayer(/* args */) { bOutput = true; }
 
@@ -47,6 +52,9 @@ void VkOutputLayer::onUpdateParamet() {
 }
 
 void VkOutputLayer::onInitVkBuffer() {
+  // 导出资源(bindD3D/createIOSurface/createAndroidBuffer/sharedImage)本轮重造,
+  // 世代先递增, 本帧起 SurfaceRenderEvent 携带新值
+  generation = ++s_outputGeneration;
   // 考虑rowPatch
   patchFormat = inFormats[0];
   int32_t pixelSize = getPixelSize(inFormats[0].imageType);

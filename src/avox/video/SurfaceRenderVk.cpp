@@ -373,7 +373,39 @@ void SurfaceRenderVk::onRenderOut() {
   if (getCpuFrameBuffer(&buf, yuvType)) {
     dispatch(&ISurfaceRenderOb::onFrame, buf, yuvType);
   }
-  dispatch(&ISurfaceRenderOb::onRender);
+  // 渲染输出事件: 世代/格式/句柄全为内存读, outputLayer 重建窗口期为空值
+  SurfaceRenderEvent ev = {};
+#ifdef AVOX_ENABLE_VULKAN
+  VkVideoRender* vkRender = vkVideoRender.get();
+  VkOutputLayer* outputLayer = vkRender ? vkRender->getOutputLayer() : nullptr;
+  if (outputLayer) {
+    ev.generation = outputLayer->getGeneration();
+    ev.format = outputLayer->getOutFormat();
+    if (vkRender->getHdrMode() == HdrMode::forceHDR) {
+      ev.hdr = 1;
+    }
+#ifdef WIN32
+    if (outputLayer->getWinImage() && outputLayer->getWinImage()->getInit()) {
+      ev.dx11Handle =
+          (uint64_t)(uintptr_t)outputLayer->getWinImage()->getHandle();
+      ev.dx11Fence =
+          (uint64_t)(uintptr_t)outputLayer->getWinImage()->getFenceHandle();
+    }
+#endif
+#ifdef __APPLE__
+    if (outputLayer->getIosImage() &&
+        outputLayer->getIosImage()->getIOSurface()) {
+      ev.ioSurface = outputLayer->getIosImage()->getIOSurface();
+      ev.ioSurfaceId = outputLayer->getIosImage()->getIOSurfaceId();
+    }
+#endif
+    if (ev.generation != 0 && ev.generation != lastEventGeneration) {
+      ev.rebuilt = 1;
+      lastEventGeneration = ev.generation;
+    }
+  }
+#endif
+  dispatch(&ISurfaceRenderOb::onRender, &ev);
 }
 
 #ifdef AVOX_ENABLE_VULKAN

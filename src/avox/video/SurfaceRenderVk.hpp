@@ -38,6 +38,8 @@ class AVOX_EXPORT SurfaceRenderVk : public ISurfaceRender,
   // 未启用 Vulkan 时，vkVideoRender 为空指针
   VideoRender* vkVideoRender = nullptr;
 #endif
+  // 上次派发事件的输出图世代(rebuilt 置位依据)
+  uint64_t lastEventGeneration = 0;
 
  public:
   // setVulkan: 固定 Vulkan，不支持切换

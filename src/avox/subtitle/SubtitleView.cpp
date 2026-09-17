@@ -416,7 +416,8 @@ void SubtitleView::resetEvents() {
 
 // ---- 渲染 ----
 
-void SubtitleView::onRender() {
+void SubtitleView::onRender(const SurfaceRenderEvent* ev) {
+  (void)ev;
   checkWindowRender();
   if (!canvasLayer) {
     return;
