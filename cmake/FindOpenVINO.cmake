@@ -29,7 +29,7 @@ else()
     )
 endif()
 
-# OpenVINO 主要 Windows/Linux + Intel 硬件 (Android/iOS/WebAssembly 不启用)
+# OpenVINO 主要 Windows/Linux + Intel 硬件 (Android/iOS 不启用)
 set(OPENVINO_DIR "")
 if(WIN32)
     set(OPENVINO_DIR_NAMES

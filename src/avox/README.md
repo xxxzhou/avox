@@ -114,7 +114,7 @@ FFmpeg / ZLMediaKit / ONVIF 输出
 - **观察者模式**：主要接口均配有 Observer（`IMediaPlayerOb`、`IAVSourceOb`、`IRecorderOb` 等）
 - **配置传播**：`IOption` 基于 JSON 的键值配置在管线中传递，对象创建时通过 `optionCopy` 获取初始配置，运行时通过 `optionUpdate`/`optionChange` 同步变更
 - **PipeGraph GPU 管线**：`IPipeGraph`/`IPipeNode` 构成节点式渲染图，支持 Anime4K、水印、LUT、翻转、缩放等 GPU 效果
-- **跨平台**：Windows(DX11/WASAPI)、Android(MediaCodec/NDK)、iOS(VideoToolbox/AudioUnit)、Linux、WebAssembly
+- **跨平台**：Windows(DX11/WASAPI)、Android(MediaCodec/NDK)、iOS(VideoToolbox/AudioUnit)、Linux
 
 ## 子目录详细文档
 

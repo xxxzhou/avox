@@ -9,7 +9,7 @@
 
 avox 是跨平台音视频播放器 SDK，支持直播流、本地媒体、硬件解码、Vulkan GPU 图像处理、WebRTC 集成及 AI 功能。
 
-**支持平台：** Windows、Android、iOS、Linux、WebAssembly
+**支持平台：** Windows、Android、iOS、Linux
 
 **详细文档：** [README.md](../README.md) | [AGENTS.md](../AGENTS.md)
 
@@ -25,7 +25,7 @@ avox 是跨平台音视频播放器 SDK，支持直播流、本地媒体、硬�
 | [platforms](platforms/) | 平台开发: Android / iOS / Linux (硬解、NDK、Xcode 等) |
 | [code-wiki](code-wiki/README.md) | 代码架构 Wiki: 概览/目录/核心类/依赖/构建 |
 | [ai](ai/) | AI 功能: inpaint 图像修复、语音转文字 |
-| [build](build/) | 构建: 脚本/CMake、Android、FFmpeg、SWIG、wasm |
+| [build](build/) | 构建: 脚本/CMake、Android、FFmpeg、SWIG |
 | [tools](tools/) | 开发工具: VSCode/Wireshark/ffmpeg/git/trae |
 | [plan](plan/) | 设计与规划方案 · 功能计划集 [backlog/README.md](plan/backlog/README.md) (panvox 双仓对齐 A-1~A-19) |
 | [test](test/环境与插件总览.md) | 测试: 环境与插件关系地图 / 测试与修复工作流 / 发布检查清单 / 功能测试矩阵 —— **测试整体移交同级 `../avox-test` 仓**，功能完成后到那边跑测试（见其 README.md）；本目录为过渡期副本 |
@@ -124,7 +124,6 @@ avox 是跨平台音视频播放器 SDK，支持直播流、本地媒体、硬�
 | [FFmpeg构建](build/FFmpeg构建.md) | FFmpeg 编译 |
 | [swig](build/swig.md) | SWIG 多语言绑定 |
 | [Swig与JS回调](build/Swig与JS回调.md) | nodejs 绑定与 JS 回调 |
-| [wasm](build/wasm.md) | WebAssembly 编译 |
 
 ---
 
@@ -235,7 +234,6 @@ class IAudioRender {
 - Android → [Android 硬解](platforms/android/Android硬解Vulkan.md)
 - iOS → [iOS 硬解](platforms/ios/IOS硬解Vulkan.md)
 - Linux → `src/avox_linux/`
-- WebAssembly → [wasm](build/wasm.md)
 
 **按开发阶段查找：**
 

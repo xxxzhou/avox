@@ -1,7 +1,10 @@
 # WebAssembly 支持
 
-> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+> 状态: 归档 · 上次核对: 2026-09-17 · 权威源: -
 
+> 2026-09-17 归档: 统一口径放弃 WebAssembly 目标——当年仅验证过 emcmake 编译通过,
+> 硬解/Vulkan 均不可用, WebGL 渲染零落地, 构建入口 (build_wasm.py / CMake wasm 分支 /
+> AvoxDef.h 导出宏) 已同日删除。背景见 [2026-04-webassembly计划.md](2026-04-webassembly计划.md)。
 
 AVPlay 支持 WebAssembly 编译目标，可在浏览器环境中运行。
 

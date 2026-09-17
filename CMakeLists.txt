@@ -251,17 +251,7 @@ if(APPLE)
     set(AVOX_DLL_TYPE "STATIC")
 endif()
 
-if(ACV_BUILD_WASM)
-    # 添加条件编译宏
-    add_definitions(-DACV_BUILD_WASM=1)
-    # WASM音视频渲染用SDL2
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s USE_SDL=2")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s USE_PTHREADS=1")
-    set(AVOX_DLL_TYPE "STATIC")
-    message(STATUS "编译为wasm:" ${CMAKE_CXX_FLAGS})
-endif()
-
-# 静态构建(iOS/WASM): plugin 源码编进 avox, 无 dll 边界。
+# 静态构建(iOS): plugin 源码编进 avox, 无 dll 边界。
 # 定义 AVOX_ENABLE_STATIC -> AVOX_REGISTER_MODULE 走构造期注册(StaticLinkModule), 不导出 NewModule。
 if(AVOX_DLL_TYPE STREQUAL "STATIC")
     add_compile_definitions(AVOX_ENABLE_STATIC)

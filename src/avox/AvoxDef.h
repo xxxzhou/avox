@@ -18,7 +18,6 @@
     // __MACOS__：用于 macOS 平台。
 // __LINUX__：用于 Linux 系统。
 // __UNIX__：用于 Unix - like 系统（包括 Linux、macOS 等，但不一定包括 Windows）。
-// Emscripten  
 
 // 导出符号,原则上给外部项目使用只有结构以及抽象类 .h的头文件
 // 只在当前项目各模块内使用导出带AVOX_EXPORT有实际实现的C++类
@@ -36,17 +35,6 @@
     #endif
 #else
     #define AVOX_EXPORT
-#endif
-
-// https://www.hellobit.com.cn/b/767368973/2826001615.html
-// __EMSCRIPTEN__
-
-// wasm 非win32/linux同层，组合关系，但是在AVOX_EXPORT定义类似同层
-#if defined(__EMSCRIPTEN__)
-    // 导入Emscripten相关头文件，用于获取EMSCRIPTEN_KEEPALIVE宏定义
-    #include <emscripten/emscripten.h>
-    // 使用正确的Emscripten宏来标记函数可导出且在模块初始化后不被优化掉
-    #define AVOX_EXPORT EMSCRIPTEN_KEEPALIVE
 #endif
 
 // 检测是否支持 C++17 的宏

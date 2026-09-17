@@ -4,7 +4,7 @@
 
 跨平台音视频播放器 SDK (C++17)，支持直播/本地播放、硬解/GPU 渲染、Vulkan 图像处理、WebRTC、AI 功能。
 
-**平台:** Windows, Android, iOS, Linux, WebAssembly
+**平台:** Windows, Android, iOS, Linux
 
 详细文档: [doc/INDEX.md](doc/INDEX.md)
 
@@ -64,7 +64,6 @@ python script/build_runner.py --target playtest   # 只重建 runner (avox 主�
 | iOS | arm64, x86_64 | VideoToolbox | Metal/Vulkan |
 | macOS | arm64, x64 | VideoToolbox | Metal/Vulkan |
 | Linux | x64 | VAAPI(计划) | Vulkan |
-| WebAssembly | wasm32 | 软件 | WebGL(计划) |
 
 ## 核心模块 (src/avox/)
 

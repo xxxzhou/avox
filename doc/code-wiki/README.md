@@ -22,7 +22,7 @@
 - **语言/标准**：C++17/20，RAII，智能指针；`.h`(C 接口) / `.hpp`(C++) / `*Export.h`(公共 API)
 - **命名空间**：`avox`（`namespace avox {` / `}`）
 - **导出宏**：`AVOX_EXPORT`（见 `src/avox/AvoxDef.h`），插件用 `AVOX_PLUGIN_API`
-- **平台**：Windows / Android / iOS / Linux / WebAssembly
+- **平台**：Windows / Android / iOS / Linux
 - **核心能力**：播放器、软/硬解、Vulkan GPU 图像处理（100+ 效果）、WebRTC 推拉流、AI（ASR/TTS/翻译/去水印/YOLO/OCR/Avatar）、Agent 客户端、CLI 工具
 
 ## 核心模块一览

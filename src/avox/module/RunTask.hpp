@@ -9,8 +9,7 @@
 #include "../AvoxDef.h"
 #include "Ringbuffer.hpp"
 
-// wasm task实现可以参考 https://www.hellobit.com.cn/b/767368973/2401459541.html
-// 线程使用尽量继承这个类，方便后期统一更新，如wasm用不上线程，这个用来模拟单线程循环
+// 线程使用尽量继承这个类，方便后期统一更新
 namespace avox {
 
 class TaskTrack;

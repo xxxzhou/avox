@@ -1,9 +1,4 @@
 # WIN32/UNIX/APPLE/__IPHONEOS__/__MACOSX__
-set(ACV_BUILD_WASM OFF)
-
-if("${CMAKE_SYSTEM_NAME}" STREQUAL "Emscripten")
-  set(ACV_BUILD_WASM ON)
-endif()
 
 # Linux Wayland 检测 (需在 LinkVulkan 平台宏之前, 提供 AVOX_ENABLE_WAYLAND)
 # 注: 不用 find_* (个别环境下对系统路径失灵), 直接 EXISTS 探测 + 链接器自搜

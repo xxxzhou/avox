@@ -10,7 +10,7 @@
 // plugin 自己的 C 工厂函数(NewModule/GetModuleABI)用 AVOX_PLUGIN_API,
 // 由 AVOX_PLUGIN_BUILDING 切换: plugin 编译时 CMake 传 AVOX_PLUGIN_BUILDING(dllexport),
 // avox 主程序消费时不定义(dllimport)。
-// 静态链接(AVOX_ENABLE_STATIC, iOS/WASM 等无 dll 边界)时为空 —— 同一二进制内符号直接可见,无需导出。
+// 静态链接(AVOX_ENABLE_STATIC, iOS 等无 dll 边界)时为空 —— 同一二进制内符号直接可见,无需导出。
 // 例外: AVOX_PLUGIN_BUILDING(动态插件源码, 如静态核 macOS 上的独立 dylib 插件)仍需真导出,
 // 否则宿主 dlsym("NewModule") 找不到符号(实测: mac 静态核全局 AVOX_ENABLE_STATIC 波及插件)。
 // 铁律: 动态模式 plugin 编译时绝不定义 AVOX_EXPORT_DEFINE(否则 IModule 被 dllexport, 跨 dll 虚表错乱)。
@@ -32,7 +32,7 @@
 #define AVOX_PLUGIN_ABI_VERSION 1
 
 // 统一注册入口(插件 .cpp 末尾调用):
-// - 静态(iOS/WASM, AVOX_ENABLE_STATIC): 全局 StaticLinkModule 对象构造期注册工厂进 ModuleMgr,
+// - 静态(iOS, AVOX_ENABLE_STATIC): 全局 StaticLinkModule 对象构造期注册工厂进 ModuleMgr,
 //   无 dll, 不导出符号。此分支实例化 StaticLinkModule, 插件 .cpp 须 #include "module/ModuleMgr.hpp"。
 //   例外: AVOX_PLUGIN_BUILDING(独立 dylib/so 插件编进静态核工程)仍走动态导出分支,
 //   否则静态核平台(mac)上宿主 dlsym 找不到 NewModule。
