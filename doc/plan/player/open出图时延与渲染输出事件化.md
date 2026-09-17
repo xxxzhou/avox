@@ -289,6 +289,7 @@ python avox/build/run_open_timing.py D:/Work/build/test_4k_hevc_30s.mp4 15 0 PAN
   素材 `assets/video/test_h264_resize_640x360_960x540.ts`（TS 中段 640x360→960x540）,
   已接入 `play_regress.py` 离线子集。实测: 软解 354 个有效事件,
   `640x360->960x540`, 首事件 rebuilt=1 + 世代递增信号对全部命中, PASS。
+  最终态: 硬解对照 346 事件 PASS（中途抓到的硬解停帧缺陷已修, 见下）。
 
 **新发现缺陷（测试抓到, 已修复）**: **硬解(DX11VA)在流中段分辨率变化处停帧**——
 播到切换点前事件即止（~168 帧）且尺寸不更新; 软解同素材正常。与 A-4 已闭环的
