@@ -55,7 +55,7 @@ class AVOX_EXPORT AudioRender : public IAudioRender, public IAudioProcessOb {
   void addTapOb(IAudioTapOb* ob);
   void removeTapOb(IAudioTapOb* ob);
   // tap 满队列策略:set 时同步给已存在的 audioTap,tap 未创建只存成员
-  void setTapBlock(bool b) override;
+  void setTapBlock(bool b);
 
  public:
   // IAudioProcessOb

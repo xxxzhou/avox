@@ -153,10 +153,9 @@ void TranscodeRecorder::close() {
   vFrameQueue.clear();
   aFrameQueue.clear();
   if (audioRender) {
-    // 空输出音频阻塞反压,closeTap 唤醒可能阻塞在 push 的解码线程
-    if (bNoOutput) {
-      audioRender->closeTap();
-    }
+    // 先 closeTap 唤醒可能堵在 tap push 的解码线程(反压开着时), 再关设备;
+    // tap 未 open 时 no-op
+    audioRender->closeTap();
     audioRender->close();
   }
   // 停止编码线程(编码线程排空队列并关源后join返回)
@@ -290,8 +289,10 @@ void TranscodeRecorder::onReady() {
     }
     // AudioRender setDesc(源格式),tap 可在之后 open
     audioRender->setDesc(aTracks[0].desc);
-    // 空输出且无视频轨:音频阻塞反压;有视频时由视频 onFrame 主导反压到 IO
-    if (bNoOutput && vTracks.empty()) {
+    // 无视频帧产出(源无视频轨,或视频已关 VCodecId::none → source 层不开视频
+    // 解码):音频解码不限速,tap 是慢端 → 阻塞反压;有视频时由视频 onFrame
+    // 主导反压到 IO
+    if (vTracks.empty() || vCodecId == VCodecId::none) {
       audioRender->setTapBlock(true);
     }
     LOGFLF(LogLevel::info, "set audio desc:", aTracks[0]);

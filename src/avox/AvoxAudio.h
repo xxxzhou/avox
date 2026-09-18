@@ -98,8 +98,6 @@ class IAudioRender {
   // frameMs 为切片时长。默认关闭,open 后才开始备份与回调
   virtual void openTap(const AudioDesc& outDesc, int32_t frameMs) {}
   virtual void closeTap() {}
-  // tap 满队列策略: true 阻塞反压到解码线程(离线提取零丢帧), false 丢最旧(默认)
-  virtual void setTapBlock(bool b) {}
 };
 
 // ============== 语音识别 ==============
