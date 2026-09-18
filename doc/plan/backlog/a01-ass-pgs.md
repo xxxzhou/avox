@@ -1,9 +1,9 @@
 # A-1 ASS/PGS 链收尾
 
-> 状态: 进行中 · 上次核对: 2026-09-18 · 权威源: -
+> 状态: 进行中 · 上次核对: 2026-09-19 · 权威源: -
 
 
-优先级 P0 · 里程碑 M1 · 计划状态:施工中(T1 完成, T2 接线已落、信号暴露未做) · 来源:backlog A-1
+优先级 P0 · 里程碑 M1 · 计划状态:施工中(T1/T2 完成; 信号暴露已落地, 剩样式/延迟/候选/PGS) · 来源:backlog A-1
 内封 ASS 已像素级验收(2026-09-15),本计划覆盖剩余四件 + 乱码探测信号暴露。
 
 ## 出口判据
@@ -36,10 +36,13 @@
 - [x] T1 外挂加载 e2e 跑绿(2026-09-18):playmatrix G 组离线 9/9 绿(sub-ext-srt-utf8/bom/gbk/
       rich/ass、sub-style-srt、sub-embed-srt/ass/movtext,亮像素取证);BOM 剥离收在
       `SubtitleFile::loadFile` 的 `normalizeSubtitleText` 内完成。
-- [ ] T2 编码自愈接线 + 信号暴露:接线已落(见现状);剩探测结果做成
-      枚举(utf8/gbk/transcoded)随加载结果返回;新回调或 desc 字段暴露给产品
-      (候选:方案 A `normalizeSubtitleText` 返枚举 + `SubtitleDesc` 扩字段[推荐],或方案 B
-      `ISubtitle` 加 onEncodingDetected 回调——动 ABI 需同步 SWIG 四语言,待晨会拍板)。
+- [x] T2 编码自愈接线 + 信号暴露(2026-09-19, `1608887`): `normalizeSubtitleText` bool→
+      `SubtitleEncoding` 枚举 {unknown=0, utf8, utf8BomStripped, gbkTranscoded, utf16Raw},
+      修 UTF-16 歧义坑; 信号经 `ISubtitle::getFileEncoding()`(带默认实现, 只增不改)
+      透出, SubtitleFile 记录/卸载复位。**落点偏离记录**: 原定「getSubtitleDesc 扩字段」
+      对外挂不适用(外挂不经源), 改走 ISubtitle 查询; ISTrackDesc 未动; SWIG 四语言为
+      构建期再生成件(gitignore), 头文件即真源。ass 插件路径(.ass/.ssa)编码自愈与探测
+      未做(插件不链 avox 核心, 需先解决 normalize 可达性, 新增缺口)。
 - [ ] T3 样式参数补齐:延迟参数全链没有(grep 无 setDelay);ASS 轨缩放/字体覆盖接口。
       现有全局变换 scale/offset/opacity 三层通用(`SubtitleView.cpp:252`),
       叠加轨级覆盖;依据 `doc/plan/player/字幕样式设计.md`(v3 定稿)的生效矩阵。

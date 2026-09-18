@@ -1,9 +1,9 @@
 # A-2 秒起播 / seek 秒响应
 
-> 状态: 进行中 · 上次核对: 2026-09-18 · 权威源: -
+> 状态: 进行中 · 上次核对: 2026-09-19 · 权威源: -
 
 
-优先级 P0 · 里程碑 M1 · 计划状态:施工中(T1 指标埋点已完成) · 来源:backlog A-2
+优先级 P0 · 里程碑 M1 · 计划状态:施工中(T1 埋点 + T2 probe 降档已落地; 剩 T3 seek 精确化/T4 基线) · 来源:backlog A-2
 做成可量化指标:打开→首帧、seek→首帧 ms。
 
 ## 出口判据
@@ -31,9 +31,12 @@
 - [x] T1 指标埋点(2026-09-18, `d7ebd1d`):MediaPlayer/IOParseFF 打点,open 阶段拆解
       (open_input/find_stream_info/首包/首帧);seektest 端到端实测 open→首帧 189ms /
       seek→首帧 13ms / IO 分段 0+2ms,与 runner 外部基线吻合;ctest 2/2 + 离线回归 33/33 绿。
-- [ ] T2 probe 降档分档:probesize/analyzeduration 按源分档(本地文件最小、网络流默认、
-      mpeg-ts/HLS 保守);本地文件快路径(缩减或跳过 find_stream_info,mp4/mkv 靠索引)。
-      **必须保底字段**:宽高/像素格式/fps/10bit 判定字段缺失时回退补查一次。
+- [x] T2 probe 降档分档(2026-09-19, `ed75f49`): 本地索引容器(mp4/mov/matroska/avi/flv,
+      无 URL scheme 或 file:)快档 probesize 1MB + max_analyze_duration 1s; **保底字段
+      硬要求已实现**: 视频(宽高/pix_fmt/fps)与音频(采样率/声道)任一缺失即恢复默认参数
+      再跑一次 find_stream_info; 网络/ts/HLS 保持默认。实测: 本地 mp4 find_stream_info
+      3-14ms, 10bit HDR mp4 快档直接得 yuv420P10(A-12 预判字段无损)。
+      「跳过 find_stream_info」未做(风险大于收益, 快档+保底回退已达目标)。
 - [ ] T3 seek 精确化:目标前最近关键帧索引 seek(替代 BACKWARD 全量回退),
       seek 后解码器 flush → I 帧直出路径确认无冗余 GOP 解码。
 - [ ] T4 基线与回归:avox-test playmatrix 加延迟用例(本地 mp4/mkv/webm + WebDAV),
