@@ -12,6 +12,12 @@
 
 namespace avox {
 
+// VAD 起振判定需连续窗口过阈值, 比人声起点晚 1~3 个窗(32ms/窗): 仅用于
+// 无 token 时间戳的 fallback 起点前移 (token 级时间戳自带声学对齐, 不补偿)
+static constexpr int64_t kVadOnsetLeadMs = 150;
+// 单条字幕最小显示时长
+static constexpr int64_t kMinSubDurationMs = 200;
+
 SherpaSenseVoice::SherpaSenseVoice() = default;
 
 SherpaSenseVoice::~SherpaSenseVoice() { unloadModel(); }
@@ -151,6 +157,7 @@ void SherpaSenseVoice::unloadModel() {
 }
 
 void SherpaSenseVoice::reset() {
+  lastEndPts = 0;
   if (vad) {
     SherpaOnnxVoiceActivityDetectorReset(vad);
   }
@@ -189,6 +196,15 @@ void SherpaSenseVoice::processAudio(const float* samples, int32_t count,
 void SherpaSenseVoice::processSegment(const float* samples, int32_t count,
                                       int64_t segmentStartPts) {
   if (!recognizer) return;
+  // VAD 起振判定需连续窗口过阈值, 比人声起点晚 1~3 个窗(32ms/窗) — 该滞后
+  // 只影响段级起点(fallback 直接用 segmentStartPts), 前移补偿只给 fallback。
+  // token 级 timestamps 是段内声学测量, 不含 VAD 滞后, 叠前移 = 字幕整体
+  // 提前 ~150ms(2026-09-18 实测), token 路径必须用原始 segmentStartPts。
+  int64_t subStartPts = segmentStartPts > kVadOnsetLeadMs
+                            ? segmentStartPts - kVadOnsetLeadMs
+                            : segmentStartPts;
+  // VAD 段尾(采样级精确), durations 缺失时作为字幕结束
+  int64_t segmentEndPts = segmentStartPts + count * 1000LL / 16000;
   // 用 SenseVoice 识别这个段落
   const SherpaOnnxOfflineStream* stream =
       SherpaOnnxCreateOfflineStream(recognizer);
@@ -213,14 +229,22 @@ void SherpaSenseVoice::processSegment(const float* samples, int32_t count,
                                   result->durations[result->count - 1]) *
                                  1000);
       } else {
-        sr.endPts =
-            segmentStartPts +
-            static_cast<int64_t>(result->timestamps[result->count - 1] * 1000);
+        // SenseVoice 无 durations: 结束取 VAD 段尾; 若停在最后 token 起始,
+        // 每条字幕比人声提前百毫秒级消失
+        sr.endPts = segmentEndPts;
       }
     } else {
-      sr.startPts = segmentStartPts;
-      sr.endPts = segmentStartPts + count * 1000LL / 16000;
+      sr.startPts = subStartPts;
+      sr.endPts = segmentEndPts;
     }
+    // 单条至少显示 kMinSubDurationMs; 起点夹住不与上一条重叠
+    if (sr.startPts < lastEndPts) {
+      sr.startPts = lastEndPts;
+    }
+    if (sr.endPts < sr.startPts + kMinSubDurationMs) {
+      sr.endPts = sr.startPts + kMinSubDurationMs;
+    }
+    lastEndPts = sr.endPts;
     dispatch(&ISherpaRecognizerOb::onSherpaResult, sr);
   }
   SherpaOnnxDestroyOfflineRecognizerResult(result);

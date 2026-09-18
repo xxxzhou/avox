@@ -48,6 +48,8 @@ class SherpaSenseVoice : public avox::Observer<ISherpaRecognizerOb> {
   // sherpa-onnx 上下文
   const SherpaOnnxVoiceActivityDetector* vad = nullptr;
   const SherpaOnnxOfflineRecognizer* recognizer = nullptr;
+  // 上一条字幕结束 PTS(起点前移补偿后夹逼, 防相邻两条重叠)
+  int64_t lastEndPts = 0;
 
   // 配置
   std::string modelPath;
