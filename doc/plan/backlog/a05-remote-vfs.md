@@ -1,10 +1,10 @@
 # A-5 可 seek 虚拟文件系统 (avox_remote)
 
-> 状态: 进行中 · 上次核对: 2026-09-16 · 权威源: -
+> 状态: 进行中 · 上次核对: 2026-09-19 · 权威源: -
 
 
 优先级 P0 · 里程碑 M2(**建议 M1 末期提前启动**:panvox P-4 刮削与源浏览硬依赖)
-计划状态:就绪 · 来源:backlog A-5
+计划状态:**T1 契约设计已定稿(见下), T2~T5 待实施** · 来源:backlog A-5
 WebDAV/SMB 统一 range 读 + 缓冲窗口 + seek;直链失效重试、令牌过期回调、目录列表缓存。
 
 ## 出口判据
@@ -33,11 +33,80 @@ WebDAV/SMB 统一 range 读 + 缓冲窗口 + seek;直链失效重试、令牌过
 - alist/OpenList token 鉴权零代码(DavSource 显式丢弃 token,:322;多处注释提及 alist 但无实现)。
 - httplib 请求不可中断(`DavSource.cpp:111-112,356-357`),仓内版本缺三参构造(:396-399 注释)。
 
-## 任务拆解
+## T1 契约设计(2026-09-19 定稿, 未动代码)
 
-- [ ] T1 契约设计(先行,半成品收口):authExpired 生命周期定案——DAV/alist 401 产生 →
-      `IRemoteSourceOb` 新增 onAuthExpired(动 AvoxBase.h,跨 DLL 只增不改)→ 产品重授权 →
-      重建会话;播放中 IO 错误路由回 source 会话 refresh() re-resolve 的通道设计。
+> 状态: 设计定稿待实施。任务卡: 夜间施工进度.md T11。实施时按本节落码, 变更需回写本节。
+
+### 1. authExpired 生命周期(三态授权流)
+
+```
+产品 open/list(带 user/pass 或 token)
+  → DavSource/SmbSource 会话建立
+  → 任意请求收到 401/403(且非首次鉴权):
+      1) 引擎置会话 invalid, 停止重试(避免无谓风暴)
+      2) 触发 IRemoteSourceOb::onAuthExpired(sourceId) —— 新增回调
+      3) 播放中: IO 层按「断流」处理(见 §2), 不静默循环重试
+  → 产品弹重授权 UI, 拿到新凭据后调用 reauthorize(entry, user, pass, token)
+      —— 新增公开方法(挂在 IRemoteSource, 见 §4)
+  → 引擎用新凭据重建会话: 播放中场景经 refresh(entry) 重 resolve 直链续播(§2);
+     浏览场景下次 list 自然生效
+超时语义: onAuthExpired 触发后 30s 内未 reauthorize, 会话进入 closed,
+后续操作返回 authFailed(-3), 产品需重新 open。
+```
+
+要点: authExpired 是「需要人工介入」信号(区别于可自动重试的瞬时 401——
+单次请求超时/重试路径内消化, 不抛产品); 同一会话 authExpired 至多抛一次,
+直到 reauthorize 成功后重新武装, 防回调风暴。
+
+### 2. 播放中直链失效 → refresh 续播通道
+
+```
+IOParseDav 读包遇 http 401/403/410/5xx-断流:
+  → IO 层上报 onIoError(remoteBroken, url) 后暂停读循环(不 close)
+  → 引擎调 IRemoteSource::refresh(entry) —— 复用 AvoxBase.h:237 预留签名,
+    实现方(DavSource)重 PROPFIND/GET 直链(带新凭据/新 token)
+  → 成功: 取新直链, IOParseDav 以「原 offset 重新 range 打开」续播;
+    失败: 分类映射(401→走 §1 authExpired; 404/410→ioError 文件已删;
+    超时→重试策略退避)
+重试策略: 次数 3 次, 退避 1s/2s/4s, 常量先内定, 后经 option 透出。
+```
+
+IOParseDav 结构: 参照 IOParseTorrent 的 lookahead 窗口(预读 4MB 起步,
+可配), seek = 重开 range 请求; 单缓冲 256KB 的 IOParseSmb 对齐同一窗口口径。
+IoPlan 枚举(AvoxMuxer.h)加 `dav` 项, MediaPlayer.cpp 路由注册。
+
+### 3. alist/OpenList token 鉴权
+
+DavSource 增加 Header 注入点: `setAuthHeader(key, value)`(内部会话级,
+Authorization: Bearer <token> / 自定义 key 均可); resolve 产生的直链请求
+由 IOParseDav 携带同一 Header。token 刷新由产品层负责(引擎只透传,
+过期走 §1 authExpired)。
+
+### 4. 接口面清单(全部「只增不改」)
+
+| 位置 | 变更 | 说明 |
+|---|---|---|
+| `AvoxBase.h` IRemoteSourceOb | + `onAuthExpired(const char* sourceId)` | 带默认空实现, 旧观察者零影响 |
+| `AvoxBase.h` IRemoteSource | + `reauthorize(entry, user, pass, token)`(虚, 默认 false) | 旧插件未覆写返回 false, 产品可判不支持 |
+| `AvoxBase.h` RemoteCode | 沿用预留 authExpired=-4 | 首个产生者=本契约 |
+| `AvoxMuxer.h` IoPlan | + `dav` | 值追加尾部 |
+| SWIG 四语言 | 头文件即真源, 构建期再生成(gitignore) | UseSWIG 不跟踪头依赖, 改头后 touch common.i |
+
+### 5. 对 A-10 的预留口
+
+resolve() 的特殊容器语义(BDMV/剧集聚合): refresh(entry) 返回的 entry 保留
+container 字段语义, IOParseDav 只消费直链不解释容器; BDMV 挂载点后续以
+独立 source 插件接入, 不在本契约内扩展枚举。
+
+### 6. 实施顺序与工作量
+
+T2 IOParseDav(参照 IOParseSmb ~600 行 + 窗口, 2-3 天) → T3 重试/续播
+(1-2 天, 依赖 §2 通道) → T4 目录缓存(1 天) → T5 avox-test 用例
+(配合 dav-* 用例表已预留)。httplib 不可中断限制: 重试/超时中止先以
+「短超时 + 整体重试」近似, 若语义不足再换请求实现。
+
+## 任务拆解(T2~T5, 设计见上节)
+
 - [ ] T2 IOParseDav(新组件,本计划核心):DAV 直链自有 IO 源进 ioSources
       (IoPlan 枚举加项),统一 range 读 + 预读窗口(参照 IOParseTorrent lookahead 模式)+
       seek;SMB 侧对齐同一缓冲口径。
