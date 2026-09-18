@@ -398,6 +398,8 @@ void SubtitleView::setPgsCanvas(const AssCanvas& canvas) {
     pgsBuf.clear();
     pgsCanvas = AssCanvas{};
     pgsCanvas.seq = canvas.seq;
+    // 清屏画布也保留 pts: 字幕延迟的到期门控依赖它(否则清屏提前穿帮)
+    pgsCanvas.ptsMs = canvas.ptsMs;
     hasPgs = true;
   }
   lastPgsSeq = canvas.seq;
@@ -459,13 +461,17 @@ void SubtitleView::renderTrack(int64_t ptsMs) {
   if (!overlay) {
     return;
   }
+  // 字幕延迟(a01-T3): 内容选择用平移时钟 subPts = pts - delay(正=延后);
+  // ASS 预喂窗口随平移, PGS 画布按到期放行(delay=0 保持原无条件快照)
+  const int64_t delay = delayMs_.load(std::memory_order_relaxed);
+  const int64_t subPts = ptsMs - delay;
   const AssCanvas* canvas = nullptr;
   {
     // 锁内只做短操作(喂包/取快照); 长持锁会卡死 IO 线程的 pushChunk
     std::lock_guard<std::mutex> lock(mtx);
     if (trackLoaded.load()) {
       // ASS 轨: 播放时钟前的小窗口预喂(补偿帧间隔与渲染延迟)
-      while (!chunks.empty() && chunks.front().ptsMs <= ptsMs + 120) {
+      while (!chunks.empty() && chunks.front().ptsMs <= subPts + 120) {
         SubChunk& c = chunks.front();
         // FFmpeg 的 MKV ASS packet 自带 ReadOrder 头("0,0,Default,..."),
         // 恰好是 ass_process_chunk 要的格式, 原样直喂
@@ -474,11 +480,12 @@ void SubtitleView::renderTrack(int64_t ptsMs) {
         chunks.pop_front();
       }
       // libass 画布双缓冲, 内容到下一次 render 前有效 → 锁外使用安全
-      canvas = overlay->render(ptsMs);
+      canvas = overlay->render(subPts);
     } else if (hasPgs) {
       // PGS 轨: 锁内把像素拷到稳定缓冲(pgsBuf 归 IO 线程的 setPgsCanvas
-      // 重排), 锁外上屏
-      if (pgsCanvas.rgba) {
+      // 重排), 锁外上屏; 有延迟时只放行 pts 已到期的画布(清屏包同规则,
+      // 未到期保持上一快照 = 前一条延长显示)
+      if (pgsCanvas.rgba && (delay == 0 || pgsCanvas.ptsMs <= subPts)) {
         pgsStable.assign(pgsBuf.begin(), pgsBuf.end());
         pgsSnapshot = pgsCanvas;
         pgsSnapshot.rgba = pgsStable.data();
@@ -510,7 +517,8 @@ void SubtitleView::renderText(int64_t ptsMs) {
   }
 #ifdef AVOX_ENABLE_FREETYPE
   const char* text = nullptr;
-  // 槽位定源: ASR 槽只查识别结果(流式部分结果优先兜底), 文件槽只查文件
+  // 槽位定源: ASR 槽只查识别结果(流式部分结果优先兜底, 实时口播不吃延迟),
+  // 文件槽只查文件(按平移时钟查, 字幕延迟生效)
   if (slots.active() == Slot::asr) {
     auto* item = subtitleAsr.getCurrent(ptsMs);
     if (item && !item->text.empty()) {
@@ -523,7 +531,8 @@ void SubtitleView::renderText(int64_t ptsMs) {
       }
     }
   } else {
-    auto* item = subtitleFile.getCurrent(ptsMs);
+    // 外挂文本槽: 字幕延迟生效(正=延后查询)
+    auto* item = subtitleFile.getCurrent(ptsMs - delayMs_.load(std::memory_order_relaxed));
     if (item && !item->text.empty()) {
       text = item->text.c_str();
     }

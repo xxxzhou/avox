@@ -54,6 +54,11 @@ class ISubtitle {
   // 外挂字幕文本编码探测结果(loadSubtitle 文本路径加载后可查, 换源/卸载复位
   // unknown; .ass 插件路径不探测仍为 unknown)。带默认实现: 既有实现者零影响
   virtual SubtitleEncoding getFileEncoding() { return SubtitleEncoding::unknown; }
+
+  // 字幕整体延迟(a01-T3): 正=延后显示, 负=提前, 0=同步(默认)。作用于外挂
+  // 文本/内封 ASS/PGS 三路内容选择; ASR 为实时口播不适用。带默认实现: 既有
+  // 实现者零影响
+  virtual void setDelay(int64_t delayMs) {}
 };
 
 #define AVOX_MAP_PLAYER_STATE(XX) \

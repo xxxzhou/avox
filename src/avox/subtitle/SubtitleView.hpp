@@ -59,6 +59,10 @@ class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
   virtual SubtitleEncoding getFileEncoding() override {
     return subtitleFile.getEncoding();
   }
+  // 字幕整体延迟: 正=延后, 负=提前; 内容选择按 (播放pts - delay) 查询
+  virtual void setDelay(int64_t delayMs) override {
+    delayMs_.store(delayMs, std::memory_order_relaxed);
+  }
   // 全复位(内部用: 播放器 close/换源/析构): 三槽位 + 轨通道 + 文件/ASR 内容
   // (渲染对象注册保留, 供重开复用)
   void closeSubtitle();
@@ -160,6 +164,8 @@ class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
   SubtitleAsr subtitleAsr;
   bool fileEnabled = false;
   bool asrEnabled = false;
+  // 字幕整体延迟 ms(setDelay 写, 渲染线程读)
+  std::atomic<int64_t> delayMs_{0};
 #ifdef AVOX_ENABLE_FREETYPE
   TextRasterizer rasterizer;
   TextCanvasStyle style;  // 纯文本样式副本(setFont/setColor/setAlign/... 写入)
