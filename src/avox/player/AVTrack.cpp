@@ -272,6 +272,9 @@ const char* getDefaultDecoderName(VCodecId codecId, bool bHard) {
 #elif __APPLE__
     // h264_qsv h264_vulkan h264 libx264
     return bHard ? AVOX_IOS_H264_DECODER : AVOX_FF_H264_DECODER;
+#elif defined(__ONLY_LINUX__)
+    // Linux 硬解主路 VAAPI(此前误映射 dx11 名字恒落软解), 失败回退 vulkan → 软解
+    return bHard ? AVOX_FFVAAPI_H264_DECODER : AVOX_FF_H264_DECODER;
 #else
     // h264_qsv h264_vulkan h264 libx264
     return bHard ? AVOX_FFDX11_H264_DECODER : AVOX_FF_H264_DECODER;
@@ -284,14 +287,23 @@ const char* getDefaultDecoderName(VCodecId codecId, bool bHard) {
 #elif __APPLE__
     // hevc_qsv hevc_vulkan hevc libx264
     return bHard ? AVOX_IOS_H265_DECODER : AVOX_FF_H265_DECODER;
+#elif defined(__ONLY_LINUX__)
+    // Linux 硬解主路 VAAPI, 失败回退 vulkan → 软解
+    return bHard ? AVOX_FFVAAPI_H265_DECODER : AVOX_FF_H265_DECODER;
 #else
     // hevc_qsv hevc_vulkan hevc libx265 AVOX_FFVULKAN_H265_DECODER
     // AVOX_FFDX11_H265_DECODER
     return bHard ? AVOX_FFDX11_H265_DECODER : AVOX_FF_H265_DECODER;
 #endif
   } else if (codecId == VCodecId::vp9) {
-    // webm/VP9: 暂无硬解注册, 走 ffmpeg 软解 (注册名来自 regFFCodec 的 codec->name)
+#ifdef _WIN32
+    // webm/VP9: Windows 走 D3D11VA(FFDx11Decoder::onVaild 探测 GPU 解码 profile,
+    // 不支持时由 VDecoderTask 选型回退软解); 其余平台暂无 VP9 硬解注册走软解
+    return bHard ? AVOX_FFDX11_VP9_DECODER : AVOX_FF_VP9_DECODER;
+#else
+    // 注册名来自 regFFCodec 的 codec->name
     return AVOX_FF_VP9_DECODER;
+#endif
   }
   return AVOX_FF_H264_DECODER;
 }

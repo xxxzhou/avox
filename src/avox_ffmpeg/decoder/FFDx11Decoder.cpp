@@ -5,12 +5,56 @@
 #include "avox/player/AVTrack.hpp"
 
 #if _WIN32
+#include <d3d11.h>
+#include <dxva.h>
 #include <libavutil/hwcontext_d3d11va.h>
 #endif
 
 namespace avox {
 
 #if _WIN32
+
+namespace {
+// VP9 解码 profile GUID(MS-PEPF 规范常量; dxva.h 的 DEFINE_GUID 需独立定义
+// TU, 直接连不上一律 LNK2019, 故本地自带)
+// clang-format off
+constexpr GUID kVp9Profile0 = {0x463707f8, 0xa1d0, 0x4585,
+                               {0x87, 0x6d, 0x83, 0xaa, 0x6d, 0x60, 0xb8, 0x9e}};
+constexpr GUID kVp9Profile2_10bit = {0xa4c749ef, 0x6ecf, 0x48aa,
+                                     {0x84, 0x48, 0x50, 0xa7, 0xa1, 0x16, 0x5f, 0xf7}};
+// clang-format on
+
+// VP9 硬解覆盖探测: 枚举 GPU 的 D3D11 解码 profile, 命中 VP9(profile 0/10bit)
+// 才放行硬解; 不支持的老核显由选型层回退软解, 避免运行期 hwaccel 失败黑屏
+bool d3d11HasVp9Profile() {
+  MComPtr<ID3D11Device> device;
+  MComPtr<ID3D11DeviceContext> context;
+  D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_11_0;
+  const HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE,
+                                       nullptr, 0, nullptr, 0,
+                                       D3D11_SDK_VERSION, &device,
+                                       &featureLevel, &context);
+  if (FAILED(hr) || !device) {
+    return false;
+  }
+  MComPtr<ID3D11VideoDevice> videoDevice;
+  if (FAILED(device.As(&videoDevice)) || !videoDevice) {
+    return false;
+  }
+  const UINT count = videoDevice->GetVideoDecoderProfileCount();
+  for (UINT i = 0; i < count; ++i) {
+    GUID guid = {};
+    if (FAILED(videoDevice->GetVideoDecoderProfile(i, &guid))) {
+      continue;
+    }
+    if (IsEqualGUID(guid, kVp9Profile0) ||
+        IsEqualGUID(guid, kVp9Profile2_10bit)) {
+      return true;
+    }
+  }
+  return false;
+}
+}  // namespace
 
 void regFFDx11Decoder() {
   RegFunc regFunc = {"ffmpeg dx11 video decoder init", []() {
@@ -34,6 +78,16 @@ void regFFDx11Decoder() {
                            VCodecId::h265, codecDesc, []() -> VideoDecoder* {
                              return new FFDx11Decoder();
                            });
+                       // VP9(webm): onVaild 探测 profile, 不支持的卡回退软解
+                       codecDesc = {};
+                       codecDesc.name = AVOX_FFDX11_VP9_DECODER;
+                       codecDesc.codecId = AVCodecID::AV_CODEC_ID_VP9;
+                       codecDesc.bHardware = true;
+                       codecDesc.vcodecId = VCodecId::vp9;
+                       AvoxManager::Get().vDecoders.regInitFunc(
+                           VCodecId::vp9, codecDesc, []() -> VideoDecoder* {
+                             return new FFDx11Decoder();
+                           });
                      }};
   AvoxManager::Get().initFuncs.push_back(regFunc);
 }
@@ -47,6 +101,11 @@ FFDx11Decoder::~FFDx11Decoder() {
 bool FFDx11Decoder::onVaild() {
   if (codecDesc.codecId <= 0) {
     LOGFLF(LogLevel::warn, "codecId:", codecDesc.codecId);
+    return false;
+  }
+  if (codecDesc.vcodecId == VCodecId::vp9 && !d3d11HasVp9Profile()) {
+    LOGFLF(LogLevel::warn,
+           "vp9 d3d11va profile not supported by gpu, fallback to software");
     return false;
   }
   return true;

@@ -1,5 +1,7 @@
 #include "VDecoderTask.hpp"
 
+#include <cstring>
+
 #include "../module/AvoxManager.hpp"
 #include "../player/MediaPlayer.hpp"
 #include "../player/VideoTrack.hpp"
@@ -40,39 +42,80 @@ bool VDecoderTask::start(class VideoTrack* context) {
     pushPB<MPPBType::MediaAction>(mpPingback, pb);
     return false;
   }
-  // 根据播放器设置选择解码器
-  size_t sIndex = 0;
+  // 根据播放器设置选择解码器; 硬解选型不可用时逐级回退: vulkan 备选 → 软解
+  // (如 VP9 老核显无 D3D11VA profile, a03/a12 的运行期回退框架先行手动兜底)
   bool bHard = mediaPlayer->getHardDecode();
   const char* sName = getDefaultDecoderName(codecId, bHard);
-  // 查找解码器
+  const char* sFallback = bHard ? getDefaultDecoderName(codecId, false) : nullptr;
+  if (sFallback && strcmp(sFallback, sName) == 0) {
+    sFallback = nullptr;
+  }
+  // 硬解备选: 主路(dx11/vaapi)失败先试 vulkan(未注册自动跳过), 再落软解
+  const char* sVulkan = nullptr;
+  if (bHard) {
+    if (codecId == VCodecId::h264) {
+      sVulkan = AVOX_FFVULKAN_H264_DECODER;
+    } else if (codecId == VCodecId::h265) {
+      sVulkan = AVOX_FFVULKAN_H265_DECODER;
+    }
+    if (sVulkan && (strcmp(sVulkan, sName) == 0 ||
+                    (sFallback && strcmp(sVulkan, sFallback) == 0))) {
+      sVulkan = nullptr;
+    }
+  }
+  size_t sIndex = 0;
+  // 按名字选定并初始化: 找不到/建不出/不支持都算未命中, 交给下一候选
+  auto trySelect = [&](const char* wantName) -> bool {
+    size_t idx = 0;
+    bool bHit = false;
+    for (size_t i = 0; i < decodes.size(); ++i) {
+      if (decodes[i].desc.name == wantName) {
+        idx = i;
+        bHit = true;
+        break;
+      }
+    }
+    if (!bHit) {
+      return false;
+    }
+    auto cand = std::unique_ptr<VideoDecoder>(decodes[idx].initFunc());
+    if (!cand) {
+      return false;
+    }
+    cand->linkOption(trackContext->getMediaPlayer());
+    cand->setObserver(trackContext);
+    if (!cand->setContext(decodes[idx].desc, srcDesc)) {
+      LOGFLF(LogLevel::warn, "decoder ", decodes[idx].desc.name,
+             " not support, try fallback");
+      return false;
+    }
+    sIndex = idx;
+    decode = std::move(cand);
+    return true;
+  };
+  bool bHitName = false;
   for (size_t i = 0; i < decodes.size(); ++i) {
     if (decodes[i].desc.name == sName) {
-      sIndex = i;
+      bHitName = true;
       break;
     }
   }
+  // 候选次序: 首选名 → vulkan 备选 → 硬解失败回退软解名 → 原行为兜底(找不到名字用首项)
+  if (!trySelect(sName)) {
+    if (!(sVulkan && trySelect(sVulkan))) {
+      if (!(sFallback && trySelect(sFallback))) {
+        if (bHitName || decodes.empty() ||
+            !trySelect(decodes[0].desc.name.c_str())) {
+          pb.result = ActionResult::fail;
+          string_format(pb.msg, "codecId ", getVCodecName(codecId),
+                        " select ", sName, " not init");
+          pushPB<MPPBType::MediaAction>(mpPingback, pb);
+          return false;
+        }
+      }
+    }
+  }
   auto& vDecode = decodes[sIndex];
-  // 初始化解码器
-  decode = std::unique_ptr<VideoDecoder>(vDecode.initFunc());
-  if (!decode) {
-    pb.result = ActionResult::fail;
-    string_format(pb.msg, "codecId ", getVCodecName(codecId), " select ",
-                  vDecode.desc.name, " not init");
-    pushPB<MPPBType::MediaAction>(mpPingback, pb);
-    return false;
-  }
-  // 关联mediaplayer的选项设计设置
-  decode->linkOption(trackContext->getMediaPlayer());
-  decode->setObserver(trackContext);
-  // 查看系统是否支持
-  bool bInit = decode->setContext(vDecode.desc, srcDesc);
-  if (!bInit) {
-    pb.result = ActionResult::fail;
-    string_format(pb.msg, "codecId ", getVCodecName(codecId), " select ",
-                  vDecode.desc.name, " no support");
-    pushPB<MPPBType::MediaAction>(mpPingback, pb);
-    return false;
-  }
   // 开始解码线程
   startTask();
   // 记录最终是否启用硬解
