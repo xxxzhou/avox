@@ -3,7 +3,7 @@
 > 状态: 进行中 · 上次核对: 2026-09-19 · 权威源: -
 
 
-优先级 P0 · 里程碑 M1 · 计划状态:施工中(T1/T2 完成; 信号暴露已落地, 剩样式/延迟/候选/PGS) · 来源:backlog A-1
+优先级 P0 · 里程碑 M1 · 计划状态:施工中(T1/T2 完成, T3 延迟接口已落地; 剩 ASS 轨样式覆盖/候选枚举/PGS) · 来源:backlog A-1
 内封 ASS 已像素级验收(2026-09-15),本计划覆盖剩余四件 + 乱码探测信号暴露。
 
 ## 出口判据
@@ -43,9 +43,12 @@
       对外挂不适用(外挂不经源), 改走 ISubtitle 查询; ISTrackDesc 未动; SWIG 四语言为
       构建期再生成件(gitignore), 头文件即真源。ass 插件路径(.ass/.ssa)编码自愈与探测
       未做(插件不链 avox 核心, 需先解决 normalize 可达性, 新增缺口)。
-- [ ] T3 样式参数补齐:延迟参数全链没有(grep 无 setDelay);ASS 轨缩放/字体覆盖接口。
-      现有全局变换 scale/offset/opacity 三层通用(`SubtitleView.cpp:252`),
-      叠加轨级覆盖;依据 `doc/plan/player/字幕样式设计.md`(v3 定稿)的生效矩阵。
+- [ ] T3 样式参数补齐: **延迟接口已落地(2026-09-19, `21491dc`)**: `ISubtitle::setDelay(ms)`
+      (正=延后/负=提前, 带默认实现), 外挂文本/内封 ASS 按 (pts-delay) 平移内容选择,
+      PGS 画布按 pts 到期放行(delay=0 原路径零变化), ASR 实时口播不平移。
+      剩: ASS 轨缩放/字体覆盖接口。现有全局变换 scale/offset/opacity 三层通用
+      (`SubtitleView.cpp:252`),叠加轨级覆盖;依据 `doc/plan/player/字幕样式设计.md`
+      (v3 定稿)的生效矩阵。
 - [ ] T4 PGS 真实样片 e2e:找/造含 PGS 的 mkv(ffmpeg 不能编 PGS,需真实样本),进 avox-test 资产。
 - [ ] T5 中文外挂自动加载探测:同名候选枚举接口(`movie.zh.srt/.chs.ass/.gbk.srt` 等常见命名
       归一化),引擎只列候选、产品决定加载。
