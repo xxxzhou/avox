@@ -52,6 +52,21 @@
 - [ ] T4 PGS 真实样片 e2e:找/造含 PGS 的 mkv(ffmpeg 不能编 PGS,需真实样本),进 avox-test 资产。
 - [ ] T5 中文外挂自动加载探测:同名候选枚举接口(`movie.zh.srt/.chs.ass/.gbk.srt` 等常见命名
       归一化),引擎只列候选、产品决定加载。
+      **设计定稿(2026-09-19 夜, 未动代码, 实施前过目 API 形状)**:
+      - 语义: 产品拿到视频 URL 后调一次枚举, 引擎在同目录扫「同主名」字幕文件,
+        归一化后按优先级排序返回; 只列候选不加载, 加载仍走 loadSubtitle。
+      - 命名归一: 主名 = 视频文件名去扩展名; 候选 = 同目录下「主名开头」且扩展名
+        `.srt/.ass/.ssa` 的文件; 语言标记段(`.zh/.chs/.cht/.gb/.big5/.eng` 等)与
+        `.gbk` 编码后缀解析为 hint 字段, 不参与主名匹配。
+      - 排序: 主名完全同名 > 带语言标记; srt > ass(中文场景 srt 命中率高, 可再议)。
+      - API 形状(公共头无 STL 约束, 参照 ISTrackDesc 口径):
+        `ISubtitle` 追加(只增不改, 带默认实现):
+        `virtual int32_t listSubtitleCandidates(const char* videoUrl,
+        SubtitleCandidate* out, int32_t cap) { return 0; }`;
+        `SubtitleCandidate { char path[512]; SCodecId codec; }` 定义于 AvoxPlayer.h;
+        返回值=实得个数(可 >cap 截断, 负=错误)。纯查询, 不持有文件句柄。
+      - SWIG: 结构体定长数组跨语言自动映射, 四语言随构建再生成。
+      - 工作量: 引擎扫描+归一化半天(纯文件系统操作, 无平台差异), 用例归 avox-test。
 
 ## 验收
 
