@@ -1,9 +1,9 @@
 # A-6 FFmpeg 9.0.1 换代适配(收口)
 
-> 状态: 进行中 · 上次核对: 2026-09-17 · 权威源: -
+> 状态: 进行中 · 上次核对: 2026-09-18 · 权威源: -
 
 
-优先级 P0(独立排期) · 里程碑:并行 · 计划状态:**适配已完成,仅剩收口验证**
+优先级 P0(独立排期) · 里程碑:并行 · 计划状态:**适配已完成,仅剩收口验证(Windows 回归已过, 剩四平台+UE)**
 来源:backlog A-6。探查结论与 backlog「进行中」口径不符,以本计划为准并回写那边。
 
 ## 探查结论(2026-09-15)
@@ -21,9 +21,11 @@
 
 - [ ] T1 五平台回归:avox-test 离线子集 + playmatrix 全量,各平台至少一轮
       (重点:硬解路径、HDR P010、录制 muxer)。
+      **Windows 已过(2026-09-18)**:离线回归 33/33 绿(硬解/HDR P010/录制 muxer/10bit 全覆盖);
+      剩 Android/iOS/macOS/Linux 本机不可测,待 CI/真机。
 - [ ] T2 UE 链路验证:avox-ue 插件仓吃本仓 install 产物跑一遍(backlog 注明 UE 链路依赖)。
-- [ ] T3 弱化用法复查:`FFVDecoder.cpp:58` codecCtx->pix_fmt 预设在 9.x 属弱化用法
-      (get_format 协商为准),确认软解路径无回归。
+- [x] T3 弱化用法复查(2026-09-18):`FFVDecoder.cpp:58` codecCtx->pix_fmt 预设在 9.x 属
+      弱化用法(get_format 协商为准),复查无恙,软解路径无回归。
 - [ ] T4(可选)版本守卫:FFCommon.hpp 加版本门控宏,防未来换代裸奔。
 - [ ] T5 回写:panvox backlog A-6 打勾,注记「五平台 9.0.1 已落地,收口回归完成」。
 - [ ] T6 Android 16KB 页对齐重出包:build_ffmpeg_android.sh 的 configure 补

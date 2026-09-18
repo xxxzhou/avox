@@ -1,9 +1,9 @@
 # A-2 秒起播 / seek 秒响应
 
-> 状态: 进行中 · 上次核对: 2026-09-16 · 权威源: -
+> 状态: 进行中 · 上次核对: 2026-09-18 · 权威源: -
 
 
-优先级 P0 · 里程碑 M1 · 计划状态:就绪 · 来源:backlog A-2
+优先级 P0 · 里程碑 M1 · 计划状态:施工中(T1 指标埋点已完成) · 来源:backlog A-2
 做成可量化指标:打开→首帧、seek→首帧 ms。
 
 ## 出口判据
@@ -28,9 +28,9 @@
 
 ## 任务拆解
 
-- [ ] T1 指标埋点(先做,优化前后都要它):cmdOpen 起点 → 首帧上屏(渲染回调)计时;
-      cmdSeek → seek 后首帧计时。输出:日志 + 统计接口(复用或新增 getStats 类入口)+
-      playmatrix 用例打印。区分 open 阶段拆解(open_input/find_stream_info/首包/首帧)。
+- [x] T1 指标埋点(2026-09-18, `d7ebd1d`):MediaPlayer/IOParseFF 打点,open 阶段拆解
+      (open_input/find_stream_info/首包/首帧);seektest 端到端实测 open→首帧 189ms /
+      seek→首帧 13ms / IO 分段 0+2ms,与 runner 外部基线吻合;ctest 2/2 + 离线回归 33/33 绿。
 - [ ] T2 probe 降档分档:probesize/analyzeduration 按源分档(本地文件最小、网络流默认、
       mpeg-ts/HLS 保守);本地文件快路径(缩减或跳过 find_stream_info,mp4/mkv 靠索引)。
       **必须保底字段**:宽高/像素格式/fps/10bit 判定字段缺失时回退补查一次。

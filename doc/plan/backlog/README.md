@@ -1,6 +1,6 @@
 # avox backlog 功能计划集 (A-1 ~ A-19)
 
-> 状态: 进行中 · 上次核对: 2026-09-16 · 权威源: -
+> 状态: 进行中 · 上次核对: 2026-09-18 · 权威源: -
 
 
 日期:2026-09-15 · 来源:[panvox/docs/backlog.md](../../../../panvox/docs/backlog.md) 第一节「avox 引擎仓」。
@@ -11,12 +11,12 @@
 
 | 项 | 优先级 | 里程碑 | 计划状态 | 一句话现状 | 计划 |
 |---|---|---|---|---|---|
-| A-1 ASS/PGS 链收尾 | P0 | M1 | 计划就绪 | 接口面与内封链已齐,剩外挂样式/编码自愈/PGS e2e | [a01](a01-ass-pgs.md) |
-| A-2 秒起播/seek 秒响应 | P0 | M1 | 计划就绪 | probe 无降档、全链无指标打点 | [a02](a02-fast-start-seek.md) |
-| A-3 VP9/WEBM 硬解排查 | P0 | M1 | 需复现 | 三平台硬解注册表均无 VP9,全落软解;**W38 仓内零记录** | [a03](a03-vp9-webm.md) |
+| A-1 ASS/PGS 链收尾 | P0 | M1 | 施工中(T1 绿, 编码自愈已接线) | G 组 9/9 绿、编码自愈已接线;剩信号暴露(待拍板)/样式延迟接口/PGS e2e(缺样片) | [a01](a01-ass-pgs.md) |
+| A-2 秒起播/seek 秒响应 | P0 | M1 | 施工中(T1 埋点已落地 09-18) | 指标埋点完成(open→首帧 189ms/seek→首帧 13ms);剩 probe 降档(留保底字段)+seek 精确化 | [a02](a02-fast-start-seek.md) |
+| A-3 VP9/WEBM 硬解排查 | P0 | M1 | 已复现, 路线待拍板 | 软解播放+seek 正常,**W38 未复现**;三平台硬解注册表均无 VP9,硬解 vs 固化软解待定 | [a03](a03-vp9-webm.md) |
 | A-4 GPU 直通三平台 | P0 | M4 | 计划就绪(**Windows 分辨率变化已修, 待实测验证, 见 T5**) | Windows 全链通;分辨率变化不跟随已修(换片后旧画布 1:1 落新纹理左上角问题消除);Android AHB 基建在但解码不直出;Apple 缺 Metal 导出 | [a04](a04-gpu-passthrough.md) |
 | A-5 可 seek 虚拟文件系统 | P0 | M2 | 计划就绪(建议提前) | 插件在但 DAV 无自有播放 IO 源、无重试/缓存/authExpired 无契约 | [a05](a05-remote-vfs.md) |
-| A-6 FFmpeg 9.0.1 换代 | P0 | 独立 | **适配已完成,待收口** | 五平台库均 9.0.1、源码已新 API,剩回归验证 | [a06](a06-ffmpeg9.md) |
+| A-6 FFmpeg 9.0.1 换代 | P0 | 独立 | **适配已完成,待收口(Windows 回归已过)** | 五平台库均 9.0.1、源码已新 API;Windows 离线回归 33/33(09-18),剩四平台回归+UE 链路(待 CI/真机) | [a06](a06-ffmpeg9.md) |
 | A-7 avox_subtitle CLI | P1 | M3 | 计划就绪 | sherpa/翻译/CLI 骨架在,批量管线与 SRT 写出为零 | [a07](a07-subtitle-cli.md) |
 | A-8 音频软解兜底 | P1 | M3 | **T1/T2 已落地(09-18 提前),待库重编+T3** | 枚举/映射/未知轨株连已修;truehd 待编译机重编部署库,下混(T3)为零 | [a08](a08-audio-fallback.md) |
 | A-9 HDR/DV | P1 | M4 | 计划就绪 | tone map 三车道已完成;直通待真机;DV/SDR→HDR 零 | [a09](a09-hdr-dv.md) |

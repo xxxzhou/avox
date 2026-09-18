@@ -1,10 +1,10 @@
 # A-3 VP9/WEBM 硬解兼容排查
 
-> 状态: 进行中 · 上次核对: 2026-09-16 · 权威源: -
+> 状态: 进行中 · 上次核对: 2026-09-18 · 权威源: -
 
 
-优先级 P0 · 里程碑 M1 · 计划状态:需复现(W38 仓内零记录) · 来源:backlog A-3
-W38 是 backlog 引用的「已知问题」编号,本仓 src/doc/tests 全部无记录,第一步必须复现定性。
+优先级 P0 · 里程碑 M1 · 计划状态:已复现(W38 未复现,软解正常;硬解 vs 固化软解待拍板) · 来源:backlog A-3
+W38 是 backlog 引用的「已知问题」编号,本仓 src/doc/tests 全部无记录;2026-09-18 标准源复现,现象未出现。
 
 ## 出口判据
 
@@ -28,6 +28,10 @@ W38 是 backlog 引用的「已知问题」编号,本仓 src/doc/tests 全部无
 
 - [ ] T1 复现定性:avox-test 标准源 + 真实 webm/VP9 样片(9/10bit、Profile 0/2),三平台跑
       playmatrix,记录现象与解码路径日志;向 backlog 维护者确认 W38 原始现象后归档到本仓 doc。
+      **进展(2026-09-18)**:`test_vp9_opus_640x360.webm` Windows 软解播放+seek 正常
+      (首帧 49ms/seek 13ms),W38「首 GOP 丢关键帧」未复现;三平台硬解注册表确无 VP9
+      (FFDx11Decoder 仅 h264/h265、AndVDecoder 仅 avc/hevc、Apple 侧无)。
+      剩:W38 原始样片(向提出方索要)再定性 + 硬解/固化软解路线拍板。
 - [ ] T2 Windows D3D11VA VP9:FFDx11Decoder 注册表加 VP9(profile 0;Intel 老核显覆盖面先查),
       get_format 诊断确认命中;不支持的卡自动落软解(依赖 a12 回退框架,先行可手动兜底)。
 - [ ] T3 Android MediaCodec VP9:mime `video/x-vnd.on2.vp9` 映射 + MediaCodecList 能力查询

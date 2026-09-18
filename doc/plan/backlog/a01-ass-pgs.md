@@ -1,9 +1,9 @@
 # A-1 ASS/PGS 链收尾
 
-> 状态: 进行中 · 上次核对: 2026-09-16 · 权威源: -
+> 状态: 进行中 · 上次核对: 2026-09-18 · 权威源: -
 
 
-优先级 P0 · 里程碑 M1 · 计划状态:就绪 · 来源:backlog A-1
+优先级 P0 · 里程碑 M1 · 计划状态:施工中(T1 完成, T2 接线已落、信号暴露未做) · 来源:backlog A-1
 内封 ASS 已像素级验收(2026-09-15),本计划覆盖剩余四件 + 乱码探测信号暴露。
 
 ## 出口判据
@@ -25,19 +25,21 @@
   (缺失时骨架降级不崩,`plugins/avox_ass/CMakeLists.txt:14-34`)。
 - **PGS 全链已通无 TODO**:`src/avox_ffmpeg/PgsDecoder.cpp`(pal8→RGBA :15)、
   IO 路由 `IOParseFF.cpp:126-140,256-271`、视图 `SubtitleView.cpp:376 setPgsCanvas`。
-- **编码自愈「工具在、链路断」**:`src/avox/module/Utf8.hpp:22-31`(isValidUtf8/patchInvalidUtf8/
-  ensureUtf8 GBK 兜底)只接了 avox_agent;字幕链 `SubtitleFile.cpp:12-40` 直接喂字节,
-  `SrtParser.cpp` 不剥 BOM(UTF-8 BOM 会使 isIndex 判 false 丢首条)、GBK 必乱码。
+- **编码自愈已接线(2026-09-18 复核)**:`SubtitleFile::loadFile` 已接 `normalizeSubtitleText`
+  (CharsetConvert, GBK→UTF-8 转换 + UTF-8 剥 BOM),G 组 bom/gbk 用例随此转绿;
+  剩探测**信号暴露**给产品(枚举/回调,见 T2,待拍板)。
 - **验证基建已在**:avox-test `l1_avox/playmatrix` G 组字幕矩阵(外挂 SRT 三编码/外挂 ASS/
   内嵌 SRT/ASS/mov_text,亮像素取证),素材生成 `avox-test/assets/gen/gen_subtitle.py`。
 
 ## 任务拆解
 
-- [ ] T1 外挂加载 e2e 跑绿:playmatrix G 组在 Windows 全绿(macplaytest 已支持外挂参数,
-      commit a0f93b6);修 SrtParser 剥 BOM;顺带验证「外挂 ASS」与「内封 ASS」渲染一致性。
-- [ ] T2 编码自愈接线 + 信号暴露:`SubtitleFile::loadFile` 接 `ensureUtf8`;探测结果做成
+- [x] T1 外挂加载 e2e 跑绿(2026-09-18):playmatrix G 组离线 9/9 绿(sub-ext-srt-utf8/bom/gbk/
+      rich/ass、sub-style-srt、sub-embed-srt/ass/movtext,亮像素取证);BOM 剥离收在
+      `SubtitleFile::loadFile` 的 `normalizeSubtitleText` 内完成。
+- [ ] T2 编码自愈接线 + 信号暴露:接线已落(见现状);剩探测结果做成
       枚举(utf8/gbk/transcoded)随加载结果返回;新回调或 desc 字段暴露给产品
-      (候选:`getSubtitleDesc` 扩字段,或 `ISubtitle` 加 onEncodingDetected——动 ABI 需同步 SWIG)。
+      (候选:方案 A `normalizeSubtitleText` 返枚举 + `SubtitleDesc` 扩字段[推荐],或方案 B
+      `ISubtitle` 加 onEncodingDetected 回调——动 ABI 需同步 SWIG 四语言,待晨会拍板)。
 - [ ] T3 样式参数补齐:延迟参数全链没有(grep 无 setDelay);ASS 轨缩放/字体覆盖接口。
       现有全局变换 scale/offset/opacity 三层通用(`SubtitleView.cpp:252`),
       叠加轨级覆盖;依据 `doc/plan/player/字幕样式设计.md`(v3 定稿)的生效矩阵。
