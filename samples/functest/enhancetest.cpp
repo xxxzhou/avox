@@ -13,6 +13,7 @@
 
 #include <windows.h>
 #include <dbghelp.h>
+#include <tlhelp32.h>
 
 #include "avox/AvoxLayer.h"
 #include "avox/AvoxMuxer.h"
@@ -108,6 +109,74 @@ int64_t nowMs() {
   return std::chrono::duration_cast<std::chrono::milliseconds>(
              std::chrono::steady_clock::now().time_since_epoch())
       .count();
+}
+
+// 全线程栈回溯: close 挂死时看门狗触发, 定位卡死现场(带符号)
+void dumpAllThreads() {
+  SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS | SYMOPT_LOAD_LINES);
+  SymInitialize(GetCurrentProcess(), nullptr, TRUE);
+  HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+  if (snap == INVALID_HANDLE_VALUE) {
+    return;
+  }
+  THREADENTRY32 te = {};
+  te.dwSize = sizeof(te);
+  const DWORD pid = GetCurrentProcessId();
+  const DWORD curTid = GetCurrentThreadId();
+  if (Thread32First(snap, &te)) {
+    do {
+      if (te.th32OwnerProcessID != pid || te.th32ThreadID == curTid) {
+        continue;
+      }
+      HANDLE t = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT |
+                                THREAD_QUERY_INFORMATION,
+                            FALSE, te.th32ThreadID);
+      if (!t) {
+        continue;
+      }
+      if (SuspendThread(t) != (DWORD)-1) {
+        CONTEXT ctx = {};
+        ctx.ContextFlags = CONTEXT_FULL;
+        if (GetThreadContext(t, &ctx)) {
+          fprintf(stderr, "\n--- tid=%lu ---\n", te.th32ThreadID);
+          STACKFRAME64 frame = {};
+          frame.AddrPC.Offset = ctx.Rip;
+          frame.AddrFrame.Offset = ctx.Rbp;
+          frame.AddrStack.Offset = ctx.Rsp;
+          frame.AddrPC.Mode = AddrModeFlat;
+          frame.AddrFrame.Mode = AddrModeFlat;
+          frame.AddrStack.Mode = AddrModeFlat;
+          CONTEXT wctx = ctx;
+          for (int i = 0; i < 24; ++i) {
+            if (!StackWalk64(IMAGE_FILE_MACHINE_AMD64, GetCurrentProcess(), t,
+                             &frame, &wctx, nullptr, SymFunctionTableAccess64,
+                             SymGetModuleBase64, nullptr)) {
+              break;
+            }
+            if (frame.AddrPC.Offset == 0) {
+              break;
+            }
+            char buf[512] = {};
+            SYMBOL_INFO* sym = (SYMBOL_INFO*)buf;
+            sym->SizeOfStruct = sizeof(SYMBOL_INFO);
+            sym->MaxNameLen = 400;
+            DWORD64 off = 0;
+            if (SymFromAddr(GetCurrentProcess(), frame.AddrPC.Offset, &off,
+                            sym)) {
+              fprintf(stderr, "  #%02d %s +0x%llX\n", i, sym->Name,
+                      (unsigned long long)off);
+            } else {
+              fprintf(stderr, "  #%02d %p\n", i, (void*)frame.AddrPC.Offset);
+            }
+          }
+        }
+        ResumeThread(t);
+      }
+      CloseHandle(t);
+    } while (Thread32Next(snap, &te));
+  }
+  CloseHandle(snap);
+  fflush(stderr);
 }
 
 // 档位 → 输出倍率(与 VkQEnhanceLayer::calcOutputSize 的 Auto 规则一致)
@@ -291,6 +360,17 @@ int main(int argc, char* argv[]) {
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
+  // 挂死看门狗: close 15s 未返回 → 全线程栈回溯, 再 60s 后强制退出(码 42)
+  std::thread watchdog([]() {
+    std::this_thread::sleep_for(std::chrono::seconds(15));
+    fprintf(stderr, "\n[watchdog] close() blocked 15s, dump thread stacks\n");
+    dumpAllThreads();
+    std::this_thread::sleep_for(std::chrono::seconds(60));
+    fprintf(stderr, "[watchdog] force exit(42)\n");
+    fflush(stderr);
+    _exit(42);
+  });
+  watchdog.detach();
   recorder->close();
   int64_t wallMs = nowMs() - wallStart;
   removeSurfaceRenderOb(render, &ob);

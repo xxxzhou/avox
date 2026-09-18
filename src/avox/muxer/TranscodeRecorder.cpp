@@ -143,6 +143,15 @@ void TranscodeRecorder::close() {
   if (state != RecorderState::failed) {
     setRecState(RecorderState::completed);
   }
+  // 先关队列再停编码线程: 生产者(IO线程)可能阻塞在 enqueueWait, 而编码线程
+  // 排空后 source->close() 会 join IO 线程 — 不关队列则 IO 卡死在满队列上,
+  // 构成 编码线程→IO线程→满队列 三方死锁, close 永不返回且产物不落盘 (G13)。
+  // setClose 后必须 clear: dequeue 因 bClose 恒 false, 残帧永远出不了队,
+  // 编码线程的 !empty 判断恒真会原地自旋
+  vFrameQueue.setClose(true);
+  aFrameQueue.setClose(true);
+  vFrameQueue.clear();
+  aFrameQueue.clear();
   if (audioRender) {
     // 空输出音频阻塞反压,closeTap 唤醒可能阻塞在 push 的解码线程
     if (bNoOutput) {
@@ -155,6 +164,10 @@ void TranscodeRecorder::close() {
   // 增强器/RGBA缓冲随open重建(下次open重新init)
   qenhancer.reset();
   rgbaBuffer.reset();
+  // join 后所有队列用户(IO/编码线程)已退出, 就地恢复开关, close 自含不对
+  // 下次 open 提出复位要求
+  vFrameQueue.setClose(false);
+  aFrameQueue.setClose(false);
   LOGFLF(LogLevel::info, "encode thread stopped, recorder close done");
 }
 
