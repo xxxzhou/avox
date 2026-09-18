@@ -1,3 +1,6 @@
+#include <atomic>
+#include <cstdio>
+#include <cstdlib>
 #include "VideoStream.hpp"
 
 #include "../module/AvoxManager.hpp"
@@ -78,6 +81,15 @@ void VideoStream::encoderFrame(const GpuFrame& frame) {
 }
 
 void VideoStream::onPacket(AvoxPacket& packet) {
+  // [dbg] ENH_VKDBG=1: 编码器包回调
+  {
+    static const bool dbg = std::getenv("ENH_VKDBG") != nullptr;
+    static std::atomic<int32_t> cnt{0};
+    if (dbg && cnt.fetch_add(1) < 5) {
+      fprintf(stderr, "[dbg] VideoStream onPacket, size=%u muxer=%p\n",
+              (unsigned)packet.data.size, (void*)muxer);
+    }
+  }
   if (!muxer) {
     LOGFLF(LogLevel::warn, "muxer is null");
     return;

@@ -1,3 +1,6 @@
+#include <atomic>
+#include <cstdio>
+#include <cstdlib>
 #include "MediaMuxer.hpp"
 
 #include "../module/AvoxManager.hpp"
@@ -106,6 +109,22 @@ void MediaMuxer::pushPacket(const AvoxPacket& packet) {
     return;
   }
   PackType type = (PackType)packet.packtype;
+  // [dbg] ENH_VKDBG=1: pushPacket 包类型计数
+  {
+    static const bool dbg = std::getenv("ENH_VKDBG") != nullptr;
+    static std::atomic<int32_t> vCnt{0};
+    static std::atomic<int32_t> aCnt{0};
+    if (dbg) {
+      if (type == PackType::video && vCnt.fetch_add(1) < 3) {
+        fprintf(stderr, "[dbg] MediaMuxer pushPacket video size=%u\n",
+                (unsigned)packet.data.size);
+      } else if ((type == PackType::audio || type == PackType::aconfig) &&
+                 aCnt.fetch_add(1) < 3) {
+        fprintf(stderr, "[dbg] MediaMuxer pushPacket audio type=%d size=%u\n",
+                (int)type, (unsigned)packet.data.size);
+      }
+    }
+  }
   bool bAudio = (type == PackType::audio || type == PackType::aconfig);
   bool bVideo = (type == PackType::video || type == PackType::vconfig);
   // 关闭音频
@@ -177,6 +196,18 @@ void MediaMuxer::singleVideo(AvoxPacket& packet) {
   uint8_t nalu = getNalUnit(vcodecId, packet);
   bool bConfig = naluConfigFrame(vcodecId, nalu);
   bool bKey = naluKeyFrame(vcodecId, nalu);
+  // [dbg] ENH_VKDBG=1: 前8个视频包的NAL判定(定位流初始化断点)
+  {
+    static const bool dbg = std::getenv("ENH_VKDBG") != nullptr;
+    static std::atomic<int32_t> cnt{0};
+    if (dbg && cnt.fetch_add(1) < 8) {
+      fprintf(stderr, "[dbg] singleVideo nalu=%u cfg=%d key=%d start=%d "
+                      "firstKey=%d size=%u\n",
+              (unsigned)nalu, bConfig ? 1 : 0, bKey ? 1 : 0,
+              bStartPacket ? 1 : 0, bFirstKey ? 1 : 0,
+              (unsigned)packet.data.size);
+    }
+  }
   if (bConfig && !bStartPacket) {
     bStartPacket = true;
   }

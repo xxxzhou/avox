@@ -1,3 +1,6 @@
+#include <atomic>
+#include <cstdio>
+#include <cstdlib>
 #include "IOMuxer.hpp"
 
 #include "../codec/H26XHelper.hpp"
@@ -152,6 +155,15 @@ void IOMuxer::onRunTask() {
       if (bHaveVideo) {
         if (bIFrmae && packtype == PackType::video) {
           if (!bInitStreams) {
+            // [dbg] ENH_VKDBG=1: onInit 触发点与配置帧数量
+            {
+              static const bool dbg = std::getenv("ENH_VKDBG") != nullptr;
+              static std::atomic<int32_t> cnt{0};
+              if (dbg && cnt.fetch_add(1) < 5) {
+                fprintf(stderr, "[dbg] IOMuxer onInit attempt, configs=%u\n",
+                        (unsigned)videoConfigs.size());
+              }
+            }
             bInitStreams = onInit();
           }
         }

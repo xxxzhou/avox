@@ -1,3 +1,6 @@
+#include <atomic>
+#include <cstdio>
+#include <cstdlib>
 #include "RawMuxer.hpp"
 
 #include "../module/AvoxManager.hpp"
@@ -98,6 +101,16 @@ void RawMuxer::onOpen() {}
 void RawMuxer::onClose() { bReAudio = false; }
 
 void RawMuxer::pushFrame(const YUVFrame& frame) {
+  // [dbg] ENH_VKDBG=1: 前几个视频帧进入编码链路
+  {
+    static const bool dbg = std::getenv("ENH_VKDBG") != nullptr;
+    static std::atomic<int32_t> cnt{0};
+    if (dbg && cnt.fetch_add(1) < 3) {
+      fprintf(stderr, "[dbg] RawMuxer pushFrame video, state=%d %ux%u\n",
+              (int)state, (unsigned)frame.format.width,
+              (unsigned)frame.format.height);
+    }
+  }
   if (bDisableVideo) {
     return;
   }
