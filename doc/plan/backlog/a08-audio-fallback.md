@@ -3,7 +3,7 @@
 > 状态: 进行中 · 上次核对: 2026-09-18 · 权威源: -
 
 
-优先级 P1 · 里程碑 M3 · 计划状态:T1/T2 已落地, T3 走查定案(已有实现零新增), 余 T4/T5(库重编+用例)
+优先级 P1 · 里程碑 M3 · 计划状态:T1/T2/T3 完成, Windows 库已重编实测过(truehd/dts 出声), 余 T5 用例+其他平台重编
 海外「永不转码直连」卖点的引擎侧一半(另一半是直连推流能力,产品口径)。
 
 ## 出口判据
@@ -30,8 +30,38 @@
 - [x] T1 枚举与映射补齐(2026-09-18):ACodecId 加 dts=17/eac3=18/truehd=19(只增不改);
       ffACodec/getFFCodecId 双向映射补齐,MLP→truehd 枚举合一;四平台构建脚本
       (py+android/apple/linux sh)白名单补 `mlp,truehd`;csharp 绑定 ACodecId.cs 已同步。
-      **交接:本机无 MSYS2 且 FFmpeg 源码树在 n7.0.3(部署库是 9.0.1),truehd 的库重编
-      需在编译机按各平台脚本重跑 minsize 并 --deploy;dca/eac3 已在部署库内,无需重编。**
+      **Windows 库重编+部署已完成(2026-09-18, 见下);其余平台待重编(命令见末节)。**
+
+## Windows 重编实录(2026-09-18, 本机)
+
+- 环境: MSYS2 在 `D:\tools\msys64`(mingw64 gcc 16.2.0);FFmpeg 源码树
+  `Q:\Work\github\FFmpeg` checkout `origin/release/9.0`(16e59dfabf, avcodec major 63
+  与部署库同主版本, dll 直接可换)。
+- 命令: 在源码树里 `MSYS2_INSTALL_DIR=D:\tools\msys64 python
+  <avox>/script/ffmpeg/build_ffmpeg.py --flavor minsize --deploy`
+  (deploy 自动整目录备份旧库到 `3rdparty/library/windows/ffmpeg-bak`)。
+- 产物核验: 新 avcodec-63.dll configure 串含 mlp/truehd/dca/eac3, 无 GPL 标记
+  (`--verify` 口径);install 目录运行时 dll 手工同步一份(下次 cmake 构建会自动覆盖,
+  无需再手工)。
+- 链路实测(临时探针, 即用即弃): TrueHD 样片 `test_h264_truehd_640x360.mkv` →
+  `codecId truehd select ffmpeg_mlp init` 解码成功, WASAPI
+  `desc s32-48000-1 → renderDesc flt-48000-2`(设备 mix format 协商+转换正常);
+  DTS 样片回归同过(`select ffmpeg_dca`);ctest 2/2 全绿。
+
+## 其余平台重编交接(白名单已同步, 库未重编前 truehd 在该平台不可解)
+
+四平台脚本(py/android/apple/linux sh)已同源补 `mlp,truehd`, 各平台在各自构建环境
+按既有流程重编并替换 3rdparty 部署库(dca/eac3 旧库已含, 只缺 mlp/truehd):
+
+| 平台 | 命令(在 FFmpeg 9.0.1 源码树里) | 说明 |
+|---|---|---|
+| Windows | `python script/ffmpeg/build_ffmpeg.py --flavor minsize --deploy` | **已完成** |
+| Android | `./script/ffmpeg/build_ffmpeg_android.sh <NDK路径-msys风格>` | NDK 26.1.10909125; arm64-v8a 先行, 产物换进 3rdparty/library/android |
+| iOS/macOS | `./script/ffmpeg/build_ffmpeg_apple.sh ios` / `... macos` | 需 macOS+Xcode; 静态库, 换 3rdparty/library/ios|darwin |
+| Linux | `./script/ffmpeg/build_ffmpeg_linux.sh` | 同源白名单 |
+
+- 排期建议: Android 在 M1 末/M2(真机回归前), Apple 在 M4 五端铺开前, Linux 随
+  VAAPI(A-15)一并; 重编后各平台跑 avox-test 对应离线子集即可收口。
 - [x] T2 未知音频不再株连(2026-09-18):`IOParseFF` 未知编码从 `bDisableAudio=true`
       (一条未知轨关掉全部音频)改为**单流跳过**——`skipAudioStreams` 记流号 +
       `AVDISCARD_ALL` 省字节,包循环与 extradata 路径按流号守卫(aIndexMaps 无映射会
