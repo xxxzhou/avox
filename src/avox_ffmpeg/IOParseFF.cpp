@@ -336,11 +336,57 @@ void IOParseFF::onRunTask() {
   // 检查是否有全局头,相应的SPS/VPS/ATDS保存在extradata里
   if (fmtCtx->iformat->flags & AVFMT_GLOBALHEADER) {
   }
+  // probe 降档分档 (a02-T2): 本地索引容器(mp4/mov/mkv/webm/avi/flv)头里就带
+  // 编码参数, 缩减探测参数省起播耗时; 网络流/ts/HLS(无索引)保持默认。
+  // 保底硬要求(A-12 10bit 预判/A-3 解码选型依赖 codecpar): 降档后宽高/像素
+  // 格式/fps/采样率任一缺失, 恢复默认参数补查一次, 不让快路径掏空字段
+  const bool bLocalUrl =
+      url.find("://") == std::string::npos || url.rfind("file:", 0) == 0;
+  const char* fmtName = fmtCtx->iformat ? fmtCtx->iformat->name : "";
+  const bool bIndexedContainer =
+      strstr(fmtName, "mp4") || strstr(fmtName, "mov,") ||
+      strstr(fmtName, "matroska") || strstr(fmtName, "avi") ||
+      strstr(fmtName, "flv");
+  const bool bFastProbe = bLocalUrl && bIndexedContainer;
+  const int64_t kDefaultProbeSize = 5000000;  // AVOption 默认 5MB
+  if (bFastProbe) {
+    fmtCtx->probesize = 1024 * 1024;          // 1MB
+    fmtCtx->max_analyze_duration = 1000000;   // 1s(微秒)
+  }
   const auto findInfoStart = std::chrono::steady_clock::now();
   if ((ret = avformat_find_stream_info(fmtCtx.get(), nullptr)) < 0) {
     AVOX_FFMEPG_LOG(ret, "avformat_find_stream_info failed");
     dispatch(&IAVSourceOb::onError, ffIoError(ret), "open stream failed");
     return;
+  }
+  // 保底字段回退补查: 任一流关键选型字段缺失则按默认参数再探一次
+  if (bFastProbe) {
+    bool bNeedFullProbe = false;
+    for (int32_t i = 0; i < fmtCtx->nb_streams && !bNeedFullProbe; i++) {
+      const auto* st = fmtCtx->streams[i];
+      if (st->disposition & AV_DISPOSITION_ATTACHED_PIC) {
+        continue;
+      }
+      if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+        bNeedFullProbe = st->codecpar->width <= 0 || st->codecpar->height <= 0 ||
+                         st->codecpar->format == AV_PIX_FMT_NONE ||
+                         ffFps(st) <= 0;
+      } else if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+        bNeedFullProbe = st->codecpar->sample_rate <= 0 ||
+                         st->codecpar->ch_layout.nb_channels <= 0;
+      }
+    }
+    if (bNeedFullProbe) {
+      LOGFLF(LogLevel::info,
+             "[metrics] fast probe insufficient, fallback full probe");
+      fmtCtx->probesize = kDefaultProbeSize;
+      fmtCtx->max_analyze_duration = 0;  // 0=默认自动
+      if ((ret = avformat_find_stream_info(fmtCtx.get(), nullptr)) < 0) {
+        AVOX_FFMEPG_LOG(ret, "avformat_find_stream_info fallback failed");
+        dispatch(&IAVSourceOb::onError, ffIoError(ret), "open stream failed");
+        return;
+      }
+    }
   }
   LOGFLF(LogLevel::info, "[metrics] io open_input_ms:", openInputMs,
          " find_stream_info_ms:",
