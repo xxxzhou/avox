@@ -129,15 +129,6 @@ void AudioRender::render(const AvoxData& frame, int64_t pts) {
   }
 }
 
-void setAudioRenderTapBlock(IAudioRender* r, bool b) {
-  // 与 addAudioTapOb 同样式(引擎内 IAudioRender 唯一实现是 AudioRender)
-  AudioRender* render = static_cast<AudioRender*>(r);
-  if (!render) {
-    return;
-  }
-  render->setTapBlock(b);
-}
-
 ARenderType getDefaultAudioType() {
 #ifdef _WIN32
   return ARenderType::wasapi;

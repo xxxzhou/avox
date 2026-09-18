@@ -37,17 +37,6 @@ void removeAudioSttOb(IAudioStt* stt, IAudioSttOb* ob) {
   }
 }
 
-// 实例实现 IAudioSttFeedControl 时才生效; 未实现的后端 dynamic_cast 落空,
-// 保持丢最旧旧行为(接口可选能力,不改 IAudioStt 的 vtable)
-void setAudioSttFeedBlocking(IAudioStt* stt, bool b) {
-  if (stt) {
-    auto* ctrl = dynamic_cast<IAudioSttFeedControl*>(stt);
-    if (ctrl) {
-      ctrl->setFeedBlocking(b);
-    }
-  }
-}
-
 // 通过 AvoxManager 工厂表创建语音识别器(组件 loadModule 时注册),
 // none 或组件未注册返回 nullptr
 IAudioStt* createAudioStt(AudioSttType type) {

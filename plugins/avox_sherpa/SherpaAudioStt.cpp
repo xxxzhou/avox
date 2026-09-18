@@ -42,8 +42,6 @@ void SherpaAudioStt::setAudioDesc(AudioDesc desc) {
   }
 }
 
-void SherpaAudioStt::setFeedBlocking(bool b) { feedBlocking.store(b); }
-
 void SherpaAudioStt::start() {
   // 幂等: 已在跑则不重启 (voice 每轮开始调 start, 首轮启动时已 start 加载过模型)
   if (!running()) {
@@ -75,7 +73,7 @@ void SherpaAudioStt::recognize(const AvoxData& adata, int64_t pts) {
 void SherpaAudioStt::stop() {
   // 阻塞喂料: 先关队列, 释放可能堵在 enqueueWait 的 recognize 生产者
   // (tap/解码线程), 再停任务; 非阻塞模式不动 bClose, 收尾 2s 等待窗不变。
-  if (feedBlocking.load()) {
+  if (bBlockingFeed()) {
     frameQueue.setClose(true);
   }
   stopTask();
@@ -120,7 +118,7 @@ void SherpaAudioStt::onRunTask() {
   // 不 releaseEngine — 模型对象级常驻, 下次 start 复用 (避免每轮重载秒级模型)
   // 此时 AudioTap 已被 closeTap join, recognize/process 不会再并发动 curFrame/swr, flush 安全。
   flush();
-  if (feedBlocking.load()) {
+  if (bBlockingFeed()) {
     // 阻塞喂料: 生产者已被 stop() 的 setClose 释放, drain(忽略 bClose) 一次
     // 排干全部在队帧 — 零丢尾帧; 上游 closeTap 先行排干过, 无需 2s 等待窗。
     frameQueue.drain(feedItem);
@@ -145,10 +143,11 @@ void SherpaAudioStt::onRunTask() {
   // 计量收口: 实收样本数 vs 丢弃数(非阻塞过载观测), 供 aisub 批量链路对账
   // 「STT 实收样本 vs 抽出音频时长」; 须在下方 reset 清零前打。
   const int64_t dropped = droppedFrames.exchange(0);
+  const int64_t recalibrated = recalibrations.exchange(0);
   LOGFLF(LogLevel::info, "[stt-metrics] received=", totalStreamSamples,
          " samples (~", totalStreamSamples / 16000, "s)",
          " dropped_frames=", dropped, " (~", dropped / 10, "s)",
-         " recalibrations=", recalibrations.load());
+         " recalibrations=", recalibrated);
   // 清队列 + reset stream 状态 (下次 start 复用干净)
   frameQueue.clear();
   std::lock_guard<std::mutex> lock(mutex);
@@ -289,7 +288,7 @@ void SherpaAudioStt::onProcess() {
   SherpaFrameItem item = {};
   item.data.assign(data, data + size);
   item.pts = curFrame.getPts();
-  if (feedBlocking.load()) {
+  if (bBlockingFeed()) {
     // 满则阻塞: 逐级反压到 tap/解码线程, 批量转写零丢帧
     // (enqueueWait 在 stop 的 setClose 时苏醒且不入队)
     frameQueue.enqueueWait(item);

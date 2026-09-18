@@ -29,6 +29,8 @@ class AVOX_EXPORT AudioStt : public IAudioStt, public Observer<IAudioSttOb> {
 
  protected:
   RecognizerType currentType = RecognizerType::offline;
+  // offline 自带反压: 内部队列满则阻塞喂料方(批量转写零丢帧), streaming 丢最旧不阻塞解码
+  bool bBlockingFeed() const { return currentType == RecognizerType::offline; }
 };
 
 }

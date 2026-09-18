@@ -27,8 +27,7 @@ class SherpaSenseVoice;
 class SherpaAudioStt : public AudioStt,
                        public AudioReshaper,
                        public RunTask,
-                       public ISherpaRecognizerOb,
-                       public IAudioSttFeedControl {
+                       public ISherpaRecognizerOb {
  private:
   // 识别引擎（按需创建）
   std::unique_ptr<SherpaRecognizer> streamingEngine;
@@ -36,10 +35,6 @@ class SherpaAudioStt : public AudioStt,
 
   // 音频队列（统一由 SherpaAudioStt 管理）
   RingBuffer<SherpaFrameItem> frameQueue;
-  // 喂料策略: false(默认)满则丢最旧(实时口播,不可阻塞解码);
-  // true 满则阻塞 recognize 调用方(批量离线转写零丢帧, 由
-  // setAudioSttFeedBlocking 打开, 需配合 AudioRender tap 的 setTapBlock)
-  std::atomic<bool> feedBlocking{false};
   // 丢帧/重校准计量(丢最旧模式的过载观测; 收尾时统一打 [stt-metrics] 日志)
   std::atomic<int64_t> droppedFrames{0};
   std::atomic<int64_t> recalibrations{0};
@@ -83,8 +78,6 @@ class SherpaAudioStt : public AudioStt,
   void setEndpoint(int trailingSilenceMs, int utteranceLengthMs);
   void flush();
   void reset();
-  // IAudioSttFeedControl: 批量转写反压开关(默认 false 丢最旧)
-  void setFeedBlocking(bool b) override;
 
   // ========== ISherpaRecognizerOb 接口实现 ==========
   // 接收识别引擎的回调结果
