@@ -22,11 +22,20 @@ void regIOSVDecoder() {
                        codecDesc.name = AVOX_IOS_H265_DECODER;
                        codecDesc.bHardware = true;
                        codecDesc.vcodecId = VCodecId::h265;
-                       AvoxManager::Get().vDecoders.regInitFunc(
-                           VCodecId::h265, codecDesc, []() -> VideoDecoder * {
-                             return new IOSVDecoder();
-                           });
-                     }};
+        AvoxManager::Get().vDecoders.regInitFunc(
+            VCodecId::h265, codecDesc, []() -> VideoDecoder * {
+              return new IOSVDecoder();
+            });
+        // VP9(webm): onVaild 探测系统版本与 VT 硬解支持, 不支持回退软解
+        codecDesc = {};
+        codecDesc.name = AVOX_IOS_VP9_DECODER;
+        codecDesc.bHardware = true;
+        codecDesc.vcodecId = VCodecId::vp9;
+        AvoxManager::Get().vDecoders.regInitFunc(
+            VCodecId::vp9, codecDesc, []() -> VideoDecoder * {
+              return new IOSVDecoder();
+            });
+      }};
   AvoxManager::Get().initFuncs.push_back(regFunc);
 }
 
@@ -62,6 +71,24 @@ bool IOSVDecoder::onVaild() {
     LOGFLF(LogLevel::warn, "ios version :", version,
            " not support h265 decoder");
     return false;
+  }
+  if (codecDesc.vcodecId == VCodecId::vp9) {
+    // VP9: iOS 14+ / macOS 11+, 且需运行期确认硬解能力; 不满足回退软解
+    bMustVcc = false;  // 无 avcc/hvcc 语义, annexb 重排会破坏 in-band 帧
+#if TARGET_OS_OSX
+    const float kVp9MinVersion = 11.0;
+#else
+    const float kVp9MinVersion = 14.0;
+#endif
+    if (version < kVp9MinVersion) {
+      LOGFLF(LogLevel::warn, "ios version :", version,
+             " not support vp9 decoder");
+      return false;
+    }
+    if (!VTIsHardwareDecodeSupported(kCMVideoCodecType_VP9)) {
+      LOGFLF(LogLevel::warn, "vp9 hardware decode not supported on this device");
+      return false;
+    }
   }
   return true;
 }
@@ -150,13 +177,25 @@ DecodeResult IOSVDecoder::onPreDecoder() {
     status = CMVideoFormatDescriptionCreateFromHEVCParameterSets(
         kCFAllocatorDefault, 3, parameterSetPointers, parameterSetSizes, 4,
         nullptr, &videoFormatDescription);
+  } else if (codecDesc.vcodecId == VCodecId::vp9) {
+    // VP9: 无带外参数集(in-band), 直接建无 extensions 的格式描述;
+    // 宽高采信容器侧 srcDesc(经 parseConfigs 填充)
+    if (packets.empty()) {
+      return DecodeResult::noConfig;
+    }
+    if (!parseConfigs() || params.width <= 0 || params.height <= 0) {
+      LOGFLF(LogLevel::warn, "vp9 missing valid dimensions in container");
+      return DecodeResult::noConfig;
+    }
+    status = CMVideoFormatDescriptionCreate(
+        kCFAllocatorDefault, kCMVideoCodecType_VP9, params.width, params.height,
+        nullptr, &videoFormatDescription);
   }
   if (status != errSecSuccess || !videoFormatDescription) {
     LOGFLF(LogLevel::warn,
            "open ios hard decoder open videoformatdescription failed");
     return DecodeResult::openFailed;
   }
-  //  bool bParse = parseConfigs();
   //  if (!bParse) {
   //    LOGFLF(LogLevel::warn,"parse configs failed");
   //  }

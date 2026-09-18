@@ -296,10 +296,18 @@ const char* getDefaultDecoderName(VCodecId codecId, bool bHard) {
     return bHard ? AVOX_FFDX11_H265_DECODER : AVOX_FF_H265_DECODER;
 #endif
   } else if (codecId == VCodecId::vp9) {
-#ifdef _WIN32
+#if defined(_WIN32)
     // webm/VP9: Windows 走 D3D11VA(FFDx11Decoder::onVaild 探测 GPU 解码 profile,
-    // 不支持时由 VDecoderTask 选型回退软解); 其余平台暂无 VP9 硬解注册走软解
+    // 不支持时由 VDecoderTask 选型回退软解)
     return bHard ? AVOX_FFDX11_VP9_DECODER : AVOX_FF_VP9_DECODER;
+#elif defined(__ANDROID__)
+    // Android 走 MediaCodec(AndVDecoder::onVaild 按解码器名排除平台软实现,
+    // 命中软实现时由 VDecoderTask 选型回退软解)
+    return bHard ? AVOX_ANDROID_VP9_DECODER : AVOX_FF_VP9_DECODER;
+#elif __APPLE__
+    // Apple 走 VideoToolbox(IOSVDecoder::onVaild 探测 VTIsHardwareDecodeSupported,
+    // 不支持时由 VDecoderTask 选型回退软解)
+    return bHard ? AVOX_IOS_VP9_DECODER : AVOX_FF_VP9_DECODER;
 #else
     // 注册名来自 regFFCodec 的 codec->name
     return AVOX_FF_VP9_DECODER;

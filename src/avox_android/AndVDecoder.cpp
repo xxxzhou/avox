@@ -1,5 +1,8 @@
 #include "AndVDecoder.hpp"
 
+#include <dlfcn.h>
+#include <strings.h>
+
 #include "avox/codec/H26XHelper.hpp"
 #include "avox/module/AvoxManager.hpp"
 #include "avox/player/MediaPlayer.hpp"
@@ -8,6 +11,19 @@
 namespace avox {
 
 #if __ANDROID_API__ >= 21
+
+namespace {
+// 平台软实现命名(c2.android.vp9.decoder / OMX.google.*): 命中不算硬解命中,
+// 由选型层回退 ffmpeg 软解; 厂商硬实现是 c2.qti.* / OMX.qcom.* 等
+bool isMediaCodecSwName(const char* name) {
+  if (!name) {
+    return false;
+  }
+  return strncmp(name, "c2.android.", 11) == 0 ||
+         strncasecmp(name, "omx.google.", 11) == 0 ||
+         strstr(name, ".google.") != nullptr;
+}
+}  // namespace
 
 void regVDecoderReg() {
   RegFunc andVDecoderReg = {
@@ -28,6 +44,15 @@ void regVDecoderReg() {
         codecDesc.vcodecId = VCodecId::h265;
         AvoxManager::Get().vDecoders.regInitFunc(
             VCodecId::h265, codecDesc,
+            []() -> VideoDecoder* { return new AndVDecoder(); });
+
+        // VP9(webm): onVaild 按解码器名排除软实现, 无硬解的设备回退软解
+        codecDesc = {};
+        codecDesc.name = AVOX_ANDROID_VP9_DECODER;
+        codecDesc.bHardware = true;
+        codecDesc.vcodecId = VCodecId::vp9;
+        AvoxManager::Get().vDecoders.regInitFunc(
+            VCodecId::vp9, codecDesc,
             []() -> VideoDecoder* { return new AndVDecoder(); });
       }};
   AvoxManager::Get().initFuncs.push_back(andVDecoderReg);
@@ -51,6 +76,9 @@ bool AndVDecoder::onVaild() {
     case VCodecId::h265:
       mime = "video/hevc";  // H265 MIME类型
       break;
+    case VCodecId::vp9:
+      mime = "video/x-vnd.on2.vp9";  // VP9 MIME类型
+      break;
     default:
       LOGFLF(LogLevel::warn, "unsupported codec");
       return false;
@@ -58,6 +86,33 @@ bool AndVDecoder::onVaild() {
   // 先关闭可能存在的mediaCodec/format
   onClose();
   mediaCodec = AMediaCodec_createDecoderByType(mime);
+  if (!mediaCodec) {
+    return false;
+  }
+  // VP9: createDecoderByType 在无硬解设备上会落平台软实现(c2.android.vp9
+  // .decoder), 按名字排除并回退软解。AMediaCodec_getName API 28+ 才有, 编译
+  // 目标 26, 运行期 dlsym 探测; 拿不到名字(老设备)保留原样, 不误杀
+  if (codecId == VCodecId::vp9) {
+    using GetNameFn = media_status_t (*)(AMediaCodec*, const char**);
+    using FreeNameFn = void (*)(const char*);
+    static GetNameFn getName =
+        reinterpret_cast<GetNameFn>(dlsym(RTLD_DEFAULT, "AMediaCodec_getName"));
+    static FreeNameFn freeName = reinterpret_cast<FreeNameFn>(
+        dlsym(RTLD_DEFAULT, "AMediaCodec_freeName"));
+    const char* mcName = nullptr;
+    if (getName && getName(mediaCodec, &mcName) == AMEDIA_OK && mcName) {
+      const bool bSw = isMediaCodecSwName(mcName);
+      LOGFLF(LogLevel::info, "vp9 mediaCodec:", mcName,
+             " hardware:", !bSw);
+      if (freeName) {
+        freeName(mcName);
+      }
+      if (bSw) {
+        onClose();
+        return false;
+      }
+    }
+  }
   format = AMediaFormat_new();
   return true;
 }
@@ -71,7 +126,13 @@ DecodeResult AndVDecoder::onPreDecoder() {
     view.data = {packet.buff.data(), packet.size, true};
     avcc2AnnexbPacket(view);
   }
-  if (codecDesc.vcodecId == VCodecId::h264) {
+  if (codecDesc.vcodecId == VCodecId::vp9) {
+    // VP9: 无带外参数集(webm in-band), 不需要 csd; 无 csd 依赖的解析分支
+    if (packets.empty()) {
+      return DecodeResult::noConfig;
+    }
+    AMediaFormat_setString(format, "mime", "video/x-vnd.on2.vp9");
+  } else if (codecDesc.vcodecId == VCodecId::h264) {
     if (packets.size() < 2) {
       return DecodeResult::noConfig;
     }
