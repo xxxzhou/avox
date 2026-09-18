@@ -1,4 +1,5 @@
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include "IOMuxer.hpp"
@@ -7,6 +8,53 @@
 #include "MediaMuxer.hpp"
 
 namespace avox {
+
+namespace {
+// G14: 纯非VCL访问单元判定。产物开头出现过 28B/8B 的纯 SEI 访问单元(无任何
+// VCL NAL), 写进 MP4 是无用 sample 且部分播放器起播异常; SEI+slice 混合包
+// (HDR 带内元数据随帧)不命中, 不会误杀。首 NAL 是 SEI 才整包扫描, 常规包零开销
+bool bSeiNal(VCodecId vcodecId, uint8_t nal) {
+  if (vcodecId == VCodecId::h264) {
+    return static_cast<H264NAL>(nal) == H264NAL::NAL_SEI;
+  }
+  if (vcodecId == VCodecId::h265) {
+    return static_cast<H265NAL>(nal) == H265NAL::NAL_SEI_PREFIX ||
+           static_cast<H265NAL>(nal) == H265NAL::NAL_SEI_SUFFIX;
+  }
+  return false;
+}
+
+bool bVclNal(VCodecId vcodecId, uint8_t nal) {
+  if (vcodecId == VCodecId::h264) {
+    return naluDataFrame(static_cast<H264NAL>(nal));
+  }
+  if (vcodecId == VCodecId::h265) {
+    return naluDataFrame(static_cast<H265NAL>(nal));
+  }
+  return false;
+}
+
+bool pureNonVclAu(VCodecId vcodecId, const AvoxPacket& data) {
+  if (!bSeiNal(vcodecId, getNalUnit(vcodecId, data))) {
+    return false;
+  }
+  // 整包扫 NAL: annexb(00 00 01 起始)与 avcc(长度前缀)两种布局都认
+  std::vector<AvoxPacket> nalus;
+  const int32_t annexb =
+      checkAnnexbHeader(data.data.data, data.data.size);
+  if (annexb > 0) {
+    splitAnnexbNalu(data, nalus);
+  } else {
+    splitAvccNalu(data, nalus);
+  }
+  for (const auto& nalu : nalus) {
+    if (bVclNal(vcodecId, getNalUnit(vcodecId, nalu))) {
+      return false;  // 含 VCL: 正常访问单元
+    }
+  }
+  return true;
+}
+}  // namespace
 
 IOMuxer::IOMuxer() {}
 
@@ -69,6 +117,11 @@ void IOMuxer::pushPacket(PacketBufPtr packet) {
     if (naluDropAble(vcodecId, nalu)) {
       return;
     }
+    // G14: 无任何 VCL 的纯 SEI 访问单元直接丢, 不落成开头孤立 sample
+    if (pureNonVclAu(vcodecId, videoData)) {
+      LOGFLF(LogLevel::info, "drop pure sei access unit, dts:", packet->dts);
+      return;
+    }
     // config包(vconfig): 不参与合并, 直通
     if (packType == PackType::vconfig) {
       onPushPacket(videoData);
@@ -124,7 +177,25 @@ void IOMuxer::onRunTask() {
   PacketBufPtr tempPtr = std::make_shared<PacketBuf>(tdata);
   bool bIFrmae = false;
   bool bConfigChange = false;
+  // G13 兜底: 停止后的排空阶段有界(10s), 防 close 的 join 被滞留的写线程
+  // 永久挂住(根因未定的偶发卡死)。超时弃排直出, onClose 仍写 trailer 保
+  // moov, 产物可播; 运行期(running=true)不受影响
+  bool bStopSeen = false;
+  std::chrono::steady_clock::time_point stopAt;
+  const auto kDrainTimeout = std::chrono::seconds(10);
   while (running() || !packetQueue.empty()) {
+    if (!running()) {
+      const auto now = std::chrono::steady_clock::now();
+      if (!bStopSeen) {
+        bStopSeen = true;
+        stopAt = now;
+      } else if (now - stopAt > kDrainTimeout) {
+        LOGFLF(LogLevel::warn,
+               "muxer drain timeout on close, abandon rest, trailer still "
+               "written");
+        break;
+      }
+    }
     PackType packtype = PackType::other;
     bool bGet = packetQueue.dequeueAction([&](const PacketBufPtr& packetPtr) {
       packtype = (PackType)(packetPtr->packtype);

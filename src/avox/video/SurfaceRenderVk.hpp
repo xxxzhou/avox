@@ -40,6 +40,10 @@ class AVOX_EXPORT SurfaceRenderVk : public ISurfaceRender,
 #endif
   // 上次派发事件的输出图世代(rebuilt 置位依据)
   uint64_t lastEventGeneration = 0;
+  // 当前输出YUV帧编码所用色彩空间(setColorSpace 存档, getOutColorSpace 供快照消费端)
+  ColorSpaceDesc outColorSpace = {};
+  // enableImage 的用户直投缓冲(onRenderOut image 分支补派发 onFrame 用)
+  IImageBuffer* imageOutUser = nullptr;
 
  public:
   // setVulkan: 固定 Vulkan，不支持切换
@@ -85,6 +89,8 @@ class AVOX_EXPORT SurfaceRenderVk : public ISurfaceRender,
   virtual void setVrStereoStrength(float strengthDeg) override;
   // 颜色空间(矩阵), 转发 VkVideoRender, 不重建 graph
   void setColorSpace(const ColorSpaceDesc& c);
+  // 当前输出YUV帧编码所用色彩空间(快照转RGBA须用同一cs)
+  virtual ColorSpaceDesc getOutColorSpace() override;
   // HDR 静态元数据(峰值亮度), 转发 VkVideoRender, 不重建 graph
   void setHdrMeta(const HdrMeta& meta);
   // HDR 输出模式, 转发 VkVideoRender(非vulkan车道无tone map,静默无效果)

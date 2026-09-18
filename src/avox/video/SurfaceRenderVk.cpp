@@ -68,12 +68,14 @@ void SurfaceRenderVk::disableYuvOut() {
 }
 
 void SurfaceRenderVk::enableImage(IImageBuffer* buf) {
+  imageOutUser = buf;
   if (vkVideoRender) {
     vkVideoRender->enableImage(buf);
   }
 }
 
 void SurfaceRenderVk::disableImage() {
+  imageOutUser = nullptr;
   if (vkVideoRender) {
     vkVideoRender->disableImage();
   }
@@ -299,6 +301,7 @@ void SurfaceRenderVk::setVrStereoStrength(float strengthDeg) {
 }
 
 void SurfaceRenderVk::setColorSpace(const ColorSpaceDesc& c) {
+  outColorSpace = c;
 #ifdef AVOX_ENABLE_VULKAN
   if (vkVideoRender) {
     vkVideoRender->setColorSpace(c);
@@ -307,6 +310,8 @@ void SurfaceRenderVk::setColorSpace(const ColorSpaceDesc& c) {
   (void)c;
 #endif
 }
+
+ColorSpaceDesc SurfaceRenderVk::getOutColorSpace() { return outColorSpace; }
 
 void SurfaceRenderVk::setHdrMeta(const HdrMeta& meta) {
 #ifdef AVOX_ENABLE_VULKAN
@@ -436,6 +441,12 @@ void SurfaceRenderVk::onRenderOut() {
   // 给上层透传packed CPU帧,由观察者自行决定是否转split
   if (getCpuFrameBuffer(&buf, yuvType)) {
     dispatch(&ISurfaceRenderOb::onFrame, buf, yuvType);
+  }
+  // image 分支(G-frames 方案①): enableImage 直投用户缓冲无 observer, 补派发
+  // 让上层 per-frame 计数可见(enhancetest frames=0 根因); 建图期 dummy 帧
+  // 会 +1(千分位噪声, 已文档化)。yuv 模式 imageOutUser 为空不重复派发
+  else if (imageOutUser) {
+    dispatch(&ISurfaceRenderOb::onFrame, imageOutUser, YuvType::other);
   }
   // 渲染输出事件: 世代/格式/句柄全为内存读, outputLayer 重建窗口期为空值
   SurfaceRenderEvent ev = {};

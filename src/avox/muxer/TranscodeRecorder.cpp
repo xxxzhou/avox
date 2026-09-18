@@ -219,9 +219,10 @@ void TranscodeRecorder::onReady() {
     }
   } else if (!vTracks.empty() && surfaceRender) {
     VTrackDesc vdesc = vTracks[0];
-    // 录制颜色空间: shader 矩阵与 encoder tag 的共同源(阶段3 量程分流在此切换)
-    ColorSpaceDesc cs{YuvStandard::bt601, YuvRange::full};
-    vdesc.desc.colorSpace = cs;
+    // 录制颜色空间(G1 源色彩空间透传): desc.colorSpace 解码侧已从 VUI/colr
+    // 填充, 无标记源兜底 bt601+full; shader 矩阵(rgba2YUV)与 encoder tag 同源
+    // 同值, bt709/bt2020 源不再被错标 bt601 产生色偏
+    const ColorSpaceDesc cs = vdesc.desc.colorSpace;
     // 同源驱动 shader 矩阵(rgba2YUV)
     surfaceRender->setColorSpace(cs);
     if (muxer) {
@@ -302,6 +303,12 @@ void TranscodeRecorder::onReady() {
         vdesc.desc.width = outVideoDesc.width;
         vdesc.desc.height = outVideoDesc.height;
       }
+    } else if (bSetOutVideo && qenhancer) {
+      // G15 口径(2026-09-19 定): 增强输出尺寸由模型整数倍缩放决定, 显式
+      // setOutVideo 不与增强级联(级联需增强后再 resize 一次); 显式请求被
+      // 忽略时日志明示, 不再静默。若产品要显式优先, 改这里做增强后缩放
+      LOGFLF(LogLevel::warn, "setOutVideo ignored while enhance on, keep ",
+             vdesc.desc.width, "x", vdesc.desc.height);
     }
     if (muxer) {
       muxer->setInVideoDesc(vdesc);

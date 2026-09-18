@@ -1,7 +1,8 @@
 # FindRealEsrgan.cmake
 # 查找 Real-ESRGAN 模型权重(VkQEnhanceLayer 画质增强; 数据文件, 无头文件/库)
 #
-# 权重预置在库仓 assets/models/quality/(平台无关, 见库仓 README 溯源与许可)
+# 权重权威位置: 本仓 assets/models/quality/(平台无关, 大文件暂走宿主注入,
+# 未进 LFS); ../avc_library/assets/models 是历史路径, 仅作迁移期兜底
 # 用法:
 #   find_package(RealEsrgan QUIET)
 #
@@ -18,17 +19,17 @@ include(FindPackageHandleStandardArgs)
 
 set(REALESRGAN_MODEL_NAME "realesrgan-general-x4v3.onnx")
 
-# 默认搜索路径: AVOX_EXTERNAL_LIBRARY_DIR 优先(同 FindONNX), 库仓/工程内兜底
+# 仓内 assets 优先; 外部库仓路径是权重入库前的旧位置, 留作兜底
 if(DEFINED AVOX_EXTERNAL_LIBRARY_DIR)
     set(RealEsrgan_SEARCH_PATHS
+        ${PROJECT_SOURCE_DIR}/assets/models
         ${AVOX_EXTERNAL_LIBRARY_DIR}/assets/models
         ${PROJECT_SOURCE_DIR}/../avc_library/assets/models
-        ${PROJECT_SOURCE_DIR}/assets/models
     )
 else()
     set(RealEsrgan_SEARCH_PATHS
-        ${PROJECT_SOURCE_DIR}/../avc_library/assets/models
         ${PROJECT_SOURCE_DIR}/assets/models
+        ${PROJECT_SOURCE_DIR}/../avc_library/assets/models
     )
 endif()
 
