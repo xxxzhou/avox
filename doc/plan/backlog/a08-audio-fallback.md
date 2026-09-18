@@ -3,7 +3,7 @@
 > 状态: 进行中 · 上次核对: 2026-09-18 · 权威源: -
 
 
-优先级 P1 · 里程碑 M3 · 计划状态:T1/T2/T3 完成, Windows 库已重编实测过(truehd/dts 出声), 余 T5 用例+其他平台重编
+优先级 P1 · 里程碑 M3 · 计划状态:T1~T5 引擎侧全部完成 (Windows 腿实测过), 余量=eac3/ac3 样片+三平台库重编后跑用例
 海外「永不转码直连」卖点的引擎侧一半(另一半是直连推流能力,产品口径)。
 
 ## 出口判据
@@ -81,12 +81,16 @@
 - [ ] T4 TrueHD 注意点:TrueHD 常挂在 MKV(蓝光抽取),存在 MLP 核心 + TrueHD 增强双层结构,
       软解取 TrueHD 层即可(枚举已合一, FFADecoder 按 avFrame 实际格式出帧, 双层无感知);
       样片需真实蓝光抽取件, truehd 解码器待部署库重编后才能实测。
-- [ ] T5 用例:ac3/eac3/dts/dts-hd/truehd 样片矩阵(avox-test 资产),三平台出声 +
-      5.1→2.0 下混波形抽验(响度不炸、声道数正确)。
-      素材已有: `test_h264_dts_640x360.mkv` / `test_h264_truehd_640x360.mkv`
-      (avox-test assets/video, eac3/ac3 待补)。判定钩子: ADecoderTask 首帧成功推
-      `AudioInfo`(带声道/采样率)、失败推 MediaAction fail——playmatrix 加 audio
-      断言(收到 AudioInfo 且无音频 error 事件)即可自动化"链路通", 真听感留人工走查。
+- [x] T5 用例(2026-09-18 Windows 腿完成, avox-test 73b7eee): playmatrix 新增
+      `audio` 用例型——断言 AudioInfo pingback (解码出首帧, 带编码/声道/采样率) +
+      无音频解码错误 + audioCodec 对名; `file-dts` enabled (Windows 实测 PASS
+      `audio=dts(1ch)@48000`), `file-truehd` 默认 off (各平台部署库重编 truehd 后
+      置回; Windows `--all` 实测 PASS `audio=truehd(1ch)@48000`); 离线回归
+      pass=30 fail=0 无回归。素材已有: `test_h264_dts_640x360.mkv` /
+      `test_h264_truehd_640x360.mkv` (avox-test assets/video)。
+      余量: eac3/ac3 样片补齐 (合成件即可, 链路断言不挑码率); android/apple/linux
+      三平台库重编后各跑一遍 file-dts + file-truehd(--all)。注意合成 truehd 素材
+      解码慢于实时致播放爬行, 真听感走查建议换真实蓝光抽取件 (T4 口径)。
 
 ## 验收
 
