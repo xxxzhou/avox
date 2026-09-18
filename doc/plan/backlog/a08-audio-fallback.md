@@ -3,7 +3,7 @@
 > 状态: 进行中 · 上次核对: 2026-09-18 · 权威源: -
 
 
-优先级 P1 · 里程碑 M3 · 计划状态:T1/T2 代码落地(2026-09-18, 按海外卖点优先级提前), T3/T4 维持 M3
+优先级 P1 · 里程碑 M3 · 计划状态:T1/T2 已落地, T3 走查定案(已有实现零新增), 余 T4/T5(库重编+用例)
 海外「永不转码直连」卖点的引擎侧一半(另一半是直连推流能力,产品口径)。
 
 ## 出口判据
@@ -20,10 +20,10 @@
   FFmpeg 映射表只有 AC3(`FFHelper.cpp:148-185`,:164-165)→ 未知编码在
   `IOParseFF.cpp:358-364` 直接 `bDisableAudio=true` **整条音频关闭**。
   FFmpeg 库本身 dca/eac3 已编入(`build_ffmpeg.py:89-94`),**truehd(mlp 解码器)需核对构建开关**。
-- **downmix 全仓为零**:解码输出原样透传,渲染描述直接用解码 desc
-  (`AudioTrack.cpp:42-58` → `ARenderTask.cpp:20-32`),WASAPI 端读设备 mix format
-  (`src/avox_windows/audio/WasAudioRender.cpp:121`);FFResample 只改采样率不改声道
-  (`ARenderTask.cpp:126-155`)。
+- **downmix**:渲染器内部各自转换(2026-09-18 走查修正: 原「FFResample 只改采样率
+  不改声道」说法有误——swr 出入布局按 desc 建, 能力完整; 差异只在各渲染器给它的
+  目标 desc),详见 T3 结论;WASAPI 端读设备 mix format
+  (`src/avox_windows/audio/WasAudioRender.cpp:121`)。
 
 ## 任务拆解
 
@@ -37,14 +37,26 @@
       `AVDISCARD_ALL` 省字节,包循环与 extradata 路径按流号守卫(aIndexMaps 无映射会
       错轨/越界,不能裸跳);实例重开时清集合。其余音轨照常出声,未知轨留 warn 日志;
       明确错误码沿用 ADecoderTask 既有 "not register decoder" fail 事件面。
-- [ ] T3 下混:swresample 内建 downmix(声道布局协商 + 混音系数)接进解码输出段;
-      协商点:解码声道数 vs 设备声道数(`ARenderTask`/`AudioTrack` 衔接处),
-      设备 2.0 → 下混,设备 ≥ 源声道 → 直出。Windows 先实测 WASAPI shared 模式
-      对多声道 mix format 的行为定口径,再平移其他平台。
+- [x] T3 下混/声道协商(2026-09-18 代码走查结论: **各平台渲染器已有实现, 无需新增协商点**):
+      原计划的「ARenderTask/AudioTrack 衔接处协商」不需要——那会造成双重重采样。
+      实际口径 = 渲染器内部把输入 desc 全量转到设备真实输出格式(FFResample 本就支持
+      声道布局转换, 原状态行「只改采样率」说法有误, 已就地修正):
+      - Windows(WasAudioRender::onInit): 取设备 mix format 当 renderDesc,
+        `resample->init(desc, renderDesc)` 逐帧转换 → 5.1 源自动下混到 2.0 设备,
+        5.1 设备报 6ch mix 即直出/上混, 正是「设备声道<源下混, ≥源直出」口径;
+      - iOS/macOS(IOSAudioRender): 固定立体声输出(`renderDesc.channels = 2`) + 同款转换;
+      - Android(AndAudioRender): 源声道直接建 AudioTrack, 依赖 AudioFlinger 平台
+        downmix(内置扬声器默认会混)——**M4 真机验证项**: 若机型表现异常, 平移
+        Windows 的渲染器内转换模式(固定 2.0 + FFResample)。
 - [ ] T4 TrueHD 注意点:TrueHD 常挂在 MKV(蓝光抽取),存在 MLP 核心 + TrueHD 增强双层结构,
-      软解取 TrueHD 层即可;样片需真实蓝光抽取件。
+      软解取 TrueHD 层即可(枚举已合一, FFADecoder 按 avFrame 实际格式出帧, 双层无感知);
+      样片需真实蓝光抽取件, truehd 解码器待部署库重编后才能实测。
 - [ ] T5 用例:ac3/eac3/dts/dts-hd/truehd 样片矩阵(avox-test 资产),三平台出声 +
       5.1→2.0 下混波形抽验(响度不炸、声道数正确)。
+      素材已有: `test_h264_dts_640x360.mkv` / `test_h264_truehd_640x360.mkv`
+      (avox-test assets/video, eac3/ac3 待补)。判定钩子: ADecoderTask 首帧成功推
+      `AudioInfo`(带声道/采样率)、失败推 MediaAction fail——playmatrix 加 audio
+      断言(收到 AudioInfo 且无音频 error 事件)即可自动化"链路通", 真听感留人工走查。
 
 ## 验收
 
