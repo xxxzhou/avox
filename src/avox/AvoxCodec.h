@@ -132,6 +132,20 @@ enum class SCodecId : int32_t {
 #undef XX
 };
 
+// 外挂字幕文本编码探测结果(值导出给引擎插件, 只增不改不删)
+#define AVOX_MAP_SUB_ENCODING(XX) \
+  XX(unknown, 0, "unknown")      \
+  XX(utf8, 1, "utf8")           \
+  XX(utf8BomStripped, 2, "utf8Bom") \
+  XX(gbkTranscoded, 3, "gbk")   \
+  XX(utf16Raw, 4, "utf16")
+
+enum class SubtitleEncoding : int32_t {
+#define XX(name, value, str) name = value,
+  AVOX_MAP_SUB_ENCODING(XX)
+#undef XX
+};
+
 // 字幕轨描述只读接口(托管对象: 由 ISourceInfo 持有, 生命周期同源, 调用方不得释放)。
 // 公共头不出现 STL: 字符串经方法取 const char*(引擎内持久缓冲, UTF-8, 空=未标,
 // 约定同 getImageBase64), 跨 DLL 只过 POD 与指针
@@ -184,6 +198,7 @@ struct DecoderParams {
 extern "C" {
 AVOX_EXPORT const char* getACodecName(ACodecId codecId);
 AVOX_EXPORT const char* getVCodecName(VCodecId codecId);
+AVOX_EXPORT const char* getSubtitleEncodingName(SubtitleEncoding encoding);
 }
 
 }

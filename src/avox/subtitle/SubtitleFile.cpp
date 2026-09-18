@@ -29,10 +29,12 @@ bool SubtitleFile::loadFile(const char* path) {
   // 编码归一: 外挂字幕常见 GBK(非 UTF-8), 直接按 UTF-8 走会被 TextRasterizer
   // 判成查不到字形 → 整屏无字。这里转成 UTF-8 再解析(UTF-8 则只剥 BOM)
   std::string text;
-  const bool bConverted = normalizeSubtitleText(content, text);
-  if (bConverted) {
-    LOGFLF(LogLevel::info, "subtitle text converted to UTF-8: ", path);
-  } else if (!isUtf8Text(text.c_str(), text.size())) {
+  encoding = normalizeSubtitleText(content, text);
+  if (encoding == SubtitleEncoding::gbkTranscoded) {
+    LOGFLF(LogLevel::info, "subtitle text transcoded to UTF-8, encoding=gbk: ",
+           path);
+  } else if (encoding == SubtitleEncoding::unknown &&
+             !isUtf8Text(text.c_str(), text.size())) {
     LOGFLF(LogLevel::warn,
            "subtitle text is not UTF-8 and cannot be converted on this "
            "platform: ",
@@ -79,6 +81,7 @@ const SubtitleItem* SubtitleFile::getCurrent(int64_t ptsMs) {
 void SubtitleFile::clear() {
   items.clear();
   currentIndex = -1;
+  encoding = SubtitleEncoding::unknown;
 }
 
 bool SubtitleFile::isLoaded() const { return !items.empty(); }

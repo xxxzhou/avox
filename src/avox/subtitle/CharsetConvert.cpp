@@ -179,30 +179,42 @@ bool isUtf8Text(const char* data, size_t size) {
   return true;
 }
 
-bool normalizeSubtitleText(const std::string& raw, std::string& out) {
+SubtitleEncoding normalizeSubtitleText(const std::string& raw, std::string& out) {
   if (raw.empty()) {
     out.clear();
-    return false;
+    return SubtitleEncoding::unknown;
   }
   const char* data = raw.data();
   const size_t size = raw.size();
   if (isUtf16Bom(data, size)) {
     out = raw;  // UTF-16: 不做 GBK 误转(需要时再补 UTF-16 分支)
-    return false;
+    return SubtitleEncoding::utf16Raw;
   }
   const size_t bom = utf8BomLen(data, size);
   if (isUtf8Text(data + bom, size - bom)) {
     // 已是 UTF-8: 剥 BOM。留着会让首条序号行("\\xEF\\xBB\\xBF1")判不出数字被丢掉
     out.assign(data + bom, size - bom);
-    return false;
+    return bom > 0 ? SubtitleEncoding::utf8BomStripped : SubtitleEncoding::utf8;
   }
   std::string converted;
   if (gbkToUtf8(raw, converted)) {
     out.swap(converted);
-    return true;
+    return SubtitleEncoding::gbkTranscoded;
   }
   out = raw;  // 平台不支持或不是合法 GBK: 保底原样, 由上层决定是否报错
-  return false;
+  return SubtitleEncoding::unknown;
+}
+
+const char* getSubtitleEncodingName(SubtitleEncoding encoding) {
+  switch (encoding) {
+#define XX(name, value, str)   \
+  case SubtitleEncoding::name: \
+    return str;
+    AVOX_MAP_SUB_ENCODING(XX)
+#undef XX
+    default:
+      return "invalid";
+  }
 }
 
 }  // namespace avox

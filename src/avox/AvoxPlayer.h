@@ -50,6 +50,10 @@ class ISubtitle {
   virtual void setPositionMargin(float marginX, float marginY) {}
   // 自动换行宽度(帧宽比例, 默认 0.8; <=0 忽略, >1 钳到 1)
   virtual void setMaxWidth(float ratio) {}
+
+  // 外挂字幕文本编码探测结果(loadSubtitle 文本路径加载后可查, 换源/卸载复位
+  // unknown; .ass 插件路径不探测仍为 unknown)。带默认实现: 既有实现者零影响
+  virtual SubtitleEncoding getFileEncoding() { return SubtitleEncoding::unknown; }
 };
 
 #define AVOX_MAP_PLAYER_STATE(XX) \
