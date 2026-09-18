@@ -1,3 +1,6 @@
+#include <atomic>
+#include <cstdio>
+#include <cstdlib>
 #include "FFVEncoder.hpp"
 
 #include "avox/muxer/Muxer.hpp"
@@ -143,6 +146,16 @@ DecodeResult FFVEncoder::onPreEncoder() {
 }
 
 DecodeResult FFVEncoder::encode(const YUVFrame& yframe) {
+  // [dbg] ENH_VKDBG=1: 编码器入口
+  {
+    static const bool dbg = std::getenv("ENH_VKDBG") != nullptr;
+    static std::atomic<int32_t> cnt{0};
+    if (dbg && cnt.fetch_add(1) < 3) {
+      fprintf(stderr, "[dbg] FFVEncoder encode entry, %ux%u pts=%lld\n",
+              (unsigned)yframe.format.width, (unsigned)yframe.format.height,
+              (long long)yframe.pts);
+    }
+  }
   // 检查分辨率是否变化,如果变化,编码器重置
   bool bChange = desc.desc.width != yframe.format.width ||
                  desc.desc.height != yframe.format.height;
@@ -175,6 +188,14 @@ DecodeResult FFVEncoder::encode(const YUVFrame& yframe) {
   frame->pts = yframe.pts;
   // LOGFLF(LogLevel::info, "encode video pts:", frame->pts);
   int32_t ret = avcodec_send_frame(codecCtx.get(), frame.get());
+  // [dbg] ENH_VKDBG=1: send/receive 结果(定位包不出编码器的环节)
+  {
+    static const bool dbg = std::getenv("ENH_VKDBG") != nullptr;
+    static std::atomic<int32_t> cnt{0};
+    if (dbg && cnt.fetch_add(1) < 5) {
+      fprintf(stderr, "[dbg] FFVEncoder send_frame ret=%d\n", ret);
+    }
+  }
   if (ret < 0) {
     if (ret == AVERROR_EOF) {
       return DecodeResult::complete;
@@ -189,6 +210,17 @@ DecodeResult FFVEncoder::encode(const YUVFrame& yframe) {
   while (true) {
     AVPacket* packet = av_packet_alloc();
     ret = avcodec_receive_packet(codecCtx.get(), packet);
+    // [dbg] ENH_VKDBG=1: receive 结果计数(前20次含ret码)
+    {
+      static const bool dbg = std::getenv("ENH_VKDBG") != nullptr;
+      static std::atomic<int32_t> cnt{0};
+      if (dbg) {
+        int32_t c = cnt.fetch_add(1);
+        if (c < 20) {
+          fprintf(stderr, "[dbg] FFVEncoder receive #%d ret=%d\n", c, ret);
+        }
+      }
+    }
     if (ret < 0) {
       if (ret == AVERROR_EOF) {
         return DecodeResult::complete;
@@ -209,10 +241,17 @@ DecodeResult FFVEncoder::encode(const YUVFrame& yframe) {
     av_packet_rescale_ts(packet, codecCtx->time_base, {1, 1000});
     AvoxPacket cpacket = ffAvoxPacket(packet);
     cpacket.packtype = (int32_t)PackType::video;
-    // AvoxData tempData = {cpacket.data.data, std::min(cpacket.data.size, 200),
-    //                     true};
-    // log(LogLevel::info, "onPacket pts:", cpacket.pts,
-    //     " size:", cpacket.data.size, " data:", tempData);
+    // [dbg] ENH_VKDBG=1: 编码器出包
+    {
+      static const bool dbg = std::getenv("ENH_VKDBG") != nullptr;
+      static std::atomic<int32_t> cnt{0};
+      if (dbg && cnt.fetch_add(1) < 5) {
+        fprintf(stderr, "[dbg] FFVEncoder packet out, size=%u pts=%lld "
+                        "keyflag=%d\n",
+                (unsigned)cpacket.data.size, (long long)cpacket.pts,
+                (int)cpacket.frameType);
+      }
+    }
     dispatch(&IEncoderOb::onPacket, cpacket);
     av_packet_unref(packet);
   }
