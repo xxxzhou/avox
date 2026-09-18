@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <set>
 
 #include "FFHelper.hpp"
 #include "avox/module/Json.hpp"
@@ -24,6 +25,9 @@ protected:
   AudioDesc audioDesc = {};
   // 如果是直播流,可能存在aac extradata,需要把首帧的adts加入
   bool bAACExtradata = false;
+  // 编码不支持而跳过的音频流号(parseStream 处): 包循环按流号丢弃, 不再株连
+  // 整条音频(a08)
+  std::set<int32_t> skipAudioStreams;
   // seek 窗口内为 true, 打断 IO 线程阻塞的 av_read_frame (线程安全)
   std::atomic<bool> bInterruptRead{false};
   // close/析构时置位, 打断 IO 线程阻塞的 av_read_frame: 不打断则 stopTask 的

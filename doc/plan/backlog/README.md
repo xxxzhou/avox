@@ -18,7 +18,7 @@
 | A-5 可 seek 虚拟文件系统 | P0 | M2 | 计划就绪(建议提前) | 插件在但 DAV 无自有播放 IO 源、无重试/缓存/authExpired 无契约 | [a05](a05-remote-vfs.md) |
 | A-6 FFmpeg 9.0.1 换代 | P0 | 独立 | **适配已完成,待收口** | 五平台库均 9.0.1、源码已新 API,剩回归验证 | [a06](a06-ffmpeg9.md) |
 | A-7 avox_subtitle CLI | P1 | M3 | 计划就绪 | sherpa/翻译/CLI 骨架在,批量管线与 SRT 写出为零 | [a07](a07-subtitle-cli.md) |
-| A-8 音频软解兜底 | P1 | M3 | 计划就绪 | dts/eac3/truehd 枚举映射全缺→整条音频被禁;downmix 为零 | [a08](a08-audio-fallback.md) |
+| A-8 音频软解兜底 | P1 | M3 | **T1/T2 已落地(09-18 提前),待库重编+T3** | 枚举/映射/未知轨株连已修;truehd 待编译机重编部署库,下混(T3)为零 | [a08](a08-audio-fallback.md) |
 | A-9 HDR/DV | P1 | M4 | 计划就绪 | tone map 三车道已完成;直通待真机;DV/SDR→HDR 零 | [a09](a09-hdr-dv.md) |
 | A-10 蓝光原盘 | P1 | M3.5 | 零起点 | 无 libbluray、无 chapter 结构,仅 resolve 注释预留 | [a10](a10-blu-ray.md) |
 | A-11 超分/插帧产品化 | P1 | M4 | 计划就绪 | Anime4K 完整但 S/L 档是空壳(无 shader)、无能力探测 | [a11](a11-superres-frc.md) |

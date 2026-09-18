@@ -27,6 +27,10 @@ import sys
 #   demuxer +flac/ape/amr/dsf, parser +vp8/vp9/av1/vorbis/flac/dca/aac_latm/amr/mjpeg
 #   hwaccel(win) +vp9/av1 的 d3d11va(+2) — 播放硬解用; 软解白名单照加(缩图/兜底)
 #
+# 2026-09-18 a08 扩展(四平台脚本同步): decoder +mlp/truehd —— TrueHD/MLP 蓝光音轨软解
+#   (「永不转码直连」的音频半句; DTS-HD MA 走已有 dca)。native 组件(LGPL), 许可不变。
+#   注意: 3rdparty 各平台部署库按脚本重编后才含此两解码器; dca/eac3 已在部署库内。
+#
 # 环境变量:
 #   MSYS2_INSTALL_DIR  MSYS2 根目录 (默认 C:\msys64)
 #   FFMPEG_PREFIX      安装树绝对路径 (默认 ../build/windows/ffmpeg-<flavor>)
@@ -89,6 +93,7 @@ MINIMUM_DECODERS = ("h264,hevc,aac,mp3,opus,ac3,pcm_alaw,pcm_mulaw,pcm_s16le,pcm
 MINIMUM_DECODERS += ("vp8,vp9,av1,theora,mjpeg,mjpegb,dvvideo,prores,"
                      "msmpeg4v1,msmpeg4v2,msmpeg4v3,"               # webm/相机/DV/ProRes/DivX3
                      "vorbis,flac,dca,eac3,mp2,amrnb,amrwb,"        # 常用音频
+                     "mlp,truehd,"                                  # TrueHD/MLP 蓝光音轨(a08; DTS-HD MA 走已有 dca)
                      "adpcm_ms,adpcm_ima_wav,adpcm_g726,adpcm_g726le,"
                      "alac,ape,aac_latm,"                           # 无损音乐/TS LATM
                      "pcm_dvd,pcm_bluray,dsd_lsbf,dsd_msbf")        # 原盘LPCM/DSD

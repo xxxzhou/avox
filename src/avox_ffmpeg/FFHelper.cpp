@@ -179,6 +179,14 @@ ACodecId ffACodec(AVCodecID codecId) {
       return ACodecId::pcms16be;
     case AV_CODEC_ID_VORBIS:
       return ACodecId::vorbis;
+    case AV_CODEC_ID_DTS:
+      return ACodecId::dts;
+    case AV_CODEC_ID_EAC3:
+      return ACodecId::eac3;
+    case AV_CODEC_ID_TRUEHD:
+    case AV_CODEC_ID_MLP:
+      // MLP 核心与 TrueHD 增强同族, 枚举合一(MKV 蓝光抽取多为 TRUEHD 标记)
+      return ACodecId::truehd;
     default:
       return ACodecId::none;
   }
@@ -276,6 +284,12 @@ AVCodecID getFFCodecId(ACodecId codecId) {
       return AV_CODEC_ID_PCM_S16BE;
     case ACodecId::vorbis:
       return AV_CODEC_ID_VORBIS;
+    case ACodecId::dts:
+      return AV_CODEC_ID_DTS;
+    case ACodecId::eac3:
+      return AV_CODEC_ID_EAC3;
+    case ACodecId::truehd:
+      return AV_CODEC_ID_TRUEHD;
     default:
       return AV_CODEC_ID_NONE;
   }

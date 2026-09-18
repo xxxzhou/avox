@@ -158,6 +158,7 @@ bool IOParseFF::parseStream(int32_t streamId, AVCodecParameters* codecpar) {
     return true;
   }
   if (!bDisableAudio && codecpar->codec_type == AVMEDIA_TYPE_AUDIO &&
+      skipAudioStreams.count(streamId) == 0 &&
       codecpar->extradata_size > 0) {
     if (codecpar->codec_id == AV_CODEC_ID_AAC) {
       parseAACConfig(streamId, codecpar->extradata, codecpar->extradata_size);
@@ -346,6 +347,7 @@ void IOParseFF::onRunTask() {
          std::chrono::duration_cast<std::chrono::milliseconds>(
              std::chrono::steady_clock::now() - findInfoStart)
              .count());
+  skipAudioStreams.clear();  // 实例可能复用重开, 清掉上次的跳过流记录
   for (int32_t i = 0; i < fmtCtx->nb_streams; i++) {
     auto& st = fmtCtx->streams[i];
     // 跳过封面图等附加静态图流: 不是可播放的视频轨, 且其包会被误判污染
@@ -368,11 +370,13 @@ void IOParseFF::onRunTask() {
                !bDisableAudio) {
       ATrackDesc adesc = {};
       adesc.codecId = ffACodec(st->codecpar->codec_id);
-      // 如果是不支持的音频格式,自动关闭音频
+      // 不支持的音频格式只跳过该流并 discard 字节, 其余音轨照常(a08):
+      // 原行为 bDisableAudio=true 会因一条未知轨株连关闭全部音频
       if (adesc.codecId == ACodecId::none) {
         LOGFLF(LogLevel::warn,
-               "unsupported audio codec:", st->codecpar->codec_id);
-        bDisableAudio = true;
+               "unsupported audio codec, skip stream:", st->codecpar->codec_id);
+        skipAudioStreams.insert(st->index);
+        st->discard = AVDISCARD_ALL;
         continue;
       }
       adesc.trackId = st->index;
@@ -521,7 +525,8 @@ void IOParseFF::onRunTask() {
       }
     } else if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
       packType = PackType::audio;
-      if (bDisableAudio) {
+      // 跳过的不支持音频流不进路由: aIndexMaps 无映射, 会错轨/越界
+      if (bDisableAudio || skipAudioStreams.count(streamId) > 0) {
         continue;
       }
     } else if (st->codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE) {
