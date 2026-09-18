@@ -49,6 +49,10 @@ class AMediaSource : public RawSource,
   TickChecker trackWaitChecker{3000};
   bool bTrackWaitStarted = false;
   bool bTrackWaitResolved = false;
+  // 轨级直拷(TransMode): copy轨不建解码器, 原始包经 onRawPacket 转出
+  TransMode transMode = TransMode::TranscodeAll;
+  bool bVideoCopy = false;
+  bool bAudioCopy = false;
 
   // IRawSource
  public:
@@ -62,6 +66,8 @@ class AMediaSource : public RawSource,
  public:
   void setUri(const char* url);
   void setHardDecode(bool bHard);
+  // 轨道处理方式(open前设置; none丢轨仍由 disableVideo/disableAudio 控制)
+  void setTransMode(TransMode mode);
   // 设置IO方案(open前设置,默认ffmpeg)
   void setIoPlan(IoPlan plan);
   // 获取内部的ioSource,在open后可用

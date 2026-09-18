@@ -112,6 +112,16 @@ class IMediaMuxer {
   virtual void close() = 0;
 };
 
+// 轨道处理方式(转码录制器, open前设置; 非转码录制器本就全直拷, 不适用)
+// 与 setVideoCodec/setAudioCodec 的 none=丢轨正交: none 决定轨道是否存在,
+// 本枚举决定存在的轨道"转码"还是"直拷"; 直拷轨上的编码/格式设置被忽略
+enum class TransMode : int32_t {
+  TranscodeAll = 0,  // 视频转码 + 音频转码(默认, 存量行为不变)
+  AudioCopy    = 1,  // 视频转码 + 音频直拷: 源音频包不解码不重编直接进封装
+                     // (pts 同轴; 目标容器不可容该编码时自动回退转码)
+  VideoCopy    = 2   // 视频直拷 + 音频转码(转封装+改音频等场景)
+};
+
 // 流录制器,三个作用
 // 1 bTranscode为false,直接保存/转发原始流
 // 2 bTranscode为true,转录原始流,ISurfaceRender处理图像
@@ -126,12 +136,18 @@ class IRecorder {
   // 如果不设置,默认是ffmpeg
   virtual void setMuxerType(MuxerType type) = 0;
   // 设置视频编码,设none丢弃视频轨(open前设置)
+  // 仅视频为转码态(TranscodeAll/AudioCopy)时生效; VideoCopy下被忽略
   virtual void setVideoCodec(VCodecId codecId) {};
   // 设置音频编码,设none丢弃音频轨(open前设置)
+  // 仅音频为转码态(TranscodeAll/VideoCopy)时生效; AudioCopy下被忽略
   virtual void setAudioCodec(ACodecId codecId) {};
+  // 轨道处理方式(open前设置); 双轨全直拷即 createRecorder(false), 不设枚举值
+  virtual void setTransMode(TransMode mode) {};
   // 转码录制器: 声明输出视频描述(尺寸变化/超分输出, onReady 据此改编码器描述, open前设置)
+  // 转码态专用; VideoCopy下无意义被忽略
   virtual void setVideoDesc(const VideoDesc& desc) {};
   // 转码录制器: 声明输出音频格式(重采样目标, open前设置)
+  // 转码态专用; AudioCopy下无意义被忽略
   virtual void setAudioDesc(const AudioDesc& desc) {};
   // 离线画质增强(Real-ESRGAN, 转码录制器专用; 队列消费侧逐帧推理, 队列满反压解码;
   // 与实时轨 ISurfaceRender::enableQualityEnhance 图内层无关, open前设置)

@@ -86,6 +86,12 @@ void AMediaSource::close() {
 
 bool AMediaSource::ioComplete() { return bIoEnd; }
 
+void AMediaSource::setTransMode(TransMode mode) {
+  transMode = mode;
+  bVideoCopy = (mode == TransMode::VideoCopy);
+  bAudioCopy = (mode == TransMode::AudioCopy);
+}
+
 void AMediaSource::onReady() {
   if (!ioSource) {
     return;
@@ -98,16 +104,29 @@ void AMediaSource::onReady() {
   if (!bDisableAudio) {
     bDisableAudio = aTracks.empty();
   }
-  // 打开音频与视频解码器
+  // 打开音频与视频解码器(copy轨不解码: 原始包在onPacket经onRawPacket转出)
   if (!vTracks.empty()) {
     const auto& vTrack = vTracks[0];
     LOGFLF(LogLevel::info, "video desc:", vTrack);
-    initVideoDecoder(vTrack.codecId, vTrack.desc, bHardDecode);
+    if (bVideoCopy) {
+      LOGFLF(LogLevel::info, "video copy mode, decoder off");
+      // copy轨无解码器则无onVideoDesc回调, 手动补RawSource轨描述,
+      // 否则checkTrackReady永远等不到视频轨, onReady不派发(录制器卡死)
+      setVideoDesc(vTrack.desc);
+    } else {
+      initVideoDecoder(vTrack.codecId, vTrack.desc, bHardDecode);
+    }
   }
   if (!aTracks.empty()) {
     const auto& aTrack = aTracks[0];
     LOGFLF(LogLevel::info, "audio desc:", aTrack);
-    initAudioDecoder(aTrack.codecId, aTrack.desc);
+    if (bAudioCopy) {
+      LOGFLF(LogLevel::info, "audio copy mode, decoder off");
+      // 同视频copy: 手动补轨描述凑齐checkTrackReady握手
+      setAudioDesc(aTrack.desc);
+    } else {
+      initAudioDecoder(aTrack.codecId, aTrack.desc);
+    }
   }
 }
 
@@ -179,6 +198,11 @@ void AMediaSource::onPacket(const AvoxPacket& packet) {
   switch (packet.packtype) {
     case (int32_t)PackType::vconfig:
     case (int32_t)PackType::video:
+      if (bVideoCopy) {
+        // copy轨原始包直出(不解码); 上面bDiscardPacket已含seek丢弃语义
+        dispatch(&IRawSourceOb::onRawPacket, packet);
+        break;
+      }
       if (videoDecoder) {
         // PacketBuf buf(packet);
         PacketBufPtr pkt = std::make_shared<PacketBuf>(packet);
@@ -197,6 +221,11 @@ void AMediaSource::onPacket(const AvoxPacket& packet) {
       break;
     case (int32_t)PackType::aconfig:
     case (int32_t)PackType::audio:
+      if (bAudioCopy) {
+        // copy轨原始包直出(不解码, fdk等解码兼容性问题整段绕开)
+        dispatch(&IRawSourceOb::onRawPacket, packet);
+        break;
+      }
       if (audioDecoder) {
         // PacketBuf buf(packet);
         // LOGFLF(LogLevel::info, "audio packet:", packet.pts);

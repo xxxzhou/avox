@@ -64,6 +64,8 @@ class TranscodeRecorder : public IRecorder,
   std::unique_ptr<ImageBuffer> splitBuffer;
   // 进度
   RecorderProgress progress = {};
+  // 进度写入锁: copy轨(IO线程 onRawPacket)与帧路径(编码线程)并发驱动
+  std::mutex progressMtx;
   // seek 状态(均跨线程:调用线程写,编码/IO 线程读)
   std::atomic<bool> bSeeking{false};        // seek 进行中(IO 回调丢弃帧)
   std::atomic<bool> bSeekPending{false};    // 编码线程待处理 seek
@@ -72,6 +74,10 @@ class TranscodeRecorder : public IRecorder,
   ACodecId aCodecid = ACodecId::aac;
   // 默认 H.264: 硬编兼容性远好于 h265(低端安卓/老设备 hevc 编码器常缺失), 兼容性敏感的转码录不赌设备能力
   VCodecId vCodecId = VCodecId::h264;
+  // 轨级直拷(none丢轨优先于copy; 空输出无封装目标自动回退转码)
+  TransMode transMode = TransMode::TranscodeAll;
+  bool bVideoCopy = false;
+  bool bAudioCopy = false;
 
   // IRecorder
  public:
@@ -79,6 +85,7 @@ class TranscodeRecorder : public IRecorder,
   virtual void setMuxerType(MuxerType type) override;
   virtual void setVideoCodec(VCodecId codecId) override;
   virtual void setAudioCodec(ACodecId codecId) override;
+  virtual void setTransMode(TransMode mode) override;
   virtual void setVideoDesc(const VideoDesc& desc) override;
   virtual void setAudioDesc(const AudioDesc& desc) override;
   virtual void enableQualityEnhance(const QualityEnhanceParamet& paramet) override;
@@ -107,6 +114,7 @@ class TranscodeRecorder : public IRecorder,
   virtual void onVideoFrame(const YUVFrame& frame, int32_t trackId) override;
   virtual void onGpuFrame(const GpuFrame& frame, int32_t trackId) override;
   virtual void onAudioFrame(const AvoxAFrame& frame, int32_t trackId) override;
+  virtual void onRawPacket(const AvoxPacket& packet) override;
 
   // RunTask - 编码线程
  protected:

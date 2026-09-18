@@ -64,6 +64,11 @@ void TranscodeRecorder::setAudioCodec(ACodecId codecId) {
   LOGFLF(LogLevel::info, "set audio codec:", codecId);
 }
 
+void TranscodeRecorder::setTransMode(TransMode mode) {
+  transMode = mode;
+  LOGFLF(LogLevel::info, "set trans mode:", (int32_t)mode);
+}
+
 void TranscodeRecorder::setVideoDesc(const VideoDesc& desc) {
   outVideoDesc = desc;
   bSetOutVideo = true;
@@ -117,6 +122,17 @@ bool TranscodeRecorder::open(const char* url, const char* file) {
     muxer->setVideoCodec(vCodecId);
     muxer->setAudioCodec(aCodecid);
   }
+  // 轨级直拷: none丢轨优先于copy(丢掉的轨谈不上处理方式); copy轨的
+  // 编码/格式设置(onReady分支)被忽略
+  bVideoCopy = (transMode == TransMode::VideoCopy) && vCodecId != VCodecId::none;
+  bAudioCopy = (transMode == TransMode::AudioCopy) && aCodecid != ACodecId::none;
+  if (bNoOutput && (bVideoCopy || bAudioCopy)) {
+    // 空输出(离屏直出)无封装目标, copy无意义
+    LOGFLF(LogLevel::warn, "copy mode needs output file, fallback transcode");
+    bVideoCopy = false;
+    bAudioCopy = false;
+  }
+  source->setTransMode(transMode);
   bool bDiscardVideo = (vCodecId == VCodecId::none);
   bool bDiscardAudio = (aCodecid == ACodecId::none);
   source->disableVideo(bDiscardVideo);
@@ -182,12 +198,26 @@ void TranscodeRecorder::onReady() {
     LOGFLF(LogLevel::warn, "quality enhance needs output file, off");
     bQEnhance = false;
   }
+  // 增强要解码帧, 与视频直拷互斥(离线超分默认 AudioCopy 不受影响)
+  if (bQEnhance && bVideoCopy) {
+    LOGFLF(LogLevel::warn, "quality enhance conflicts video copy, off");
+    bQEnhance = false;
+  }
   // 打开muxer(空输出不建 muxer)
   if (muxer) {
     muxer->open(outputFile.c_str());
   }
   // 设置
-  if (!vTracks.empty() && surfaceRender) {
+  if (!vTracks.empty() && bVideoCopy) {
+    // 视频直拷: 取AVSource容器轨desc(带源编码; source->getVideoTracks是
+    // 解码描述codec=none), 原样进封装(编码/尺寸不改, extradata由vconfig包
+    // 经pushPacket提供); 不经渲染与编码器, 绕过RawMuxer编码接线
+    if (muxer && ioSource && !ioSource->getVideoTracks().empty()) {
+      muxer->MediaMuxer::setInVideoDesc(ioSource->getVideoTracks()[0]);
+      LOGFLF(LogLevel::info, "video copy mode, set in desc:",
+             ioSource->getVideoTracks()[0]);
+    }
+  } else if (!vTracks.empty() && surfaceRender) {
     VTrackDesc vdesc = vTracks[0];
     // 录制颜色空间: shader 矩阵与 encoder tag 的共同源(阶段3 量程分流在此切换)
     ColorSpaceDesc cs{YuvStandard::bt601, YuvRange::full};
@@ -279,23 +309,34 @@ void TranscodeRecorder::onReady() {
     LOGFLF(LogLevel::info, "set video desc:", vdesc);
   }
   if (!aTracks.empty()) {
-    if (muxer) {
-      muxer->setAudioCodec(aCodecid);
-      // 音频是否重采样
-      if (bSetOutAudio && outAudioDesc.bValid()) {
-        muxer->setAudioDesc(outAudioDesc);
+    if (bAudioCopy) {
+      // 音频直拷: 绕过RawMuxer编码/重采样接线, 容器轨desc(带源编码aac)
+      // 原样进封装(IOMuxerFF输出流编码取自inDesc); 不解码,
+      // fdk等兼容性问题整段绕开
+      if (muxer && ioSource && !ioSource->getAudioTracks().empty()) {
+        muxer->MediaMuxer::setInAudioDesc(ioSource->getAudioTracks()[0]);
+        LOGFLF(LogLevel::info, "audio copy mode, set in desc:",
+               ioSource->getAudioTracks()[0]);
       }
-      muxer->setInAudioDesc(aTracks[0]);
+    } else {
+      if (muxer) {
+        muxer->setAudioCodec(aCodecid);
+        // 音频是否重采样
+        if (bSetOutAudio && outAudioDesc.bValid()) {
+          muxer->setAudioDesc(outAudioDesc);
+        }
+        muxer->setInAudioDesc(aTracks[0]);
+      }
+      // AudioRender setDesc(源格式),tap 可在之后 open
+      audioRender->setDesc(aTracks[0].desc);
+      // 无视频帧产出(源无视频轨,或视频已关 VCodecId::none → source 层不开视频
+      // 解码):音频解码不限速,tap 是慢端 → 阻塞反压;有视频时由视频 onFrame
+      // 主导反压到 IO
+      if (vTracks.empty() || vCodecId == VCodecId::none) {
+        audioRender->setTapBlock(true);
+      }
+      LOGFLF(LogLevel::info, "set audio desc:", aTracks[0]);
     }
-    // AudioRender setDesc(源格式),tap 可在之后 open
-    audioRender->setDesc(aTracks[0].desc);
-    // 无视频帧产出(源无视频轨,或视频已关 VCodecId::none → source 层不开视频
-    // 解码):音频解码不限速,tap 是慢端 → 阻塞反压;有视频时由视频 onFrame
-    // 主导反压到 IO
-    if (vTracks.empty() || vCodecId == VCodecId::none) {
-      audioRender->setTapBlock(true);
-    }
-    LOGFLF(LogLevel::info, "set audio desc:", aTracks[0]);
   }
   if (muxer) {
     muxer->ready();
@@ -371,6 +412,21 @@ void TranscodeRecorder::onAudioFrame(const AvoxAFrame& frame, int32_t trackId) {
   aFrameQueue.enqueueWait<AvoxAFrame>(frame, copyAudioBuf);
   // LOGFLF(LogLevel::info, "in audio framesize:", audioQueue.size(),
   //        " pts:", frame.pts, " size:", frame.buffer.size);
+}
+
+// copy轨原始包直通封装(IO线程): 不解码不重编, pts沿用源包(basePts已归一)
+void TranscodeRecorder::onRawPacket(const AvoxPacket& packet) {
+  // seek期间丢弃; close后短路: IO线程不推包, 不会阻塞在muxer包队列(G13教训)
+  if (bSeeking.load() || !running()) {
+    return;
+  }
+  if (!muxer) {
+    return;
+  }
+  // copy轨不经帧队列, 进度在此驱动(带锁, 与编码线程帧路径并发安全)
+  updateProgress();
+  // pushPacket内部enqueueWait带拷贝, 包数据回调返回后失效无碍
+  muxer->pushPacket(packet);
 }
 
 void TranscodeRecorder::onClose() {
@@ -493,6 +549,7 @@ void TranscodeRecorder::processAudio(AudioFramePtr aframe) {
 }
 
 void TranscodeRecorder::updateProgress() {
+  std::lock_guard<std::mutex> lock(progressMtx);
   if (!ioSource) {
     return;
   }

@@ -271,6 +271,9 @@ class IRawSourceOb {
   virtual void onGpuFrame(const GpuFrame& frame, int32_t trackId) {};
   // 音频帧
   virtual void onAudioFrame(const AvoxAFrame& frame, int32_t trackId) {};
+  // 原始包直出(copy轨): TransMode 指定直拷的轨不经解码直接转出;
+  // IO线程回调, seek/flush期间不派发; 包数据在回调返回后失效需拷贝
+  virtual void onRawPacket(const AvoxPacket& packet) {};
 };
 
 // 原始数据源，如YUV/GPUTexture/PCM

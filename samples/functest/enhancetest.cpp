@@ -274,7 +274,8 @@ int main(int argc, char* argv[]) {
   if (input.empty()) {
     std::printf(
         "usage: enhancetest <input> [output] [mode=restore|2x|4x|auto] "
-        "[maxMediaSec=0] [codec=h264|h265] [hardEnc=1|0]\n");
+        "[maxMediaSec=0] [codec=h264|h265] [hardEnc=1|0] "
+        "[trans=all|audiocopy|videocopy]\n");
     return 1;
   }
   std::string output = argc > 2 ? argv[2] : "enhance_output.mp4";
@@ -282,6 +283,7 @@ int main(int argc, char* argv[]) {
   int maxMediaSec = argc > 4 ? std::atoi(argv[4]) : 0;
   std::string codec = argc > 5 ? argv[5] : "h264";
   bool hardEnc = argc > 6 ? std::atoi(argv[6]) != 0 : true;
+  std::string trans = argc > 7 ? argv[7] : "all";
 
   int32_t srcW = 0, srcH = 0;
   int64_t srcDurationMs = 0;
@@ -307,11 +309,17 @@ int main(int argc, char* argv[]) {
     return 1;
   }
   recorder->setVideoCodec(codec == "h265" ? VCodecId::h265 : VCodecId::h264);
+  // 轨级直拷(T9): copy态下对应轨的编码/格式设置被忽略(接口注释语义)
+  if (trans == "audiocopy") {
+    recorder->setTransMode(TransMode::AudioCopy);
+  } else if (trans == "videocopy") {
+    recorder->setTransMode(TransMode::VideoCopy);
+  }
   // [dbg] 竞态排查: ENH_NOAUD=1 丢弃音轨, 验证音频重采样链路
   static const bool noAud = std::getenv("ENH_NOAUD") != nullptr;
   if (noAud) {
     recorder->setAudioCodec(ACodecId::none);
-  } else {
+  } else if (trans != "audiocopy") {
     AudioDesc adesc = {};
     adesc.channels = 2;
     adesc.format = AudioFormat::AVOX_AUDIO_S16;
