@@ -1,6 +1,6 @@
 # 播放器FFmpeg
 
-> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+> 状态: 有效 · 上次核对: 2026-09-18 · 权威源: -
 
 
 当初设计这个播放器时，是不需要FFmpeg也能正常使用，那这为什么还单独写一篇了，主要是FFmpeg可以做为一个保底方案，其有IO，有解码这些都可做保底方案，在平台对应方案使用不上时，做为备用方案。
@@ -1301,3 +1301,20 @@ void VkVideoRender::onWinUpdate(IWindow *context) {
 然后是vulkan窗口，dx11/dx12窗口的实现，结合[Vulkan与DX11交互](https://zhuanlan.zhihu.com/p/349534525)，可以把VkVideoRender渲染后的数据分别给到vulkan窗口，dx11/dx12窗口，这部分代码实现比较多，就不贴了。
 
 这边等有时间，就先把ffmpeg里的vulkan硬解方案集成下，这个多个平台就多了一种硬解的备选方案，并且针对结合vulkan渲染应该也是最高效的实现方式了。
+
+## Vulkan硬解备选车道（2026-09-18 已落地）
+
+上面这段待办已实现，口径与当年"太复杂"的顾虑相反：复杂性由 FFmpeg 的 vulkan hwaccel 承担
+（VkVideoSession/DPB/参考帧管理），`FFVkDecoder` 只做设备创建与格式协商：
+
+- **定位**：桌面(Windows/Linux)硬解**备选**，注册名 `ff_h264_vulkan`/`ff_hevc_vulkan`，
+  排在 dx11/vaapi 主路之后的选型候选（选型链：首选名 → vulkan → 软解名 → 首项兜底）。
+  Apple 不注册（MoltenVK 无 VK_KHR_video_queue）；Android 不注册（驱动不出 video 扩展，走 MediaCodec）。
+- **自降级三级**：无 Vulkan 运行时 → 构造探测失败，选型链跳过；驱动不支持该编码 →
+  `get_format` 候选无 VULKAN，帧内自动软解；解码会话协商失败 → open 报错走链上下一候选。
+- **输出车道**：`VCodecTh::cpu`，VkImage 经 `av_hwframe_transfer_data` 下载成 CPU NV12
+  走软解同款上传链路（与 FFVADecoder 同款）；GPU 直通（AVVulkanDeviceContext 注入自研
+  device、VkImage 直进渲染图）留待后续迭代。
+- **编解码覆盖**：仅 h264/hevc/vp9/av1（Vulkan Video 规范范围），老编码永远软解兜底。
+- **FFmpeg 包**：需 `--enable-vulkan` + vulkan hwaccel 白名单（构建脚本 2026-09-18 已同步，
+  见 doc/build/FFmpeg构建.md），增量约 0.5~1MB。

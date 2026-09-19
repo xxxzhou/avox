@@ -31,6 +31,13 @@ import sys
 #   (「永不转码直连」的音频半句; DTS-HD MA 走已有 dca)。native 组件(LGPL), 许可不变。
 #   注意: 3rdparty 各平台部署库按脚本重编后才含此两解码器; dca/eac3 已在部署库内。
 #
+# 2026-09-18 桌面硬解备选扩展(win/linux 同步): --enable-vulkan + vulkan hwaccel 白名单,
+#   配合 FFVkDecoder(ff_h264/hevc_vulkan)作 dx11/vaapi 之后的备选硬解(FFmpeg 6.1+
+#   Vulkan Video, 9.0 已成熟; 仅覆盖 h264/hevc/vp9/av1, 老编码仍靠软解兜底)。
+#   构建依赖: MSYS2 mingw64 需 vulkan-headers/vulkan-loader 包(linux 需 libvulkan-dev);
+#   运行时 vulkan-1.dll/libvulkan.so.1 由 GPU 驱动自带, 不随包分发。
+#   包体增量实测口径: avcodec/avutil 合计约 +0.5~1MB (hwaccel 对象+hwcontext_vulkan)。
+#
 # 环境变量:
 #   MSYS2_INSTALL_DIR  MSYS2 根目录 (默认 C:\msys64)
 #   FFMPEG_PREFIX      安装树绝对路径 (默认 ../build/windows/ffmpeg-<flavor>)
@@ -76,6 +83,7 @@ COMMON_OPTIONS = [
     "--disable-x86asm",        # 免装 nasm; 追求极致解码性能可去掉
     "--enable-zlib",           # http gzip + matroska 压缩轨
     "--enable-schannel",       # https/tls/rtmps 走 Windows 自带 TLS
+    "--enable-vulkan",         # vulkan hwaccel(硬解备选, 见文件头 2026-09-18 扩展说明)
 ]
 # 注: FFmpeg 9.0 已删除 postproc 库, 勿加 --disable-postproc
 
@@ -106,7 +114,9 @@ MINIMUM_DECODERS += ("vp8,vp9,av1,theora,mjpeg,mjpegb,dvvideo,prores,"
 # legacy 运行时无害: 无 HW_DEVICE_CTX 方法, 默认选择器会自动跳过
 MINIMUM_HWACCELS = ("h264_d3d11va,h264_d3d11va2,hevc_d3d11va,hevc_d3d11va2,"
                     # 常用扩展: webm/AV1 硬解(av1 decoder 为硬解分发壳, 无软解 dav1d)
-                    "vp9_d3d11va,vp9_d3d11va2,av1_d3d11va,av1_d3d11va2")
+                    "vp9_d3d11va,vp9_d3d11va2,av1_d3d11va,av1_d3d11va2,"
+                    # vulkan 硬解备选(FFVkDecoder): 驱动侧要求 VK_KHR_video_decode_*
+                    "h264_vulkan,hevc_vulkan,vp9_vulkan,av1_vulkan")
 MINIMUM_ENCODERS = "h264_mf,hevc_mf,aac"   # 商业渠道; h264_mf/hevc_mf 为系统自带 MFT
 MINIMUM_PARSERS = ("h264,hevc,aac,mp3,opus,ac3,mpegaudio,mpeg4video,vc1"  # 后两项为老媒体扩展(wmv3/vc1/mpeg4 帧内解析需要)
                    ",vp8,vp9,av1,vorbis,flac,dca,aac_latm,amr,mjpeg")     # 常用扩展(eac3 无独立 parser, 勿加)
@@ -201,7 +211,8 @@ def deploy(prefix):
     # 注: zlib 由 avformat 动态链(zlib1.dll), avcodec 不直接依赖
     SYSTEM_DLLS = {"kernel32.dll", "msvcrt.dll", "user32.dll", "ole32.dll", "oleaut32.dll",
                    "advapi32.dll", "ws2_32.dll", "bcrypt.dll", "crypt32.dll", "ncrypt.dll",
-                   "secur32.dll", "ntdll.dll", "shell32.dll", "gdi32.dll"}
+                   "secur32.dll", "ntdll.dll", "shell32.dll", "gdi32.dll",
+                   "vulkan-1.dll"}  # GPU 驱动自带(System32), 不随包分发
     for name in list(copied):
         info = subprocess.run([objdump, "-p", os.path.join(dest_bin, name)],
                               capture_output=True, text=True)

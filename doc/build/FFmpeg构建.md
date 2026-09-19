@@ -1,7 +1,11 @@
 # 编译FFmpeg
 
-> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+> 状态: 有效 · 上次核对: 2026-09-18 · 权威源: -
 
+> **硬解白名单现况**: Windows minsize 含 d3d11va(+2) 与 vulkan hwaccel, Linux 含 vaapi 与
+> vulkan hwaccel(2026-09-18 起, 供 FFVkDecoder 作 dx11/vaapi 之后的备选硬解; 包体约 +0.5~1MB)。
+> vulkan 构建依赖: MSYS2 需 `mingw-w64-x86_64-vulkan-headers`/`-vulkan-loader`, Linux 需 `libvulkan-dev`;
+> 运行时 vulkan-1.dll / libvulkan.so.1 由 GPU 驱动自带, 不随包分发。改完脚本需在构建机重编部署。
 
 ## windows
 

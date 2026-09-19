@@ -1,5 +1,7 @@
 #include "AMediaSource.hpp"
 
+#include <cstring>
+
 #include "../AvoxCodec.h"
 #include "../audio/AudioDecoder.hpp"
 #include "../module/AvoxManager.hpp"
@@ -255,6 +257,18 @@ bool AMediaSource::initVideoDecoder(VCodecId codecId, const VideoDesc& srcDesc,
     return false;
   }
   const char* sName = getDefaultDecoderName(codecId, bHard);
+  // 硬解备选: 主路(dx11/vaapi)失败先试 vulkan(未注册自动跳过), 再落软解
+  const char* sVulkan = nullptr;
+  if (bHard) {
+    if (codecId == VCodecId::h264) {
+      sVulkan = AVOX_FFVULKAN_H264_DECODER;
+    } else if (codecId == VCodecId::h265) {
+      sVulkan = AVOX_FFVULKAN_H265_DECODER;
+    }
+    if (sVulkan && strcmp(sVulkan, sName) == 0) {
+      sVulkan = nullptr;
+    }
+  }
   size_t sIndex = 0;
   for (size_t i = 0; i < decodes.size(); ++i) {
     if (decodes[i].desc.name == sName) {
@@ -274,6 +288,25 @@ bool AMediaSource::initVideoDecoder(VCodecId codecId, const VideoDesc& srcDesc,
            " failed");
     videoDecoder.reset();
     if (bHard) {
+      // 主路失败先试 vulkan 备选(未注册/环境不支持自动跳过), 再落软解
+      if (sVulkan) {
+        for (size_t i = 0; i < decodes.size(); ++i) {
+          if (decodes[i].desc.name != sVulkan) {
+            continue;
+          }
+          videoDecoder = std::unique_ptr<VideoDecoder>(decodes[i].initFunc());
+          if (videoDecoder) {
+            videoDecoder->setObserver(this);
+            if (videoDecoder->setContext(decodes[i].desc, srcDesc)) {
+              LOGFLF(LogLevel::info, "create video decode success (vulkan)");
+              return true;
+            }
+            LOGFLF(LogLevel::warn, "vulkan backup failed, fallback to soft");
+            videoDecoder.reset();
+          }
+          break;
+        }
+      }
       return initVideoDecoder(codecId, srcDesc, false);
     }
     return false;

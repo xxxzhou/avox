@@ -2,15 +2,13 @@
 
 #include "FFVDecoder.hpp"
 #include "avox/video/VideoDecoder.hpp"
-#if AVOX_ENABLE_VULKAN
-#include "avox_vulkan/VkContext.hpp"
-#endif
 
 namespace avox {
 
-#if AVOX_ENABLE_VULKAN
+#if AVOX_ENABLE_VULKAN && !defined(__APPLE__)
 
-class FFVkDecoder : public FFVDecoder, public VkContext {
+// FFmpeg Vulkan 硬解(桌面备选车道): 注册排在 dx11/vaapi 主路之后, 环境不支持时逐层降级
+class FFVkDecoder : public FFVDecoder {
 public:
   FFVkDecoder();
   virtual ~FFVkDecoder();
@@ -25,6 +23,7 @@ protected:
 
 protected:
   virtual void onAttachContext() override;
+  virtual void onDetachContext() override;
 
 protected:
   AVBufferRef *hwBuffer = nullptr;
