@@ -83,8 +83,18 @@ function(copy_head HEAD_FILE)
     set(DST_FILE "${CMAKE_BINARY_DIR}/install/include/${HEAD_FILE}")
     get_filename_component(DST_DIR "${DST_FILE}" DIRECTORY)
     file(MAKE_DIRECTORY "${DST_DIR}")
-    
-    # 检查目标文件是否存在且内容相同
+
+    # T19(09-18 vtable 崩溃事故根): 增量构建不触发 reconfigure 时改了公共头,
+    # install/include 会落后于新 dll —— 下游按旧头编译即 vtable 错位。
+    # 构建期刷新: ALL 目标每次构建都跑, copy_if_different 内容相同零拷贝,
+    # 头文件一变立即同步。注册必须无条件(不能被下方 configure 期跳过早退)
+    string(REGEX REPLACE "[^A-Za-z0-9]" "_" CH_TARGET "copy_head_${HEAD_FILE}")
+    add_custom_target(${CH_TARGET} ALL
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${SRC_FILE}" "${DST_FILE}"
+        DEPENDS "${SRC_FILE}"
+        VERBATIM)
+
+    # configure 期拷贝(首配兜底): 内容相同且源不比目标新则跳过
     if(EXISTS "${DST_FILE}")
         file(SHA256 "${SRC_FILE}" SRC_HASH)
         file(SHA256 "${DST_FILE}" DST_HASH)
@@ -95,7 +105,7 @@ function(copy_head HEAD_FILE)
                 return()
             endif()
         endif()
-    endif()    
+    endif()
     file(COPY "${SRC_FILE}" DESTINATION "${DST_DIR}" FILES_MATCHING PATTERN "*")
 endfunction()
 
