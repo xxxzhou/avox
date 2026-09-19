@@ -121,6 +121,10 @@ T2 IOParseDav(参照 IOParseSmb ~600 行 + 窗口, 2-3 天) → T3 重试/续播
       明确报错不降级; 直链失效自动重试(refresh 续播)属 T3。
 - [ ] T3 直链失效重试:播放中 http 错误分类映射(401/403/410/断流)→ refresh(entry) 重取
       → 带 offset 重开续播;重试策略(次数/退避)可配;alists token 形态鉴权加 Header 注入点。
+      **avox-test 注入面约束(2026-09-19 对齐)**: 素材小于 4MB 预读窗口时顺序读不再发
+      请求, 断链注入只在 seek 强制窗口重填时才撞得上; 用例走 `--dav-control` 管线
+      (davserver control.json 注入 410/断流, 用例 dav-broken-resume/dav-outage-resume
+      已建待引擎实现)。验收口径: refresh 生效 = 恢复后播放位置越过注入点继续前进。
 - [ ] T4 目录列表缓存:会话级连接复用 + 目录树缓存(TTL 可配),秒开指标入 a02 口径。
 - [ ] T5 avox-test 用例:WebDAV(本机 ZLM/Alist 容器)播放/seek/断链重试/过期令牌/目录缓存,
       离线子集用本地 http range 服务模拟。
