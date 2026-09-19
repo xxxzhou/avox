@@ -11,8 +11,9 @@
 backlog 全景与逐项施工方案见 [backlog/README.md](backlog/README.md)。
 
 - [ ] A-1 字幕链收尾: 信号暴露已落地(方案A, `1608887`: SubtitleEncoding 枚举 +
-      ISubtitle::getFileEncoding, SWIG 四语言随构建同步); 剩 **ASS 样式/延迟接口**(T3) →
-      候选枚举(T5) → PGS e2e(T4, 缺真实样片); ass 插件路径编码自愈未做(见 a01) → [a01](backlog/a01-ass-pgs.md)
+      ISubtitle::getFileEncoding, SWIG 四语言随构建同步) + 延迟接口已落地(`21491dc`);
+      剩 **ASS 样式覆盖接口**(T3) → 候选枚举(T5) → PGS e2e(T4, 缺真实样片); ass 插件
+      路径编码自愈未做(见 a01) → [a01](backlog/a01-ass-pgs.md)
 - [ ] A-2 秒起播: 埋点+probe 降档已落地(`d7ebd1d`/`ed75f49`: 本地索引容器快档 3-14ms,
       保底字段缺失回退补查); 剩 **T3 seek 精确化** → T4 基线回归用例 → [a02](backlog/a02-fast-start-seek.md)
 - [ ] A-3 VP9/WEBM: **三平台硬解已落地**(Win D3D11VA `1c195f5` 本机实测 hw 命中 /
