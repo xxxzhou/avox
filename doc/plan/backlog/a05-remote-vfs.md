@@ -4,7 +4,7 @@
 
 
 优先级 P0 · 里程碑 M2(**建议 M1 末期提前启动**:panvox P-4 刮削与源浏览硬依赖)
-计划状态:**T1 契约设计 + T2 IOParseDav 已落地, 剩 T3 重试/T4 缓存/T5 用例** · 来源:backlog A-5
+计划状态:**T1 契约 + T2 IOParseDav + T3 断链自愈已落地, T5 用例主体落地, 剩 T4 缓存/§1 回调链** · 来源:backlog A-5
 WebDAV/SMB 统一 range 读 + 缓冲窗口 + seek;直链失效重试、令牌过期回调、目录列表缓存。
 
 ## 出口判据
@@ -119,15 +119,28 @@ T2 IOParseDav(参照 IOParseSmb ~600 行 + 窗口, 2-3 天) → T3 重试/续播
       服务端走查)。本机 range 服务器实测: dav:// 播放+seek PASS
       (seek 109ms), 离线回归 44/44 绿。v1 限制: 服务端不支持 range(200 全量)
       明确报错不降级; 直链失效自动重试(refresh 续播)属 T3。
-- [ ] T3 直链失效重试:播放中 http 错误分类映射(401/403/410/断流)→ refresh(entry) 重取
-      → 带 offset 重开续播;重试策略(次数/退避)可配;alists token 形态鉴权加 Header 注入点。
+- [x] T3 直链失效重试 (2026-09-19 落地): 播放中 http 错误分类映射 → refresh 重取
+      → 带 offset 重开续播;重试策略(次数/退避)可配;Header 注入点。**实现面与 §2
+      设计的差异(实施收窄, 验收口径不变)**: 恢复流收在 avox_remote 插件内, 不动
+      MediaPlayer 与公开头 —— IOParseDav 拉窗失败按状态分类, 401/403/404/410 经
+      插件内会话注册表(RemoteBridge.hpp, DavSource 构造/析构注册)以「resolve 产出
+      原样 URL」找回会话 refresh 换新直链(携会话 authHeader), 断流/5xx 退避重试
+      同直链(3 次, 1s/2s/4s); ioPosition 失败不前移, 恢复从断点字节续读, PTS 无
+      跳变。AVError::remoteBroken/onAuthExpired 未加(§1 单独落地): 断链期间表现为
+      缓冲冻结, 重试耗尽走既有 EIO 终错。Header 注入 = setParam("authHeader",
+      "Key:Value"), 会话 PROPFIND 与直链 GET 携带同 Header。测试口: 插件本地
+      option 键 `remote.dav.lookahead`(预读窗口字节数; **只准经变更回调取值,
+      对缺失键主动 getString 会硬死 exit 127**)。
       **avox-test 注入面约束(2026-09-19 对齐)**: 素材小于 4MB 预读窗口时顺序读不再发
       请求, 断链注入只在 seek 强制窗口重填时才撞得上; 用例走 `--dav-control` 管线
       (davserver control.json 注入 410/断流, 用例 dav-broken-resume/dav-outage-resume
       已建待引擎实现)。验收口径: refresh 生效 = 恢复后播放位置越过注入点继续前进。
+      **实测(同日)**: 两例 PASS, 服务端日志双证据 —— 签名 token 预算打空 410 后
+      refresh 换新 token 续播; 断流窗口 4 次 DROP 后退避恢复。
 - [ ] T4 目录列表缓存:会话级连接复用 + 目录树缓存(TTL 可配),秒开指标入 a02 口径。
-- [ ] T5 avox-test 用例:WebDAV(本机 ZLM/Alist 容器)播放/seek/断链重试/过期令牌/目录缓存,
-      离线子集用本地 http range 服务模拟。
+- [ ] T5 avox-test 用例:**主体已落地 (2026-09-19)** —— dav-open-list / dav-play-seek /
+      dav-auth-fail / dav-broken-resume / dav-outage-resume 五例进离线门禁;
+      剩 过期令牌回调链路(依赖 §1 onAuthExpired 落地后打开 dav-auth-expired)。
 
 ## 验收
 
