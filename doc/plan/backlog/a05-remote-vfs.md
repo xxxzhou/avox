@@ -152,7 +152,16 @@ T2 IOParseDav(参照 IOParseSmb ~600 行 + 窗口, 2-3 天) → T3 重试/续播
       —— 播放场景以 IO 有界等待 30s 替代(缓冲冻结=断流形态), 浏览场景无 closed 态,
       过期后 list 仍可发、code 持续流转, 回调仍只一次; ② 凭据不回写 open 时 UrlParts
       (直链 userinfo 走快照), 重建=热更新+重 resolve; ③ SMB 未动(卡范围 DavSource)。
-- [ ] T4 目录列表缓存:会话级连接复用 + 目录树缓存(TTL 可配),秒开指标入 a02 口径。
+- [ ] T4 目录列表缓存 **DavSource 半已落地 (2026-09-20 夜, `fd4fc87`)**:
+      ① 会话级连接复用 —— propfind 持会话级 httplib::Client(keep-alive, 省每次
+      PROPFIND 的 TCP/TLS 握手), clientMtx 串行 op 线程/桥 refresh/reauthorize
+      并发, send 失败重建客户端重试一次(keep-alive 半开), open/close 重置;
+      ② 目录 TTL 缓存 —— setParam("listCacheTtl", 秒) 默认 30/"0"禁用, 命中时
+      list() 同步回填+回调(不起工作线程), TTL 内反复命中(二次进入/翻回秒开),
+      容量 64 逐最旧, open/close 清空, refresh 换签链式同步进缓存。构建+ctest
+      绿; 秒开指标入 a02 口径属 avox-test 侧(用例配 listCacheTtl+计时)。
+      **剩**: SmbSource 会话级连接复用(现每次 list 独立 smb2_context+
+      connect_share)留明晚。
 - [ ] T5 avox-test 用例:**主体已落地 (2026-09-19)** —— dav-open-list / dav-play-seek /
       dav-auth-fail / dav-broken-resume / dav-outage-resume 五例进离线门禁;
       剩 过期令牌回调链路(依赖 §1 onAuthExpired 落地后打开 dav-auth-expired)。
