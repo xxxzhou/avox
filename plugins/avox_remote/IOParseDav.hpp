@@ -32,10 +32,18 @@ class IOParseDav : public AVSource, public RunTask {
  protected:
   // 会话客户端(keep-alive, 连接死时重建一次)
   std::unique_ptr<httplib::Client> client;
+  // 生效播放 URL(onOpen 取基类 url; refresh 重取后更新, ensureClient 按此解析)
+  std::string curUrl;
+  // 鉴权 Header 注入(断链桥重取时自 DavSource 会话拷贝, 空=不携带)
+  std::string authKey;
+  std::string authVal;
   // 请求路径(ensureClient 时从 URL 解析缓存, 保持百分号编码原样)
   std::string reqPath;
   // 目标文件大小(首个 range 响应的 Content-Range total; EOF 与 AVSEEK_SIZE)
   uint64_t fileSize = 0;
+  // 预读窗口字节数(默认 kLookaheadSize; 测试可经 option "remote.dav.lookahead"
+  // 调小, 强制窗口频繁重填 —— 小素材否则一窗吃尽, 断链面永远咬不到)
+  uint64_t lookaheadSize = 0;  // 0 = 未配置, refillWindow 取默认
   // 流上下文(fmtCtx的CUSTOM_IO下pb不随close释放, 所有权在本类)
   AVFormatContextPtr fmtCtx = nullptr;
   // 自定义avio缓冲(av_malloc分配, close时统一释放)
@@ -82,11 +90,18 @@ class IOParseDav : public AVSource, public RunTask {
                       int32_t size);
   // 释放自定义avio缓冲与上下文(CUSTOM_IO下pb所有权在本类)
   void releaseIoContext();
-  // range 拉取 [start, end] 入 out(206), 并从 Content-Range 回填 fileSize;
-  // 返回 false = 请求失败/服务端不支持 range
-  bool fetchRange(uint64_t start, uint64_t end, std::vector<uint8_t>* out);
-  // 预读窗口未覆盖 ioPosition 时重新拉取
+  // range 拉取 [start, end] 入 out: 返回 206=成功, 其他=http 状态码, 0=连接级失败
+  // (内部对连接死重建会话重试一次)
+  int fetchRange(uint64_t start, uint64_t end, std::vector<uint8_t>* out);
+  // 预读窗口未覆盖 ioPosition 时重新拉取; 失败按 a05-T3 分类自愈
+  // (瞬时类退避重试, 401/403/404/410 走断链桥 refresh 换新直链), 全部
+  // 尝试耗尽才返回 false —— 上层 avio 拿 EIO 走既有终错路径
   bool refillWindow();
+  // 退避等待(1s/2s/4s, 分片轮询 bInterruptRead; 被打断返回 false)
+  bool backoffSleep(int retry);
+  // 断链桥: 找回产出当前 URL 的 DavSource 会话并 refresh 换新直链(携其鉴权
+  // Header); 无桥/重取失败返回 false
+  bool bridgeRefresh();
   // 连接级错误后重建会话客户端(各请求独立重试一次)
   bool ensureClient();
 

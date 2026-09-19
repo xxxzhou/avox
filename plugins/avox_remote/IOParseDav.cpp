@@ -7,6 +7,7 @@
 
 #include "avox/codec/H26XHelper.hpp"
 #include "avox/module/LogHelper.hpp"
+#include "DavSource.hpp"
 
 namespace avox {
 
@@ -18,6 +19,11 @@ constexpr int kAvioBufferSize = 256 * 1024;
 // 预读窗口大小(a05契约): 顺序读时一次 range 拉取摊薄请求次数,
 // 4MB/窗口 ≈ 每 64MB 视频仅 16 个请求; seek 落窗口内零请求
 constexpr uint64_t kLookaheadSize = 4 * 1024 * 1024;
+// 断链自愈 (a05-T3 契约 §2): 401/403/404/410 直链级失效 → refresh 换新直链;
+// 断流/5xx 瞬时类 → 退避重试同直链。次数 3 次、退避 1s/2s/4s 为契约内定值
+// (option 透出后续加); httplib 不可中断 → 以「短超时+整体重试」近似
+constexpr int kRecoverRetries = 3;
+constexpr int kBackoffMs[kRecoverRetries] = {1000, 2000, 4000};
 // 单请求粒度上限: httplib 不可中断, 打断最坏等一个请求返回,
 // 拉取按窗口一次到位但超时受客户端读超时约束
 
@@ -115,7 +121,7 @@ bool IOParseDav::ensureClient() {
     return true;
   }
   UrlParts p;
-  if (!parseUrl(url, &p)) {
+  if (!parseUrl(curUrl.empty() ? url : curUrl, &p)) {
     return false;
   }
   reqPath = p.path;
@@ -139,33 +145,34 @@ bool IOParseDav::ensureClient() {
   return true;
 }
 
-bool IOParseDav::fetchRange(uint64_t start, uint64_t end,
-                            std::vector<uint8_t>* out) {
-  if (!ensureClient()) {
-    return false;
-  }
-  if (bInterruptRead.load()) {
-    return false;
+int IOParseDav::fetchRange(uint64_t start, uint64_t end,
+                           std::vector<uint8_t>* out) {
+  if (!ensureClient() || bInterruptRead.load()) {
+    return 0;
   }
   httplib::Headers headers = {{"Range", "bytes=" + std::to_string(start) +
                                             "-" + std::to_string(end)}};
+  if (!authKey.empty()) {
+    // 鉴权 Header 注入 (契约 §3): 断链桥重取时自会话拷贝, 直链 GET 携带
+    headers.emplace(authKey, authVal);
+  }
   httplib::Result res = client->Get(reqPath, headers);
   if (!res) {
     // 连接死(半开等): 重建会话重试一次
     client.reset();
-    if (!ensureClient()) {
-      return false;
+    if (!ensureClient() || bInterruptRead.load()) {
+      return 0;
     }
     res = client->Get(reqPath, headers);
     if (!res) {
-      return false;
+      return 0;
     }
   }
   if (res->status != 206) {
-    // 服务端不支持 range(200 全量)或鉴权失效等: v1 明确不支持, 上层报错
+    // 服务端不支持 range(200 全量)/鉴权失效/直链过期等, 交上层按状态分类
     LOGFLF(LogLevel::warn, "[dav io] range request status:", res->status,
            " (expect 206)");
-    return false;
+    return res->status;
   }
   // Content-Range: bytes S-E/TOTAL 回填总大小
   auto rangeIt = res->headers.find("Content-Range");
@@ -183,24 +190,85 @@ bool IOParseDav::fetchRange(uint64_t start, uint64_t end,
     // httplib body 为 string, 拷成字节缓冲
     out->assign(res->body.begin(), res->body.end());
   }
-  return true;
+  return 206;
 }
 
 bool IOParseDav::refillWindow() {
   if (fileSize > 0 && (uint64_t)ioPosition >= fileSize) {
     return false;
   }
+  const uint64_t win =
+      lookaheadSize > 0 ? lookaheadSize : kLookaheadSize;
   const uint64_t start = (uint64_t)ioPosition;
   const uint64_t end =
-      fileSize > 0 ? std::min(start + kLookaheadSize, fileSize) - 1
-                   : start + kLookaheadSize - 1;
-  std::vector<uint8_t> data;
-  if (!fetchRange(start, end, &data) || data.empty()) {
+      fileSize > 0 ? std::min(start + win, fileSize) - 1 : start + win - 1;
+  // 断链自愈 (a05-T3): 首拉失败按状态分类 —— 401/403/404/410 直链级失效走
+  // 断链桥 refresh 换新直链立即重试; 断流/5xx 瞬时类退避重试同直链。
+  // ioPosition 在拉取失败时不前移, 恢复后从断点字节续读, PTS 无跳变;
+  // 全部尝试耗尽才 false(avio EIO → 既有终错路径)
+  for (int attempt = 0; attempt <= kRecoverRetries; ++attempt) {
+    std::vector<uint8_t> data;
+    const int status = fetchRange(start, end, &data);
+    if (bInterruptRead.load()) {
+      return false;
+    }
+    if (status == 206 && !data.empty()) {
+      winBuf = std::move(data);
+      winStart = start;
+      winValid = winBuf.size();
+      return true;
+    }
+    if (attempt >= kRecoverRetries) {
+      break;
+    }
+    const bool linkBroken =
+        (status == 401 || status == 403 || status == 404 || status == 410);
+    LOGFLF(LogLevel::warn, "[dav io] range fetch failed status:", status,
+           linkBroken ? " -> refresh direct link"
+                      : " -> transient backoff retry",
+           " attempt:", attempt + 1);
+    if (linkBroken) {
+      if (bridgeRefresh()) {
+        client.reset();  // 新直链(换签名/凭据), 下次 ensureClient 按新 URL 重建
+        continue;        // 立即重试, 不退避
+      }
+      // 无桥(裸 URL 播放)或会话重取失败: 直链级失效不可自愈, 重试同直链无意义
+      LOGFLF(LogLevel::error, "[dav io] refresh unavailable, give up");
+      return false;
+    }
+    if (!backoffSleep(attempt)) {
+      return false;
+    }
+  }
+  return false;
+}
+
+bool IOParseDav::backoffSleep(int retry) {
+  const int totalMs =
+      (retry >= 0 && retry < kRecoverRetries) ? kBackoffMs[retry] : 1000;
+  // 分片轮询: seek/close 打断退避立即让位
+  for (int waited = 0; waited < totalMs; waited += 50) {
+    if (bInterruptRead.load()) {
+      return false;
+    }
+    sleepTask(false, 50);
+  }
+  return true;
+}
+
+bool IOParseDav::bridgeRefresh() {
+  DavSource* src = davbridge::findForUrl(url);
+  if (src == nullptr) {
     return false;
   }
-  winBuf = std::move(data);
-  winStart = start;
-  winValid = winBuf.size();
+  std::string fresh;
+  if (!src->refreshPlaybackUrl(&fresh)) {
+    return false;
+  }
+  curUrl = fresh;
+  src->playbackAuthHeader(&authKey, &authVal);
+  LOGFLF(LogLevel::info, "[dav io] refreshed direct link, len:",
+         (double)fresh.size());
   return true;
 }
 
@@ -386,6 +454,7 @@ bool IOParseDav::onOpen() {
              "unsupported url(expect http(s)|dav(s)://[user:pass@]host[:port]/path)");
     return false;
   }
+  curUrl = url;  // 生效直链初值; refresh 重取后由 bridgeRefresh 更新
   if (!ensureClient()) {
     dispatch(&IAVSourceOb::onError, AVError::urlNoSupport, "http client init failed");
     return false;
@@ -393,7 +462,7 @@ bool IOParseDav::onOpen() {
   // 探测文件大小(bytes=0-0, 1字节body): Content-Range total 回填 fileSize,
   // 同时验证服务端支持 range(不支持时明确报错, 不做全量渐进降级)
   std::vector<uint8_t> probe;
-  if (!fetchRange(0, 0, &probe) || fileSize == 0) {
+  if (fetchRange(0, 0, &probe) != 206 || fileSize == 0) {
     dispatch(&IAVSourceOb::onError, AVError::urlNoSupport,
              "range probe failed(server may not support range requests)");
     client.reset();
@@ -700,7 +769,26 @@ double IOParseDav::progress() const {
 }
 
 void IOParseDav::onOptionChange(const char* key, ArgType type) {
-  // dav 无私有键, 全部交给基类(timeout等)
+  // 插件本地键: 预读窗口字节数(播放中调整下一窗生效; linkOption 建链时还会
+  // 重放既有键, open 前设置的值在这里收到)。经 option 成员上转 IOption* 取值
+  // (getLink 未导出, 见 onOpen 同注)。
+  // ⚠ 只准在变更回调里取键值, 不准对可能不存在的键主动 getString ——
+  // 本仓 JsonOption 对缺失键的读取行为未定义, 已实测进程硬死(exit 127)
+  if (std::strcmp(key, "remote.dav.lookahead") == 0) {
+    if (option != nullptr) {
+      IOption* io = option;
+      const char* v = io->getString(key);
+      if (v != nullptr && *v != '\0') {
+        const unsigned long long n = std::strtoull(v, nullptr, 10);
+        if (n > 0) {
+          lookaheadSize = (uint64_t)n;
+        }
+      }
+    }
+    (void)type;
+    return;
+  }
+  // 其余交给基类(timeout等)
   AVSource::onOptionChange(key, type);
 }
 

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <cstdio>
 #include <cstring>
 
 #ifndef CPPHTTPLIB_OPENSSL_SUPPORT
@@ -228,9 +229,12 @@ bool isMediaPath(const std::string& path) {
 
 }  // namespace
 
-DavSource::DavSource() {}
+DavSource::DavSource() { davbridge::registerSource(this); }
 
-DavSource::~DavSource() { close(); }
+DavSource::~DavSource() {
+  davbridge::unregisterSource(this);
+  close();
+}
 
 void DavSource::setOb(IRemoteSourceOb* ob) { obAt.store(ob); }
 
@@ -248,6 +252,21 @@ void DavSource::setParam(const char* key, const char* value) {
   // 自签名证书场景关校验 (内网 NAS 常见)
   if (std::strcmp(key, "verifyTls") == 0) {
     verifyTls = value != nullptr && std::strcmp(value, "false") == 0;
+  }
+  // 鉴权 Header 注入 (a05-T3 契约 §3): "Key:Value", 首个 ':' 分隔; 空值清除。
+  // alist/OpenList token 形态: Authorization: Bearer <token>
+  if (std::strcmp(key, "authHeader") == 0) {
+    std::lock_guard<std::mutex> lk(resultMutex);
+    authKey.clear();
+    authVal.clear();
+    if (value != nullptr && *value != '\0') {
+      const std::string kv(value);
+      const size_t colon = kv.find(':');
+      if (colon != std::string::npos && colon > 0) {
+        authKey = trimCopy(kv.substr(0, colon));
+        authVal = trimCopy(kv.substr(colon + 1));
+      }
+    }
   }
 }
 
@@ -412,6 +431,13 @@ bool DavSource::propfind(const std::string& reqPath, int depth,
   req.path = reqPath;
   req.headers.emplace("Depth", depth > 0 ? "1" : "0");
   req.headers.emplace("Content-Type", "application/xml");
+  {
+    // 鉴权 Header 注入 (契约 §3): setParam("authHeader") 设置后本会话所有请求携带
+    std::lock_guard<std::mutex> lk(resultMutex);
+    if (!authKey.empty()) {
+      req.headers.emplace(authKey, authVal);
+    }
+  }
   req.body = kPropfindBody;
   httplib::Response res;
   httplib::Error err = httplib::Error::Success;
@@ -693,7 +719,87 @@ const char* DavSource::resolve(int32_t entryIndex, IOption* option) {
     return nullptr;
   }
   resolvedBuf = entryUrl(e.token);
+  // 断链自愈桥凭证 (a05-T3): IOParseDav 凭原样 URL 找回本会话重取
+  lastResolvedIndex = entryIndex;
+  lastResolvedUrl = resolvedBuf;
   return resolvedBuf.c_str();
+}
+
+const char* DavSource::refresh(int32_t entryIndex, IOption* option) {
+  (void)option;  // dav 无私有 option 键 (同 resolve)
+  std::string token;
+  {
+    std::lock_guard<std::mutex> lk(resultMutex);
+    if (!openedFlag.load()) {
+      lastError = "session closed";
+      return nullptr;
+    }
+    if (entryIndex < 0 || entryIndex >= (int32_t)batch.size()) {
+      lastError = "entry index out of range";
+      return nullptr;
+    }
+    if (batch[entryIndex].type == RemoteEntryType::dir) {
+      lastError = "entry is a directory(refresh 不适用): " + batch[entryIndex].token;
+      return nullptr;
+    }
+    token = batch[entryIndex].token;
+  }
+  // 同名重发 PROPFIND Depth0: 服务端重签 href(alist/网盘签名直链的时效语义;
+  // 静态 DAV 服务返回同路径 = 幂等重取)。同步阻塞, 至多 opTimeoutMs。
+  std::string body;
+  int32_t status = 0;
+  if (!propfind(requestPath(token), 0, &body, &status) || status != 207) {
+    std::lock_guard<std::mutex> lk(resultMutex);
+    lastError = "refresh propfind status=" + std::to_string(status);
+    return nullptr;
+  }
+  const auto items = parseMultistatus(body);
+  if (items.empty() || items[0].href.empty()) {
+    std::lock_guard<std::mutex> lk(resultMutex);
+    lastError = "refresh: empty multistatus";
+    return nullptr;
+  }
+  // href 编码原样, 可能是绝对路径或完整 URL → 归一成 token(解码路径)
+  std::string fresh = items[0].href;
+  const size_t schemePos = fresh.find("://");
+  if (schemePos != std::string::npos) {
+    const size_t slash = fresh.find('/', schemePos + 3);
+    fresh = slash != std::string::npos ? fresh.substr(slash) : "/";
+  }
+  fresh = percentDecode(fresh);
+  {
+    std::lock_guard<std::mutex> lk(resultMutex);
+    batch[entryIndex].token = fresh;  // 链式更新: 下次 refresh 从新签名续
+    resolvedBuf = entryUrl(fresh);
+    lastResolvedIndex = entryIndex;
+    lastResolvedUrl = resolvedBuf;
+    return resolvedBuf.c_str();
+  }
+}
+
+bool DavSource::matchPlaybackUrl(const std::string& url) {
+  std::lock_guard<std::mutex> lk(resultMutex);
+  return !lastResolvedUrl.empty() && lastResolvedUrl == url;
+}
+
+bool DavSource::refreshPlaybackUrl(std::string* out) {
+  int32_t idx = -1;
+  {
+    std::lock_guard<std::mutex> lk(resultMutex);
+    idx = lastResolvedIndex;
+  }
+  const char* u = refresh(idx, nullptr);
+  if (u == nullptr || *u == '\0') {
+    return false;
+  }
+  *out = u;
+  return true;
+}
+
+void DavSource::playbackAuthHeader(std::string* key, std::string* val) {
+  std::lock_guard<std::mutex> lk(resultMutex);
+  *key = authKey;
+  *val = authVal;
 }
 
 const char* DavSource::getLastError() {

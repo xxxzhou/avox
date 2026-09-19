@@ -8,6 +8,7 @@
 
 #include "avox/AvoxBase.h"
 #include "avox/module/RunTask.hpp"
+#include "RemoteBridge.hpp"
 
 namespace avox {
 
@@ -42,6 +43,19 @@ class DavSource : public IRemoteSource, public RunTask {
   virtual const char* getEntryToken(int32_t i) override;
   virtual const char* getSessionField(const char* key) override;
   virtual const char* resolve(int32_t entryIndex, IOption* option) override;
+  // 直链失效重取 (a05-T3 契约 §2): 对文件条目重发 PROPFIND Depth0, 以服务端
+  // 重签的 href 换新直链(alist/网盘形态 URL 有时效; 静态 DAV 返回同路径)。
+  // 同步阻塞(至多 opTimeoutMs), 失败 nullptr(原因见 getLastError)。
+  virtual const char* refresh(int32_t entryIndex, IOption* option) override;
+
+ public:
+  // ---- 断链自愈桥 (davbridge, 仅 IOParseDav 调用) ----
+  // 本会话最近 resolve/refresh 产出的直链是否为 url
+  bool matchPlaybackUrl(const std::string& url);
+  // 重取最近 resolve 条目的直链, 新 URL 写 *out (复用 refresh 通道)
+  bool refreshPlaybackUrl(std::string* out);
+  // 会话鉴权 Header 注入对 (setParam("authHeader") 产物; IOParseDav 直链 GET 携带)
+  void playbackAuthHeader(std::string* key, std::string* val);
 
   virtual const char* getLastError() override;
 
@@ -106,6 +120,10 @@ class DavSource : public IRemoteSource, public RunTask {
   int32_t opTimeoutMs = 10000;
   // 会话参数(setParam 写入)
   bool verifyTls = true;
+  // 鉴权 Header 注入 (a05-T3 契约 §3, setParam("authHeader","Key:Value") 写入;
+  // 本会话所有 PROPFIND 携带, refreshPlaybackUrl 时交 IOParseDav 携带到直链 GET)
+  std::string authKey;
+  std::string authVal;
   // 入口解析产物(open 成功后不变, 读多写少, resultMutex 保护)
   std::unique_ptr<UrlParts> parts;
   // 外部中止源(close/stopList 置位; httplib 请求不可中断, 请求返回后检查丢弃结果)
@@ -118,6 +136,24 @@ class DavSource : public IRemoteSource, public RunTask {
   std::string sessionName;
   std::string lastError;
   std::string resolvedBuf;  // resolve 返回缓冲(会话内稳定)
+  // 最近一次 resolve/refresh 的条目与产出 (断链自愈桥的匹配凭证)
+  int32_t lastResolvedIndex = -1;
+  std::string lastResolvedUrl;
 };
+
+namespace davbridge {
+// 按播放直链找注册会话(resolve/refresh 产出原样匹配; 未命中 nullptr)。
+// 需 DavSource 完整类型, 置类定义后。
+inline DavSource* findForUrl(const std::string& url) {
+  std::lock_guard<std::mutex> lk(regMutex());
+  auto& v = reg();
+  for (size_t i = 0; i < v.size(); ++i) {
+    if (v[i]->matchPlaybackUrl(url)) {
+      return v[i];
+    }
+  }
+  return nullptr;
+}
+}  // namespace davbridge
 
 }
