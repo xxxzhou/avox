@@ -40,9 +40,9 @@ protected:
   // 读满 → EOF → 之后任何 seek 都再也拿不到数据(录制产物缺失/画面静止)。
   std::atomic<bool> bEofReset{false};     // seekTo 成功后置位: 叫醒停放的读线程
   std::atomic<bool> bEofNotified{false};  // onComplete 每次 EOF 只报一次
-  // PGS 解码器(选中该轨时建): 局部轨索引 → 解码器
+  // PGS 解码器(首个 PGS 流在轨扫描期即建): 以流索引喂包门控
   std::unique_ptr<PgsDecoder> pgsDec = nullptr;
-  int32_t pgsTrackLocal = -1;  // 解码器对应的局部轨索引
+  int32_t pgsStreamId = -1;  // PGS 解码器对应的 ffmpeg 流索引(非局部轨号)
 
 private:
   // 解析IO流媒体格式

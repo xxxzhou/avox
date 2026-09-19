@@ -126,19 +126,15 @@ bool IOParseFF::parseStream(int32_t streamId, AVCodecParameters* codecpar) {
   // sconfig 包旁路下发, MediaPlayer 侧留存, 选轨时喂 libass(计划 §3.2)。
   // index 与 subtitles 包一致走局部轨索引(与选轨号同域)
   if (codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE) {
-    if (codecpar->codec_id == AV_CODEC_ID_HDMV_PGS_SUBTITLE &&
-        (int32_t)sIndexMaps.size() > streamId && streamId >= 0 &&
-        sIndexMaps[streamId] == pgsTrackLocal) {
-      // 首个 PGS 轨: 建解码器, 记局部轨索引
+    if (codecpar->codec_id == AV_CODEC_ID_HDMV_PGS_SUBTITLE && !pgsDec) {
+      // 首个 PGS 轨: 建解码器(与 sIndexMaps 填充时序解耦 —— 该映射在播放器
+      // 首查源信息时才填, parseStream 时点等值比较恒假, 曾致 PGS 全链不通)
       pgsDec = std::make_unique<PgsDecoder>();
       if (!pgsDec->open(codecpar)) {
         pgsDec.reset();
-        pgsTrackLocal = -1;
         LOGFLF(LogLevel::warn, "pgs decoder open failed");
       } else {
-        pgsTrackLocal = sIndexMaps[streamId];
-        LOGFLF(LogLevel::info, "pgs decoder ready, local track:",
-               pgsTrackLocal);
+        LOGFLF(LogLevel::info, "pgs decoder ready, stream:", streamId);
       }
     }
     if (ffSCodec(codecpar->codec_id) == SCodecId::ass &&
@@ -267,6 +263,7 @@ bool IOParseFF::parsePgsFrame(int32_t streamId, const AVPacket* pkt,
   }
   // 画布内存归解码器所有, 观察者同步拷贝(onPgsFrame 约定)
   dispatch(&IAVSourceOb::onPgsFrame, pgsDec->canvas());
+  fprintf(stderr, "[pgs-parse] dispatched result=%d\n", (int)result);
   return true;
 }
 
@@ -444,7 +441,8 @@ void IOParseFF::onRunTask() {
         continue;
       }
       if (subCodec == SCodecId::pgs && !pgsDec) {
-        pgsTrackLocal = st->index;  // 暂存 streamId, parseStream 时换局部索引
+        // 解码器在 parseStream 按 codecpar 建, 这里只记流索引用于喂包门控
+        pgsStreamId = st->index;
       }
       std::string lang;
       std::string title;
@@ -577,9 +575,8 @@ void IOParseFF::onRunTask() {
       }
     } else if (st->codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE) {
       // PGS: 选中轨的包进解码器出画布, 不再作为原始包旁路下发
-      if (pgsDec && sIndexMaps.size() > (size_t)streamId &&
-          sIndexMaps[streamId] == selSubTrack.load() &&
-          sIndexMaps[streamId] == pgsTrackLocal && pkt->pts != AV_NOPTS_VALUE) {
+      if (pgsDec && streamId == pgsStreamId &&
+          pkt->pts != AV_NOPTS_VALUE) {
         const int64_t pgsPts =
             av_rescale_q(pkt->pts, st->time_base, {1, 1000});
         parsePgsFrame(streamId, pkt.get(), pgsPts);

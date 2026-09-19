@@ -429,8 +429,10 @@ void MediaPlayer::onPacket(const AvoxPacket& packet) {
 }
 
 void MediaPlayer::onPgsFrame(const AssCanvas& canvas) {
-  // PGS 解码在 IO 线程, 画布内存归源所有: 拷贝进视图(线程安全)
-  if (!subtitleView || !subtitleView->trackOpened()) {
+  // PGS 解码在 IO 线程, 画布内存归源所有: 拷贝进视图(线程安全)。
+  // 不设 trackOpened 门槛: 选轨命令与首包赛跑时(libass 通道未建), 帧仍须
+  // 进视图缓冲(渲染按 pts 取用), 否则 PGS 全链在"选轨晚于首包"时永黑。
+  if (!subtitleView) {
     return;
   }
   subtitleView->setPgsCanvas(canvas);

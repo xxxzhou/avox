@@ -319,7 +319,10 @@ void SubtitleView::closeTrackChannel() {
     overlay = nullptr;
   }
   trackLoaded = false;
-  hasPgs = false;
+  {
+    std::lock_guard<std::mutex> lock(mtx);
+    pgsFrames.clear();
+  }
   lastPgsSeq = 0;
   if (canvasLayer && windowRender) {
     disableRenderCanvas(windowRender);
@@ -413,19 +416,20 @@ void SubtitleView::setPgsCanvas(const AssCanvas& canvas) {
     return;
   }
   std::lock_guard<std::mutex> lock(mtx);
-  if (canvas.rgba && canvas.width > 0 && canvas.height > 0) {
-    pgsBuf.assign(canvas.rgba,
+  PgsFrame f;
+  f.ptsMs = canvas.ptsMs;
+  f.seq = canvas.seq;
+  f.empty = !(canvas.rgba && canvas.width > 0 && canvas.height > 0);
+  if (!f.empty) {
+    f.width = canvas.width;
+    f.height = canvas.height;
+    f.stride = canvas.stride;
+    f.rgba.assign(canvas.rgba,
                   canvas.rgba + (size_t)canvas.stride * canvas.height);
-    pgsCanvas = canvas;
-    pgsCanvas.rgba = pgsBuf.data();
-    hasPgs = true;
-  } else {
-    pgsBuf.clear();
-    pgsCanvas = AssCanvas{};
-    pgsCanvas.seq = canvas.seq;
-    // 清屏画布也保留 pts: 字幕延迟的到期门控依赖它(否则清屏提前穿帮)
-    pgsCanvas.ptsMs = canvas.ptsMs;
-    hasPgs = true;
+  }
+  pgsFrames.push_back(std::move(f));
+  while (pgsFrames.size() > 8) {
+    pgsFrames.pop_front();  // 有界: 溢出丢最旧(正常按 pts 消费不积压)
   }
   lastPgsSeq = canvas.seq;
   lastSeq = -1;  // 源切换(ASS↔PGS 的 seq 域不同), 强制下一帧重传
@@ -434,6 +438,7 @@ void SubtitleView::setPgsCanvas(const AssCanvas& canvas) {
 void SubtitleView::resetEvents() {
   std::lock_guard<std::mutex> lock(mtx);
   chunks.clear();
+  pgsFrames.clear();  // seek/换轨: PGS 缓冲帧与 ASS 事件一并作废
   if (overlay) {
     overlay->flush();
   }
@@ -506,18 +511,35 @@ void SubtitleView::renderTrack(int64_t ptsMs) {
       }
       // libass 画布双缓冲, 内容到下一次 render 前有效 → 锁外使用安全
       canvas = overlay->render(subPts);
-    } else if (hasPgs) {
-      // PGS 轨: 锁内把像素拷到稳定缓冲(pgsBuf 归 IO 线程的 setPgsCanvas
-      // 重排), 锁外上屏; 有延迟时只放行 pts 已到期的画布(清屏包同规则,
-      // 未到期保持上一快照 = 前一条延长显示)
-      if (pgsCanvas.rgba && (delay == 0 || pgsCanvas.ptsMs <= subPts)) {
-        pgsStable.assign(pgsBuf.begin(), pgsBuf.end());
-        pgsSnapshot = pgsCanvas;
-        pgsSnapshot.rgba = pgsStable.data();
-      } else {
-        pgsSnapshot = AssCanvas{};
-        pgsSnapshot.seq = pgsCanvas.seq;
+    } else if (!pgsFrames.empty()) {
+      // PGS 轨: 按(延迟平移后的)播放位置取不越于它的最新一帧, 其之前的帧
+      // 就地回收; 有延迟时未到期帧不显示(等价上一条延长, 与旧口径一致)
+      size_t curIdx = SIZE_MAX;
+      for (size_t i = 0; i < pgsFrames.size(); ++i) {
+        if (pgsFrames[i].ptsMs <= subPts) {
+          curIdx = i;
+        }
       }
+      if (curIdx != SIZE_MAX) {
+        if (curIdx > 0) {
+          pgsFrames.erase(pgsFrames.begin(), pgsFrames.begin() + curIdx);
+        }
+        const PgsFrame& f = pgsFrames.front();
+        if (!f.empty) {
+          pgsStable = f.rgba;
+          pgsSnapshot = AssCanvas{};
+          pgsSnapshot.width = f.width;
+          pgsSnapshot.height = f.height;
+          pgsSnapshot.stride = f.stride;
+          pgsSnapshot.ptsMs = f.ptsMs;
+          pgsSnapshot.seq = f.seq;
+          pgsSnapshot.rgba = pgsStable.data();
+        } else {
+          pgsSnapshot = AssCanvas{};
+          pgsSnapshot.seq = f.seq;
+        }
+      }
+      // 无到期帧: 维持当前快照(初始空快照 seq=0 与 lastSeq 初值相同, 零上传)
       canvas = &pgsSnapshot;
     }
   }

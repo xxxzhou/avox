@@ -196,13 +196,21 @@ class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
   };
   std::deque<SubChunk> chunks;
 
-  // PGS 画布(视图持有拷贝): seq 变化即上屏, 呈现集语义由包序决定
-  std::vector<uint8_t> pgsBuf;
+  // PGS 画布帧(视图持有拷贝): IO 侧解码可能先于选轨全量到达(旁路包不进
+  // 同步时钟, 全速读), 按 pts 排队、渲染按播放位置取帧; 有界, 溢出丢最旧
+  struct PgsFrame {
+    int64_t ptsMs = 0;
+    int32_t seq = 0;
+    bool empty = true;  // 清屏帧
+    int32_t width = 0;
+    int32_t height = 0;
+    int32_t stride = 0;
+    std::vector<uint8_t> rgba;
+  };
+  std::deque<PgsFrame> pgsFrames;
   std::vector<uint8_t> pgsStable;  // 渲染线程持有的稳定拷贝(updateCanvas 用)
-  AssCanvas pgsCanvas = {};
   AssCanvas pgsSnapshot = {};
   int32_t lastPgsSeq = 0;
-  bool hasPgs = false;
 };
 
 }
