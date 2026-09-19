@@ -104,7 +104,8 @@ MINIMUM_DECODERS += ("vp8,vp9,av1,theora,mjpeg,mjpegb,dvvideo,prores,"
                      "mlp,truehd,"                                  # TrueHD/MLP 蓝光音轨(a08; DTS-HD MA 走已有 dca)
                      "adpcm_ms,adpcm_ima_wav,adpcm_g726,adpcm_g726le,"
                      "alac,ape,aac_latm,"                           # 无损音乐/TS LATM
-                     "pcm_dvd,pcm_bluray,dsd_lsbf,dsd_msbf")        # 原盘LPCM/DSD
+                     "pcm_dvd,pcm_bluray,dsd_lsbf,dsd_msbf,"        # 原盘LPCM/DSD
+                     "pgssub")                                      # PGS 位图字幕(a01-T4; PgsDecoder 走 pgssubdec)
 # hwaccel 是 avcodec 独立组件, --disable-everything 会连它一起裁掉;
 # 不显式加回则 ff_get_format 拿不到 D3D11 配置, 硬解逐帧静默回退软解 (09-10 排查结论)。
 # 注意 FFmpeg9 拆了新旧两个组件: d3d11va(legacy, D3D11VA_VLD, 不支持 hw_device_ctx)
