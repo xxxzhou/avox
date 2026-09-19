@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+#include <mutex>
 #include <string>
 
 #include "../audio/AudioFrame.hpp"
@@ -31,7 +33,11 @@ class AVOX_EXPORT AudioRender : public IAudioRender, public IAudioProcessOb {
   bool initProcess = false;
   bool closeOutput = false;
   std::unique_ptr<AudioProcess> audioProcess = nullptr;
-  std::unique_ptr<AudioTap> audioTap = nullptr;
+  // tap 快照指针(T18): 渲染线程取 shared_ptr 快照后锁外 push, closeTap 先
+  // move-out 再 close —— 对象生命周期由快照兜住, 杜绝 use-after-free;
+  // tapMtx 只护指针存取(毫秒级), push/close 本身不持锁防反压死锁
+  std::mutex tapMtx;
+  std::shared_ptr<AudioTap> audioTap;
   // tap 满队列策略(唯一真相源):tap 未创建时只存此,创建时据此初始化
   bool bTapBlock = false;
   // tap 延迟打开:openTap 时 desc 未就绪则缓存参数,setDesc 后自动 open

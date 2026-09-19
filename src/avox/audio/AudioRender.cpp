@@ -42,9 +42,14 @@ void AudioRender::close() {
 
 void AudioRender::setTapBlock(bool b) {
   bTapBlock = b;
-  // tap 在:直接同步;不在:只存成员,创建时取 —— 与 set/openTap 顺序无关
-  if (audioTap) {
-    audioTap->setBlock(b);
+  // tap 在:快照后同步(锁外);不在:只存成员,创建时取 —— 与 set/openTap 顺序无关
+  std::shared_ptr<AudioTap> tap;
+  {
+    std::lock_guard<std::mutex> lk(tapMtx);
+    tap = audioTap;
+  }
+  if (tap) {
+    tap->setBlock(b);
   }
 }
 
@@ -52,9 +57,14 @@ void AudioRender::onAudioProcess(const AvoxAFrame& frame) {
   if (!closeOutput) {
     onRender(frame.buffer);
   }
-  // tap:深拷贝入队(在处理/设备之后,取 post-3A 帧)
-  if (audioTap && audioTap->bOpen()) {
-    audioTap->push(frame.buffer, frame.pts);
+  // tap:深拷贝入队(在处理/设备之后,取 post-3A 帧);快照锁外 push(T18)
+  std::shared_ptr<AudioTap> tap;
+  {
+    std::lock_guard<std::mutex> lk(tapMtx);
+    tap = audioTap;
+  }
+  if (tap && tap->bOpen()) {
+    tap->push(frame.buffer, frame.pts);
   }
 }
 
@@ -73,19 +83,33 @@ void AudioRender::openTap(const AudioDesc& outDesc, int32_t frameMs) {
     return;
   }
   bTapPending = false;
-  if (!audioTap) {
-    audioTap = std::make_unique<AudioTap>();
+  // 创建/取快照持 tapMtx, open 在锁外(open 内部 close 会 join 旧线程)
+  std::shared_ptr<AudioTap> tap;
+  {
+    std::lock_guard<std::mutex> lk(tapMtx);
+    if (!audioTap) {
+      audioTap = std::make_shared<AudioTap>();
+      // 新建 tap 时从成员取阻塞策略
+      audioTap->setBlock(bTapBlock);
+    }
+    tap = audioTap;
   }
-  audioTap->open(desc, outDesc, frameMs);
-  // 从成员取,与 setTapBlock/openTap 调用顺序无关
-  audioTap->setBlock(bTapBlock);
+  tap->open(desc, outDesc, frameMs);
+  // 与 setTapBlock 调用顺序无关(open 后重申)
+  tap->setBlock(bTapBlock);
 }
 
 void AudioRender::closeTap() {
   bTapPending = false;
-  if (audioTap) {
-    audioTap->close();
-    audioTap.reset();
+  // 锁内 move-out(T18): 渲染线程此后快照为空不再 push, 已持有快照的 push
+  // 由 AudioTap bRunning/setClose 兜底; close(join)在锁外, 防反压互相等
+  std::shared_ptr<AudioTap> tap;
+  {
+    std::lock_guard<std::mutex> lk(tapMtx);
+    tap = std::move(audioTap);
+  }
+  if (tap) {
+    tap->close();
   }
 }
 
@@ -93,19 +117,32 @@ void AudioRender::addTapOb(IAudioTapOb* ob) {
   if (!ob) {
     return;
   }
-  if (!audioTap) {
-    audioTap = std::make_unique<AudioTap>();
-    // 新建 tap 时从成员取阻塞策略
-    audioTap->setBlock(bTapBlock);
+  std::shared_ptr<AudioTap> tap;
+  {
+    std::lock_guard<std::mutex> lk(tapMtx);
+    if (!audioTap) {
+      audioTap = std::make_shared<AudioTap>();
+      // 新建 tap 时从成员取阻塞策略
+      audioTap->setBlock(bTapBlock);
+    }
+    tap = audioTap;
   }
-  audioTap->addObserver(ob);
+  tap->addObserver(ob);
 }
 
 void AudioRender::removeTapOb(IAudioTapOb* ob) {
-  if (!audioTap || !ob) {
+  if (!ob) {
     return;
   }
-  audioTap->removeObserver(ob);
+  std::shared_ptr<AudioTap> tap;
+  {
+    std::lock_guard<std::mutex> lk(tapMtx);
+    tap = audioTap;
+  }
+  if (!tap) {
+    return;
+  }
+  tap->removeObserver(ob);
 }
 
 void AudioRender::render(const AvoxData& frame, int64_t pts) {
@@ -123,9 +160,14 @@ void AudioRender::render(const AvoxData& frame, int64_t pts) {
   if (!closeOutput) {
     onRender(frame);
   }
-  // tap:深拷贝入队(在处理/设备之后,取 post-3A 帧)
-  if (audioTap && audioTap->bOpen()) {
-    audioTap->push(frame, pts);
+  // tap:深拷贝入队(在处理/设备之后,取 post-3A 帧);快照锁外 push(T18)
+  std::shared_ptr<AudioTap> tap;
+  {
+    std::lock_guard<std::mutex> lk(tapMtx);
+    tap = audioTap;
+  }
+  if (tap && tap->bOpen()) {
+    tap->push(frame, pts);
   }
 }
 
