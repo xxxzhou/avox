@@ -74,8 +74,16 @@
       `script/ffmpeg/make_msvc_lib.py` 重生成 MSVC 导入库 —— lib.exe /def 产物含
       按序号导入记录, dll 导出位移会让 avox.dll 绑错函数(段错误在 avsubtitle_free)。
 - [x] T5 中文外挂自动加载探测(2026-09-19, 设计定稿即日实施): `ISubtitle::
-      listSubtitleCandidates(videoUrl, SubtitleCandidate* out, cap)`(只增不改带默认实现),
-      `SubtitleCandidate{path[512], SCodecId codec, lang[16], gbkHint}` 纯 POD。
+      listSubtitleCandidates(videoUrl)`(扫描排序后引擎缓存, 返回个数, 带默认实现) +
+      `ISubtitle::getSubtitleCandidate(index)`(取缓存项, 越界 nullptr), 候选项为
+      `ISubtitleCandidate` 只读接口(getPath/getCodec/getLang/getGbkHint; 托管对象,
+      生命周期至下次扫描/换源/close, 约定同 ISTrackDesc)。
+      **API 形状返工(2026-09-19)**: 初版为出参数组
+      `listSubtitleCandidates(videoUrl, SubtitleCandidate* out, cap)` +
+      `SubtitleCandidate{path[512], codec, lang[16], gbkHint}` 纯 POD —— SWIG 把
+      `SubtitleCandidate*` 包成**单对象指针**, C# 传一个对象引擎写 cap 份即堆破坏,
+      出参数组形态绑不过去; 改接口 + 扫描缓存形态(仓内惯例: `get*` 返回托管对象,
+      const char* 经绑定层当场拷贝, 生命周期规则见 AvoxPlayer.h)。
       实现 `subtitle/SubtitleScan.cpp`(std::filesystem, C++17/20 char8_t 双兼容):
       同目录「同主名」扫描, 主名去扩展名, 候选=去扩展名后等于主名或「主名+分隔符
       (.-_)开头」(movies.srt 不命中 movie.mkv), 扩展名 .srt/.ass/.ssa(.ssa 归 ass);
@@ -86,10 +94,10 @@
       `sub-cand-basic`(movie.mkv + 同名/语言/gbk 素材, 断言排序与 hint)、
       `sub-cand-remote`(smb:// 返回 0)、`sub-cand-cjk`(中文目录+中文文件名可加载,
       吃 openFileUtf8 路径自愈 —— Windows ACP 无关, 素材可直接用中文名)。
-      API 形状(2026-09-19 夜定稿, 即日落地, 未另走审批):
-      `virtual int32_t listSubtitleCandidates(const char* videoUrl,
-      SubtitleCandidate* out, int32_t cap) { return 0; }`于 ISubtitle 追加;
-      返回值=实得总数(可 >cap, 截断填充), 负=参数错误。
+      API 形状(2026-09-19 夜定稿, 即日落地; 同日按上段返工为接口形态):
+      `virtual int32_t listSubtitleCandidates(const char* videoUrl) { return 0; }`
+      与 `virtual ISubtitleCandidate* getSubtitleCandidate(int32_t index) { return nullptr; }`
+      于 ISubtitle 追加(带默认实现, 既有实现者零影响)。
 
 ## 验收
 

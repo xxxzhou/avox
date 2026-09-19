@@ -7,7 +7,7 @@
 
 namespace avox {
 
-// 外挂字幕候选(扫描产物, STL 形态内部用; 对外透出见 AvoxPlayer.h 的 POD 版)
+// 外挂字幕候选(扫描产物, STL 形态内部用; 对外透出见 AvoxPlayer.h 的 ISubtitleCandidate)
 struct SubtitleCandidateInfo {
   std::string path = "";  // UTF-8 绝对路径
   SCodecId codecId = SCodecId::ass;

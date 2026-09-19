@@ -26,6 +26,19 @@ namespace avox {
 
 class ISurfaceRender;
 
+// 扫描缓存项(a01-T5): ISubtitleCandidate 的视图侧实现(持拷贝), 生命周期随扫描缓存
+class SubtitleCandidateItem : public ISubtitleCandidate {
+ public:
+  explicit SubtitleCandidateItem(const SubtitleCandidateInfo& info) : info(info) {}
+  virtual const char* getPath() const override { return info.path.c_str(); }
+  virtual SCodecId getCodec() const override { return info.codecId; }
+  virtual const char* getLang() const override { return info.lang.c_str(); }
+  virtual int32_t getGbkHint() const override { return info.gbkHint ? 1 : 0; }
+
+ private:
+  SubtitleCandidateInfo info;
+};
+
 // 统一字幕视图(计划 doc/plan/player/字幕模块合并计划.md P3): 三槽位(内封轨/
 // 外挂文件/ASR)状态与仲裁内聚, 后激活者胜, 空窗不回落。全部内容统一产出
 // RGBA8 bbox canvas 经同一个 ICanvasLayer sourceOver 混合: 轨槽走 libass
@@ -71,10 +84,9 @@ class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
   virtual void setDelay(int64_t delayMs) override {
     delayMs_.store(delayMs, std::memory_order_relaxed);
   }
-  // 外挂候选枚举(a01-T5): 纯文件系统查询, 与播放管线无涉, 直调扫描助手
-  virtual int32_t listSubtitleCandidates(const char* videoUrl,
-                                         SubtitleCandidate* out,
-                                         int32_t cap) override;
+  // 外挂候选枚举(a01-T5): 纯文件系统查询, 结果入缓存(scanMtx), 经 getSubtitleCandidate 取用
+  virtual int32_t listSubtitleCandidates(const char* videoUrl) override;
+  virtual ISubtitleCandidate* getSubtitleCandidate(int32_t index) override;
   // 全复位(内部用: 播放器 close/换源/析构): 三槽位 + 轨通道 + 文件/ASR 内容
   // (渲染对象注册保留, 供重开复用)
   void closeSubtitle();
@@ -178,6 +190,10 @@ class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
   bool asrEnabled = false;
   // 字幕整体延迟 ms(setDelay 写, 渲染线程读)
   std::atomic<int64_t> delayMs_{0};
+
+  // 外挂候选扫描缓存(a01-T5): deque 保条目指针稳定, 至下次扫描/closeSubtitle
+  mutable std::mutex scanMtx;
+  std::deque<SubtitleCandidateItem> scanCache;
 #ifdef AVOX_ENABLE_FREETYPE
   TextRasterizer rasterizer;
   TextCanvasStyle style;  // 纯文本样式副本(setFont/setColor/setAlign/... 写入)

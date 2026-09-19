@@ -13,12 +13,19 @@ enum class AsrMode {
 };
 
 
-// 外挂字幕候选项(a01-T5): ISubtitle::listSubtitleCandidates 产出, 纯 POD 跨 DLL
-struct SubtitleCandidate {
-  char path[512];   // UTF-8 绝对路径(0 结尾)
-  SCodecId codec;   // srt / ass(.ssa 归 ass)
-  char lang[16];    // 语言标记 hint(小写原名 zh/chs/cht/gb/big5/eng..., 空=未标)
-  int32_t gbkHint;  // 1=带 .gbk 编码后缀(内容大概率 GBK), 0=无
+// 外挂字幕候选项(a01-T5): listSubtitleCandidates 扫描结果的只读接口。托管对象:
+// 引擎缓存最近一次扫描, 生命周期至下次 listSubtitleCandidates/换源/close, 勿释放
+class ISubtitleCandidate {
+ public:
+  virtual ~ISubtitleCandidate() = default;
+  // UTF-8 绝对路径
+  virtual const char* getPath() const = 0;
+  // srt / ass(.ssa 归 ass)
+  virtual SCodecId getCodec() const = 0;
+  // 语言标记 hint(小写原名 zh/chs/cht/gb/big5/eng..., 空=未标)
+  virtual const char* getLang() const = 0;
+  // 1=带 .gbk 编码后缀(内容大概率 GBK), 0=无
+  virtual int32_t getGbkHint() const = 0;
 };
 
 // 观感设置生效矩阵(样式计划 doc/plan/player/字幕样式设计.md):
@@ -68,17 +75,17 @@ class ISubtitle {
   // 实现者零影响
   virtual void setDelay(int64_t delayMs) {}
 
-  // 外挂候选枚举(a01-T5): 对本地视频路径扫同目录「同主名」字幕文件
-  // (movie.zh.srt / movie.chs.ass / movie.gbk.srt 等), 归一化排序后填入 out
-  // (不超过 cap), 返回实得个数(0=无候选/远程路径, 负=参数非法)。语言段与
-  // .gbk 后缀进 hint 不参与主名匹配; 排序: 完全同名 > 带标记, srt > ass。
-  // 只列候选不加载, 加载仍走 loadSubtitle。带默认实现: 既有实现者零影响
-  virtual int32_t listSubtitleCandidates(const char* videoUrl,
-                                         SubtitleCandidate* out, int32_t cap) {
+  // 外挂候选枚举(a01-T5): 扫同目录「同主名」字幕排序后缓存, 返回个数(0=无候选/
+  // 远程路径, 负=参数非法), 经 getSubtitleCandidate 取用(默认实现返回 0)
+  virtual int32_t listSubtitleCandidates(const char* videoUrl) {
     (void)videoUrl;
-    (void)out;
-    (void)cap;
     return 0;
+  }
+  // 取最近一次 listSubtitleCandidates 缓存的第 index 个候选(越界返回 nullptr),
+  // 生命周期见 ISubtitleCandidate。带默认实现: 既有实现者零影响
+  virtual ISubtitleCandidate* getSubtitleCandidate(int32_t index) {
+    (void)index;
+    return nullptr;
   }
 };
 

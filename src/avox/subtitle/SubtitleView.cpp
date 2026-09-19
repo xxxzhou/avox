@@ -284,6 +284,10 @@ void SubtitleView::closeSubtitle() {
   closeTrackChannel();
   closeFileContent();
   closeAsrContent();
+  {
+    std::lock_guard<std::mutex> lock(scanMtx);
+    scanCache.clear();  // 候选缓存随源失效
+  }
 }
 
 // ---- 轨槽通道 ----
@@ -369,28 +373,27 @@ bool SubtitleView::loadTextFile(const char* path) {
   return fileEnabled;
 }
 
-int32_t SubtitleView::listSubtitleCandidates(const char* videoUrl,
-                                             SubtitleCandidate* out,
-                                             int32_t cap) {
-  if (!videoUrl || cap < 0 || (cap > 0 && !out)) {
+int32_t SubtitleView::listSubtitleCandidates(const char* videoUrl) {
+  if (!videoUrl) {
     return -1;
   }
   std::vector<SubtitleCandidateInfo> found;
   // 同名遮蔽: 成员与非成员同名, 显式限定走自由函数
-  const int32_t total =
-      avox::listSubtitleCandidates(std::string(videoUrl), &found);
-  int32_t n = 0;
+  avox::listSubtitleCandidates(std::string(videoUrl), &found);
+  std::lock_guard<std::mutex> lock(scanMtx);
+  scanCache.clear();
   for (const SubtitleCandidateInfo& c : found) {
-    if (n >= cap) {
-      break;
-    }
-    SubtitleCandidate& dst = out[n++];
-    std::snprintf(dst.path, sizeof(dst.path), "%s", c.path.c_str());
-    std::snprintf(dst.lang, sizeof(dst.lang), "%s", c.lang.c_str());
-    dst.codec = c.codecId;
-    dst.gbkHint = c.gbkHint ? 1 : 0;
+    scanCache.emplace_back(c);
   }
-  return total;
+  return (int32_t)scanCache.size();
+}
+
+ISubtitleCandidate* SubtitleView::getSubtitleCandidate(int32_t index) {
+  std::lock_guard<std::mutex> lock(scanMtx);
+  if (index < 0 || index >= (int32_t)scanCache.size()) {
+    return nullptr;
+  }
+  return &scanCache[(size_t)index];
 }
 
 void SubtitleView::pushChunk(const char* data, int32_t size, int64_t ptsMs,
