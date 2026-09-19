@@ -1,5 +1,8 @@
 #pragma once
 
+#include <functional>
+#include <utility>
+
 #include "../module/RunTask.hpp"
 #include "../player/MPCommon.hpp"
 #include "VideoDecoder.hpp"
@@ -30,6 +33,8 @@ protected:
   bool bResetFlag = false;
   // 如果重置解码器，需要保持上个解码器里的配置帧
   std::vector<PacketBuf> configPackets;
+  // 懒open失败的降级候选(选型时缓存: vulkan→软解; 覆盖点名时仅软解), onRunTask里依次重建
+  std::vector<std::pair<VCodecDesc, std::function<VideoDecoder*()>>> openFallbacks;
   // 配置帧变化
   bool bDecodeUpdate = false;
   std::mutex configMutex;

@@ -45,14 +45,18 @@ bool VDecoderTask::start(class VideoTrack* context) {
   // 根据播放器设置选择解码器; 硬解选型不可用时逐级回退: vulkan 备选 → 软解
   // (如 VP9 老核显无 D3D11VA profile, a03/a12 的运行期回退框架先行手动兜底)
   bool bHard = mediaPlayer->getHardDecode();
-  const char* sName = getDefaultDecoderName(codecId, bHard);
+  // 解码器名覆盖(测试/排障强制车道): 覆盖首选名, 不再自动插vulkan备选, 失败直接回软解
+  const std::string& sOverrideName = mediaPlayer->getVideoDecoderName();
+  const char* sOverride =
+      (bHard && !sOverrideName.empty()) ? sOverrideName.c_str() : nullptr;
+  const char* sName = sOverride ? sOverride : getDefaultDecoderName(codecId, bHard);
   const char* sFallback = bHard ? getDefaultDecoderName(codecId, false) : nullptr;
   if (sFallback && strcmp(sFallback, sName) == 0) {
     sFallback = nullptr;
   }
-  // 硬解备选: 主路(dx11/vaapi)失败先试 vulkan(未注册自动跳过), 再落软解
+  // 硬解备选: 主路失败先试vulkan(未注册自动跳过); 覆盖点名时跳过, 保证机器无关回软解
   const char* sVulkan = nullptr;
-  if (bHard) {
+  if (bHard && !sOverride) {
     if (codecId == VCodecId::h264) {
       sVulkan = AVOX_FFVULKAN_H264_DECODER;
     } else if (codecId == VCodecId::h265) {
@@ -116,6 +120,19 @@ bool VDecoderTask::start(class VideoTrack* context) {
     }
   }
   auto& vDecode = decodes[sIndex];
+  // 缓存懒open失败的降级候选: 默认链按 vulkan→软解 排; 名字被覆盖时仅软解(sVulkan已置空)
+  openFallbacks.clear();
+  for (const char* sWant : {sVulkan, sFallback}) {
+    if (!sWant) {
+      continue;
+    }
+    for (auto& d : decodes) {
+      if (d.desc.name == sWant) {
+        openFallbacks.push_back({d.desc, d.initFunc});
+        break;
+      }
+    }
+  }
   // 开始解码线程
   startTask();
   // 记录最终是否启用硬解
@@ -170,6 +187,51 @@ void VDecoderTask::onRunTask() {
   std::vector<uint8_t> temp(10000);
   PacketBufPtr tempPtr = std::make_shared<PacketBuf>(temp);
   bool bOpenDecode = false;
+  // 视频轨是否真收到过帧: success会被重复参数集包空转返回污染, 看门狗只认实际产出
+  bool bGotFrame = false;
+  // 降级下一候选: 重建解码器并重放配置帧, 建不出/不支持跳下一个; open失败与首帧超时共用
+  auto tryNextFallback = [&]() -> bool {
+    while (!openFallbacks.empty()) {
+      auto next = std::move(openFallbacks.front());
+      openFallbacks.erase(openFallbacks.begin());
+      configPackets.clear();
+      decode->copyConfigs(configPackets);
+      auto cand = std::unique_ptr<VideoDecoder>(next.second());
+      bool bOk = false;
+      if (cand) {
+        cand->linkOption(trackContext->getMediaPlayer());
+        cand->setObserver(trackContext);
+        bOk = cand->setContext(next.first, srcDesc);
+      }
+      if (!bOk) {
+        continue;
+      }
+      decode = std::move(cand);
+      for (auto& cp : configPackets) {
+        decode->pushConfig(cp);
+      }
+      configPackets.clear();
+      codecTh = decode->getCodecTh();
+      bHardDecode = (codecTh == VCodecTh::dx11 || codecTh == VCodecTh::androidMC ||
+                     codecTh == VCodecTh::iosVT);
+      // 新解码器需要重新证明自己交付帧, 看门狗重新计时
+      bGotFrame = false;
+      bOpenDecode = false;
+      check.reset();
+      LOGFLF(LogLevel::warn, "video decoder fallback to:", next.first.name);
+      // 埋点透出换道事实(判定/分诊面): 首选名没交付, 实际交付的是候选名
+      PBMediaAction fb = {};
+      fb.mediaObject = MediaObject::decode;
+      fb.trackType = TrackType::video;
+      fb.action = MediaAction::config;
+      string_format(fb.msg, "video decoder fallback from ", pbInfo.slectCodec,
+                    " to ", next.first.name);
+      pushPB<MPPBType::MediaAction>(mpPingback, fb);
+      pbInfo.slectCodec = next.first.name;
+      return true;
+    }
+    return false;
+  };
   while (running()) {
     // 检查暂停
     if (pauseing()) {
@@ -247,6 +309,10 @@ void VDecoderTask::onRunTask() {
       pushPB<MPPBType::VideoInfo>(mpPingback, pbInfo);
       bOpenDecode = true;
     }
+    // 懒open失败(如vulkan会话协商失败): 换下一候选重放配置帧继续, 而不是杀视频轨
+    if (result == DecodeResult::openFailed && tryNextFallback()) {
+      continue;
+    }
     if ((int32_t)result < 0) {
       // 解码器配置失败
       trackContext->onDecodeError(result);
@@ -257,7 +323,18 @@ void VDecoderTask::onRunTask() {
       decode->dispatch(&IVideoDecoderOb::onVideoComplete);
       return;
     }
-    if (!bOpenDecode && check.timeout()) {
+    if (!bGotFrame && trackContext->getFrameQueue().size() > 0) {
+      bGotFrame = true;
+    }
+    if (!bGotFrame && check.timeout()) {
+      // 首帧看门狗超时(选中但不交付帧, 如vulkan会话建出后驱动不产帧): 降级下一候选
+      if (tryNextFallback()) {
+        // 死车道已把本地流吞到EOF: 回0重读让新车道从关键帧起解, 否则永远等不到数据
+        if (mediaPlayer->ioExhausted() && mediaPlayer->seekable()) {
+          mediaPlayer->seek(0);
+        }
+        continue;
+      }
       trackContext->onDecodeError(DecodeResult::timeout);
       return;
     }

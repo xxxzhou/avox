@@ -28,6 +28,8 @@ class AMediaSource : public RawSource,
  private:
   std::string uri;
   bool bHardDecode = false;
+  // 视频解码器名覆盖(mp.video.decoder.name, onOptionChange缓存), 硬解选型时消费
+  std::string videoDecoderName;
   std::unique_ptr<AVSource> ioSource;
   // IO方案,open时创建对应ioSource(默认ffmpeg)
   IoPlan ioPlan = IoPlan::ffmpeg;

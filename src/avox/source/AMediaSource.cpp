@@ -5,6 +5,7 @@
 #include "../AvoxCodec.h"
 #include "../audio/AudioDecoder.hpp"
 #include "../module/AvoxManager.hpp"
+#include "../module/OptionKey.hpp"
 #include "../player/AVTrack.hpp"
 #include "../video/VideoDecoder.hpp"
 
@@ -21,9 +22,10 @@ void AMediaSource::setHardDecode(bool bHard) { bHardDecode = bHard; }
 void AMediaSource::setIoPlan(IoPlan plan) { ioPlan = plan; }
 
 void AMediaSource::onOptionChange(const char* key, ArgType option) {
-  // io.*键由内部ioSource(同样link到上层JsonOption)自行消费,此处留AMediaSource级扩展点
-  (void)key;
-  (void)option;
+  // io.*键由内部ioSource(同样link到上层JsonOption)自行消费
+  if (equalsIgnoreCase(key, AVOX_MP_VIDEO_DECODER_NAME_STR)) {
+    videoDecoderName = getLink()->getString(key);
+  }
 }
 
 void AMediaSource::preSeek() {
@@ -256,10 +258,13 @@ bool AMediaSource::initVideoDecoder(VCodecId codecId, const VideoDesc& srcDesc,
     LOGFLF(LogLevel::warn, "no video codec:", codecId, " init");
     return false;
   }
-  const char* sName = getDefaultDecoderName(codecId, bHard);
-  // 硬解备选: 主路(dx11/vaapi)失败先试 vulkan(未注册自动跳过), 再落软解
+  // 解码器名覆盖(测试/排障强制车道): 覆盖首选名, 不再自动插vulkan备选, 失败直接回软解
+  const char* sOverride =
+      (bHard && !videoDecoderName.empty()) ? videoDecoderName.c_str() : nullptr;
+  const char* sName = sOverride ? sOverride : getDefaultDecoderName(codecId, bHard);
+  // 硬解备选: 主路失败先试vulkan(未注册自动跳过); 覆盖点名时跳过, 保证机器无关回软解
   const char* sVulkan = nullptr;
-  if (bHard) {
+  if (bHard && !sOverride) {
     if (codecId == VCodecId::h264) {
       sVulkan = AVOX_FFVULKAN_H264_DECODER;
     } else if (codecId == VCodecId::h265) {
@@ -270,11 +275,18 @@ bool AMediaSource::initVideoDecoder(VCodecId codecId, const VideoDesc& srcDesc,
     }
   }
   size_t sIndex = 0;
+  bool bHitName = false;
   for (size_t i = 0; i < decodes.size(); ++i) {
     if (decodes[i].desc.name == sName) {
       sIndex = i;
+      bHitName = true;
       break;
     }
+  }
+  if (!bHitName && sOverride) {
+    // 覆盖名未注册: 不落首项兜底, 直接回软解重选
+    LOGFLF(LogLevel::warn, "override decoder ", sName, " not register, try soft");
+    return initVideoDecoder(codecId, srcDesc, false);
   }
   auto& vDecode = decodes[sIndex];
   videoDecoder = std::unique_ptr<VideoDecoder>(vDecode.initFunc());
