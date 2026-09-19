@@ -12,10 +12,11 @@ backlog 全景与逐项施工方案见 [backlog/README.md](backlog/README.md)。
 
 - [ ] A-1 字幕链收尾: 信号暴露已落地(方案A, `1608887`: SubtitleEncoding 枚举 +
       ISubtitle::getFileEncoding, SWIG 四语言随构建同步) + 延迟接口(`21491dc`) +
-      **候选枚举 T5 与 ass 路径编码自愈已落地**(09-19: listSubtitleCandidates +
+      **候选枚举 T5 / ass 路径编码自愈 / PGS e2e T4 已落地**(09-19: listSubtitleCandidates +
       .ass/.ssa 编码探测+中文路径自愈, **契约变更: .ass 路径 getFileEncoding 不再恒
-      unknown**, 见 a01); 剩 **ASS 样式覆盖接口**(T3) → PGS e2e(T4, 合成配方已给
-      avox-test, 素材侧零外部依赖) → [a01](backlog/a01-ass-pgs.md)
+      unknown**; PGS 纯 Python 合成素材 e2e 全绿 51/0/24, 引擎三处 bug 修复 +
+      **dll 重编须重生成 MSVC 导入库**(序号导入绑错函数), 见 a01); 剩
+      **ASS 样式覆盖接口**(T3) → [a01](backlog/a01-ass-pgs.md)
 - [ ] A-2 秒起播: 埋点+probe 降档已落地(`d7ebd1d`/`ed75f49`: 本地索引容器快档 3-14ms,
       保底字段缺失回退补查); **T3 seek 精确化已判定「不动」**(09-19 post-T2 基线: 首帧
       持平偏快, seek 31→153ms 为双峰噪声且落地恒 0, 见 a02); 剩 T4 基线回归用例 →

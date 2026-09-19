@@ -3,7 +3,7 @@
 > 状态: 进行中 · 上次核对: 2026-09-19 · 权威源: -
 
 
-优先级 P0 · 里程碑 M1 · 计划状态:施工中(T1/T2/T3延迟/T5候选枚举/ass路径自愈 完成; 剩 ASS 轨样式覆盖 + PGS e2e 素材合成) · 来源:backlog A-1
+优先级 P0 · 里程碑 M1 · 计划状态:施工中(T1/T2/T3延迟/T4 PGS e2e/T5候选枚举/ass路径自愈 完成; 剩 ASS 轨样式缩放/字体覆盖) · 来源:backlog A-1
 内封 ASS 已像素级验收(2026-09-15),本计划覆盖剩余四件 + 乱码探测信号暴露。
 
 ## 出口判据
@@ -56,19 +56,23 @@
       剩: ASS 轨缩放/字体覆盖接口。现有全局变换 scale/offset/opacity 三层通用
       (`SubtitleView.cpp:252`),叠加轨级覆盖;依据 `doc/plan/player/字幕样式设计.md`
       (v3 定稿)的生效矩阵。
-- [ ] T4 PGS 真实样片 e2e:**卡点已解(2026-09-19 定配方)—— 无需真实样片, 自合成**。
-      avox-test 侧加 `gen_pgs_asset.py`(script/testenv) 即可造素材:
-      - .sup 段格式(FFmpeg supdemuxer 口径, 已核 supdec.c): `"PG"`(u16) + PTS(u32 BE,
-        90kHz) + DTS(u32 BE, 可=PTS) + type(u8) + size(u16 BE) + payload; 探测需 ≥4 个
-        连续合法段。
-      - 段类型: 0x14 PDS(调色板, 2-4 色即可)/0x15 ODS(对象 RLE 位图, 用纯色矩形,
-        亮像素取证友好)/0x16 PCS(展示组合)/0x17 WDS(窗口)/0x80 END。
-      - 事件: 显示 = PCS+PDS+ODS+WDS+END, 消除 = 空 PCS+END; 挂到已知 PTS
-        (如 1s 出 4s 收)。
-      - 封装: `ffmpeg -i <现有测试视频.h264/ts> -i gen.sup -map 0 -map 1 -c copy
-        out_pgs.mkv`(PGS 只进 mkv)。
-      - 引擎侧链路已全通(PgsDecoder/IOParseFF 路由/setPgsCanvas), 素材就位即 e2e。
-      - 用例需求: `sub-pgs-e2e`(播放亮像素取证) + `sub-pgs-seek`(seek 后仍上屏)。
+- [x] T4 PGS 真实样片 e2e(2026-09-19 全链绿, avox `2d4c6ac` + avox-test `48002b8/d0c3461/747135f`):
+      **配方落地**: 无需真实样片, 纯 Python 合成 —— avox-test `assets/gen/gen_subtitle.py`
+      (make_pgs_sup/_seg/_pcs/_wds/_pds/_ods/_rle_rect), sup 段格式核 pgssubdec.c
+      (PCS 头含 composition_number/palette_id; ODS 长度字段含宽高 4 字节; RLE 用
+      flags 位编码)。ffmpeg `-c copy` 封装 sub_pgs_embed.mkv(注意: mkv 首字幕包
+      重定基到 0, 事件轴整体提前)。用例 `sub-pgs-e2e`(时窗亮暗取证) +
+      `sub-pgs-seek`(seek 续显) + `sub-cand-basic/cjk` 离线 51/0/24 全绿,
+      e2e 压测 ×3 稳定。**引擎侧三处 bug 修复**:
+      1. sIndexMaps 时序: parseStream 时映射未填, 等值门控恒假 → 解码器建立改按
+         codec 判, 喂包门控改 pgsStreamId 流索引(`IOParseFF.cpp`);
+      2. 单槽画布: 旁路包全速先到, setPgsCanvas 只留最新 → 清屏态覆盖显示态;
+         改 PgsFrame deque 按 pts 排队, 渲染按播放位置取帧(`SubtitleView.cpp`);
+      3. onPgsFrame 的 trackOpened 门槛: 选轨命令与首包赛跑时帧被丢 → 去门槛,
+         帧照常入缓冲(视图槽位仲裁兜底)(`MediaPlayer.cpp`)。
+      ⚠️ **构建教训**: FFmpeg 白名单补 pgssub 重编 dll 后, 必须用
+      `script/ffmpeg/make_msvc_lib.py` 重生成 MSVC 导入库 —— lib.exe /def 产物含
+      按序号导入记录, dll 导出位移会让 avox.dll 绑错函数(段错误在 avsubtitle_free)。
 - [x] T5 中文外挂自动加载探测(2026-09-19, 设计定稿即日实施): `ISubtitle::
       listSubtitleCandidates(videoUrl, SubtitleCandidate* out, cap)`(只增不改带默认实现),
       `SubtitleCandidate{path[512], SCodecId codec, lang[16], gbkHint}` 纯 POD。
