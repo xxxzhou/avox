@@ -15,7 +15,7 @@
 | A-2 秒起播/seek 秒响应 | P0 | M1 | 施工中(T1/T2 完成 09-19) | 埋点+probe 降档落地(本地快档 3-14ms, 保底字段回退);剩 T3 seek 精确化+T4 基线 | [a02](a02-fast-start-seek.md) |
 | A-3 VP9/WEBM 硬解排查 | P0 | M1 | **三平台硬解已落地(09-19)** | Win 实测 hw 命中/Android 编译过/Apple 待 mac 编译;选型失败自动回退软解;剩真机验证+W38 样片 | [a03](a03-vp9-webm.md) |
 | A-4 GPU 直通三平台 | P0 | M4 | 计划就绪(**Windows 分辨率变化已修, 待实测验证, 见 T5**) | Windows 全链通;分辨率变化不跟随已修(换片后旧画布 1:1 落新纹理左上角问题消除);Android AHB 基建在但解码不直出;Apple 缺 Metal 导出 | [a04](a04-gpu-passthrough.md) |
-| A-5 可 seek 虚拟文件系统 | P0 | M2 | **T1 契约设计定稿(09-19)** | authExpired 生命周期/onAuthExpired/refresh 续播通道已定,剩 IOParseDav/重试/缓存/用例 | [a05](a05-remote-vfs.md) |
+| A-5 可 seek 虚拟文件系统 | P0 | M2 | **T1 契约+T2 IOParseDav 落地(09-19)** | dav range 源+自动路由实测 PASS;剩 T3 直链重试/T4 目录缓存/T5 用例 | [a05](a05-remote-vfs.md) |
 | A-6 FFmpeg 9.0.1 换代 | P0 | 独立 | **适配已完成,待收口(Windows 回归已过, 版本守卫已加)** | 五平台库均 9.0.1、源码已新 API;Windows 离线回归 33/33(09-18),剩四平台回归+UE 链路(待 CI/真机);T6 16KB 页对齐 P2 | [a06](a06-ffmpeg9.md) |
 | A-7 avox_subtitle CLI | P1 | M3 | 计划就绪 | sherpa/翻译/CLI 骨架在,批量管线与 SRT 写出为零 | [a07](a07-subtitle-cli.md) |
 | A-8 音频软解兜底 | P1 | M3 | **T1/T2 已落地(09-18 提前),待库重编+T3** | 枚举/映射/未知轨株连已修;truehd 待编译机重编部署库,下混(T3)为零 | [a08](a08-audio-fallback.md) |
