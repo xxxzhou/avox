@@ -8,6 +8,11 @@ cmake_policy(SET CMP0122 NEW)  # UseSWIG use standard library name conventions f
 
 include_directories("../src")
 set(WRAPPERLIST "${CMAKE_CURRENT_SOURCE_DIR}/common.i")
+# swig 头依赖: 默认只盯 .i 本身, %include 的公共头改动不触发重生成(生成物静默过期)。
+# swig_add_library 路径(csharp/java)走 USE_SWIG_DEPENDENCIES(swig -MD 自产依赖);
+# 手写 add_custom_command(nodejs/python)不走 UseSWIG, 显式挂 SWIG_HEADER_DEPS
+file(GLOB SWIG_HEADER_DEPS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/avox*/*.h")
+set_source_files_properties(${WRAPPERLIST} PROPERTIES USE_SWIG_DEPENDENCIES ON)
 
 get_directory_property(definitions COMPILE_DEFINITIONS)
 # 遍历定义并添加 -D 前缀（SWIG 需要显式 -D 标志）
@@ -141,7 +146,7 @@ if(AVOX_ENABLE_SWIG_NODEJS AND WIN32)
     add_custom_command( 
         OUTPUT ${NODEJS_OUTPUT_DIR}/commonJAVASCRIPT_wrap.cxx
         COMMAND ${SWIG_EXECUTABLE} -javascript -napi -c++ ${SWIG_DEFINITIONS} -I"${CMAKE_SOURCE_DIR}/src" -I"${CMAKE_SOURCE_DIR}/plugins" -o ${NODEJS_OUTPUT_DIR}/commonJAVASCRIPT_wrap.cxx ${WRAPPERLIST}
-        DEPENDS ${WRAPPERLIST}
+        DEPENDS ${WRAPPERLIST} ${SWIG_HEADER_DEPS}
         COMMENT "Generating SWIG wrapper for Node.js")
     # 调用command
     add_custom_target(avox_nodejs_swig ALL DEPENDS ${NODEJS_OUTPUT_DIR}/commonJAVASCRIPT_wrap.cxx ${NODEJS_OUTPUT_DIR}/commonJAVASCRIPT_wrap.h)
@@ -165,7 +170,7 @@ if(AVOX_ENABLE_SWIG_PYTHON AND WIN32)
             COMMAND ${SWIG_EXECUTABLE} -python -c++ -py3 -threads -module AvoxWrapper ${SWIG_DEFINITIONS}
                     -I"${CMAKE_SOURCE_DIR}/src" -I"${CMAKE_SOURCE_DIR}/plugins"
                     -outdir ${PYTHON_OUTPUT_DIR} -o ${PYTHON_WRAP_CXX} ${WRAPPERLIST}
-            DEPENDS ${WRAPPERLIST}
+            DEPENDS ${WRAPPERLIST} ${SWIG_HEADER_DEPS}
             COMMENT "Generating SWIG wrapper for Python")
         # _AvoxWrapper.pyd: python 扩展命名 (_<module>.pyd), 模块名由 -module AvoxWrapper 决定
         add_library(avox_swig_python MODULE ${PYTHON_WRAP_CXX})
