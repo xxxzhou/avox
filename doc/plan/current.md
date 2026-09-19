@@ -17,16 +17,18 @@ backlog 全景与逐项施工方案见 [backlog/README.md](backlog/README.md)。
       unknown**, 见 a01); 剩 **ASS 样式覆盖接口**(T3) → PGS e2e(T4, 合成配方已给
       avox-test, 素材侧零外部依赖) → [a01](backlog/a01-ass-pgs.md)
 - [ ] A-2 秒起播: 埋点+probe 降档已落地(`d7ebd1d`/`ed75f49`: 本地索引容器快档 3-14ms,
-      保底字段缺失回退补查); 剩 **T3 seek 精确化** → T4 基线回归用例 → [a02](backlog/a02-fast-start-seek.md)
+      保底字段缺失回退补查); **T3 seek 精确化已判定「不动」**(09-19 post-T2 基线: 首帧
+      持平偏快, seek 31→153ms 为双峰噪声且落地恒 0, 见 a02); 剩 T4 基线回归用例 →
+      [a02](backlog/a02-fast-start-seek.md)
 - [ ] A-3 VP9/WEBM: **三平台硬解已落地**(Win D3D11VA `1c195f5` 本机实测 hw 命中 /
       Android `19e4729` 编译过待真机 / Apple `19e4729` 待 mac 编译+真机; 软解为回退项,
       VDecoderTask 选型失败自动回退); 剩 Android/Apple 真机验证 + W38 原始样片定性(外部) → [a03](backlog/a03-vp9-webm.md)
 - [ ] A-6 FFmpeg 9.0.1 收口: Windows 离线回归 33/33 已过; 剩 **Android/iOS/macOS/Linux
       四平台回归 + UE 链路验证**(本机做不了, 待 CI/真机) + T5 回写 panvox; T6 16KB 页对齐(P2) → [a06](backlog/a06-ffmpeg9.md)
-- [ ] A-5 avox_remote: T1 契约设计定稿(`44cf620`) + **T2 IOParseDav 已落地**(`29c2cd6`:
-      range 读+4MB 预读窗口+seek, dav://davs:// 自动路由, 本机实测 PASS) +
-      IOParseSmb 同款 EOF 隐患已修(`c784372`, 编译过待真机走查); 剩
-      T3 直链失效重试/续播 → T4 目录缓存 → T5 用例 → [a05](backlog/a05-remote-vfs.md)
+- [ ] A-5 avox_remote: T1 契约设计定稿(`44cf620`) + **T2 IOParseDav 已落地**(`29c2cd6`) +
+      **T3 断链自愈已落地**(`c6c928d`: refresh 换链续播+断流退避, avox-test 双例 PASS
+      恢复 5.6s/11.9s) + IOParseSmb 同款 EOF 隐患已修(`c784372`); 剩
+      T4 目录列表缓存 → T5 剩过期令牌回调用例 → [a05](backlog/a05-remote-vfs.md)
 
 ## 2026.09 计划 (离线超分转码)
 

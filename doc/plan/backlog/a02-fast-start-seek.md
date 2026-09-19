@@ -37,8 +37,12 @@
       再跑一次 find_stream_info; 网络/ts/HLS 保持默认。实测: 本地 mp4 find_stream_info
       3-14ms, 10bit HDR mp4 快档直接得 yuv420P10(A-12 预判字段无损)。
       「跳过 find_stream_info」未做(风险大于收益, 快档+保底回退已达目标)。
-- [ ] T3 seek 精确化:目标前最近关键帧索引 seek(替代 BACKWARD 全量回退),
-      seek 后解码器 flush → I 帧直出路径确认无冗余 GOP 解码。
+- [x] T3 seek 精确化:**2026-09-19 判定「不动」**(avox-test post-T2 基线
+      `out/latency/baseline_post-t2-0919.*`): T2 后 first_frame 全面持平偏快
+      (file-h264 -21ms / file-h265 -24ms / shot -30ms / probe-field -31ms,
+      probe 五例红线全绿); file-h264-seek seek_ms 31→153 判为噪声(双峰序列,
+      150ms 轮早于 T2 即存在, seek_land_ms 恒 0)。无可见症状, 关键帧索引 seek
+      不做; 用例继续留在矩阵里观察, 若后续版本出现 landing 异常再重启本项。
 - [ ] T4 基线与回归:avox-test playmatrix 加延迟用例(本地 mp4/mkv/webm + WebDAV),
       采集基线 → 优化 → 对比报告落 avox-test/doc。
 
