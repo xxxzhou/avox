@@ -87,6 +87,10 @@ class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
   // 外挂候选枚举(a01-T5): 纯文件系统查询, 结果入缓存(scanMtx), 经 getSubtitleCandidate 取用
   virtual int32_t listSubtitleCandidates(const char* videoUrl) override;
   virtual ISubtitleCandidate* getSubtitleCandidate(int32_t index) override;
+  // ASS 轨样式覆盖(a01-T3): 下发 overlay(libass 排版层); 无插件时存值,
+  // openTrackChannel 建通道补发
+  virtual void setAssScale(float scale) override;
+  virtual void setAssFont(const char* family) override;
   // 全复位(内部用: 播放器 close/换源/析构): 三槽位 + 轨通道 + 文件/ASR 内容
   // (渲染对象注册保留, 供重开复用)
   void closeSubtitle();
@@ -201,6 +205,11 @@ class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
 
   // ---- 轨槽通道(ASS/PGS) ----
   IAssOverlay* overlay = nullptr;  // assOverlayHub.create("libass"), 消费方持有
+  // ASS 轨样式覆盖存档(a01-T3): setter 写, openTrackChannel 建通道补发;
+  // scale 原子, font 独立小锁(不与 mtx 嵌套)
+  std::atomic<float> assScale{1.f};
+  mutable std::mutex assStyleMtx;
+  std::string assFontFamily;
   // libass 轨就绪(loadTrack/loadTrackFile 成功)前, chunk 全部丢弃:
   // ass_process_chunk 无 track 时是空操作, 排队反而会白占内存
   std::atomic<bool> trackLoaded{false};

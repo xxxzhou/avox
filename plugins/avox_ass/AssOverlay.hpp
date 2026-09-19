@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mutex>
 #include <string>
 
 #include "avox/subtitle/IAssOverlay.hpp"
@@ -26,6 +27,10 @@ class AssOverlay : public IAssOverlay {
   void setFontsDir(const char* dir) override;
   void setDefaultFont(const char* fontPath, const char* family) override;
 
+  // 轨级样式覆盖(a01-T3): libass 排版层, PGS/文本路径不适用
+  void setStyleScale(float scale) override;
+  void setStyleFont(const char* family) override;
+
   bool loadTrack(const char* extradata, int32_t size) override;
   void processChunk(const char* data, int32_t size, int64_t ptsMs,
                     int64_t durationMs) override;
@@ -44,6 +49,13 @@ class AssOverlay : public IAssOverlay {
   int32_t storageW = 0;
   int32_t storageH = 0;
   bool bInit = false;
+  // 轨级样式覆盖存档(a01-T3; setter 产品线程, load/render 播放线程, styleMtx 保护)
+  // 注册到 libass 的 overrides 为 library 级(libass 拷贝存), loadTrack/loadFile
+  // 对新轨 force-style 重应用; 清除对已应用轨不回滚(重载轨生效)
+  void applyStyleOverride();
+  mutable std::mutex styleMtx;
+  double styleScale = 1.0;
+  std::string styleFont;  // 空 = 不覆盖
 
   // libass 句柄(AVOX_ASS_HAVE_LIBASS 下使用; 骨架模式恒 nullptr)
   void* assLibrary = nullptr;   // ASS_Library*

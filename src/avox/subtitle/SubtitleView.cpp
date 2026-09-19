@@ -307,6 +307,12 @@ bool SubtitleView::openTrackChannel() {
     overlay = nullptr;
     return false;
   }
+  // 轨级样式覆盖补发(a01-T3): 建通道前设置的值在 init 后生效
+  overlay->setStyleScale(assScale.load(std::memory_order_relaxed));
+  {
+    std::lock_guard<std::mutex> lock(assStyleMtx);
+    overlay->setStyleFont(assFontFamily.c_str());
+  }
   LOGFLF(LogLevel::info, "subtitle view: track channel open storage:",
          storageW, "x", storageH);
   return true;
@@ -394,6 +400,30 @@ ISubtitleCandidate* SubtitleView::getSubtitleCandidate(int32_t index) {
     return nullptr;
   }
   return &scanCache[(size_t)index];
+}
+
+void SubtitleView::setAssScale(float scale) {
+  if (!(scale > 0.f)) {
+    return;  // <=0/NaN 忽略保持现值(同 setScale 口径)
+  }
+  assScale.store(scale, std::memory_order_relaxed);
+  // overlay 的 setStyleScale 在 plugin 侧即刻生效; 无插件时 openTrackChannel 补发
+  if (overlay) {
+    overlay->setStyleScale(scale);
+  }
+}
+
+void SubtitleView::setAssFont(const char* family) {
+  {
+    std::lock_guard<std::mutex> lock(assStyleMtx);
+    assFontFamily = family != nullptr ? family : "";
+  }
+  // plugin 侧注册 library overrides + 当前轨 force-style; 锁内拷贝串保证
+  // c_str() 有效(plugin 同步拷走)。不持 mtx: 插件不会回调本视图, 无死锁
+  std::lock_guard<std::mutex> lock(assStyleMtx);
+  if (overlay) {
+    overlay->setStyleFont(assFontFamily.c_str());
+  }
 }
 
 void SubtitleView::pushChunk(const char* data, int32_t size, int64_t ptsMs,

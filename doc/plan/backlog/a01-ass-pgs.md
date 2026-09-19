@@ -3,7 +3,7 @@
 > 状态: 进行中 · 上次核对: 2026-09-19 · 权威源: -
 
 
-优先级 P0 · 里程碑 M1 · 计划状态:施工中(T1/T2/T3延迟/T4 PGS e2e/T5候选枚举/ass路径自愈 完成; 剩 ASS 轨样式缩放/字体覆盖) · 来源:backlog A-1
+优先级 P0 · 里程碑 M1 · 计划状态:施工中(T1/T2/T3延迟+ASS轨样式覆盖/T4 PGS e2e/T5候选枚举/ass路径自愈 完成; 剩 跨平台 STATIC 编译与人工走查) · 来源:backlog A-1
 内封 ASS 已像素级验收(2026-09-15),本计划覆盖剩余四件 + 乱码探测信号暴露。
 
 ## 出口判据
@@ -53,9 +53,17 @@
 - [ ] T3 样式参数补齐: **延迟接口已落地(2026-09-19, `21491dc`)**: `ISubtitle::setDelay(ms)`
       (正=延后/负=提前, 带默认实现), 外挂文本/内封 ASS 按 (pts-delay) 平移内容选择,
       PGS 画布按 pts 到期放行(delay=0 原路径零变化), ASR 实时口播不平移。
-      剩: ASS 轨缩放/字体覆盖接口。现有全局变换 scale/offset/opacity 三层通用
-      (`SubtitleView.cpp:252`),叠加轨级覆盖;依据 `doc/plan/player/字幕样式设计.md`
-      (v3 定稿)的生效矩阵。
+      剩: ~~ASS 轨缩放/字体覆盖接口~~ **已落地 (2026-09-20 夜, 头 `f2c328e` +
+      实现随本节回写同笔)**: `ISubtitle` 类尾只增 `setAssScale(float)`(libass
+      font_scale, 排版重排非位图拉伸, 放大清晰; 1.0=片源原样, <=0 忽略) 与
+      `setAssFont(const char*)`(替换片源样式字体名; 空=不覆盖, 已应用轨不回滚,
+      重载轨生效)。通道 `IAssOverlay` 只增默认实现 `setStyleScale/setStyleFont`
+      → AssOverlay: scale 走 `ass_set_font_scale`(renderer 级, 跨换轨保持),
+      font 走 `ass_set_style_overrides` + `ass_process_force_style`(library 级
+      注册, loadTrack/loadFile 对新轨重应用)。SubtitleView 存档覆盖参数,
+      openTrackChannel 建通道补发。与 v3 生效矩阵不冲突: 纯文本 setter 对 ASS
+      仍忽略, 本组是叠加其上的轨级覆盖新口径。构建+ctest 绿; 真渲染取证
+      (scale/font 实际观感)待带素材走查。
 - [x] T4 PGS 真实样片 e2e(2026-09-19 全链绿, avox `2d4c6ac` + avox-test `48002b8/d0c3461/747135f`):
       **配方落地**: 无需真实样片, 纯 Python 合成 —— avox-test `assets/gen/gen_subtitle.py`
       (make_pgs_sup/_seg/_pcs/_wds/_pds/_ods/_rle_rect), sup 段格式核 pgssubdec.c

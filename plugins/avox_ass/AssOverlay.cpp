@@ -42,6 +42,14 @@ bool AssOverlay::init(int32_t storageWidth, int32_t storageHeight) {
   storageW = storageWidth;
   storageH = storageHeight;
   bInit = true;
+  // init 前设置的轨级覆盖补应用(a01-T3): scale 直上渲染器, font 注册到 library
+  {
+    std::lock_guard<std::mutex> lk(styleMtx);
+    if (styleScale != 1.0) {
+      ass_set_font_scale(rend, styleScale);
+    }
+  }
+  applyStyleOverride();
   return true;
 }
 
@@ -67,6 +75,54 @@ void AssOverlay::setDefaultFont(const char* fontPath, const char* family) {
   if (family) defaultFontFamily = family;
 }
 
+void AssOverlay::setStyleScale(float scale) {
+  if (!(scale > 0.f)) {
+    return;  // <=0/NaN 忽略保持现值(同 ISubtitle::setScale 口径)
+  }
+  {
+    std::lock_guard<std::mutex> lk(styleMtx);
+    styleScale = (double)scale;
+  }
+  // renderer 级旋钮: 即刻生效, 持续到 shutdown(跨 loadTrack/loadFile 保持);
+  // 下一次 ass_render_frame 按新 font_scale 重排
+  if (assRenderer) {
+    ass_set_font_scale(static_cast<ASS_Renderer*>(assRenderer), (double)scale);
+  }
+}
+
+void AssOverlay::setStyleFont(const char* family) {
+  {
+    std::lock_guard<std::mutex> lk(styleMtx);
+    styleFont = family != nullptr ? family : "";
+  }
+  applyStyleOverride();
+}
+
+void AssOverlay::applyStyleOverride() {
+  std::string font;
+  {
+    std::lock_guard<std::mutex> lk(styleMtx);
+    font = styleFont;
+  }
+  if (!assLibrary) {
+    return;
+  }
+  // library 级 overrides(ass.h: list 被 libass 拷贝, 调用后可释放):
+  // [Style.]Param=Value 形态; 空 = 注册空表(对后续新轨不覆盖)
+  if (font.empty()) {
+    const char* none[1] = {nullptr};
+    ass_set_style_overrides(static_cast<ASS_Library*>(assLibrary), none);
+  } else {
+    const std::string ov = "Fontname=" + font;
+    const char* list[2] = {ov.c_str(), nullptr};
+    ass_set_style_overrides(static_cast<ASS_Library*>(assLibrary), list);
+  }
+  // 当前已加载轨立即应用(新轨由 loadTrack/loadFile 调本函数重应用)
+  if (assTrack) {
+    ass_process_force_style(static_cast<ASS_Track*>(assTrack));
+  }
+}
+
 bool AssOverlay::loadTrack(const char* extradata, int32_t size) {
   if (!bInit || !extradata || size <= 0) return false;
   unload();
@@ -74,6 +130,7 @@ bool AssOverlay::loadTrack(const char* extradata, int32_t size) {
   if (!track) return false;
   ass_process_codec_private(track, const_cast<char*>(extradata), size);
   assTrack = track;
+  applyStyleOverride();  // 新轨重应用字体覆盖(a01-T3)
   return true;
 }
 
@@ -196,6 +253,7 @@ bool AssOverlay::loadFile(const char* path) {
                                  int32_t(ass.size()), nullptr);
     if (!read) return false;
     assTrack = read;
+    applyStyleOverride();  // 新轨重应用字体覆盖(a01-T3)
     return true;
   }
   // .ass 外挂: 内存加载双自愈 —— 路径经 openFileUtf8(Windows 中文名与 ACP
@@ -223,6 +281,7 @@ bool AssOverlay::loadFile(const char* path) {
                                  int32_t(ass.size()), nullptr);
     if (!read) return false;
     assTrack = read;
+    applyStyleOverride();  // 新轨重应用字体覆盖(a01-T3)
     return true;
   }
 }
@@ -338,6 +397,12 @@ void AssOverlay::setFontsDir(const char* dir) {
 void AssOverlay::setDefaultFont(const char* fontPath, const char* family) {
   if (fontPath) defaultFontPath = fontPath;
   if (family) defaultFontFamily = family;
+}
+
+void AssOverlay::setStyleScale(float scale) { (void)scale; }
+
+void AssOverlay::setStyleFont(const char* family) {
+  if (family) styleFont = family;
 }
 
 bool AssOverlay::loadTrack(const char* extradata, int32_t size) {

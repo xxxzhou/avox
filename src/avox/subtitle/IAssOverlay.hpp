@@ -69,6 +69,14 @@ class IAssOverlay {
   // 原样), unload 后复位 unknown; 与核心 ISubtitle::getFileEncoding 同口径。
   // 带默认实现: 既有实现者零影响(只增不改)
   virtual SubtitleEncoding getFileEncoding() { return SubtitleEncoding::unknown; }
+
+  // ---- ASS 轨样式覆盖(a01-T3): libass 排版层生效, PGS/文本路径不适用 ----
+  // 内容缩放(libass font_scale, 1.0=片源原样, <=0 忽略); init 前可设,
+  // init 时应用。带默认空实现: 既有实现者零影响(只增不改)
+  virtual void setStyleScale(float scale) { (void)scale; }
+  // 字体覆盖(nullptr/空=不覆盖): 注册 library overrides + 当前轨 force-style;
+  // loadTrack/loadFile 对新轨自动重应用。带默认空实现
+  virtual void setStyleFont(const char* family) { (void)family; }
 };
 
 }  // namespace avox
