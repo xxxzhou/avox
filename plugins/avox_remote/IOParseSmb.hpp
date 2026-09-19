@@ -45,6 +45,11 @@ class IOParseSmb : public AVSource, public RunTask {
   std::atomic<bool> bInterruptRead{false};
   // IO线程已退出av_read_frame的确认(seekTo等它再操作fmtCtx)
   std::atomic<bool> bIoPausedAck{false};
+  // EOF 停放(IOParseFF 同款): EOF 不退循环, seekTo 成功后复位续读。
+  // 小文件起播即到 EOF, 线程一退 seek 只挪 demuxer 位置无人再读, 管道静止
+  std::atomic<bool> bEof{false};
+  std::atomic<bool> bEofReset{false};     // seekTo 成功后置位: 叫醒停放的读线程
+  std::atomic<bool> bEofNotified{false};  // onComplete 每次 EOF 只报一次
 
  private:
   // 入口 URL 解析产物

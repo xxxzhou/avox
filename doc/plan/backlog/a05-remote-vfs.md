@@ -113,9 +113,10 @@ T2 IOParseDav(参照 IOParseSmb ~600 行 + 窗口, 2-3 天) → T3 重试/续播
       (userinfo 百分号解码), bytes=0-0 探测总大小(Content-Range)。IoPlan 加 `dav`
       项; MediaPlayer 对 dav://davs:// 自动路由(同 smb:// 先例); http(s) 直链
       显式 setIoPlan(dav) 亦走此源。**EOF 停放机制**(IOParseFF 同款 bEof/bEofReset):
-      小文件起播即读完, seek 后复位续读 —— IOParseSmb 的读循环 EOF 直接 break,
-      存在同款「seek 在 EOF 后管道静止」隐患(本机 libsmb2 未编入无法验证修复,
-      未动, 待其编译环境修复)。本机 range 服务器实测: dav:// 播放+seek PASS
+      小文件起播即读完, seek 后复位续读; IOParseSmb 同款「seek 在 EOF 后管道
+      静止」隐患已随后同构修复(bEof/bEofReset/bEofNotified 三原子移植, Release
+      编译通过 —— libsmb2 已在 avc_library 就位参与常规编译; 运行期待真机 SMB
+      服务端走查)。本机 range 服务器实测: dav:// 播放+seek PASS
       (seek 109ms), 离线回归 44/44 绿。v1 限制: 服务端不支持 range(200 全量)
       明确报错不降级; 直链失效自动重试(refresh 续播)属 T3。
 - [ ] T3 直链失效重试:播放中 http 错误分类映射(401/403/410/断流)→ refresh(entry) 重取

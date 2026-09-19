@@ -419,12 +419,26 @@ void IOParseSmb::onRunTask() {
       sleepTask(false, 10);
       continue;
     }
+    if (bEof.load()) {
+      // EOF 停放: 不 break。小文件起播即读完, 尾包可能还有几十秒数据没被
+      // 消费, 且之后很可能 seek —— 线程一退, seek 只挪了 demuxer 位置却
+      // 无人再读, 管道从此静止。等 seekTo 复位(bEofReset)或 close
+      if (bEofReset.exchange(false)) {
+        bEof.store(false);
+        continue;
+      }
+      sleepTask(false, 10);
+      continue;
+    }
     AVPacketPtr pkt = getUniquePtr(av_packet_alloc());
     ret = av_read_frame(fmtCtx.get(), pkt.get());
     if (ret < 0) {
       if (ret == AVERROR_EOF) {
-        dispatch(&IAVSourceOb::onComplete);
-        break;
+        bEof.store(true);
+        if (!bEofNotified.exchange(true)) {
+          dispatch(&IAVSourceOb::onComplete);
+        }
+        continue;
       }
       // interrupt打断或非阻塞暂无数据: 回循环顶等暂停处理
       if (ret == AVERROR_EXIT || ret == AVERROR(EAGAIN)) {
@@ -521,6 +535,9 @@ void IOParseSmb::onClose() {
     smb2_destroy_context(smb);
     smb = nullptr;
   }
+  bEof.store(false);
+  bEofNotified.store(false);
+  bEofReset.store(false);
   bInterruptRead.store(false);
 }
 
@@ -570,6 +587,11 @@ bool IOParseSmb::seekTo(int64_t pos) {
     AVOX_FFMEPG_LOG(ret, "avformat_seek_file failed")
   }
   bOk = (ret == 0);
+  // 读线程若已 EOF 停放: 复位让它从新位置继续读(否则 seek 无人读, 管道静止)
+  if (bOk) {
+    bEofNotified.store(false);
+    bEofReset.store(true);
+  }
   resumeTask();
   return bOk;
 }
