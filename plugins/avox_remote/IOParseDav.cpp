@@ -26,6 +26,10 @@ constexpr int kRecoverRetries = 3;
 constexpr int kBackoffMs[kRecoverRetries] = {1000, 2000, 4000};
 // 单请求粒度上限: httplib 不可中断, 打断最坏等一个请求返回,
 // 拉取按窗口一次到位但超时受客户端读超时约束
+// 鉴权过期等待产品重授权的窗口 (a05 §1): onAuthExpired 后 IO 层有界等待
+// (30s, 与契约 closed 超时同口径), 期间缓冲冻结表现为「断流」不静默重试;
+// reauthorize 落地即续播, 超时走 EIO 既有终错
+constexpr int kReauthWaitMs = 30000;
 
 std::string percentDecode(const std::string& s) {
   std::string out;
@@ -232,7 +236,13 @@ bool IOParseDav::refillWindow() {
         client.reset();  // 新直链(换签名/凭据), 下次 ensureClient 按新 URL 重建
         continue;        // 立即重试, 不退避
       }
-      // 无桥(裸 URL 播放)或会话重取失败: 直链级失效不可自愈, 重试同直链无意义
+      // refresh 失败且会话已置鉴权过期态 (a05 §1): onAuthExpired 已由会话抛出,
+      // 有界等待产品 reauthorize (轮询过期态清除, 不发请求不打服务器), 落地后
+      // 断链桥以新凭据换链续播; 超时/无桥(裸 URL 播放)按断流终错
+      if (waitForReauth() && bridgeRefresh()) {
+        client.reset();
+        continue;
+      }
       LOGFLF(LogLevel::error, "[dav io] refresh unavailable, give up");
       return false;
     }
@@ -270,6 +280,27 @@ bool IOParseDav::bridgeRefresh() {
   LOGFLF(LogLevel::info, "[dav io] refreshed direct link, len:",
          (double)fresh.size());
   return true;
+}
+
+bool IOParseDav::waitForReauth() {
+  // a05 §1: 鉴权过期后等待产品 reauthorize, 轮询会话过期态(500ms, 有界 30s),
+  // 不发请求不打服务器; seek/close 打断随时退。true = 过期态已清除, 可再过桥
+  for (int waited = 0; waited < kReauthWaitMs; waited += 500) {
+    if (bInterruptRead.load()) {
+      return false;
+    }
+    sleepTask(false, 500);
+    DavSource* src = davbridge::findForUrl(url);
+    if (src == nullptr) {
+      return false;  // 会话已析构
+    }
+    if (!src->authExpired()) {
+      return true;
+    }
+  }
+  LOGFLF(LogLevel::warn, "[dav io] reauthorize wait timeout(ms):",
+         (double)kReauthWaitMs);
+  return false;
 }
 
 // ---- avio回调: FFmpeg读请求从预读窗口供给 ----

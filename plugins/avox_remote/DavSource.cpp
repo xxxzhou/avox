@@ -364,8 +364,16 @@ bool DavSource::open(const char* url, const char* user, const char* pass,
     resolvedBuf = "";
   }
   parts = std::move(p);  // startTask 前写完, 工作线程读无竞态
+  {
+    std::lock_guard<std::mutex> lk(resultMutex);
+    credUser = parts->user;
+    credPass = parts->pass;
+  }
   openedFlag.store(false);
   abortFlag.store(false);
+  // 重新 open 即新会话: 鉴权三态复位 (a05 §1)
+  authExpiredFlag.store(false);
+  authCbArmed.store(true);
   op = Op::open;
   taskName = "dav open";
   startTask();
@@ -420,9 +428,6 @@ bool DavSource::propfind(const std::string& reqPath, int depth,
   cli.set_connection_timeout(secs, 0);
   cli.set_read_timeout(secs, 0);
   cli.set_write_timeout(secs, 0);
-  if (!p.user.empty()) {
-    cli.set_basic_auth(p.user.c_str(), p.pass.c_str());
-  }
   if (!verifyTls) {
     cli.enable_server_certificate_verification(false);
   }
@@ -431,12 +436,19 @@ bool DavSource::propfind(const std::string& reqPath, int depth,
   req.path = reqPath;
   req.headers.emplace("Depth", depth > 0 ? "1" : "0");
   req.headers.emplace("Content-Type", "application/xml");
+  // 凭据快照 + 鉴权 Header 注入 (契约 §3): reauthorize 可热更新, 同锁读免竞态
+  std::string basicUser;
+  std::string basicPass;
   {
-    // 鉴权 Header 注入 (契约 §3): setParam("authHeader") 设置后本会话所有请求携带
     std::lock_guard<std::mutex> lk(resultMutex);
+    basicUser = credUser;
+    basicPass = credPass;
     if (!authKey.empty()) {
       req.headers.emplace(authKey, authVal);
     }
+  }
+  if (!basicUser.empty()) {
+    cli.set_basic_auth(basicUser.c_str(), basicPass.c_str());
   }
   req.body = kPropfindBody;
   httplib::Response res;
@@ -514,9 +526,9 @@ void DavSource::runList() {
   } else if (!ok) {
     code = (int32_t)RemoteCode::net;
   } else if (status == 401 || status == 403) {
-    std::lock_guard<std::mutex> lk(resultMutex);
-    lastError = "auth failed(http " + std::to_string(status) + ")";
-    code = (int32_t)RemoteCode::authFailed;
+    // 会话中途鉴权过期 (a05 §1): code 流转 authExpired(-4), 与 open 首次
+    // 鉴权失败(authFailed)区分; 回调在 abort 检查后统一走 handleAuthFailure
+    code = (int32_t)RemoteCode::authExpired;
   } else {
     std::lock_guard<std::mutex> lk(resultMutex);
     lastError = "http " + std::to_string(status);
@@ -526,6 +538,9 @@ void DavSource::runList() {
   // 上层已 stopList/close: 结果作废, 不再回调
   if (abortFlag.load()) {
     return;
+  }
+  if (code == (int32_t)RemoteCode::authExpired) {
+    handleAuthFailure(status);
   }
   IRemoteSourceOb* o = obAt.load();
   if (o) {
@@ -538,6 +553,21 @@ void DavSource::onRunTask() {
     runOpen();
   } else {
     runList();
+  }
+}
+
+void DavSource::handleAuthFailure(int32_t status) {
+  {
+    std::lock_guard<std::mutex> lk(resultMutex);
+    lastError = "auth expired(http " + std::to_string(status) + ")";
+  }
+  authExpiredFlag.store(true);
+  // 武装位: 同一会话至多抛一次, reauthorize 成功后重新武装 (防回调风暴, a05 §1)
+  if (authCbArmed.exchange(false)) {
+    IRemoteSourceOb* o = obAt.load();
+    if (o) {
+      o->onAuthExpired(sourceId.c_str());
+    }
   }
 }
 
@@ -646,12 +676,13 @@ bool DavSource::fillBatch(const std::vector<DavItem>& items,
   return !batch.empty();
 }
 
-std::string DavSource::entryUrl(const std::string& token) const {
+std::string DavSource::entryUrl(const std::string& token,
+                                const std::string& user,
+                                const std::string& pass) const {
   const UrlParts& p = *parts;
   std::string auth;
-  if (!p.user.empty()) {
-    auth = percentEncode(p.user, nullptr) + ":" +
-           percentEncode(p.pass, nullptr) + "@";
+  if (!user.empty()) {
+    auth = percentEncode(user, nullptr) + ":" + percentEncode(pass, nullptr) + "@";
   }
   std::string port;
   bool defaultPort =
@@ -718,7 +749,7 @@ const char* DavSource::resolve(int32_t entryIndex, IOption* option) {
     lastError = "entry is a directory(先 list 下钻): " + e.token;
     return nullptr;
   }
-  resolvedBuf = entryUrl(e.token);
+  resolvedBuf = entryUrl(e.token, credUser, credPass);
   // 断链自愈桥凭证 (a05-T3): IOParseDav 凭原样 URL 找回本会话重取
   lastResolvedIndex = entryIndex;
   lastResolvedUrl = resolvedBuf;
@@ -748,9 +779,16 @@ const char* DavSource::refresh(int32_t entryIndex, IOption* option) {
   // 静态 DAV 服务返回同路径 = 幂等重取)。同步阻塞, 至多 opTimeoutMs。
   std::string body;
   int32_t status = 0;
-  if (!propfind(requestPath(token), 0, &body, &status) || status != 207) {
-    std::lock_guard<std::mutex> lk(resultMutex);
-    lastError = "refresh propfind status=" + std::to_string(status);
+  const bool ok = propfind(requestPath(token), 0, &body, &status);
+  if (!ok || status != 207) {
+    if (ok && (status == 401 || status == 403)) {
+      // 重取即鉴权过期 (a05 §1): 会话置 invalid + onAuthExpired(至多一次),
+      // 凭旧凭据换链重试无意义; 产品 reauthorize 后断链桥/本口自然恢复
+      handleAuthFailure(status);
+    } else {
+      std::lock_guard<std::mutex> lk(resultMutex);
+      lastError = "refresh propfind status=" + std::to_string(status);
+    }
     return nullptr;
   }
   const auto items = parseMultistatus(body);
@@ -770,11 +808,45 @@ const char* DavSource::refresh(int32_t entryIndex, IOption* option) {
   {
     std::lock_guard<std::mutex> lk(resultMutex);
     batch[entryIndex].token = fresh;  // 链式更新: 下次 refresh 从新签名续
-    resolvedBuf = entryUrl(fresh);
+    resolvedBuf = entryUrl(fresh, credUser, credPass);
     lastResolvedIndex = entryIndex;
     lastResolvedUrl = resolvedBuf;
     return resolvedBuf.c_str();
   }
+}
+
+bool DavSource::reauthorize(int32_t entryIndex, const char* user,
+                            const char* pass, const char* token) {
+  if (!openedFlag.load()) {
+    std::lock_guard<std::mutex> lk(resultMutex);
+    lastError = "reauthorize: session closed(重新 open)";
+    return false;
+  }
+  {
+    std::lock_guard<std::mutex> lk(resultMutex);
+    // 账密形态: 热更新凭据快照, propfind/entryUrl 即刻生效 (a05 §1 重建会话语义)
+    if (user != nullptr && *user != '\0') {
+      credUser = user;
+      credPass = pass != nullptr ? pass : "";
+    }
+    // token 形态 (alist/OpenList): 走会话鉴权 Header, Bearer 约定同 setParam("authHeader")
+    if (token != nullptr && *token != '\0') {
+      authKey = "Authorization";
+      authVal = std::string("Bearer ") + token;
+    }
+  }
+  // 重新武装 (a05 §1): 新凭据有效性由下一次请求验证, 仍失败会再抛 onAuthExpired
+  authExpiredFlag.store(false);
+  authCbArmed.store(true);
+  // 播放中场景: 以新凭据重取条目直链续播; IOParseDav 轮询到过期态清除后
+  // 经断链桥 refreshPlaybackUrl 拉到同一新直链
+  if (entryIndex >= 0) {
+    const char* u = refresh(entryIndex, nullptr);
+    if (u == nullptr || *u == '\0') {
+      return false;
+    }
+  }
+  return true;
 }
 
 bool DavSource::matchPlaybackUrl(const std::string& url) {
@@ -801,6 +873,8 @@ void DavSource::playbackAuthHeader(std::string* key, std::string* val) {
   *key = authKey;
   *val = authVal;
 }
+
+bool DavSource::authExpired() { return authExpiredFlag.load(); }
 
 const char* DavSource::getLastError() {
   std::lock_guard<std::mutex> lk(resultMutex);

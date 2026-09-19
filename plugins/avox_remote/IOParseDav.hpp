@@ -102,6 +102,9 @@ class IOParseDav : public AVSource, public RunTask {
   // 断链桥: 找回产出当前 URL 的 DavSource 会话并 refresh 换新直链(携其鉴权
   // Header); 无桥/重取失败返回 false
   bool bridgeRefresh();
+  // 鉴权过期等待产品 reauthorize (a05 §1): 轮询会话过期态至清除(重授权落地)
+  // 或超时; 打断随时退。true = 过期态已清除, 可再过断链桥
+  bool waitForReauth();
   // 连接级错误后重建会话客户端(各请求独立重试一次)
   bool ensureClient();
 

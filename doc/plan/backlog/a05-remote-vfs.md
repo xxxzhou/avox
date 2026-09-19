@@ -4,7 +4,7 @@
 
 
 优先级 P0 · 里程碑 M2(**建议 M1 末期提前启动**:panvox P-4 刮削与源浏览硬依赖)
-计划状态:**T1 契约 + T2 IOParseDav + T3 断链自愈已落地, T5 用例主体落地, 剩 T4 缓存/§1 回调链** · 来源:backlog A-5
+计划状态:**T1 契约 + T2 IOParseDav + T3 断链自愈 + §1 authExpired 回调链已落地, T5 用例主体落地, 剩 T4 缓存 + dav-auth-expired 用例** · 来源:backlog A-5
 WebDAV/SMB 统一 range 读 + 缓冲窗口 + seek;直链失效重试、令牌过期回调、目录列表缓存。
 
 ## 出口判据
@@ -137,6 +137,21 @@ T2 IOParseDav(参照 IOParseSmb ~600 行 + 窗口, 2-3 天) → T3 重试/续播
       已建待引擎实现)。验收口径: refresh 生效 = 恢复后播放位置越过注入点继续前进。
       **实测(同日)**: 两例 PASS, 服务端日志双证据 —— 签名 token 预算打空 410 后
       refresh 换新 token 续播; 断流窗口 4 次 DROP 后退避恢复。
+- [x] §1 authExpired 回调链 (2026-09-20 夜落地, 头文件 `2cacdef` + 实现随本节回写同笔):
+      公开头只增两处 —— IRemoteSourceOb 尾部 + `onAuthExpired(sourceId)`(默认空,
+      旧观察者零影响); IRemoteSource 类尾 + `reauthorize(entry,user,pass,token)`(默认
+      false, 产品可判不支持)。均类尾追加防 vtable 位移(09-18 事故纪律); SWIG 依赖自
+      45dff55 起构建期自动重生成, 免 touch。DavSource 三态授权: 会话中途 401/403
+      (list/refresh; open 首次仍 authFailed)→ 过期态 + 武装位 onAuthExpired("dav")
+      至多抛一次, onListResult 流转 authExpired(-4); reauthorize = 凭据快照热更新
+      (resultMutex 保护, propfind/entryUrl 同锁读)+ 重新武装 + refresh(entry) 重取
+      直链续播, token 形态映射 Authorization: Bearer(§3 同通道)。IOParseDav 播放中:
+      401/403 过断链桥 → 会话已过期 → 有界等待 30s(500ms 轮询过期态, 不打服务器)
+      → reauthorize 落地续播, 超时 EIO 终错。
+      **与 §1 设计差异(实施收窄, 验收口径不变)**: ① 30s closed 语义后置(任务卡注)
+      —— 播放场景以 IO 有界等待 30s 替代(缓冲冻结=断流形态), 浏览场景无 closed 态,
+      过期后 list 仍可发、code 持续流转, 回调仍只一次; ② 凭据不回写 open 时 UrlParts
+      (直链 userinfo 走快照), 重建=热更新+重 resolve; ③ SMB 未动(卡范围 DavSource)。
 - [ ] T4 目录列表缓存:会话级连接复用 + 目录树缓存(TTL 可配),秒开指标入 a02 口径。
 - [ ] T5 avox-test 用例:**主体已落地 (2026-09-19)** —— dav-open-list / dav-play-seek /
       dav-auth-fail / dav-broken-resume / dav-outage-resume 五例进离线门禁;

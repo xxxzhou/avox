@@ -47,6 +47,11 @@ class DavSource : public IRemoteSource, public RunTask {
   // 重签的 href 换新直链(alist/网盘形态 URL 有时效; 静态 DAV 返回同路径)。
   // 同步阻塞(至多 opTimeoutMs), 失败 nullptr(原因见 getLastError)。
   virtual const char* refresh(int32_t entryIndex, IOption* option) override;
+  // 会话中途鉴权过期后的重授权 (a05 §1): 新凭据即刻生效并重新武装 onAuthExpired
+  // (同一会话至多抛一次, 重授权成功后可再抛); entryIndex>=0 时同步重取该条目
+  // 直链续播, 浏览场景下次 list 自然生效。false = 会话未建立或重取失败。
+  virtual bool reauthorize(int32_t entryIndex, const char* user,
+                           const char* pass, const char* token) override;
 
  public:
   // ---- 断链自愈桥 (davbridge, 仅 IOParseDav 调用) ----
@@ -56,6 +61,8 @@ class DavSource : public IRemoteSource, public RunTask {
   bool refreshPlaybackUrl(std::string* out);
   // 会话鉴权 Header 注入对 (setParam("authHeader") 产物; IOParseDav 直链 GET 携带)
   void playbackAuthHeader(std::string* key, std::string* val);
+  // 会话是否处于鉴权过期态 (a05 §1; IOParseDav 等待重授权轮询用)
+  bool authExpired();
 
   virtual const char* getLastError() override;
 
@@ -92,6 +99,9 @@ class DavSource : public IRemoteSource, public RunTask {
   // 工作线程分派: 验会话 / 列目录
   void runOpen();
   void runList();
+  // 会话中途鉴权过期统一入口 (a05 §1): 置过期态 + lastError, 武装位允许时抛
+  // onAuthExpired (同一会话至多一次, reauthorize 成功后重新武装)。不持锁回调。
+  void handleAuthFailure(int32_t status);
   // PROPFIND 请求: depth 0 验在/1 列子项; 成功时 body 为 multistatus 原文
   bool propfind(const std::string& reqPath, int depth, std::string* body,
                 int32_t* statusCode);
@@ -107,7 +117,8 @@ class DavSource : public IRemoteSource, public RunTask {
   static bool isDirToken(const std::string& token);
   // 解析入口 URL: scheme/user/pass/host/port/rootToken (非法返回 false)
   static bool parseUrl(const std::string& url, UrlParts* out);
-  std::string entryUrl(const std::string& token) const;     // token → 播放直链(带userinfo)
+  std::string entryUrl(const std::string& token, const std::string& user,
+                       const std::string& pass) const;  // token → 播放直链(带userinfo)
   std::string requestPath(const std::string& token) const;  // token → 逐段百分号编码
 
  private:
@@ -130,6 +141,15 @@ class DavSource : public IRemoteSource, public RunTask {
   std::atomic<bool> abortFlag{false};
   // 会话状态
   std::atomic<bool> openedFlag{false};
+  // 鉴权三态 (a05 §1): expired = 会话中途 401/403 后未重授权 (浏览 list 仍可发,
+  // 回调面 code=authExpired); armed = onAuthExpired 武装位, 至多抛一次
+  std::atomic<bool> authExpiredFlag{false};
+  std::atomic<bool> authCbArmed{true};
+  // 生效 Basic 凭据快照 (resultMutex 保护; reauthorize 热更新, propfind/entryUrl 读)
+  std::string credUser;
+  std::string credPass;
+  // onAuthExpired 的 sourceId (创建时的协议键, RemoteModule.reg 同名)
+  const std::string sourceId = "dav";
   // 结果(结果锁: 工作线程写, getter 读)
   std::mutex resultMutex;
   std::vector<Entry> batch;
