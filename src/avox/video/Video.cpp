@@ -289,7 +289,6 @@ bool image2YUVFrame(IImageBuffer* buffer, YUVFrame& yuvFrame, YuvType yuvType) {
     rowPitch = imageFormat.rowPitch;
   }
   yuvFrame.stride[0] = rowPitch;
-  // 上面没处理rowPtich
   int32_t frameSize = getYuvFrameSize(yuvFrame.format, yuvFrame.stride[0]);
   // buffer的长度应该大于等于frameSize
   if (buffer->getBufferSize() < frameSize) {
@@ -306,7 +305,8 @@ bool image2YUVFrame(IImageBuffer* buffer, YUVFrame& yuvFrame, YuvType yuvType) {
     yuvFrame.data[2] = yuvFrame.data[1] + uvSize;
     yuvFrame.stride[1] = uvPitch;
     yuvFrame.stride[2] = uvPitch;
-  } else if (yuvType == YuvType::nv12) {
+  } else if (yuvType == YuvType::nv12 || yuvType == YuvType::p010) {
+    // NV12/P010: UV交错起始=Y面末尾, 行距与Y一致(P010按字节同为rowPitch)
     yuvFrame.data[1] = yuvFrame.data[0] + ysize;
     yuvFrame.stride[1] = rowPitch;
   } else if (yuvType == YuvType::yuv420P || yuvType == YuvType::yuv422P) {

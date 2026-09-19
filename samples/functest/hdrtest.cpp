@@ -44,6 +44,8 @@ void fail(const std::string& reason) {
 // 单次播放观察: onFrame 收 Vulkan 图处理后的 CPU 帧, 统计 Y 均值 + 出图
 class HdrOb : public ISurfaceRenderOb {
  public:
+  ISurfaceRender* sr = nullptr;
+ public:
   void onFrame(IImageBuffer* buf, YuvType yuvType) override {
     if (!buf || !buf->getPointer()) {
       fail("onFrame null buf");
@@ -79,7 +81,7 @@ class HdrOb : public ISurfaceRenderOb {
       }
       if (dumpCount < 1) {
         IImageBuffer* rgba = createImageBuffer();
-        if (yuvframe2Rgba(frame, rgba)) {
+        if (yuvframe2Rgba(frame, rgba, sr->getOutColorSpace())) {
           std::string path = prefix + tag + "_yuv.png";
           if (saveImagePath(path.c_str(), rgba)) {
             std::printf("[%s] dump %s\n", tag.c_str(), path.c_str());
@@ -250,6 +252,7 @@ bool playOnce(const char* url, bool hard, HdrOb& ob,
   player->getOption()->setBool("log.decoder.frame", true);
   player->getOption()->setBool("log.render.frame", true);
   ISurfaceRender* sr = player->getSurfaceRender();
+  ob.sr = sr;
   sr->setOffSurface(YuvType::yuv420P);
   addSurfaceRenderOb(sr, &ob);
   if (metaOb) {

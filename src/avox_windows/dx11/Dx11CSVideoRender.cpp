@@ -230,6 +230,7 @@ void Dx11CSVideoRender::renderGpuFrame(const GpuFrame& frame) {
 }
 
 void Dx11CSVideoRender::setColorSpace(const ColorSpaceDesc& c) {
+  VideoRender::setColorSpace(c);  // 基类存档, checkShot CPU兜底转换取用
   if (c.standard == cs.standard && c.range == cs.range &&
       c.transfer == cs.transfer) {
     return;
@@ -468,7 +469,7 @@ bool Dx11CSVideoRender::mapStagingFrame() {
   }
   const UINT srcSub =
       D3D11CalcSubresource(0, (UINT)gpuFrame.queueIndex, desc.MipLevels);
-  // 平面格式用 box 的 z 选平面: z=0 Y面(outH行), z=1 UV面(outH/2行)
+  // 平面格式源侧用box z选平面, 目的侧用DstZ: Y面DstZ=0, UV面DstZ=1
   D3D11_BOX yBox = {0, 0, 0, (UINT)outW, (UINT)outH, 1};
   D3D11_BOX uvBox = {0, 0, 1, (UINT)outW / 2, (UINT)outH / 2, 2};
   d3dcontext->CopySubresourceRegion(stagingTexture.Get(), 0, 0, 0, 0, src,

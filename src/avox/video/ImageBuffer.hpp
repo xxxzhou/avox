@@ -41,18 +41,4 @@ class AVOX_EXPORT ImageBuffer : public IImageBuffer {
   void setData(uint8_t* data, const ImageFormat& format, bool bCopy);
 };
 
-// 下面方法只是给electron+软解非vulkan截图使用,请不要每帧调用
-
-// YUV420P → RGBA 转换
-void yuv420p2Rgba(const uint8_t* y, const uint8_t* u, const uint8_t* v,
-                  int32_t width, int32_t height,
-                  int32_t yStride, int32_t uvStride,
-                  uint8_t* rgba, int32_t rgbaStride);
-
-// NV12 → RGBA 转换
-void nv122Rgba(const uint8_t* y, const uint8_t* uv,
-               int32_t width, int32_t height,
-               int32_t yStride, int32_t uvStride,
-               uint8_t* rgba, int32_t rgbaStride);
-
 }

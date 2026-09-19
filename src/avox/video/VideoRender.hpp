@@ -97,7 +97,10 @@ class AVOX_EXPORT VideoRender : public OptionLink {
   bool bCpuInput() { return cpuIn; }
   // 颜色空间与HDR参数: vk lane 进 UBO, dx11 lane 进 CS 常量
   // (硬解 YUV->RGB 转换在 dx11 CS 里, tone map 参数必须送到这一层)
-  virtual void setColorSpace(const ColorSpaceDesc& c) {};
+  // 基类存档, checkShot 的 CPU 兜底转换取用; 派生类覆写请带基类调用
+  virtual void setColorSpace(const ColorSpaceDesc& c) { colorSpace = c; };
+  // 当前帧编码所用色彩空间(YUVFrame→RGBA 快照须与之一致)
+  ColorSpaceDesc colorSpace = {};
   virtual void setHdrMeta(const HdrMeta& meta) {};
   virtual void setHdrMode(HdrMode mode) {};
   // CPU输入帧的解码格式(cpuIn时有效)

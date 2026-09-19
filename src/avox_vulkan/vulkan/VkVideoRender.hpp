@@ -102,7 +102,7 @@ class VkVideoRender : public VideoRender, public IVOutputLayerOb {
   // getCpuFrame的split重排副本(仅420P/422P带padding时实际拷贝),nvBuffer保持packed且多次调用幂等
   std::unique_ptr<ImageBuffer> splitBuffer;
   // 录制/播放颜色空间, 驱动 rgba2YUV/yuv2RGBA 的转换矩阵(与 encoder tag 同源)
-  ColorSpaceDesc colorSpace{YuvStandard::bt601, YuvRange::full};
+  // 存档用基类 VideoRender::colorSpace, 本类不再自持
   // HDR 静态元数据, 驱动 yuv2RGBA tone map 峰值
   HdrMeta hdrMeta = {};
   // HDR 输出模式, 驱动 yuv2RGBA tone map 开关

@@ -119,7 +119,10 @@ AVOX_EXPORT bool image2SplitYUVFrame(IImageBuffer* buffer, YuvType yuvType,
 // 注意IImageBuffer在yuv420P/yuv422P的情况下
 // 如果是和GPU交互的,其UV的padding类似[前半width/2 | 后半width/2 | padding]
 // 如果要给ffmpeg交互，需要改成[前半width/2 | pad/2 | 后半width/2 | pad/2]
-AVOX_EXPORT bool yuvframe2Rgba(const YUVFrame& frame, IImageBuffer* buffer);
+// cs须与帧编码时的色彩空间一致(引擎侧getOutColorSpace), 否则limited/bt709
+// 流的快照会发灰(白235当满量程显示、色度压缩~0.88)
+AVOX_EXPORT bool yuvframe2Rgba(const YUVFrame& frame, IImageBuffer* buffer,
+                               const ColorSpaceDesc& cs);
 // shader把U/V按width×(height/4)紧凑打包(每物理行2条逻辑UV行),
 // 加padding后每物理行布局: [前半width/2 | 后半width/2 | padding]
 // 重排为: [前半width/2 | pad/2 | 后半width/2 | pad/2]

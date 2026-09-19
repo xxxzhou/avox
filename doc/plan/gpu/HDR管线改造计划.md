@@ -37,7 +37,7 @@
 - DX11VA 硬解只注册 H264/H265(VP9/AV1 无硬解入口);`get_format` 直接 `avcodec_default_get_format`,无 P010 挑选逻辑(`FFDx11Decoder.cpp`)。
 - **致命断点**:`Dx11Helper::getDxFormat` 只认 NV12/YUY2,P010 surface 落 `YuvType::other` 后被下游**误当 RGBA 导入 Vulkan,画面错乱**(`src/avox_windows/dx11/Dx11Helper.cpp`)。整条 GPU 管线 NV12-only:DX11 CS 渲染的 SRV 固定 R8/R8G8(`Dx11CSVideoRender.cpp`),CPU YUV 回读明确拒绝非 NV12(`Dx11CSVideoRender.cpp` mapStagingFrame)。
 - 软解 `yuv420P10` 通路已闭环:r16 纹理上传 → `glsl/source/yuv2rgbaV4.comp` 取低 10 位 → **输出 rgba8 即刻截断**。
-- 纯 CPU 转换 `yuvframe2Rgba` 只支持 yuv420P/nv12,系数写死 601(`src/avox/video/ImageBuffer.cpp`)。
+- 纯 CPU 转换 `yuvframe2Rgba(frame, buf, cs)` 只支持 yuv420P/nv12;原系数写死 601 已修(2026-09-19):按 cs 矩阵法转换(`buildYuvToRgb(cs)`,与编码侧互逆),cs 取 `ISurfaceRender::getOutColorSpace()`(`src/avox/video/ImageBuffer.cpp`)。
 - Android:MediaCodec `COLOR_FormatYUVP010(0x36)` 被错映射为 `uyvy422_10B`(P010 是 420 半平面,不是 packed 422,`src/avox_android/AndCommon.cpp`);全链路无色彩标记。
 - iOS/macOS:VT 会话属性写死 8bit NV12 video range,不读 `kCVImageBufferYCbCrMatrixKey`;Metal 采样 shader 硬编码 601 limited(`src/avox_apple/IOSVDecoder.mm`、`MetalRender.mm`)。
 

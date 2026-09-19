@@ -313,13 +313,14 @@ def image2SplitYUVFrame(buf, yuvType, tmp=None):
     return ok, frame
 
 
-def yuvframe2Rgba(frame, buf):
+def yuvframe2Rgba(frame, buf, cs):
     """YUVFrame → IImageBuffer(RGBA)。
     frame 为 _pw.YUVFrame (常用 image2YUVFrame 导出的, data 指向某 IImageBuffer 内部);
-    buf 为目标 IImageBuffer (会被内部 setFormat 为 width×height rgba8)。
+    buf 为目标 IImageBuffer (会被内部 setFormat 为 width×height rgba8);
+    cs 为 _pw.ColorSpaceDesc, 须与帧编码所用一致 (引擎侧 render.getOutColorSpace())。
     返回 bool。仅支持 yuv420P / nv12。"""
     native = buf._native if isinstance(buf, IImageBuffer) else buf
-    return _pw.yuvframe2Rgba(frame, native)
+    return _pw.yuvframe2Rgba(frame, native, cs)
 
 
 def unpackGpuYUV(buf, yuvType):

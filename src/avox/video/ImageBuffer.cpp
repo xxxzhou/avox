@@ -2,6 +2,8 @@
 
 #include <assert.h>
 
+#include "ColorSpace.hpp"
+
 namespace avox {
 
 ImageBuffer::ImageBuffer() {}
@@ -58,57 +60,8 @@ void ImageBuffer::copyTo(IImageBuffer* xbuffer, bool bCopyData) {
   dest->setData(data, imageFormat, bCopyData);
 }
 
-void yuv420p2Rgba(const uint8_t* y, const uint8_t* u, const uint8_t* v,
-                  int32_t width, int32_t height, int32_t yStride,
-                  int32_t uvStride, uint8_t* rgba, int32_t rgbaStride) {
-  for (int32_t row = 0; row < height; ++row) {
-    for (int32_t col = 0; col < width; ++col) {
-      int32_t yIndex = row * yStride + col;
-      int32_t uvIndex = (row / 2) * uvStride + (col / 2);
-      int32_t rgbaIndex = row * rgbaStride + col * 4;
-
-      int32_t yVal = y[yIndex];
-      int32_t uVal = u[uvIndex] - 128;
-      int32_t vVal = v[uvIndex] - 128;
-
-      int32_t r = yVal + (int32_t)(1.402f * vVal);
-      int32_t g = yVal - (int32_t)(0.344f * uVal + 0.714f * vVal);
-      int32_t b = yVal + (int32_t)(1.772f * uVal);
-
-      rgba[rgbaIndex] = (uint8_t)std::max(0, std::min(255, r));
-      rgba[rgbaIndex + 1] = (uint8_t)std::max(0, std::min(255, g));
-      rgba[rgbaIndex + 2] = (uint8_t)std::max(0, std::min(255, b));
-      rgba[rgbaIndex + 3] = 255;
-    }
-  }
-}
-
-void nv122Rgba(const uint8_t* y, const uint8_t* uv, int32_t width,
-               int32_t height, int32_t yStride, int32_t uvStride, uint8_t* rgba,
-               int32_t rgbaStride) {
-  for (int32_t row = 0; row < height; ++row) {
-    for (int32_t col = 0; col < width; ++col) {
-      int32_t yIndex = row * yStride + col;
-      int32_t uvIndex = (row / 2) * uvStride + (col / 2) * 2;
-      int32_t rgbaIndex = row * rgbaStride + col * 4;
-
-      int32_t yVal = y[yIndex];
-      int32_t uVal = uv[uvIndex] - 128;
-      int32_t vVal = uv[uvIndex + 1] - 128;
-
-      int32_t r = yVal + (int32_t)(1.402f * vVal);
-      int32_t g = yVal - (int32_t)(0.344f * uVal + 0.714f * vVal);
-      int32_t b = yVal + (int32_t)(1.772f * uVal);
-
-      rgba[rgbaIndex] = (uint8_t)std::max(0, std::min(255, r));
-      rgba[rgbaIndex + 1] = (uint8_t)std::max(0, std::min(255, g));
-      rgba[rgbaIndex + 2] = (uint8_t)std::max(0, std::min(255, b));
-      rgba[rgbaIndex + 3] = 255;
-    }
-  }
-}
-
-bool yuvframe2Rgba(const YUVFrame& frame, IImageBuffer* buffer) {
+bool yuvframe2Rgba(const YUVFrame& frame, IImageBuffer* buffer,
+                   const ColorSpaceDesc& cs) {
   int32_t width = frame.format.width;
   int32_t height = frame.format.height;
   if (width <= 0 || height <= 0 || !buffer) {
@@ -124,16 +77,37 @@ bool yuvframe2Rgba(const YUVFrame& frame, IImageBuffer* buffer) {
   uint8_t* rgba = buffer->getPointer();
   int32_t rgbaStride = width * 4;
 
-  if (frame.format.type == YuvType::yuv420P) {
-    yuv420p2Rgba(frame.data[0], frame.data[1], frame.data[2], width, height,
-                 frame.stride[0], frame.stride[1], rgba, rgbaStride);
-    return true;
-  } else if (frame.format.type == YuvType::nv12) {
-    nv122Rgba(frame.data[0], frame.data[1], width, height, frame.stride[0],
-              frame.stride[1], rgba, rgbaStride);
-    return true;
+  if (frame.format.type != YuvType::yuv420P &&
+      frame.format.type != YuvType::nv12) {
+    return false;
   }
-  return false;
+  // buildYuvToRgb(cs)与编码侧buildRgbToYuv(cs)严格互逆(含limited展开),
+  // 输入归一化[0,1]且UV不预减0.5(-0.5已折叠进偏移列), 与yuv2rgbaV1.comp同源
+  const Mat4x4f mat = buildYuvToRgb(cs);
+  bool bNv12 = frame.format.type == YuvType::nv12;
+  for (int32_t row = 0; row < height; ++row) {
+    const uint8_t* yRow = frame.data[0] + (size_t)row * frame.stride[0];
+    const uint8_t* uRow =
+        frame.data[1] + (size_t)(row / 2) * frame.stride[1];
+    const uint8_t* vRow =
+        bNv12 ? uRow : frame.data[2] + (size_t)(row / 2) * frame.stride[2];
+    uint8_t* rgbaRow = rgba + (size_t)row * rgbaStride;
+    for (int32_t col = 0; col < width; ++col) {
+      // 420P色度半宽采样点col/2; NV12字节交错对[col*2]=[U,V]
+      float yn = yRow[col] / 255.0f;
+      float un = (bNv12 ? uRow[col * 2] : uRow[col / 2]) / 255.0f;
+      float vn = (bNv12 ? uRow[col * 2 + 1] : vRow[col / 2]) / 255.0f;
+      float r = yn * mat.row0.x + un * mat.row0.y + vn * mat.row0.z + mat.row0.w;
+      float g = yn * mat.row1.x + un * mat.row1.y + vn * mat.row1.z + mat.row1.w;
+      float b = yn * mat.row2.x + un * mat.row2.y + vn * mat.row2.z + mat.row2.w;
+      uint8_t* p = rgbaRow + col * 4;
+      p[0] = (uint8_t)std::max(0, std::min(255, (int32_t)(r * 255.0f + 0.5f)));
+      p[1] = (uint8_t)std::max(0, std::min(255, (int32_t)(g * 255.0f + 0.5f)));
+      p[2] = (uint8_t)std::max(0, std::min(255, (int32_t)(b * 255.0f + 0.5f)));
+      p[3] = 255;
+    }
+  }
+  return true;
 }
 
 // shader把U/V按width×(height/4)紧凑打包(每物理行2条逻辑UV行),

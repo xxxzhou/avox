@@ -51,6 +51,7 @@ bool fileExists(const std::string& path) {
 
 class YuvOutOb : public ISurfaceRenderOb {
  public:
+  ISurfaceRender* sr = nullptr;
   // onFrame: packed 帧契约校验 + 抽帧转 RGBA (验证 packed→split→rgba 全链)
   void onFrame(IImageBuffer* buf, YuvType yuvType) override {
     if (!buf || !buf->getPointer()) {
@@ -78,7 +79,7 @@ class YuvOutOb : public ISurfaceRenderOb {
       YUVFrame frame = {};
       if (image2SplitYUVFrame(buf, yuvType, frame, tmp)) {
         IImageBuffer* rgba = createImageBuffer();
-        if (yuvframe2Rgba(frame, rgba)) {
+        if (yuvframe2Rgba(frame, rgba, sr->getOutColorSpace())) {
           std::string path = prefix + "frame" + std::to_string(frames) + ".png";
           if (saveImagePath(path.c_str(), rgba)) {
             std::printf("onFrame dump %s\n", path.c_str());
@@ -123,6 +124,7 @@ int main(int argc, char* argv[]) {
     return 1;
   }
   ISurfaceRender* sr = player->getSurfaceRender();
+  ob.sr = sr;
   for (int i = 1; i < argc; i++) {
     std::string arg = argv[i];
     if (arg == "-novulkan") {

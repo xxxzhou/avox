@@ -400,6 +400,9 @@ class ISurfaceRender {
   virtual void disableYuvOut() = 0;
   // 设置源视频色彩空间(矩阵标准+量程), 决定 yuv2RGBA/rgba2YUV 转换, 运行时可调
   virtual void setColorSpace(const ColorSpaceDesc& cs) {};
+  // 当前输出YUV帧实际编码所用的色彩空间: onFrame/screenShot 拿到 YUVFrame 后
+  // 经 yuvframe2Rgba 转 RGBA 必须传同一 cs, 否则 limited/bt709 流快照会发灰
+  virtual ColorSpaceDesc getOutColorSpace() { return ColorSpaceDesc{}; };
   // HDR输出模式(默认follow), 运行时可调。tone map 仅 Vulkan 车道实现:
   // follow=按流与元数据自动(HDR进 tone map 出SDR); forceSDR=恒tone map;
   // forceHDR=跳过tone map(PQ编码值原样落帧, SDR表面表现为过曝, 宿主自担)

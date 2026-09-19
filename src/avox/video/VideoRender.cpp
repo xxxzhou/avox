@@ -111,7 +111,7 @@ void VideoRender::checkShot() {
       bool bRet = fetchFrame(imageBuffer);
       // 如果GPU渲染拿不到,并且是CPU输入,直接用CPU转换
       if (!bRet && cpuIn) {
-        bRet = yuvframe2Rgba(yuvFrame, imageBuffer);
+        bRet = yuvframe2Rgba(yuvFrame, imageBuffer, colorSpace);
       }
       bShotComplete->set_value(bRet);
       LOGFLF(LogLevel::info, "screen shot:", bRet, " ms:", timeStampMS());

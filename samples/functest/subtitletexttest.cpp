@@ -54,7 +54,7 @@ namespace {
 
 // 底部字幕带(下 1/4)亮像素计数, 与 assmkvtest 同判据(黑底素材确定性判)
 int32_t brightPixelsInStrip(IImageBuffer* buf, YuvType yuvType,
-                            IImageBuffer** outRgba) {
+                            IImageBuffer** outRgba, const ColorSpaceDesc& cs) {
   *outRgba = nullptr;
   if (!buf || !buf->getPointer()) {
     return -1;
@@ -63,7 +63,7 @@ int32_t brightPixelsInStrip(IImageBuffer* buf, YuvType yuvType,
   YUVFrame frame = {};
   IImageBuffer* rgba = createImageBuffer();
   if (!image2SplitYUVFrame(buf, yuvType, frame, tmp) ||
-      !yuvframe2Rgba(frame, rgba)) {
+      !yuvframe2Rgba(frame, rgba, cs)) {
     delete tmp;
     delete rgba;
     return -1;
@@ -93,6 +93,8 @@ int32_t brightPixelsInStrip(IImageBuffer* buf, YuvType yuvType,
 
 class TextOutOb : public ISurfaceRenderOb {
  public:
+  ISurfaceRender* sr = nullptr;
+ public:
   void onFrame(IImageBuffer* buf, YuvType yuvType) override {
     std::lock_guard<std::mutex> lock(mtx);
     if (!subArmed) {
@@ -100,7 +102,7 @@ class TextOutOb : public ISurfaceRenderOb {
     }
     ++frames;
     IImageBuffer* rgba = nullptr;
-    const int32_t bright = brightPixelsInStrip(buf, yuvType, &rgba);
+    const int32_t bright = brightPixelsInStrip(buf, yuvType, &rgba, sr->getOutColorSpace());
     if (bright < 0) {
       return;
     }
@@ -208,6 +210,7 @@ int main(int argc, char* argv[]) {
   TextOutOb ob;
   ob.prefix = prefix;
   ISurfaceRender* sr = player->getSurfaceRender();
+  ob.sr = sr;
   sr->setOffSurface(YuvType::yuv420P);
   addSurfaceRenderOb(sr, &ob);
   player->open(url);

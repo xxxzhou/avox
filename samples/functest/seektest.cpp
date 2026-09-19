@@ -165,6 +165,8 @@ struct StateOb : IMediaPlayerOb {
 // ── 帧观察: pre(基线)/post(seek后) 两阶段抽帧落盘 + 统计 ──
 class SeekOb : public ISurfaceRenderOb {
  public:
+  ISurfaceRender* sr = nullptr;
+ public:
   void onFrame(IImageBuffer* buf, YuvType yuvType) override {
     if (!buf || !buf->getPointer()) {
       fail("onFrame null buf");
@@ -213,7 +215,7 @@ class SeekOb : public ISurfaceRenderOb {
       return;
     }
     IImageBuffer* rgba = createImageBuffer();
-    if (yuvframe2Rgba(frame, rgba)) {
+    if (yuvframe2Rgba(frame, rgba, sr->getOutColorSpace())) {
       std::string path = prefix + tag + ".png";
       if (saveImagePath(path.c_str(), rgba)) {
         ImageStats st = analyzeImage(rgba);
@@ -291,6 +293,7 @@ int main(int argc, char* argv[]) {
   sr->setVulkan(false);
   sr->setOffSurface(YuvType::yuv420P);
   SeekOb ob;
+  ob.sr = sr;
   ob.prefix = prefix;
   addSurfaceRenderOb(sr, &ob);
   StateOb sob;

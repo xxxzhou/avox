@@ -30,6 +30,8 @@ void fail(const std::string& reason) {
 
 class LatProbeOb : public ISurfaceRenderOb {
  public:
+  ISurfaceRender* sr = nullptr;
+ public:
   void onFrame(IImageBuffer* buf, YuvType yuvType) override {
     if (!buf || !buf->getPointer()) {
       return;
@@ -52,7 +54,7 @@ class LatProbeOb : public ISurfaceRenderOb {
     YUVFrame frame = {};
     if (image2SplitYUVFrame(buf, yuvType, frame, tmp)) {
       IImageBuffer* rgba = createImageBuffer();
-      if (yuvframe2Rgba(frame, rgba)) {
+      if (yuvframe2Rgba(frame, rgba, sr->getOutColorSpace())) {
         std::string path = prefix + "cur.png";
         if (saveImagePath(path.c_str(), rgba)) {
           saved++;
@@ -105,6 +107,7 @@ int main(int argc, char* argv[]) {
     opt->setInt(AVOX_MP_DELAY_MS_INT, 0);
   }
   ISurfaceRender* sr = player->getSurfaceRender();
+  ob.sr = sr;
   sr->setOffSurface(YuvType::yuv420P);
   addSurfaceRenderOb(sr, &ob);
   player->open(url);
