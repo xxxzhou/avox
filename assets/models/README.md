@@ -1,6 +1,10 @@
 # AI模型文件
 
-本项目使用的 AI 模型文件存放在 `assets/models/` 目录下。
+> 状态: 有效 · 上次核对: 2026-09-19 · 权威源: -(本文件=模型资源分发口径唯一权威; 下载链接/镜像/sha256 的唯一权威在 [assets_manifest.json](../script/assets_manifest.json))
+
+**分发口径 (2026-09-19 全仓统一)**: 所有模型资源**不入任何仓库**(本仓/库仓均不存权重, 也不用 Git LFS —— `assets/models/**` 已 gitignore), SDK/插件发布产物**不随包携带模型**。需要时按下面命令**自行下载**: 统一入口 [`fetch_assets.py`](../script/fetch_assets.py)。其余文档一律引用本文件, 不得再各自维护模型链接或「随包分发」表述。
+
+模型缺失不影响构建(相关构建目标自动跳过), 运行期对应功能自行降级(如超分回退纯转码)。
 
 ## 目录结构
 
@@ -9,12 +13,13 @@ assets/models/
 ├── stt/                    # 语音识别模型 (sherpa-onnx)
 │   ├── zh-en/              # 中英流式识别模型
 │   └── sense-voice/        # 多语言离线识别模型 (中/英/日/韩/粤)
-├── translation/            # 翻译模型
-│   └── opus-mt-ja-zh/      # 日语→中文翻译模型
+├── translation/            # 翻译模型 (opus-mt-ja-zh)
 ├── inpaint/                # 水印检测/修复模型
 │   ├── lama.onnx           # LaMa 图像修复模型
 │   ├── yolo11x_watermark.pt  # YOLO11x 水印检测模型
 │   └── owlv2/              # OWLv2 开放词汇检测模型
+├── quality/                # 画质增强/超分模型 (Real-ESRGAN)
+├── ocr/  avatar/           # OCR / 数字人模型 (manifest 管理)
 └── onnx/                   # ONNX Runtime 库
 ```
 
@@ -99,3 +104,28 @@ python script/inpaint/yolo_to_onnx.py yolo11x_watermark.pt -o watermark.onnx -s 
 - **OWLv2**: 可通过文本提示如 "watermark logo" 直接检测，无需训练
 
 ---
+
+## 3. 画质增强/超分 (Real-ESRGAN, avox_vulkan)
+
+| 模型 | 用途 | 大小 | 路径 |
+|------|------|------|------|
+| realesrgan-general-x4v3.onnx | 通用盲超分 4x (BSD-3-Clause, ONNX 已导出免转换) | ~4.7MB | `quality/` |
+
+```bash
+python assets/script/fetch_assets.py --select quality_realesrgan_x4v3   # 落 assets/models/quality/
+```
+
+- 构建期 `cmake/FindRealEsrgan.cmake` 可选定位 (`assets/models` 优先, `../avc_library` 遗留兜底), 命中即拷进运行目录; 缺失不阻塞构建
+- 运行期缺权重自动降级: 录制走纯转码, 实时轨不挂增强层; 宿主也可直接注入 modelsRoot
+- 自导出(仅开发期, 从官方 .pth 重导): `script/realesrgan/export_onnx.py`。注意 ONNX 导出非字节确定 —— 本地重导的文件与 manifest 版本 sha 不同属正常, 功能等价, 分发以 manifest 版本为准
+
+---
+
+## 4. 其余插件模型 (OCR/数字人/翻译等)
+
+同由 manifest 统一管理, 按插件拉取:
+
+```bash
+python assets/script/fetch_assets.py --list                       # 全量清单与就绪状态
+python assets/script/fetch_assets.py --plugin avox_avatar --all   # 按插件拉取 (ocr/translation 等同理)
+```

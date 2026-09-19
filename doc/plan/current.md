@@ -31,8 +31,8 @@ backlog 全景与逐项施工方案见 [backlog/README.md](backlog/README.md)。
 BSD-3-Clause 可商用), 配合 panvox 媒体库「画质增强」挂机任务 → [ai/离线超分转码方案.md](ai/离线超分转码方案.md)
 (P0 管线验证基本收口: 样例、U/V 色差修复产物级复验、离屏空输出不崩、G13 收尾卡死根因已修)
 
-- [ ] P0 零头: ~~G1 源色彩空间透传~~ · ~~G13 排空有界兜底(muxer 层; 录制层 close 重构并行会话在途)~~ ·
-      ~~G14 纯 SEI 访问单元丢弃~~ · ~~enhancetest frames=0~~ · ~~G15 口径(增强优先+warn 明示)~~ ·
-      ~~FindRealEsrgan.cmake~~ 均已落地(`843b4b2`, 09-19); 剩 **模型权重入库/LFS**(分发方案待定) →
+- [x] P0 零头: G1/G13/G14/frames=0/G15/FindRealEsrgan.cmake 均已落地(`843b4b2`, 09-19);
+      模型分发口径已定(09-19): **不入库/不 LFS/发布不随包, manifest 链接用户自取**,
+      口径权威 [assets/models/README.md](../../assets/models/README.md) →
       [ai/离线超分转码方案.md](ai/离线超分转码方案.md)
 - [ ] P1 panvox 集成: pvx_enhance shim (镜像 pvx_aisub job 模型, 含 stop_at_ms 试转预览) + Dart 画质增强任务队列 (方案 §5 T6/T8)
