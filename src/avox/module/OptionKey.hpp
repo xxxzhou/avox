@@ -23,6 +23,10 @@ namespace avox {
 #define AVOX_MP_SPEED_TYPE_INT "mp.speed.type"
 // 严格大于4倍速时是否只处理I帧(快速预览,进包时丢P/B与音频,恰好4倍仍全量),默认true
 #define AVOX_MP_IFRAME_ONLY_GT4_BOOL "mp.iframe.gt4"
+// 视频解码器名覆盖(测试/排障强制车道): 空=默认选型链, 覆盖首选名且回软解兜底
+#define AVOX_MP_VIDEO_DECODER_NAME_STR "mp.video.decoder.name"
+// 解码器故障注入(调试/测试): 值=解码器注册名, 该解码器open阶段强制失败
+#define AVOX_MP_DECODER_FAILINJECT_STR "mp.decoder.failinject"
 // 播放器主时钟类型 0=none 1=audio(默认) 2=video 3=external
 // 音频 PTS 异常(数据量与时间对应不上)的流可切到 video 绕过
 #define AVOX_MP_SYNC_TYPE_INT "mp.synctype"

@@ -23,6 +23,8 @@ static const KeyEntry kKeyRegistry[] = {
     {AVOX_MP_SPEED_TYPE_INT, avox::ArgType::Int, "KEY_SPEED_TYPE"},
     {AVOX_MP_IFRAME_ONLY_GT4_BOOL, avox::ArgType::Boolean, "KEY_IFRAME_ONLY_GT4"},
     {AVOX_MP_SYNC_TYPE_INT, avox::ArgType::Int, "KEY_SYNC_TYPE"},
+    {AVOX_MP_VIDEO_DECODER_NAME_STR, avox::ArgType::String, "KEY_VIDEO_DECODER_NAME"},
+    {AVOX_MP_DECODER_FAILINJECT_STR, avox::ArgType::String, "KEY_DECODER_FAILINJECT"},
     {AVOX_MP_IO_TIMEOUT_MS_INT, avox::ArgType::Int, "KEY_IO_TIMEOUT_MS"},
     {AVOX_MP_IO_RTSP_TRANSPORT_STR, avox::ArgType::String, "KEY_IO_RTSP_TRANSPORT"},
     {AVOX_MP_IO_TRACK_READY_MS_INT, avox::ArgType::Int, "KEY_IO_TRACK_READY_MS"},

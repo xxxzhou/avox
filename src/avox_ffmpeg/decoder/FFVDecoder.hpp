@@ -21,6 +21,8 @@ public:
   // flush
   virtual void flush() override;
   virtual void onClose() override;
+  // IOptionOb(OptionLink): 选项推送缓存(含linkOption时存量重放)
+  virtual void onOptionChange(const char* key, ArgType option) override;
 
   // FFDecoder
 protected:
@@ -40,6 +42,8 @@ protected:
   HdrMeta hdrMeta = {};
   // SEI RBSP 反仿真复用缓冲
   std::vector<uint8_t> seiRbsp;
+  // 故障注入解码器名(mp.decoder.failinject), onOptionChange缓存, open时比对命中即失败
+  std::string failInjectName;
 };
 
 }

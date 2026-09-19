@@ -23,6 +23,10 @@ KEY_SPEED_TYPE = "mp.speed.type"
 KEY_IFRAME_ONLY_GT4 = "mp.iframe.gt4"
 #: 主时钟类型 (int, 0=none 1=audio(默认) 2=video 3=external)
 KEY_SYNC_TYPE = "mp.synctype"
+#: 视频解码器名覆盖 (string, 空/未设=默认选型链; 测试/排障强制车道, 仅硬解选型消费)
+KEY_VIDEO_DECODER_NAME = "mp.video.decoder.name"
+#: 解码器故障注入 (string, 值=解码器注册名, 该解码器 open 阶段强制失败; 调试/测试)
+KEY_DECODER_FAILINJECT = "mp.decoder.failinject"
 
 # ── IO (io.*) ──
 
@@ -53,6 +57,8 @@ _KEY_REGISTRY = {
     KEY_SPEED_TYPE:            (ArgType.Int,     "变速类型 (1=local 2=server)"),
     KEY_IFRAME_ONLY_GT4:       (ArgType.Boolean, "大于4倍只处理I帧 (默认true)"),
     KEY_SYNC_TYPE:             (ArgType.Int,     "主时钟 (0=none 1=audio 2=video 3=ext)"),
+    KEY_VIDEO_DECODER_NAME:    (ArgType.String,  "视频解码器名覆盖 (空=默认链)"),
+    KEY_DECODER_FAILINJECT:    (ArgType.String,  "解码器故障注入 (调试/测试)"),
     KEY_IO_TIMEOUT_MS:         (ArgType.Int,     "IO 超时 (ms)"),
     KEY_IO_RTSP_TRANSPORT:     (ArgType.String,  "RTSP 传输 (udp/tcp)"),
     KEY_IO_TRACK_READY_MS:     (ArgType.Int,     "Track ready 超时 (ms)"),

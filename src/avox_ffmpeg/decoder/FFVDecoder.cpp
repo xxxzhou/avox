@@ -4,6 +4,8 @@
 
 #include "avox/codec/H26XHelper.hpp"
 #include "avox/player/MediaPlayer.hpp"
+#include "avox/Avox.hpp"
+#include "avox/module/OptionKey.hpp"
 
 #ifdef _WIN32
 #include "avox_windows/WinCommon.hpp"
@@ -22,6 +24,16 @@ bool FFVDecoder::onVaild() {
     return false;
   }
   return true;
+}
+
+void FFVDecoder::onOptionChange(const char* key, ArgType option) {
+  if (!getLink()) {
+    return;
+  }
+  if (equalsIgnoreCase(key, AVOX_MP_DECODER_FAILINJECT_STR)) {
+    failInjectName = getLink()->getString(key);
+    LOGFLF(LogLevel::info, "option:", key, " change:", failInjectName);
+  }
 }
 
 // 参考ffmpeg/codec_par.c 里avcodec_parameters_to_context实现
@@ -92,6 +104,11 @@ DecodeResult FFVDecoder::onPreDecoder() {
     codecCtx->extradata =
         (uint8_t*)av_malloc(extradata.size() + AV_INPUT_BUFFER_PADDING_SIZE);
     memcpy(codecCtx->extradata, extradata.data(), extradata.size());
+  }
+  // 故障注入: 命中mp.decoder.failinject的解码器open强制失败, 构造会话协商失败等效场景
+  if (!failInjectName.empty() && codecDesc.name == failInjectName) {
+    LOGFLF(LogLevel::warn, "failinject decoder open fail:", codecDesc.name);
+    return DecodeResult::openFailed;
   }
   int32_t ret = avcodec_open2(codecCtx.get(), codec, nullptr);
   AVOX_FFMEPG_LOG(ret, "avcodec_open2 failed");
