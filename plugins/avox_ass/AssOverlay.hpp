@@ -50,6 +50,9 @@ class AssOverlay : public IAssOverlay {
   void* assRenderer = nullptr;  // ASS_Renderer*
   void* assTrack = nullptr;     // ASS_Track*
 
+  // 外挂文件编码探测(loadFile 记录, unload 复位; 随 getFileEncoding 透出)
+  SubtitleEncoding fileEncoding = SubtitleEncoding::unknown;
+
   // RGBA canvas 双缓冲(插件堆内, 消费方只读)
   std::string canvasBuf[2];     // 像素存储(素, 避免 vector 跨 DLL; 仅本 DLL 内用)
   AssCanvas canvas[2];          // 对外描述

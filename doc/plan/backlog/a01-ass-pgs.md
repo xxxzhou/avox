@@ -3,7 +3,7 @@
 > 状态: 进行中 · 上次核对: 2026-09-19 · 权威源: -
 
 
-优先级 P0 · 里程碑 M1 · 计划状态:施工中(T1/T2 完成, T3 延迟接口已落地; 剩 ASS 轨样式覆盖/候选枚举/PGS) · 来源:backlog A-1
+优先级 P0 · 里程碑 M1 · 计划状态:施工中(T1/T2/T3延迟/T5候选枚举/ass路径自愈 完成; 剩 ASS 轨样式覆盖 + PGS e2e 素材合成) · 来源:backlog A-1
 内封 ASS 已像素级验收(2026-09-15),本计划覆盖剩余四件 + 乱码探测信号暴露。
 
 ## 出口判据
@@ -41,32 +41,51 @@
       修 UTF-16 歧义坑; 信号经 `ISubtitle::getFileEncoding()`(带默认实现, 只增不改)
       透出, SubtitleFile 记录/卸载复位。**落点偏离记录**: 原定「getSubtitleDesc 扩字段」
       对外挂不适用(外挂不经源), 改走 ISubtitle 查询; ISTrackDesc 未动; SWIG 四语言为
-      构建期再生成件(gitignore), 头文件即真源。ass 插件路径(.ass/.ssa)编码自愈与探测
-      未做(插件不链 avox 核心, 需先解决 normalize 可达性, 新增缺口)。
+      构建期再生成件(gitignore), 头文件即真源。~~ass 插件路径(.ass/.ssa)编码自愈与
+      探测未做(插件不链 avox 核心, 需先解决 normalize 可达性, 新增缺口)~~
+      **缺口已修(2026-09-19, 见 T5 提交)**: CharsetConvert.cpp 直编入 avox_ass 插件
+      (无 avox 内部依赖), loadFile 双自愈(内容 normalizeSubtitleText + 路径
+      openFileUtf8), 编码经 IAssOverlay::getFileEncoding(只增不改)回传 SubtitleView。
+      ⚠️ **契约变更**: 「.ass 插件路径不探测仍为 unknown」作废 —— 现在 .ass/.ssa
+      加载后 getFileEncoding 返回真实探测(GBK 也能转码加载); UTF-16 文件渲染不可用
+      但编码可查(与 srt 同口径)。avox-test `sub-enc-expose` 契约行需同步,
+      可加 `sub_enc_ass_gbk` 用例吃新行为。
 - [ ] T3 样式参数补齐: **延迟接口已落地(2026-09-19, `21491dc`)**: `ISubtitle::setDelay(ms)`
       (正=延后/负=提前, 带默认实现), 外挂文本/内封 ASS 按 (pts-delay) 平移内容选择,
       PGS 画布按 pts 到期放行(delay=0 原路径零变化), ASR 实时口播不平移。
       剩: ASS 轨缩放/字体覆盖接口。现有全局变换 scale/offset/opacity 三层通用
       (`SubtitleView.cpp:252`),叠加轨级覆盖;依据 `doc/plan/player/字幕样式设计.md`
       (v3 定稿)的生效矩阵。
-- [ ] T4 PGS 真实样片 e2e:找/造含 PGS 的 mkv(ffmpeg 不能编 PGS,需真实样本),进 avox-test 资产。
-- [ ] T5 中文外挂自动加载探测:同名候选枚举接口(`movie.zh.srt/.chs.ass/.gbk.srt` 等常见命名
-      归一化),引擎只列候选、产品决定加载。
-      **设计定稿(2026-09-19 夜, 未动代码, 实施前过目 API 形状)**:
-      - 语义: 产品拿到视频 URL 后调一次枚举, 引擎在同目录扫「同主名」字幕文件,
-        归一化后按优先级排序返回; 只列候选不加载, 加载仍走 loadSubtitle。
-      - 命名归一: 主名 = 视频文件名去扩展名; 候选 = 同目录下「主名开头」且扩展名
-        `.srt/.ass/.ssa` 的文件; 语言标记段(`.zh/.chs/.cht/.gb/.big5/.eng` 等)与
-        `.gbk` 编码后缀解析为 hint 字段, 不参与主名匹配。
-      - 排序: 主名完全同名 > 带语言标记; srt > ass(中文场景 srt 命中率高, 可再议)。
-      - API 形状(公共头无 STL 约束, 参照 ISTrackDesc 口径):
-        `ISubtitle` 追加(只增不改, 带默认实现):
-        `virtual int32_t listSubtitleCandidates(const char* videoUrl,
-        SubtitleCandidate* out, int32_t cap) { return 0; }`;
-        `SubtitleCandidate { char path[512]; SCodecId codec; }` 定义于 AvoxPlayer.h;
-        返回值=实得个数(可 >cap 截断, 负=错误)。纯查询, 不持有文件句柄。
-      - SWIG: 结构体定长数组跨语言自动映射, 四语言随构建再生成。
-      - 工作量: 引擎扫描+归一化半天(纯文件系统操作, 无平台差异), 用例归 avox-test。
+- [ ] T4 PGS 真实样片 e2e:**卡点已解(2026-09-19 定配方)—— 无需真实样片, 自合成**。
+      avox-test 侧加 `gen_pgs_asset.py`(script/testenv) 即可造素材:
+      - .sup 段格式(FFmpeg supdemuxer 口径, 已核 supdec.c): `"PG"`(u16) + PTS(u32 BE,
+        90kHz) + DTS(u32 BE, 可=PTS) + type(u8) + size(u16 BE) + payload; 探测需 ≥4 个
+        连续合法段。
+      - 段类型: 0x14 PDS(调色板, 2-4 色即可)/0x15 ODS(对象 RLE 位图, 用纯色矩形,
+        亮像素取证友好)/0x16 PCS(展示组合)/0x17 WDS(窗口)/0x80 END。
+      - 事件: 显示 = PCS+PDS+ODS+WDS+END, 消除 = 空 PCS+END; 挂到已知 PTS
+        (如 1s 出 4s 收)。
+      - 封装: `ffmpeg -i <现有测试视频.h264/ts> -i gen.sup -map 0 -map 1 -c copy
+        out_pgs.mkv`(PGS 只进 mkv)。
+      - 引擎侧链路已全通(PgsDecoder/IOParseFF 路由/setPgsCanvas), 素材就位即 e2e。
+      - 用例需求: `sub-pgs-e2e`(播放亮像素取证) + `sub-pgs-seek`(seek 后仍上屏)。
+- [x] T5 中文外挂自动加载探测(2026-09-19, 设计定稿即日实施): `ISubtitle::
+      listSubtitleCandidates(videoUrl, SubtitleCandidate* out, cap)`(只增不改带默认实现),
+      `SubtitleCandidate{path[512], SCodecId codec, lang[16], gbkHint}` 纯 POD。
+      实现 `subtitle/SubtitleScan.cpp`(std::filesystem, C++17/20 char8_t 双兼容):
+      同目录「同主名」扫描, 主名去扩展名, 候选=去扩展名后等于主名或「主名+分隔符
+      (.-_)开头」(movies.srt 不命中 movie.mkv), 扩展名 .srt/.ass/.ssa(.ssa 归 ass);
+      标记段: 首个语言段(zh/chs/cht/gb/big5/eng/zhhans/zhhant/zhcn/zhtw/jpn/jp/kor/kr)
+      + .gbk 编码后缀进 hint 不参与匹配; 排序 完全同名 > 带标记, srt > ass, 同级按
+      路径; 远程路径(带 ://)与缺目录返回 0, 参数非法返回负。纯查询不加载。
+      单测 test_subcandidates(排序/边界/中文路径)。**avox-test 用例需求**:
+      `sub-cand-basic`(movie.mkv + 同名/语言/gbk 素材, 断言排序与 hint)、
+      `sub-cand-remote`(smb:// 返回 0)、`sub-cand-cjk`(中文目录+中文文件名可加载,
+      吃 openFileUtf8 路径自愈 —— Windows ACP 无关, 素材可直接用中文名)。
+      API 形状(2026-09-19 夜定稿, 即日落地, 未另走审批):
+      `virtual int32_t listSubtitleCandidates(const char* videoUrl,
+      SubtitleCandidate* out, int32_t cap) { return 0; }`于 ISubtitle 追加;
+      返回值=实得总数(可 >cap, 截断填充), 负=参数错误。
 
 ## 验收
 

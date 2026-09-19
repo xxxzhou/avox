@@ -13,6 +13,14 @@ enum class AsrMode {
 };
 
 
+// 外挂字幕候选项(a01-T5): ISubtitle::listSubtitleCandidates 产出, 纯 POD 跨 DLL
+struct SubtitleCandidate {
+  char path[512];   // UTF-8 绝对路径(0 结尾)
+  SCodecId codec;   // srt / ass(.ssa 归 ass)
+  char lang[16];    // 语言标记 hint(小写原名 zh/chs/cht/gb/big5/eng..., 空=未标)
+  int32_t gbkHint;  // 1=带 .gbk 编码后缀(内容大概率 GBK), 0=无
+};
+
 // 观感设置生效矩阵(样式计划 doc/plan/player/字幕样式设计.md):
 //   纯文本样式(setFont/setColor/setAlign/setPosition/setPositionMargin/
 //   setMaxWidth) → 仅 SRT/ASR 文本路径生效; 内封 ASS 轨/外挂 .ass 样式归
@@ -51,14 +59,27 @@ class ISubtitle {
   // 自动换行宽度(帧宽比例, 默认 0.8; <=0 忽略, >1 钳到 1)
   virtual void setMaxWidth(float ratio) {}
 
-  // 外挂字幕文本编码探测结果(loadSubtitle 文本路径加载后可查, 换源/卸载复位
-  // unknown; .ass 插件路径不探测仍为 unknown)。带默认实现: 既有实现者零影响
+  // 外挂字幕编码探测结果(文本与 .ass/.ssa 插件路径加载后均可查, 换源/卸载复位
+  // unknown; UTF-16 文件渲染不可用但编码仍可查)。带默认实现: 既有实现者零影响
   virtual SubtitleEncoding getFileEncoding() { return SubtitleEncoding::unknown; }
 
   // 字幕整体延迟(a01-T3): 正=延后显示, 负=提前, 0=同步(默认)。作用于外挂
   // 文本/内封 ASS/PGS 三路内容选择; ASR 为实时口播不适用。带默认实现: 既有
   // 实现者零影响
   virtual void setDelay(int64_t delayMs) {}
+
+  // 外挂候选枚举(a01-T5): 对本地视频路径扫同目录「同主名」字幕文件
+  // (movie.zh.srt / movie.chs.ass / movie.gbk.srt 等), 归一化排序后填入 out
+  // (不超过 cap), 返回实得个数(0=无候选/远程路径, 负=参数非法)。语言段与
+  // .gbk 后缀进 hint 不参与主名匹配; 排序: 完全同名 > 带标记, srt > ass。
+  // 只列候选不加载, 加载仍走 loadSubtitle。带默认实现: 既有实现者零影响
+  virtual int32_t listSubtitleCandidates(const char* videoUrl,
+                                         SubtitleCandidate* out, int32_t cap) {
+    (void)videoUrl;
+    (void)out;
+    (void)cap;
+    return 0;
+  }
 };
 
 #define AVOX_MAP_PLAYER_STATE(XX) \

@@ -15,7 +15,12 @@ SubtitleFile::~SubtitleFile() { }
 bool SubtitleFile::loadFile(const char* path) {
   if (!path) return false;
 
+#if defined(_WIN32)
+  // MSVC 扩展直收宽路径: UTF-8 路径经 utf8ToWide 与 ACP 无关(中文路径自愈)
+  std::ifstream file(utf8ToWide(path), std::ios::binary | std::ios::ate);
+#else
   std::ifstream file(path, std::ios::binary | std::ios::ate);
+#endif
   if (!file.is_open()) return false;
 
   size_t size = file.tellg();

@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include "../AvoxCodec.h"
+
 namespace avox {
 
 // ============== ASS/PGS 字幕 overlay(纯接口, plugins/avox_ass 实现) ==============
@@ -62,6 +64,11 @@ class IAssOverlay {
   virtual void flush() = 0;
   // 卸载当前轨(切轨用), init 保持
   virtual void unload() = 0;
+
+  // 外挂文件编码探测(a01 自愈): loadFile 记录(GBK→UTF-8 转码/剥 BOM/UTF-16
+  // 原样), unload 后复位 unknown; 与核心 ISubtitle::getFileEncoding 同口径。
+  // 带默认实现: 既有实现者零影响(只增不改)
+  virtual SubtitleEncoding getFileEncoding() { return SubtitleEncoding::unknown; }
 };
 
 }  // namespace avox

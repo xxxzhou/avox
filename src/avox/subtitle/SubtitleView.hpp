@@ -15,6 +15,7 @@
 #include "SubtitleAsr.hpp"
 #include "SubtitleCanvas.hpp"
 #include "SubtitleFile.hpp"
+#include "SubtitleScan.hpp"
 #include "SubtitleSlots.hpp"
 
 #ifdef AVOX_ENABLE_FREETYPE
@@ -55,14 +56,25 @@ class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
   virtual void setPosition(float anchorX, float anchorY) override;
   virtual void setPositionMargin(float marginX, float marginY) override;
   virtual void setMaxWidth(float ratio) override;
-  // 外挂文本编码探测结果(文本路径 loadFile 记录; ass 插件路径与卸载后 unknown)
+  // 外挂编码探测结果(.ass/.ssa 走 overlay 记录, 文本路径走 SubtitleFile;
+  // 未探测/卸载后 unknown)
   virtual SubtitleEncoding getFileEncoding() override {
+    if (overlay) {
+      const SubtitleEncoding enc = overlay->getFileEncoding();
+      if (enc != SubtitleEncoding::unknown) {
+        return enc;
+      }
+    }
     return subtitleFile.getEncoding();
   }
   // 字幕整体延迟: 正=延后, 负=提前; 内容选择按 (播放pts - delay) 查询
   virtual void setDelay(int64_t delayMs) override {
     delayMs_.store(delayMs, std::memory_order_relaxed);
   }
+  // 外挂候选枚举(a01-T5): 纯文件系统查询, 与播放管线无涉, 直调扫描助手
+  virtual int32_t listSubtitleCandidates(const char* videoUrl,
+                                         SubtitleCandidate* out,
+                                         int32_t cap) override;
   // 全复位(内部用: 播放器 close/换源/析构): 三槽位 + 轨通道 + 文件/ASR 内容
   // (渲染对象注册保留, 供重开复用)
   void closeSubtitle();

@@ -35,7 +35,10 @@ endif()
 
 set(_ass_sources
   ${CMAKE_CURRENT_SOURCE_DIR}/AssModule.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/AssOverlay.cpp)
+  ${CMAKE_CURRENT_SOURCE_DIR}/AssOverlay.cpp
+  # 编码自愈(GBK→UTF-8/路径 openFileUtf8)与核心同源: 插件不链 avox.dll,
+  # 该 TU 无 avox 内部依赖可直接同编(测试目标同款用法)
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../src/avox/subtitle/CharsetConvert.cpp)
 
 if(AVOX_ASS_DEPS_DIR)
   # 预编译产物布局(avox-ass-deps dist/<platform>/): include/ + lib/ + bin/(Windows dll)

@@ -6,6 +6,8 @@
 #include <ass/ass.h>
 #endif
 
+#include "avox/subtitle/CharsetConvert.hpp"
+
 namespace avox {
 
 // ================== ASS/PGS overlay 渲染(libass) ==================
@@ -99,6 +101,18 @@ bool AssOverlay::loadFile(const char* path) {
     size_t n;
     while ((n = std::fread(buf, 1, sizeof(buf), f)) > 0) srt.append(buf, n);
     std::fclose(f);
+    // 编码自愈: GBK→UTF-8 转码/剥 BOM(libass 只吃 UTF-8), 探测随
+    // getFileEncoding 透出; UTF-16/未知原样交给后续流程(渲染不可用但可查)
+    {
+      std::string fixed;
+      const SubtitleEncoding enc = normalizeSubtitleText(srt, fixed);
+      fileEncoding = enc;
+      if (enc == SubtitleEncoding::utf8 ||
+          enc == SubtitleEncoding::utf8BomStripped ||
+          enc == SubtitleEncoding::gbkTranscoded) {
+        srt = fixed;
+      }
+    }
 
     char head[256];
     std::snprintf(head, sizeof(head),
@@ -184,12 +198,33 @@ bool AssOverlay::loadFile(const char* path) {
     assTrack = read;
     return true;
   }
-  // .ass 外挂
-  auto* read = ass_read_file(static_cast<ASS_Library*>(assLibrary),
-                             const_cast<char*>(path), nullptr);
-  if (!read) return false;
-  assTrack = read;
-  return true;
+  // .ass 外挂: 内存加载双自愈 —— 路径经 openFileUtf8(Windows 中文名与 ACP
+  // 无关; ass_read_file 只收平台窄路径), 内容经 normalizeSubtitleText(GBK
+  // →UTF-8/剥 BOM; libass 只吃 UTF-8)。UTF-16/未知原样: 渲染不可用但编码可查
+  {
+    FILE* f = openFileUtf8(path, "rb");
+    if (!f) return false;
+    std::string ass;
+    char buf[8192];
+    size_t n;
+    while ((n = std::fread(buf, 1, sizeof(buf), f)) > 0) ass.append(buf, n);
+    std::fclose(f);
+    std::string fixed;
+    const SubtitleEncoding enc = normalizeSubtitleText(ass, fixed);
+    fileEncoding = enc;
+    if (enc == SubtitleEncoding::utf8 ||
+        enc == SubtitleEncoding::utf8BomStripped ||
+        enc == SubtitleEncoding::gbkTranscoded) {
+      ass = fixed;
+    }
+    // 完整剧本一次性读入(ass_read_memory: 解析 Script/Styles/Events 全量)
+    auto* read = ass_read_memory(static_cast<ASS_Library*>(assLibrary),
+                                 const_cast<char*>(ass.data()),
+                                 int32_t(ass.size()), nullptr);
+    if (!read) return false;
+    assTrack = read;
+    return true;
+  }
 }
 
 const AssCanvas* AssOverlay::render(int64_t ptsMs) {
@@ -283,6 +318,7 @@ void AssOverlay::unload() {
     assTrack = nullptr;
   }
   hasCanvas = false;
+  fileEncoding = SubtitleEncoding::unknown;
 }
 
 #else  // 骨架模式: 未链接 libass

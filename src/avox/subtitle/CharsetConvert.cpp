@@ -217,4 +217,39 @@ const char* getSubtitleEncodingName(SubtitleEncoding encoding) {
   }
 }
 
+#if defined(_WIN32)
+std::wstring utf8ToWide(const char* s) {
+  std::wstring out;
+  if (!s || !*s) {
+    return out;
+  }
+  const int n = MultiByteToWideChar(CP_UTF8, 0, s, -1, nullptr, 0);
+  if (n <= 0) {
+    return out;
+  }
+  out.resize((size_t)n - 1);
+  MultiByteToWideChar(CP_UTF8, 0, s, -1, &out[0], n);
+  return out;
+}
+
+FILE* openFileUtf8(const char* path, const char* mode) {
+  if (!path || !mode) {
+    return nullptr;
+  }
+  const std::wstring widePath = utf8ToWide(path);
+  const std::wstring wideMode = utf8ToWide(mode);
+  if (widePath.empty() || wideMode.empty()) {
+    return nullptr;
+  }
+  return _wfopen(widePath.c_str(), wideMode.c_str());
+}
+#else
+FILE* openFileUtf8(const char* path, const char* mode) {
+  if (!path || !mode) {
+    return nullptr;
+  }
+  return std::fopen(path, mode);
+}
+#endif
+
 }  // namespace avox

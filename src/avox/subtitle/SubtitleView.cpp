@@ -1,6 +1,7 @@
 #include "SubtitleView.hpp"
 
 #include <algorithm>
+#include <cstdio>
 
 #include "../module/AvoxManager.hpp"
 #include "../module/LogHelper.hpp"
@@ -363,6 +364,30 @@ bool SubtitleView::loadTextFile(const char* path) {
   closeFileContent();
   fileEnabled = subtitleFile.loadFile(path);
   return fileEnabled;
+}
+
+int32_t SubtitleView::listSubtitleCandidates(const char* videoUrl,
+                                             SubtitleCandidate* out,
+                                             int32_t cap) {
+  if (!videoUrl || cap < 0 || (cap > 0 && !out)) {
+    return -1;
+  }
+  std::vector<SubtitleCandidateInfo> found;
+  // 同名遮蔽: 成员与非成员同名, 显式限定走自由函数
+  const int32_t total =
+      avox::listSubtitleCandidates(std::string(videoUrl), &found);
+  int32_t n = 0;
+  for (const SubtitleCandidateInfo& c : found) {
+    if (n >= cap) {
+      break;
+    }
+    SubtitleCandidate& dst = out[n++];
+    std::snprintf(dst.path, sizeof(dst.path), "%s", c.path.c_str());
+    std::snprintf(dst.lang, sizeof(dst.lang), "%s", c.lang.c_str());
+    dst.codec = c.codecId;
+    dst.gbkHint = c.gbkHint ? 1 : 0;
+  }
+  return total;
 }
 
 void SubtitleView::pushChunk(const char* data, int32_t size, int64_t ptsMs,
