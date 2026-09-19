@@ -10,7 +10,8 @@ namespace avox {
   XX(zlmediakit, 1, "zlmediakit") \
   XX(ffmpeg, 2, "ffmpeg")         \
   XX(torrent, 3, "torrent")       \
-  XX(smb, 4, "smb")
+  XX(smb, 4, "smb")               \
+  XX(dav, 5, "dav")
 
 // 传统标准网络流解析
 enum class IoPlan {

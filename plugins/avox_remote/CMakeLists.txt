@@ -1,6 +1,6 @@
 # avox_remote 插件: 远程内容源统一会话 (IRemoteSource, AvoxBase.h)
 # 当前实现: "dav" WebDAV 目录树(兼容 Alist/OpenList 的 /dav 挂载端点)
-#   PROPFIND 列目录 + Basic 认证 + resolve 产 http(s) 直链(走现有 http IO 播放)
+#   PROPFIND 列目录 + Basic 认证 + resolve 产 http(s) 直链(IOParseDav range 播放)
 # 规划中: "smb" (需 libsmb2 预编译入库, 依赖方式与 libtorrent 一致, 见 README)
 #
 # httplib 为 header-only, 仅需头路径; https 需要 OpenSSL(全局 find_package, 见
@@ -17,16 +17,24 @@ if(WIN32)
   list(APPEND _REMOTE_LIBS ws2_32 crypt32)
 endif()
 
+# "dav" 播放源依赖(a05-T2): IOParseDav(avio_alloc_context+avformat) 与
+# avox_torrent 同构, 需源码版 FFmpeg; 就位时定义 AVOX_REMOTE_DAV 条件编译
+if(FFMPEG_LIBRARIES)
+  list(APPEND _REMOTE_LIBS ${FFMPEG_LIBRARIES})
+  add_definitions(-DAVOX_REMOTE_DAV=1)
+else()
+  message(STATUS "avox_remote plugin: dav 播放源需要 ffmpeg(IOParseDav), 未找到, 关闭 dav io")
+endif()
+
 # "smb" 源依赖: libsmb2 预编译产物(库仓, 依赖方式与 libtorrent 一致, 见 README)
-# 就位时定义 AVOX_REMOTE_SMB 并链接静态库, SmbSource/IOParseSmb 按此宏条件编译;
-# IOParseSmb(avio_alloc_context+avformat) 与 avox_torrent 同构, 还需源码版 FFmpeg
+# 就位时定义 AVOX_REMOTE_SMB 并链接静态库, SmbSource/IOParseSmb 按此宏条件编译
 find_package(Libsmb2 QUIET)
 if(Libsmb2_FOUND AND NOT FFMPEG_LIBRARIES)
   message(STATUS "avox_remote plugin: smb 源需要 ffmpeg(IOParseSmb), 未找到, 关闭 smb")
 endif()
 if(Libsmb2_FOUND AND FFMPEG_LIBRARIES)
   include_directories(${LIBSMB2_INCLUDE_DIRS})
-  list(APPEND _REMOTE_LIBS ${LIBSMB2_LIBRARIES} ${FFMPEG_LIBRARIES})
+  list(APPEND _REMOTE_LIBS ${LIBSMB2_LIBRARIES})
   add_definitions(-DAVOX_REMOTE_SMB=1)
 else()
   message(STATUS "avox_remote plugin: libsmb2 未找到, smb 源不参与编译(见 D:/Work/github/libsmb2)")

@@ -1307,6 +1307,13 @@ void MediaPlayer::cmdOpen(OpenCommandPtr cmd) {
       AvoxManager::Get().ioSources.hasObjectId(IoPlan::smb)) {
     useIO = IoPlan::smb;
   }
+  // dav://davs:// 自动路由(a05-T2): avox_remote 插件已注册时自有 range IO 源
+  // 接管(统一预读窗口/断链重试挂点), 无需业务显式 setIoPlan
+  if ((url.rfind("dav://", 0) == 0 || url.rfind("davs://", 0) == 0) &&
+      useIO != IoPlan::dav &&
+      AvoxManager::Get().ioSources.hasObjectId(IoPlan::dav)) {
+    useIO = IoPlan::dav;
+  }
   // torrent是渐进下载源: seek落到未下载区域要等片落地(秒级~十几秒),
   // 10s缓冲看门狗会误杀播放器; 业务未显式设置时默认放宽到30s
   if (useIO == IoPlan::torrent && !bufferingTimeoutUserSet) {

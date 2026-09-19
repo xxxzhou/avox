@@ -4,6 +4,9 @@
 #include "avox/module/AvoxManager.hpp"
 // 静态模式(iOS/WASM)下 AVOX_REGISTER_MODULE 展开 StaticLinkModule, 需此头
 #include "avox/module/ModuleMgr.hpp"
+#ifdef AVOX_REMOTE_DAV
+#include "IOParseDav.hpp"
+#endif
 #ifdef AVOX_REMOTE_SMB
 #include "IOParseSmb.hpp"
 #include "SmbSource.hpp"
@@ -17,6 +20,14 @@ bool RemoteModule::loadModule(IOption* option) {
   // 注: 注册项无显式卸载接口(RegeditObj), 与插件DLL句柄常驻策略配套(进程内不FreeLibrary)
   AvoxManager::Get().remoteSourceHub.reg(
       "dav", []() -> IRemoteSource* { return new DavSource(); });
+#ifdef AVOX_REMOTE_DAV
+  // IoPlan::dav 播放源工厂(a05-T2): DAV 直链自有 range IO 源
+  // (MediaPlayer 对 dav://davs:// 链接自动路由, 业务无需显式 setIoPlan)
+  IoPlanDesc davDesc = {};
+  davDesc.name = "dav(httplib range streaming)";
+  AvoxManager::Get().ioSources.regInitFunc(
+      IoPlan::dav, davDesc, []() -> AVSource* { return new IOParseDav(); });
+#endif
 #ifdef AVOX_REMOTE_SMB
   // IRemoteSource("smb") 目录树+选文件 + IoPlan::smb 播放源工厂
   // (MediaPlayer 对 smb:// 链接自动路由, 业务无需显式 setIoPlan)
