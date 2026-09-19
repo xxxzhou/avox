@@ -34,6 +34,9 @@ class ISubtitleCandidate {
 //   片源(libass)、PGS 是位图, 静默忽略。
 //   全局变换(setScale/setOffset/setOpacity) → 三层通用: 文本在 CPU 侧重
 //   栅格化(放大清晰), ASS/PGS 在 canvas 合成处重采样。
+//   ASS 轨覆盖(setAssScale/setAssFont) → 仅内封 ASS 轨/外挂 .ass 的 libass
+//   排版层生效(libass 重排, 放大清晰非位图拉伸), 叠加在全局变换之上;
+//   SRT/ASR 文本路径与 PGS 忽略。
 class ISubtitle {
  public:
   virtual ~ISubtitle() = default;
@@ -87,6 +90,14 @@ class ISubtitle {
     (void)index;
     return nullptr;
   }
+
+  // ---- ASS 轨样式覆盖(a01-T3): 生效面见类注释矩阵; 带默认实现既有实现者零影响 ----
+  // ASS 内容缩放(libass font_scale 排版重排, 放大清晰非位图拉伸): 1.0=片源
+  // 原样(默认), <=0 忽略保持现值; 与全局 setScale 独立(canvas 合成层再乘)
+  virtual void setAssScale(float scale) {}
+  // ASS 字体覆盖: 替换片源样式的字体名(nullptr/空=不覆盖; 已应用覆盖的轨
+  // 不回滚, 重载轨生效)。字体需系统字体提供器或 setFontsDir 可供
+  virtual void setAssFont(const char* family) {}
 };
 
 #define AVOX_MAP_PLAYER_STATE(XX) \
