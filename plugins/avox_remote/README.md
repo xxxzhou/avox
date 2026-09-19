@@ -32,10 +32,15 @@ src->close();                          // 会话结束(create* 产物记得释�
   FFmpeg http 协议原生支持), 交 `IMediaPlayer::open` 走现有 http IO, 无需额外选项键;
 - **token 约定**: 解码后的服务器绝对路径(目录带尾 `/`), 上层当不透明串传回即可;
 - **百分比编码**: 请求路径逐段重编码, href 返回的编码串自动解码, 空格/中文/特殊字符均覆盖;
-- **错误码映射**: 401/403→`authFailed(-3)`(账密错), 404→`notFound(-6)`, 网络错→`net(-5)`,
-  其余 HTTP 错→`other(-8)`; 超时经 `onOpenResult/onListResult` 的 `timeout(-2)` 上报;
+- **错误码映射**: 首次鉴权 401/403→`authFailed(-3)`(账密错), 会话中途 401/403→
+  `authExpired(-4)`(经 onAuthExpired 抛产品, reauthorize 恢复, a05 §1), 404→`notFound(-6)`,
+  网络错→`net(-5)`, 其余 HTTP 错→`other(-8)`; 超时经 `onOpenResult/onListResult` 的
+  `timeout(-2)` 上报;
 - **中止语义**: httplib 请求本身不可中断, `stopList/close` 在当前请求返回后生效(结果丢弃不回调);
 - **会话参数**: `setParam("verifyTls", "false")` 关闭 TLS 证书校验(自签名场景);
+  `setParam("listCacheTtl", "<秒>")` 目录列表缓存 TTL(a05-T4, 默认 30, "0"=禁用);
+  命中时 `list()` 同步回填并回调(不起工作线程), 二次进入/翻回秒开, refresh 换签
+  链式同步进缓存;
 - godot 封装: `RemoteSource` 类(`platform/godot/plugin/src/remote_source.h`)已接本插件,
   tools 播放器 UI 的磁力流程同一套接口可平移到 WebDAV。
 

@@ -268,6 +268,15 @@ void DavSource::setParam(const char* key, const char* value) {
       }
     }
   }
+  // 目录列表缓存 TTL 秒(a05-T4): "0"=禁用; 非法值忽略保持现值
+  if (std::strcmp(key, "listCacheTtl") == 0) {
+    if (value != nullptr && *value != '\0') {
+      const int32_t v = std::atoi(value);
+      if (v >= 0) {
+        listCacheTtlSec = v;
+      }
+    }
+  }
 }
 
 bool DavSource::parseUrl(const std::string& url, UrlParts* out) {
@@ -369,6 +378,15 @@ bool DavSource::open(const char* url, const char* user, const char* pass,
     credUser = parts->user;
     credPass = parts->pass;
   }
+  // 新会话: 连接复用客户端与目录缓存作废(parts 可能换 host)
+  {
+    std::lock_guard<std::mutex> lk(clientMtx);
+    client.reset();
+  }
+  {
+    std::lock_guard<std::mutex> lk(cacheMtx);
+    listCache.clear();
+  }
   openedFlag.store(false);
   abortFlag.store(false);
   // 重新 open 即新会话: 鉴权三态复位 (a05 §1)
@@ -387,6 +405,14 @@ void DavSource::close() {
   if (running()) {
     stopTask();
   }
+  {
+    std::lock_guard<std::mutex> lk(clientMtx);
+    client.reset();  // 断开 keep-alive 连接
+  }
+  {
+    std::lock_guard<std::mutex> lk(cacheMtx);
+    listCache.clear();
+  }
   std::lock_guard<std::mutex> lk(resultMutex);
   batch.clear();
   sessionName = "";
@@ -402,6 +428,23 @@ bool DavSource::list(const char* nodeToken, int32_t timeoutMs) {
   }
   listToken = nodeToken != nullptr ? nodeToken : "";
   opTimeoutMs = timeoutMs > 0 ? timeoutMs : opTimeoutMs;
+  // TTL 缓存命中(a05-T4): 同步回填批次并回调, 不起工作线程(秒开);
+  // 回调线程口径与工作线程路径一致(上层自行切线程)
+  if (listCacheTtlSec > 0) {
+    std::vector<Entry> cached;
+    if (takeCachedBatch(normalizeDirToken(listToken), &cached)) {
+      {
+        std::lock_guard<std::mutex> lk(resultMutex);
+        batch = std::move(cached);
+        lastError = "";
+      }
+      IRemoteSourceOb* o = obAt.load();
+      if (o) {
+        o->onListResult((int32_t)RemoteCode::ok);
+      }
+      return true;
+    }
+  }
   abortFlag.store(false);
   op = Op::list;
   taskName = "dav list";
@@ -420,49 +463,67 @@ bool DavSource::propfind(const std::string& reqPath, int depth,
                          std::string* body, int32_t* statusCode) {
   *statusCode = 0;
   const UrlParts& p = *parts;
-  // 本版 httplib 无 (scheme,host,port) 三参构造, 用 scheme://host:port 单串
+  // 会话级 client 复用(a05-T4): keep-alive 省每次请求的 TCP/TLS 握手;
+  // op 线程/桥 refresh/reauthorize 可能并发, clientMtx 串行(请求短平)
+  std::lock_guard<std::mutex> lk(clientMtx);
   std::string hostPart =
       p.host.find(':') != std::string::npos ? "[" + p.host + "]" : p.host;
-  httplib::Client cli(p.scheme + "://" + hostPart + ":" + std::to_string(p.port));
-  auto secs = std::max<int32_t>(1, (opTimeoutMs + 999) / 1000);
-  cli.set_connection_timeout(secs, 0);
-  cli.set_read_timeout(secs, 0);
-  cli.set_write_timeout(secs, 0);
-  if (!verifyTls) {
-    cli.enable_server_certificate_verification(false);
+  auto makeClient = [this, &hostPart]() {
+    auto c = std::make_unique<httplib::Client>(
+        parts->scheme + "://" + hostPart + ":" + std::to_string(parts->port));
+    auto secs = std::max<int32_t>(1, (opTimeoutMs + 999) / 1000);
+    c->set_connection_timeout(secs, 0);
+    c->set_read_timeout(secs, 0);
+    c->set_write_timeout(secs, 0);
+    c->set_keep_alive(true);
+    {
+      // 凭据快照(reauthorize 可热更新, 每请求重申 basic auth)
+      std::lock_guard<std::mutex> rlk(resultMutex);
+      if (!credUser.empty()) {
+        c->set_basic_auth(credUser.c_str(), credPass.c_str());
+      }
+    }
+    if (!verifyTls) {
+      c->enable_server_certificate_verification(false);
+    }
+    return c;
+  };
+  if (!client) {
+    client = makeClient();
   }
   httplib::Request req;
   req.method = "PROPFIND";
   req.path = reqPath;
   req.headers.emplace("Depth", depth > 0 ? "1" : "0");
   req.headers.emplace("Content-Type", "application/xml");
-  // 凭据快照 + 鉴权 Header 注入 (契约 §3): reauthorize 可热更新, 同锁读免竞态
-  std::string basicUser;
-  std::string basicPass;
   {
-    std::lock_guard<std::mutex> lk(resultMutex);
-    basicUser = credUser;
-    basicPass = credPass;
+    // 鉴权 Header 注入 (契约 §3): setParam("authHeader") 设置后本会话所有请求携带
+    std::lock_guard<std::mutex> rlk(resultMutex);
     if (!authKey.empty()) {
       req.headers.emplace(authKey, authVal);
     }
   }
-  if (!basicUser.empty()) {
-    cli.set_basic_auth(basicUser.c_str(), basicPass.c_str());
-  }
   req.body = kPropfindBody;
+  // keep-alive 连接可能被服务端半途断开: 首次 send 失败重建客户端重试一次
   httplib::Response res;
   httplib::Error err = httplib::Error::Success;
-  if (!cli.send(req, res, err)) {
-    // getter 并发读 lastError, 写入走结果锁
-    std::lock_guard<std::mutex> lk(resultMutex);
-    lastError = std::string("dav request failed: ") + httplib::to_string(err);
-    *statusCode = -1;
-    return false;
+  for (int attempt = 0; attempt < 2; ++attempt) {
+    res = httplib::Response{};
+    err = httplib::Error::Success;
+    if (client->send(req, res, err)) {
+      *statusCode = (int32_t)res.status;
+      *body = std::move(res.body);
+      return true;
+    }
+    if (attempt == 0) {
+      client = makeClient();
+    }
   }
-  *statusCode = (int32_t)res.status;
-  *body = std::move(res.body);
-  return true;
+  // getter 并发读 lastError, 写入走结果锁
+  std::lock_guard<std::mutex> rlk(resultMutex);
+  lastError = std::string("dav request failed: ") + httplib::to_string(err);
+  *statusCode = -1;
+  return false;
 }
 
 void DavSource::runOpen() {
@@ -522,6 +583,9 @@ void DavSource::runList() {
     if (!fillBatch(items, dir)) {
       lastError = "no entries under " + dir;
       code = (int32_t)RemoteCode::notFound;
+    } else if (listCacheTtlSec > 0) {
+      // 目录批次入 TTL 缓存(a05-T4): 键 = 归一目录 token
+      storeListCache(dir, batch);
     }
   } else if (!ok) {
     code = (int32_t)RemoteCode::net;
@@ -697,6 +761,50 @@ std::string DavSource::requestPath(const std::string& token) const {
   return encodePath(token);
 }
 
+std::string DavSource::normalizeDirToken(const std::string& token) const {
+  std::string dir = token.empty() ? parts->rootToken : token;
+  if (!isDirToken(dir)) {
+    dir += "/";
+  }
+  return dir;
+}
+
+bool DavSource::takeCachedBatch(const std::string& dirToken,
+                                std::vector<Entry>* out) {
+  std::lock_guard<std::mutex> lk(cacheMtx);
+  auto it = listCache.find(dirToken);
+  if (it == listCache.end()) {
+    return false;
+  }
+  const auto ageSec = std::chrono::duration_cast<std::chrono::seconds>(
+                          std::chrono::steady_clock::now() - it->second.ts)
+                          .count();
+  if (ageSec > listCacheTtlSec) {
+    listCache.erase(it);  // 过期即逐
+    return false;
+  }
+  *out = it->second.batch;  // 拷贝不清缓存: TTL 内反复命中(二次进入/翻回秒开)
+  return true;
+}
+
+void DavSource::storeListCache(const std::string& dirToken,
+                               const std::vector<Entry>& batch) {
+  std::lock_guard<std::mutex> lk(cacheMtx);
+  if (listCache.size() >= 64) {
+    // 容量上限: 逐最旧(线性扫, 64 项量级成本可忽略)
+    auto oldest = listCache.begin();
+    for (auto it = listCache.begin(); it != listCache.end(); ++it) {
+      if (it->second.ts < oldest->second.ts) {
+        oldest = it;
+      }
+    }
+    listCache.erase(oldest);
+  }
+  ListCacheItem& item = listCache[dirToken];
+  item.batch = batch;
+  item.ts = std::chrono::steady_clock::now();
+}
+
 int32_t DavSource::getEntryCount() {
   std::lock_guard<std::mutex> lk(resultMutex);
   return (int32_t)batch.size();
@@ -811,8 +919,18 @@ const char* DavSource::refresh(int32_t entryIndex, IOption* option) {
     resolvedBuf = entryUrl(fresh, credUser, credPass);
     lastResolvedIndex = entryIndex;
     lastResolvedUrl = resolvedBuf;
-    return resolvedBuf.c_str();
   }
+  // 缓存同步(a05-T4): 归属目录缓存中的同位条目 token 链式更新(位次对应,
+  // 目录未变时成立); 目录不在缓存(TTL 0/被逐)则跳过
+  if (listCacheTtlSec > 0) {
+    std::lock_guard<std::mutex> clk(cacheMtx);
+    auto it = listCache.find(dirOf(token));
+    if (it != listCache.end() &&
+        entryIndex < (int32_t)it->second.batch.size()) {
+      it->second.batch[entryIndex].token = fresh;
+    }
+  }
+  return resolvedBuf.c_str();
 }
 
 bool DavSource::reauthorize(int32_t entryIndex, const char* user,

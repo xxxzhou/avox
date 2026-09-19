@@ -1,14 +1,20 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "avox/AvoxBase.h"
 #include "avox/module/RunTask.hpp"
 #include "RemoteBridge.hpp"
+
+namespace httplib {
+class Client;
+}
 
 namespace avox {
 
@@ -121,6 +127,13 @@ class DavSource : public IRemoteSource, public RunTask {
                        const std::string& pass) const;  // token → 播放直链(带userinfo)
   std::string requestPath(const std::string& token) const;  // token → 逐段百分号编码
 
+  // list 目录 token 归一(根默认/补尾'/'; 缓存键与 runList 目标一致)
+  std::string normalizeDirToken(const std::string& token) const;
+  // TTL 缓存取批次(命中且未过期返回 true, 批次移出; 无锁版由调用方持 cacheMtx)
+  bool takeCachedBatch(const std::string& dirToken, std::vector<Entry>* out);
+  // TTL 缓存存批次(容量上限 64, 满则逐最旧)
+  void storeListCache(const std::string& dirToken, const std::vector<Entry>& batch);
+
  private:
   // 观察者(单播, 工作线程回调)
   std::atomic<IRemoteSourceOb*> obAt{nullptr};
@@ -150,6 +163,21 @@ class DavSource : public IRemoteSource, public RunTask {
   std::string credPass;
   // onAuthExpired 的 sourceId (创建时的协议键, RemoteModule.reg 同名)
   const std::string sourceId = "dav";
+  // 会话级 http 客户端(a05-T4 连接复用): parts 定型后一 session 一连接,
+  // keep-alive 省每次 PROPFIND 的 TCP/TLS 握手; 请求可能跨线程(op 线程/
+  // 桥 refresh/reauthorize), clientMtx 串行化; 连接死由 propfind 重建一次
+  std::mutex clientMtx;
+  std::unique_ptr<httplib::Client> client;
+  // 目录列表 TTL 缓存(a05-T4): setParam("listCacheTtl", 秒) 配置, 0=禁用,
+  // 默认 30; 命中时 list() 同步回填批次并回调(不起工作线程, 秒开);
+  // 容量上限 64 满则逐最旧; open/close 清空, refresh 链式更新同步进缓存
+  int32_t listCacheTtlSec = 30;
+  struct ListCacheItem {
+    std::vector<Entry> batch;
+    std::chrono::steady_clock::time_point ts;
+  };
+  std::mutex cacheMtx;
+  std::unordered_map<std::string, ListCacheItem> listCache;
   // 结果(结果锁: 工作线程写, getter 读)
   std::mutex resultMutex;
   std::vector<Entry> batch;
