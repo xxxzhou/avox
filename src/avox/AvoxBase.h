@@ -169,6 +169,9 @@ class IRemoteSourceOb {
   virtual void onListResult(int32_t code) { (void)code; };
   // 慢源进度 0-100 (仅 kCapProgress 协议回调)
   virtual void onListProgress(int32_t percent) { (void)percent; };
+  // 会话鉴权过期 (401/403 且非首次鉴权; 同一会话至多抛一次, reauthorize 成功后重新武装;
+  // 产品弹重授权 UI 后调 IRemoteSource::reauthorize, sourceId 为创建时的协议键)
+  virtual void onAuthExpired(const char* sourceId) { (void)sourceId; }
 };
 
 class IRemoteSource {
@@ -245,6 +248,16 @@ class IRemoteSource {
 
   // 最后一次错误描述 (内部缓冲, 下次调用失效)
   virtual const char* getLastError() = 0;
+
+  // 会话中途鉴权过期后的重授权入口 (onAuthExpired 触发后由产品调用): 以新凭据重建
+  // 会话并重新武装 authExpired 回调 (同一会话至多抛一次, 重授权成功后可再抛);
+  // 播放中经 refresh(entryIndex) 重取直链续播, 浏览场景下次 list 自然生效。
+  // entryIndex<0 = 仅重武装凭据不重取条目。返回 false = 不支持或重建失败 (重新 open)。
+  // 注意: 只增虚拟函数一律追加在类尾, 防 vtable 位移破坏已编译插件 (09-18 事故)
+  virtual bool reauthorize(int32_t entryIndex, const char* user, const char* pass,
+                           const char* token) {
+    (void)entryIndex; (void)user; (void)pass; (void)token; return false;
+  }
 };
 
 extern "C" {
