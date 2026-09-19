@@ -93,6 +93,8 @@ platform/avalonia/DDPlayer/AvaPlayer/AvaPlayer.iOS/net10.0
 # AI
 .codebuddy/
 .trae/
+# zcode video-agent-kit 插件的工作区标记 (plugin_root)
+.video_agent/
 assets/models/**
 assets/config
 !assets/models/README.md
