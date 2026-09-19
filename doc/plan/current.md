@@ -21,9 +21,9 @@ backlog 全景与逐项施工方案见 [backlog/README.md](backlog/README.md)。
 - [ ] A-6 FFmpeg 9.0.1 收口: Windows 离线回归 33/33 已过; 剩 **Android/iOS/macOS/Linux
       四平台回归 + UE 链路验证**(本机做不了, 待 CI/真机) + T5 回写 panvox; T6 16KB 页对齐(P2) → [a06](backlog/a06-ffmpeg9.md)
 - [ ] A-5 avox_remote: T1 契约设计定稿(`44cf620`) + **T2 IOParseDav 已落地**(`29c2cd6`:
-      range 读+4MB 预读窗口+seek, dav://davs:// 自动路由, 本机实测 PASS); 剩
-      T3 直链失效重试/续播 → T4 目录缓存 → T5 用例; 附带发现 IOParseSmb 有同款
-      EOF 后 seek 静止隐患待修(见 a05) → [a05](backlog/a05-remote-vfs.md)
+      range 读+4MB 预读窗口+seek, dav://davs:// 自动路由, 本机实测 PASS) +
+      IOParseSmb 同款 EOF 隐患已修(`c784372`, 编译过待真机走查); 剩
+      T3 直链失效重试/续播 → T4 目录缓存 → T5 用例 → [a05](backlog/a05-remote-vfs.md)
 
 ## 2026.09 计划 (离线超分转码)
 
