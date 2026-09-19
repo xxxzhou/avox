@@ -159,28 +159,26 @@ void TranscodeRecorder::close() {
   if (state != RecorderState::failed) {
     setRecState(RecorderState::completed);
   }
-  // 先关队列再停编码线程: 生产者(IO线程)可能阻塞在 enqueueWait, 而编码线程
-  // 排空后 source->close() 会 join IO 线程 — 不关队列则 IO 卡死在满队列上,
-  // 构成 编码线程→IO线程→满队列 三方死锁, close 永不返回且产物不落盘 (G13)。
-  // setClose 后必须 clear: dequeue 因 bClose 恒 false, 残帧永远出不了队,
-  // 编码线程的 !empty 判断恒真会原地自旋
+  // close意图先落位, 排空/丢弃由编码线程收尾块裁决(source仅编码线程可读)
+  bStopPending.store(true);
+  // 封队解锁堵在enqueueWait的生产者, 防收尾join死锁(G13); 只封不清, 排空要编残帧
   vFrameQueue.setClose(true);
   aFrameQueue.setClose(true);
-  vFrameQueue.clear();
-  aFrameQueue.clear();
   if (audioRender) {
     // 先 closeTap 唤醒可能堵在 tap push 的解码线程(反压开着时), 再关设备;
     // tap 未 open 时 no-op
     audioRender->closeTap();
     audioRender->close();
   }
-  // 停止编码线程(编码线程排空队列并关源后join返回)
+  // 停止编码线程(编码线程收尾块排空/清队并关源后join返回)
   stopTask();
   // 增强器/RGBA缓冲随open重建(下次open重新init)
   qenhancer.reset();
   rgbaBuffer.reset();
-  // join 后所有队列用户(IO/编码线程)已退出, 就地恢复开关, close 自含不对
-  // 下次 open 提出复位要求
+  // join后复位标志与队列开关(close自含); ioSource已随source析构, 置空恢复判空语义
+  bStopPending.store(false);
+  bDrainPhase.store(false);
+  ioSource = nullptr;
   vFrameQueue.setClose(false);
   aFrameQueue.setClose(false);
   LOGFLF(LogLevel::info, "encode thread stopped, recorder close done");
@@ -488,10 +486,37 @@ void TranscodeRecorder::onRunTask() {
       }
       break;
     }
-    // 关闭源,关闭解码
-    if (!running() && source) {
-      source->close();
-      source.reset();
+    // close收尾: EOF后(completed)排空保尾帧, 其余清队快退; doSeek会重开队列, 先重申封队(G13变体)
+    if (!running() && bStopPending.load()) {
+      bStopPending.store(false);
+      vFrameQueue.setClose(true);
+      aFrameQueue.setClose(true);
+      // 排空仅限completed且ioComplete: 直播排空永不返回, failed不往muxer灌帧
+      bool bDrain = state == RecorderState::completed && source &&
+                    source->ioComplete();
+      bDrainPhase.store(bDrain);
+      if (bDrain) {
+        // bClose下dequeue恒false, 排空必须走无视bClose的drain
+        while (!vFrameQueue.empty() || !aFrameQueue.empty()) {
+          vFrameQueue.drain([this](const VideoFramePtr& f) { processVideo(f); });
+          aFrameQueue.drain([this](const AudioFramePtr& f) { processAudio(f); });
+          sleepTask(true);
+        }
+      } else {
+        vFrameQueue.clear();
+        aFrameQueue.clear();
+      }
+      // 排空/清队后统一关源(join全部生产者), 之后不再有入队
+      if (source) {
+        source->close();
+        source.reset();
+      }
+      // 兜底再排一次: ioComplete判定与解码flush尾帧入队有竞态, 关源后补收
+      if (bDrainPhase.load()) {
+        vFrameQueue.drain([this](const VideoFramePtr& f) { processVideo(f); });
+        aFrameQueue.drain([this](const AudioFramePtr& f) { processAudio(f); });
+        bDrainPhase.store(false);
+      }
     }
     sleepTask(true);
   }
@@ -511,7 +536,9 @@ void TranscodeRecorder::onRunTask() {
 }
 
 void TranscodeRecorder::processVideo(VideoFramePtr vframe) {
-  if (!vframe || !vframe->buffer || !muxer || !running()) {
+  // bDrainPhase: close收尾排空中running已false, 残帧仍需编码进文件
+  if (!vframe || !vframe->buffer || !muxer ||
+      (!running() && !bDrainPhase.load())) {
     return;
   }
   // VideoFrame里的SwVideoBuffer恒为packed布局,to()取split帧给编码器,
@@ -541,7 +568,7 @@ void TranscodeRecorder::processVideo(VideoFramePtr vframe) {
 }
 
 void TranscodeRecorder::processAudio(AudioFramePtr aframe) {
-  if (!aframe || !muxer || !running()) {
+  if (!aframe || !muxer || (!running() && !bDrainPhase.load())) {
     return;
   }
   if (muxer->getState() != RecorderState::recording) {

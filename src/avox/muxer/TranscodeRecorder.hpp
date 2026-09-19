@@ -70,6 +70,9 @@ class TranscodeRecorder : public IRecorder,
   std::atomic<bool> bSeeking{false};        // seek 进行中(IO 回调丢弃帧)
   std::atomic<bool> bSeekPending{false};    // 编码线程待处理 seek
   std::atomic<int64_t> seekTargetMs{0};     // 绝对 PTS(已 +baseTime)
+  // close收尾: close线程只表达意图, 排空(EOF后编完残帧)/丢弃由编码线程裁决(source仅它可读)
+  std::atomic<bool> bStopPending{false};    // close已请求, 待编码线程收尾
+  std::atomic<bool> bDrainPhase{false};     // 收尾排空中(running已false), process放行残帧
   //
   ACodecId aCodecid = ACodecId::aac;
   // 默认 H.264: 硬编兼容性远好于 h265(低端安卓/老设备 hevc 编码器常缺失), 兼容性敏感的转码录不赌设备能力
