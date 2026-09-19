@@ -126,6 +126,9 @@ void MediaPlayer::onOptionChange(const char* key, ArgType option) {
     bIFrameOnlyGt4 = getBool(key);
     updateIFrameOnly();
     LOGFLF(LogLevel::info, "option:", key, " change:", bIFrameOnlyGt4);
+  } else if (equalsIgnoreCase(key, AVOX_MP_VIDEO_DECODER_NAME_STR)) {
+    videoDecoderName = getString(key);
+    LOGFLF(LogLevel::info, "option:", key, " change:", videoDecoderName);
   }
 }
 
@@ -857,6 +860,10 @@ void MediaPlayer::renderFrame(AVTrack* track, bool bGetFrame) {
   if (!bIoEmpty) {
     return;
   }
+  // 播放未开始时状态快照还是零初始值而非真实空队列, 慢启动车道会在此被误判completed(R1/R3b)
+  if (state != PlayerState::playing && state != PlayerState::buffering) {
+    return;
+  }
   // 如果IO给出结束信号，检测是否所有队列数据都处理了
   if (bIOComplete) {
     if (audioStatus.queueSize == 0 && videoStatus.queueSize == 0 &&
@@ -1488,6 +1495,32 @@ void MediaPlayer::cmdPause(PauseCommandPtr cmd) {
 }
 
 void MediaPlayer::cmdComplete() {
+  // 完成收口: 播放已开始且各轨实时队列放空才完成; 状态快照是渲染节拍缓存不可信(R1/R3b)
+  if (state != PlayerState::playing && state != PlayerState::buffering) {
+    return;
+  }
+  // seek落地窗口队列是真空的, 但流马上会续上, 不算放完
+  if (bSeeking) {
+    return;
+  }
+  bool bDrained = true;
+  for (const auto& vt : videoTracks) {
+    if (vt && vt->vaild() && (vt->getPacketQueue().size() > 0 ||
+                              vt->getFrameQueue().size() > 0)) {
+      bDrained = false;
+      break;
+    }
+  }
+  for (const auto& at : audioTracks) {
+    if (at && at->vaild() && (at->getPacketQueue().size() > 0 ||
+                              at->getFrameQueue().size() > 0)) {
+      bDrained = false;
+      break;
+    }
+  }
+  if (!bDrained) {
+    return;
+  }
   // 当正常播放完成后，设置成完成状态
   setState(PlayerState::completed);
   MPOB::dispatch(&IMediaPlayerOb::onComplete);
@@ -1556,6 +1589,10 @@ void MediaPlayer::cmdBuffering() {
   }
   // 如果IO已经完成且队列为空，直接结束播放而不是进入buffering
   if (bIOComplete) {
+    // 同 renderFrame 门控: 播放未开始时快照是零初始值, 不能据此判完成
+    if (state != PlayerState::playing) {
+      return;
+    }
     bool bQueueEmpty = audioStatus.queueSize == 0 &&
                        videoStatus.queueSize == 0 &&
                        audioStatus.frameSize == 0 && videoStatus.frameSize == 0;

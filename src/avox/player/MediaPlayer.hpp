@@ -86,6 +86,8 @@ class MediaPlayer : public IMediaPlayer,
   double cspeed = 1.0;
   IoPlan selectIO = IoPlan::ffmpeg;
   bool bHardDecode = true;
+  // 视频解码器名覆盖(mp.video.decoder.name, onOptionChange缓存), 硬解选型时消费
+  std::string videoDecoderName;
   // 分拆包
   std::vector<AvoxPacket> spiltBufs;
   // 把IO数据封装复用到文件或是网络流
@@ -211,6 +213,11 @@ class MediaPlayer : public IMediaPlayer,
   const std::vector<VideoTrackPtr>& getVideoTracks() { return videoTracks; }
   const std::vector<AudioTrackPtr>& getAudioTracks() { return audioTracks; }
   bool getHardDecode() { return bHardDecode; }
+  // 解码器名覆盖(mp.video.decoder.name), onOptionChange缓存, 空=默认选型链
+  const std::string& getVideoDecoderName() { return videoDecoderName; }
+  // 解码降级换道用: IO是否已读到EOF / 源是否可seek
+  bool ioExhausted() { return bIOComplete; }
+  bool seekable() { return ioSource && ioSource->seekType() != SeekType::none; }
   bool logDFrame() { return bLogDFrame; }
   bool logRFrame() { return bLogRFrame; }
 
