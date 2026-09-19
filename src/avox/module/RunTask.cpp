@@ -1,6 +1,7 @@
 #include "RunTask.hpp"
 
 #include <chrono>
+#include <exception>
 
 #include "../Avox.hpp"
 #include "AvoxManager.hpp"
@@ -64,10 +65,24 @@ void RunTask::runTask() {
   // LOGFLF(LogLevel::info, "usage memory:", getCurrentMemoryUsageKB());
   log(LogLevel::info, "task run:", taskName, " thread id ",
       std::this_thread::get_id());
-  // 子类用runflag做判断
-  onRunTask();
+  // 线程边界兜底: 异常逃出线程proc会 terminate→abort 整进程 (0xc0000409
+  // fail-fast, 真机注入环境下日志/格式化链路的 bad_alloc 等即此链), 在此
+  // 就地拦截转错误日志, 任务按正常收尾处理
+  try {
+    // 子类用runflag做判断
+    onRunTask();
+  } catch (const std::exception& e) {
+    log(LogLevel::error, "task:", taskName,
+        " onRunTask exception:", e.what());
+  } catch (...) {
+    log(LogLevel::error, "task:", taskName, " onRunTask unknown exception");
+  }
   // 清理资源
-  onStopTask();
+  try {
+    onStopTask();
+  } catch (...) {
+    log(LogLevel::error, "task:", taskName, " onStopTask exception");
+  }
   // 非外部关闭，自身关闭也需要重置flag
   runflag.store(false);
   tpause.store(false);

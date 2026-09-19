@@ -497,6 +497,8 @@ struct HttpMetaCtx {
   std::shared_ptr<std::atomic<bool>> alive;
 };
 
+static void httpMetaFetch(HttpMetaCtx* ctx);
+
 // HTTP 元数据缓存通道: itorrents.org 按 info-hash 直取 .torrent, 解析校验
 // info-hash 与磁力一致后 set_metadata 注入运行中的磁力(免等 BEP-9)。
 // 命中后顺带落元数据缓存(下次秒开)。线程只碰ctx快照, shutdown置停止位后
@@ -514,23 +516,36 @@ void TorrentEngine::startHttpMetaFetch() {
   httpMetaStop = ctx->stop;
   httpMetaAlive = ctx->alive;
   httpMetaThread = std::thread([ctx]() {
-    ctx->alive->store(true);
-    httplib::Client cli("https://itorrents.org");
-    cli.set_connection_timeout(6);
-    cli.set_read_timeout(10);
-    auto res = cli.Get("/torrent/" + ctx->upper + ".torrent");
-    if (ctx->stop->load()) {
-      ctx->alive->store(false);
-      return;
-    }
-    if (!res || res->status != 200 || res->body.size() < 100) {
-      LOGFLF(LogLevel::info, "[torrent] http metadata cache miss");
-      ctx->alive->store(false);
-      return;
-    }
+    // 线程边界兜底: httplib 连接/请求路径可抛 system_error, 逃逸即 terminate
     try {
-      add_torrent_params atp = load_torrent_buffer(
-          span<char const>(res->body.data(), (long long)res->body.size()));
+      httpMetaFetch(ctx.get());
+    } catch (const std::exception& e) {
+      LOGFLF(LogLevel::warn, "[torrent] http metadata fetch failed:", e.what());
+    } catch (...) {
+      LOGFLF(LogLevel::warn, "[torrent] http metadata fetch failed");
+    }
+    ctx->alive->store(false);
+  });
+}
+
+static void httpMetaFetch(HttpMetaCtx* ctx) {
+  ctx->alive->store(true);
+  httplib::Client cli("https://itorrents.org");
+  cli.set_connection_timeout(6);
+  cli.set_read_timeout(10);
+  auto res = cli.Get("/torrent/" + ctx->upper + ".torrent");
+  if (ctx->stop->load()) {
+    ctx->alive->store(false);
+    return;
+  }
+  if (!res || res->status != 200 || res->body.size() < 100) {
+    LOGFLF(LogLevel::info, "[torrent] http metadata cache miss");
+    ctx->alive->store(false);
+    return;
+  }
+  try {
+    add_torrent_params atp = load_torrent_buffer(
+        span<char const>(res->body.data(), (long long)res->body.size()));
       if (atp.ti == nullptr ||
           atp.ti->info_hashes().get_best() != ctx->wantHash) {
         LOGFLF(LogLevel::warn,
@@ -549,11 +564,10 @@ void TorrentEngine::startHttpMetaFetch() {
                  "[torrent] metadata via http cache(itorrents)");
         }
       }
-    } catch (const std::exception& e) {
-      LOGFLF(LogLevel::warn, "[torrent] http metadata parse failed:", e.what());
-    }
-    ctx->alive->store(false);
-  });
+  } catch (const std::exception& e) {
+    LOGFLF(LogLevel::warn, "[torrent] http metadata parse failed:", e.what());
+  }
+  ctx->alive->store(false);
 }
 
 void TorrentEngine::shutdown() {
