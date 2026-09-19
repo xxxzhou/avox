@@ -19,7 +19,7 @@ namespace avox {
 // open=smb2_connect_share 验会话, list=smb2_opendir+readdir 枚举目录,
 // resolve=拼规范 smb://host[:port]/share/path 交给 IOParseSmb(libsmb2 自定义avio)播放。
 // token 约定: share 内绝对路径, '/'开头, 目录带尾'/', 根为"/"(open 带 /sub 路径时
-// 顶层"/"映射到该子目录); 会话无跨目录状态, 每次 list 独立连接。
+// 顶层"/"映射到该子目录); 会话级连接常驻(a05-T4), 失效自动重建。
 // user 支持 "DOMAIN\user"(libsmb2 原生拆分); URL 可带 userinfo(参数优先)。
 // 线程模型同 DavSource: 单发 RunTask 工作线程跑 op, 结果锁保护读取。
 class SmbSource : public IRemoteSource, public RunTask {
@@ -77,6 +77,10 @@ class SmbSource : public IRemoteSource, public RunTask {
   // 工作线程分派: 验会话 / 列目录
   void runOpen();
   void runList();
+  // 会话级 ctx 建连(仅工作线程调): 已连复用, 失效销毁全新重试一次;
+  // 返回 nullptr = 建连失败(lastError 已写)
+  struct smb2_context* ensureConnected();
+  static bool isAuthErrorText(const std::string& err);
   // smb2dirent → 批次条目(跳过 . ..; token = dirToken + name, 绝对路径)
   bool fillBatch(struct smb2_context* ctx, struct smb2dir* dir,
                  const std::string& dirToken);
@@ -99,6 +103,9 @@ class SmbSource : public IRemoteSource, public RunTask {
   int32_t opTimeoutMs = 10000;
   // 入口解析产物(open 成功后不变, 读多写少, resultMutex 保护)
   std::unique_ptr<UrlParts> parts;
+  // 会话级连接(a05-T4): open 建连后常驻, list 复用免每次 TCP+会话 setup;
+  // 仅 RunTask 工作线程触碰(op 串行), close/open 在 join 后重置 —— 免跨线程生命周期
+  struct smb2_context* smbCtx = nullptr;
   // 外部中止源(close/stopList 置位; 阻塞调用返回后检查丢弃结果)
   std::atomic<bool> abortFlag{false};
   // 会话状态

@@ -4,7 +4,7 @@
 
 
 优先级 P0 · 里程碑 M2(**建议 M1 末期提前启动**:panvox P-4 刮削与源浏览硬依赖)
-计划状态:**T1 契约 + T2 IOParseDav + T3 断链自愈 + §1 authExpired 回调链已落地, T5 用例主体落地, 剩 T4 缓存 + dav-auth-expired 用例** · 来源:backlog A-5
+计划状态:**T1 契约 + T2 IOParseDav + T3 断链自愈 + §1 authExpired 回调链 + T4 目录缓存已落地, T5 用例主体落地, 剩 dav-auth-expired 用例** · 来源:backlog A-5
 WebDAV/SMB 统一 range 读 + 缓冲窗口 + seek;直链失效重试、令牌过期回调、目录列表缓存。
 
 ## 出口判据
@@ -152,16 +152,17 @@ T2 IOParseDav(参照 IOParseSmb ~600 行 + 窗口, 2-3 天) → T3 重试/续播
       —— 播放场景以 IO 有界等待 30s 替代(缓冲冻结=断流形态), 浏览场景无 closed 态,
       过期后 list 仍可发、code 持续流转, 回调仍只一次; ② 凭据不回写 open 时 UrlParts
       (直链 userinfo 走快照), 重建=热更新+重 resolve; ③ SMB 未动(卡范围 DavSource)。
-- [ ] T4 目录列表缓存 **DavSource 半已落地 (2026-09-20 夜, `fd4fc87`)**:
-      ① 会话级连接复用 —— propfind 持会话级 httplib::Client(keep-alive, 省每次
-      PROPFIND 的 TCP/TLS 握手), clientMtx 串行 op 线程/桥 refresh/reauthorize
-      并发, send 失败重建客户端重试一次(keep-alive 半开), open/close 重置;
-      ② 目录 TTL 缓存 —— setParam("listCacheTtl", 秒) 默认 30/"0"禁用, 命中时
-      list() 同步回填+回调(不起工作线程), TTL 内反复命中(二次进入/翻回秒开),
-      容量 64 逐最旧, open/close 清空, refresh 换签链式同步进缓存。构建+ctest
-      绿; 秒开指标入 a02 口径属 avox-test 侧(用例配 listCacheTtl+计时)。
-      **剩**: SmbSource 会话级连接复用(现每次 list 独立 smb2_context+
-      connect_share)留明晚。
+- [x] T4 目录列表缓存 (2026-09-20 夜, dav `fd4fc87` + smb 随本节回写同笔):
+      ① 会话级连接复用 —— dav: propfind 持会话级 httplib::Client(keep-alive,
+      省每次 PROPFIND 的 TCP/TLS 握手), clientMtx 串行 op 线程/桥 refresh/
+      reauthorize 并发, send 失败重建客户端重试一次(keep-alive 半开);
+      smb: smb2_context 常驻(仅 RunTask 工作线程触碰, close/open 在 join 后
+      重置), ensureConnected 失效销毁全新重试一次, opendir 非 NOT_FOUND 视作
+      连接级失效弃用旧连接; ② 目录 TTL 缓存(dav) —— setParam("listCacheTtl",
+      秒) 默认 30/"0"禁用, 命中时 list() 同步回填+回调(不起工作线程), TTL 内
+      反复命中(二次进入/翻回秒开), 容量 64 逐最旧, open/close 清空, refresh
+      换签链式同步进缓存。构建+ctest 绿; 秒开指标入 a02 口径属 avox-test 侧
+      (用例配 listCacheTtl+计时)。
 - [ ] T5 avox-test 用例:**主体已落地 (2026-09-19)** —— dav-open-list / dav-play-seek /
       dav-auth-fail / dav-broken-resume / dav-outage-resume 五例进离线门禁;
       剩 过期令牌回调链路(依赖 §1 onAuthExpired 落地后打开 dav-auth-expired)。

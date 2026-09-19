@@ -158,6 +158,12 @@ bool SmbSource::open(const char* url, const char* user, const char* pass,
   parts = std::move(p);  // startTask 前写完, 工作线程读无竞态
   openedFlag.store(false);
   abortFlag.store(false);
+  // 新会话: 上一会话残留连接作废(host/share 可能已换; running()已排除并发)
+  if (smbCtx != nullptr) {
+    smb2_disconnect_share(smbCtx);
+    smb2_destroy_context(smbCtx);
+    smbCtx = nullptr;
+  }
   op = Op::open;
   taskName = "smb open";
   startTask();
@@ -169,7 +175,12 @@ void SmbSource::close() {
   abortFlag.store(true);
   openedFlag.store(false);
   if (running()) {
-    stopTask();
+    stopTask();  // join 后工作线程不再触碰 smbCtx, 此处销毁安全
+  }
+  if (smbCtx != nullptr) {
+    smb2_disconnect_share(smbCtx);
+    smb2_destroy_context(smbCtx);
+    smbCtx = nullptr;
   }
   std::lock_guard<std::mutex> lk(resultMutex);
   batch.clear();
@@ -233,44 +244,64 @@ bool SmbSource::fillBatch(struct smb2_context* ctx, struct smb2dir* dir,
   return !batch.empty();
 }
 
-void SmbSource::runOpen() {
+struct smb2_context* SmbSource::ensureConnected() {
   const UrlParts& p = *parts;
-  struct smb2_context* ctx = smb2_init_context();
-  int32_t code = (int32_t)RemoteCode::ok;
-  if (!ctx) {
-    std::lock_guard<std::mutex> lk(resultMutex);
-    lastError = "smb2_init_context failed";
-    code = (int32_t)RemoteCode::other;
-  } else {
-    smb2_set_timeout(ctx, std::max<int32_t>(1, (opTimeoutMs + 999) / 1000));
-    if (!p.user.empty()) {
-      smb2_set_user(ctx, p.user.c_str());
-      smb2_set_password(ctx, p.pass.c_str());
+  // 陈连接失效场景: 销毁重建全新重试一次(半开/服务端断连常见)
+  for (int attempt = 0; attempt < 2; ++attempt) {
+    if (smbCtx == nullptr) {
+      smbCtx = smb2_init_context();
+      if (smbCtx == nullptr) {
+        std::lock_guard<std::mutex> lk(resultMutex);
+        lastError = "smb2_init_context failed";
+        return nullptr;
+      }
     }
-    // 阻塞连接(RunTask 工作线程); 失败原因经 smb2_geterror 可读
-    int ret = smb2_connect_share(ctx, p.host.c_str(), p.share.c_str(),
-                                 p.user.empty() ? nullptr : p.user.c_str());
-    if (ret != 0) {
-      std::string err = smb2_get_error(ctx);
+    smb2_set_timeout(smbCtx, std::max<int32_t>(1, (opTimeoutMs + 999) / 1000));
+    if (!p.user.empty()) {
+      smb2_set_user(smbCtx, p.user.c_str());
+      smb2_set_password(smbCtx, p.pass.c_str());
+    }
+    if (smb2_connect_share(smbCtx, p.host.c_str(), p.share.c_str(),
+                           p.user.empty() ? nullptr : p.user.c_str()) == 0) {
+      return smbCtx;
+    }
+    std::string err = smb2_get_error(smbCtx);
+    {
       std::lock_guard<std::mutex> lk(resultMutex);
       lastError = "connect share failed: " + err;
-      if (err.find("LOGON") != std::string::npos ||
-          err.find("ACCESS_DENIED") != std::string::npos ||
-          err.find("BAD_USERID") != std::string::npos ||
-          err.find("PASSWORD_EXPIRED") != std::string::npos) {
-        code = (int32_t)RemoteCode::authFailed;
-      } else {
-        code = (int32_t)RemoteCode::net;
-      }
-      smb2_destroy_context(ctx);
-    } else {
-      std::lock_guard<std::mutex> lk(resultMutex);
-      sessionName = p.share;
-      lastError = "";
-      openedFlag.store(true);
-      // 会话是无状态的: 每个 op 各建/各销 ctx(连接成本一次 TCP, 免跨线程生命周期问题)
-      smb2_destroy_context(ctx);
     }
+    smb2_disconnect_share(smbCtx);
+    smb2_destroy_context(smbCtx);
+    smbCtx = nullptr;
+    if (attempt > 0) {
+      return nullptr;
+    }
+  }
+  return nullptr;
+}
+
+bool SmbSource::isAuthErrorText(const std::string& err) {
+  return err.find("LOGON") != std::string::npos ||
+         err.find("ACCESS_DENIED") != std::string::npos ||
+         err.find("BAD_USERID") != std::string::npos ||
+         err.find("PASSWORD_EXPIRED") != std::string::npos;
+}
+
+void SmbSource::runOpen() {
+  int32_t code = (int32_t)RemoteCode::ok;
+  if (ensureConnected() == nullptr) {
+    std::string err;
+    {
+      std::lock_guard<std::mutex> lk(resultMutex);
+      err = lastError;
+    }
+    code = isAuthErrorText(err) ? (int32_t)RemoteCode::authFailed
+                                : (int32_t)RemoteCode::net;
+  } else {
+    std::lock_guard<std::mutex> lk(resultMutex);
+    sessionName = parts->share;
+    lastError = "";
+    openedFlag.store(true);
   }
   // 上层已 close: 结果作废, 不再回调
   if (abortFlag.load()) {
@@ -301,37 +332,30 @@ void SmbSource::runList() {
     sharePath.pop_back();  // opendir 要的是不带尾'/'的路径
   }
 
-  struct smb2_context* ctx = smb2_init_context();
+  // 会话级连接复用(a05-T4): ensureConnected 已连即用, 失效自动重建重试
   int32_t code = (int32_t)RemoteCode::ok;
-  if (!ctx) {
+  struct smb2_context* ctx = ensureConnected();
+  if (ctx == nullptr) {
     std::lock_guard<std::mutex> lk(resultMutex);
-    lastError = "smb2_init_context failed";
-    code = (int32_t)RemoteCode::other;
+    code = (int32_t)RemoteCode::net;
   } else {
-    smb2_set_timeout(ctx, std::max<int32_t>(1, (opTimeoutMs + 999) / 1000));
-    if (!p.user.empty()) {
-      smb2_set_user(ctx, p.user.c_str());
-      smb2_set_password(ctx, p.pass.c_str());
-    }
-    int ret = smb2_connect_share(ctx, p.host.c_str(), p.share.c_str(),
-                                 p.user.empty() ? nullptr : p.user.c_str());
-    struct smb2dir* d = nullptr;
-    if (ret == 0) {
-      d = smb2_opendir(ctx, sharePath.c_str());
-      if (d == nullptr) {
-        std::string err = smb2_get_error(ctx);
+    struct smb2dir* d = smb2_opendir(ctx, sharePath.c_str());
+    if (d == nullptr) {
+      std::string err = smb2_get_error(ctx);
+      {
         std::lock_guard<std::mutex> lk(resultMutex);
         lastError = "opendir " + dir + " failed: " + err;
-        code = err.find("NOT_FOUND") != std::string::npos
-                   ? (int32_t)RemoteCode::notFound
-                   : (int32_t)RemoteCode::other;
+      }
+      if (err.find("NOT_FOUND") != std::string::npos) {
+        code = (int32_t)RemoteCode::notFound;
+      } else {
+        // 连接级失效(opendir 非 NOT_FOUND): 弃用旧连接, 下次 op 全新建连
+        code = (int32_t)RemoteCode::net;
+        smb2_disconnect_share(ctx);
+        smb2_destroy_context(ctx);
+        smbCtx = nullptr;
       }
     } else {
-      std::lock_guard<std::mutex> lk(resultMutex);
-      lastError = std::string("connect share failed: ") + smb2_get_error(ctx);
-      code = (int32_t)RemoteCode::net;
-    }
-    if (d != nullptr) {
       bool ok = fillBatch(ctx, d, dir);
       smb2_closedir(ctx, d);
       std::lock_guard<std::mutex> lk(resultMutex);
@@ -340,8 +364,6 @@ void SmbSource::runList() {
         code = (int32_t)RemoteCode::notFound;
       }
     }
-    smb2_disconnect_share(ctx);
-    smb2_destroy_context(ctx);
   }
   // 上层已 stopList/close: 结果作废, 不再回调
   if (abortFlag.load()) {
