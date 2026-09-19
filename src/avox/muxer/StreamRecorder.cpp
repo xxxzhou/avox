@@ -52,7 +52,13 @@ bool StreamRecorder::open(const char* url, const char* file) {
     return false;
   }
   inputUrl = url;
-  outputFile = file;
+  outputFile = file ? file : "";
+  if (outputFile.empty()) {
+    // 流录制必须有输出目标(离屏无封装是TranscodeRecorder的bNoOutput语义)
+    LOGFLF(LogLevel::warn, "stream record needs output file");
+    setRecState(RecorderState::failed);
+    return false;
+  }
   auto& ioSourceInfo = AvoxManager::Get().ioSources.initFunc(ioPlan);
   if (!ioSourceInfo.initFunc) {
     LOGFLF(LogLevel::error, "no io source for plan:", (int32_t)ioPlan);
@@ -80,7 +86,8 @@ bool StreamRecorder::open(const char* url, const char* file) {
     return false;
   }
   setRecState(RecorderState::opening);
-  LOGFLF(LogLevel::info, "recorder opening, input:", url, " output:", file);
+  LOGFLF(LogLevel::info, "recorder opening, input:", url, " output:",
+         outputFile);
   return true;
 }
 

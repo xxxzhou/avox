@@ -150,7 +150,7 @@ bool TranscodeRecorder::open(const char* url, const char* file) {
   ioSource = source->getSource();
   setRecState(RecorderState::opening);
   LOGFLF(LogLevel::info, "transcode recorder opening, input:", url,
-         " output:", file);
+         " output:", outputFile);
   return true;
 }
 
