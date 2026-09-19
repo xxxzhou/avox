@@ -59,6 +59,10 @@ class AssOverlay : public IAssOverlay {
   int32_t frontIdx = 0;
   int32_t seq = 0;
   bool hasCanvas = false;
+
+ public:
+  // IAssOverlay: 外挂文件编码探测结果(loadFile 记录, unload 复位)
+  virtual SubtitleEncoding getFileEncoding() override { return fileEncoding; }
 };
 
 }
