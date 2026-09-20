@@ -141,9 +141,19 @@ bool VkPipeGraph::bOutLayer(int32_t node) {
   return nodes[node]->bOutputNode();
 }
 
+bool VkPipeGraph::vkStale() {
+  // run()外的vk入口自判代际: flip后重拉句柄前旧句柄+新volk函数表不相干, 必须拦;
+  // 恢复中(Recovering)不可拦 —— 旧表+旧句柄相干, 互操作须继续流动否则饿死帧泵
+  return vkDevEpoch != VkContext::devEpoch();
+}
+
 bool VkPipeGraph::resourceReady() {
   // 设备丢失/恢复中: 旧资源已随旧device消亡
   if (VkContext::devState() != VkContext::VkDevState::Ok) {
+    return false;
+  }
+  // 恢复已成功但本graph尚未重拉句柄重建: 纹理仍是旧device的, 判未就绪
+  if (vkDevEpoch != VkContext::devEpoch()) {
     return false;
   }
   if (outEvent == VK_NULL_HANDLE) {
@@ -219,11 +229,14 @@ void VkPipeGraph::onRun() {
     return;
   }
 #endif
-  // [TEST] 注入设备丢失, 验证恢复链路(AVC_VK_FORCE_LOST=每N帧丢一次)
-  static const int32_t kForceLostEvery = [] {
+  // [TEST] 注入设备丢失, 验证恢复链路(AVC_VK_FORCE_LOST=每N帧丢一次)。
+  // 每帧重读env: 播放矩阵宿主按用例开关注入, 进程级静态缓存会让后置用例永远拿0
+  static std::atomic<int32_t> sForceLostEvery{0};
+  {
     const char* env = std::getenv("AVC_VK_FORCE_LOST");
-    return env ? std::atoi(env) : 0;
-  }();
+    sForceLostEvery.store(env ? std::atoi(env) : 0);
+  }
+  const int32_t kForceLostEvery = sForceLostEvery.load();
   if (kForceLostEvery > 0) {
     static std::atomic<uint32_t> injectCnt{0};
     if ((injectCnt.fetch_add(1) + 1) % (uint32_t)kForceLostEvery == 0) {

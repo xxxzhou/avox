@@ -242,6 +242,11 @@ void VkInputLayer::onUnInit() {
 }
 
 void VkInputLayer::inputGpuData(IRenderContext* context) {
+  // 互操作不走run()恢复门, 自判代际: flip后旧句柄+新volk函数表不相干, 必须拦;
+  // 恢复中(Recovering)不可拦 —— 旧表+旧句柄相干, 停流会让解码端D3D11围栏饿死
+  if (!vkPipeGraph || vkPipeGraph->vkStale()) {
+    return;
+  }
   bGpuInput = true;
   ImageFormat imageFormat = inFormats[0];
 #ifdef WIN32

@@ -65,6 +65,8 @@ class VkPipeGraph : public VPipeGraph<VkLayer>, public VkContextRef {
   bool getMustSampled(NodeSlot slot);
   bool bOutLayer(int32_t node);
   bool resourceReady();
+  // 仅判恢复相关失配(不涉冷启动未就绪态): 恢复中/已成功但本graph尚未重拉句柄
+  bool vkStale();
 
 #ifdef WIN32
   ID3D11Device* getD3D11Device();

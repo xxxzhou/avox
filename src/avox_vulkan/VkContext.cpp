@@ -1,6 +1,8 @@
 #include "VkContext.hpp"
 
+#include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <thread>
 
 #include "avox/module/AvoxManager.hpp"
@@ -11,6 +13,10 @@ namespace avox {
 static std::atomic<VkContext::VkDevState> sVkDevState{VkContext::VkDevState::Ok};
 static std::atomic<uint32_t> sVkDevEpoch{0};
 static std::atomic<int32_t> sVkRecoverAttempts{0};
+// [TEST] 恢复链路注入, 默认关闭生产行为不变:
+//   AVC_VK_RECOVER_FAIL=前N次createDevice必失败; AVC_VK_RECOVER_BACKOFF_MS=退避基数
+static std::atomic<int32_t> sRecoverForcedFailLeft{0};
+static std::atomic<int64_t> sRecoverBackoffBaseMs{1000};
 
 struct VkReg {
   VkReg() {
@@ -107,6 +113,21 @@ void VkContext::markLost() {
   }
   LOGFLF(LogLevel::warn, "vk device lost, start recovery, attempt:",
          sVkRecoverAttempts.load() + 1);
+  // [TEST] 注入种子: 每个恢复episode读一次env, 测试可按episode改参
+  if (const char* env = std::getenv("AVC_VK_RECOVER_FAIL")) {
+    sRecoverForcedFailLeft.store(std::atoi(env));
+  }
+  {
+    // 默认1s: 亚秒级瞬时丢失可在1s窗口内无缝恢复; 判空修复后失败重试已无害
+    int64_t backoffMs = 1000;
+    if (const char* env = std::getenv("AVC_VK_RECOVER_BACKOFF_MS")) {
+      int64_t v = std::atoll(env);
+      if (v > 0) {
+        backoffMs = v;
+      }
+    }
+    sRecoverBackoffBaseMs.store(backoffMs);
+  }
   std::thread([] {
     while (true) {
       int32_t attempt = sVkRecoverAttempts.fetch_add(1);
@@ -117,17 +138,20 @@ void VkContext::markLost() {
                "recover");
         return;
       }
-      // 驱动重置需要时间, 退避后重试: 1s,2s,4s,8s,16s,16s
-      int64_t waitMs = 500ll << std::min(attempt + 1, 5);
+      // 驱动重置需要时间, 退避后重试: 默认基数1s → 1s,2s,4s,8s,16s,16s
+      int64_t waitMs = std::min(sRecoverBackoffBaseMs.load() << attempt,
+                                (int64_t)16000);
       std::this_thread::sleep_for(std::chrono::milliseconds(waitMs));
       bool ok = false;
       {
         std::lock_guard<std::mutex> lock(gVkContextMutex);
         if (gVkContext && !gVkContext->bShardConext) {
           // 旧设备已lost: 跳过waitIdle(会返回DEVICE_LOST), 直接销毁重建
-          gVkContext->createDevice();
-          gVkContext->createCommandPool();
-          ok = gVkContext->vkDevice != VK_NULL_HANDLE;
+          // 重建设备成功才重建pool: 失败后vkDevice已无效, 不能再喂给loader
+          ok = gVkContext->createDevice();
+          if (ok) {
+            gVkContext->createCommandPool();
+          }
         }
       }
       if (ok) {
@@ -160,6 +184,10 @@ void VkContext::onDeviceComplete() {}
 
 void VkContext::createCommandPool() {
   // 在vkDevice已经后
+  // 设备丢失恢复中重建失败时vkDevice无效, 无效句柄进loader会堆损坏
+  if (vkDevice == VK_NULL_HANDLE) {
+    return;
+  }
   if (devArgs.graphicsIndex >= 0) {
     vkGetDeviceQueue(vkDevice, devArgs.graphicsIndex, 0, &vkGraphicsQueue);
   }
@@ -219,6 +247,15 @@ bool VkContext::createInstance(bool bDebug) {
 
 bool VkContext::createDevice() {
   devArgs = VkDeviceArgs::defArgs(phDevice);
+  // [TEST] 恢复注入: 模拟驱动重置未完成时重建失败
+  if (sVkDevState.load() == VkDevState::Recovering &&
+      sRecoverForcedFailLeft.load() > 0) {
+    sRecoverForcedFailLeft.fetch_sub(1);
+    LOGFLF(LogLevel::warn, "[TEST] inject createDevice fail, left:",
+           sRecoverForcedFailLeft.load());
+    vkDevice = VK_NULL_HANDLE;
+    return false;
+  }
   // 丢失恢复不变式: 刻意不销毁旧vkDevice, 丢失期间所有旧句柄调用仍合法; 勿补destroy否则恢复门变UAF, 旧device每episode泄漏一个属取舍
   vkDevice = devArgs.crateDevice(phDevice);
   if (vkDevice != VK_NULL_HANDLE) {
@@ -234,8 +271,10 @@ void VkContext::initContext() {
   bVkDebug = true;
 #endif
   createInstance(bVkDebug);
-  createDevice();
-  createCommandPool();
+  // 建设备失败(无可用GPU等)时不再建pool: 无效句柄进loader会堆损坏
+  if (createDevice()) {
+    createCommandPool();
+  }
   submitMtxPtr = &submitMtx;
   bShardConext = false;
 }

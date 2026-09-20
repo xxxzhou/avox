@@ -393,6 +393,11 @@ void VkOutputLayer::outputGpuData(IRenderContext* context) {
 }
 
 bool VkOutputLayer::fetchData(IImageBuffer* buffer) {
+  // 截帧路径不走run()恢复门, 必须自判: 恢复窗/重建未完成时纹理随旧device
+  // 已消亡, 独立提交只会喂无效句柄给loader(UAF/堆损坏)
+  if (!vkPipeGraph || !vkPipeGraph->resourceReady()) {
+    return false;
+  }
   if (inTexs.size() <= 0 || !inTexs[0]) {
     return false;
   }
