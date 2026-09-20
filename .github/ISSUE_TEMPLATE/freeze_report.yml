@@ -1,0 +1,67 @@
+name: 冻结/无响应报告
+description: 应用卡死/画面冻结(挂起型卡死)。附「冻结名片」可把定位做到线程级。
+title: "[冻结] "
+labels: ["freeze"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈!冻结类问题的关键证据是**冻结名片**: 纯文本(逐线程 RIP + 符号名),
+        不含内存内容, 公开安全。没有名片也可以提——把场景写清楚, 维护者会先按
+        复现路径排查; 有名片则可以直接落到线程现场。
+
+  - type: input
+    id: app
+    attributes:
+      label: 应用与版本
+      description: 如 `Panvox 泛音 v0.9.0+1`(「关于」页第一行)
+    validations:
+      required: true
+
+  - type: input
+    id: engine
+    attributes:
+      label: 引擎提交
+      description: 「关于」页可见(如 `avox a2acc93`)。符号化需要它来匹配 pdb。
+    validations:
+      required: true
+
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU 与驱动
+      description: 如 `AMD RX 9070 XT / Adrenalin 25.x`; 冻结多与渲染/驱动相关
+    validations:
+      required: false
+
+  - type: textarea
+    id: scene
+    attributes:
+      label: 场景描述
+      description: |
+        做了什么、何时冻住(秒级时间线)、多久出现一次、是否每次必现。
+        例: 「清缓存重加源后, 电视墙渐进扫入过程中, 拉到下面点开一个媒体即冻结」。
+    validations:
+      required: true
+
+  - type: textarea
+    id: card
+    attributes:
+      label: 冻结名片 (freeze card)
+      description: |
+        粘贴 `freeze_card_*.txt` 全文(逐行 `[card] tid=... rip=... sym=...`)。
+        生成途径: 冻结时应用自动落盘(新版本), 或测试宿主 `vulkan_wedge_repro` 产物。
+        旧版本没有名片就写 `无`。
+      render: text
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: dump
+    attributes:
+      label: mini dump 附件(可选, ~80KB)
+      description: |
+        dump 是进程内存快照, **公开 issue 附件前请自行斟酌**(不想公开就只附名片,
+        维护者确有需要时会私信你传法)。名片本身公开安全。
+      options:
+        - label: 我随附了 mini dump, 并已知悉它含内存快照

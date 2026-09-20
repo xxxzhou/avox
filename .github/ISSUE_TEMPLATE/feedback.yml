@@ -1,0 +1,17 @@
+name: 建议/反馈
+description: 功能建议、体验反馈、兼容性报告。
+title: "[反馈] "
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: 建议/问题
+      description: 一句话说清想要什么; 体验类说清「预期 vs 实际」。
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: 应用/环境(可选)
+      description: 应用与版本、系统、GPU; 兼容性问题请尽量带上。
