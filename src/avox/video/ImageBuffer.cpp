@@ -110,38 +110,54 @@ bool yuvframe2Rgba(const YUVFrame& frame, IImageBuffer* buffer,
   return true;
 }
 
-// shader把U/V按width×(height/4)紧凑打包(每物理行2条逻辑UV行),
-// 加padding后每物理行布局: [前半width/2 | 后半width/2 | padding]
-// 重排为: [前半width/2 | pad/2 | 后半width/2 | pad/2]
-// 这样stride=rowPitch/2,FFmpeg按等距读取即可
+// 打包侧(copyPlaneYUV2TightlyBuffer)与shader(yuv2rgbaV1/rgba2yuvV1)按width宽
+// 纹理线性摆放色度(奇数色度行时V平面起点在半行上,packed布局无法用stride表达),
+// 本函数把带padding的packed帧就地紧缩成rowPitch=width的连续split布局:
+// Y去行距 + U/V各uvSize字节紧随, 末条色度行全量保留
 void unpackGpuYUV(IImageBuffer* buffer, YuvType yuvType) {
-  ImageFormat imageFormat = buffer->getImageFormat();
+  ImageFormat packedFormat = buffer->getImageFormat();
+  int32_t rowPitch = packedFormat.rowPitch;
+  int32_t width = packedFormat.width;
+  if ((yuvType != YuvType::yuv420P && yuvType != YuvType::yuv422P) ||
+      rowPitch <= width) {
+    return;
+  }
   uint8_t* data = buffer->getPointer();
-  int32_t rowPitch = imageFormat.rowPitch;
-  int32_t width = imageFormat.width;
-  if ((yuvType == YuvType::yuv420P || yuvType == YuvType::yuv422P) &&
-      rowPitch != width) {
-    // shader把U/V紧凑打包(每物理行2条逻辑UV行),
-    // 加padding后每物理行布局: [前半width/2 | 后半width/2 | padding]
-    // 重排为: [前半width/2 | pad/2 | 后半width/2 | pad/2]
-    // 这样stride=rowPitch/2,FFmpeg按等距读取即可
-    int32_t halfPitch = rowPitch / 2;
-    int32_t halfWidth = width / 2;
-    int32_t yHeight, uvPhysRows;
-    if (yuvType == YuvType::yuv420P) {
-      // imageFormat.height = height * 3/2, Y占 height 行
-      yHeight = imageFormat.height * 2 / 3;
-      uvPhysRows = yHeight / 2;
-    } else {
-      // yuv422P: imageFormat.height = height * 2, Y占 height 行
-      yHeight = imageFormat.height / 2;
-      uvPhysRows = yHeight / 2;
+  int32_t halfWidth = width / 2;
+  int32_t yHeight, uvHeight;
+  if (yuvType == YuvType::yuv420P) {
+    // imageFormat.height = height*3/2, Y占 height 行
+    yHeight = packedFormat.height * 2 / 3;
+    uvHeight = yHeight / 2;
+  } else {
+    // yuv422P: imageFormat.height = height*2, Y占 height 行
+    yHeight = packedFormat.height / 2;
+    uvHeight = yHeight;
+  }
+  // 1) Y面去行距: 目的行起点<=源行起点且不越过下一行源, 逐行memmove前向安全
+  for (int32_t r = 1; r < yHeight; ++r) {
+    memmove(data + (size_t)r * width, data + (size_t)r * rowPitch, width);
+  }
+  // 2) 色度按打包侧的线性位置读出, 写成U/V连续split平面; 源区未被步骤1触碰,
+  //    且任一目的行终点<=线性位置随后的未读源起点, 前向写入安全
+  int32_t uvSize = halfWidth * uvHeight;
+  uint8_t* dstUV = data + (size_t)yHeight * width;
+  for (int p = 0; p < 2; ++p) {
+    for (int r = 0; r < uvHeight; ++r) {
+      uint64_t lin = (uint64_t)yHeight * width + (uint64_t)p * uvSize +
+                     (uint64_t)r * halfWidth;
+      const uint8_t* src =
+          data + (size_t)(lin / width) * rowPitch + (lin % width);
+      memcpy(dstUV + (size_t)p * uvSize + (size_t)r * halfWidth, src,
+             halfWidth);
     }
-    uint8_t* uvStart = data + (size_t)rowPitch * yHeight;
-    for (int32_t i = 0; i < uvPhysRows; ++i) {
-      uint8_t* row = uvStart + (size_t)i * rowPitch;
-      memmove(row + halfPitch, row + halfWidth, halfWidth);
-    }
+  }
+  // 3) 收紧行距, 后续image2YUVFrame按rowPitch=width切分出正确的split视图
+  //    (引用型数据不在buffer手里, 只紧缩内容不动格式, 保持老API契约)
+  if (!buffer->bDataRef()) {
+    ImageFormat tightFormat = packedFormat;
+    tightFormat.rowPitch = width;
+    buffer->setImageFormat(tightFormat);
   }
 }
 

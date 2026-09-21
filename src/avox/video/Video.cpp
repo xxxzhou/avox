@@ -263,18 +263,19 @@ void copyPlaneYUV2TightlyBuffer(const YUVFrame& frame, uint8_t* bfdata) {
       memcpy(uvDst + uvSize, frame.data[2], uvSize);
     } else {
       // 丢给GPU,padding重新组合
-      // unpackGpuYUV的逆操作: U(pad)U(pad) → UU(pad)(pad)
-      // 每物理行yrowpitch宽: 前halfWidth放偶数行, 后halfWidth放奇数行
-      int32_t physRows = uvHeight / 2;
+      // 打包成纹理线性布局, 与yuv2rgbaV1/rgba2yuvV1的线性寻址互逆: 色度第p平面
+      // 逻辑行r落在width宽线性位置 height*width + p*uvSize + r*halfWidth 上,
+      // 奇数色度行时V平面起点在半行上(不再按物理行成对摆放), uvHeight全量写入
+      int32_t width = frame.format.width;
+      uint64_t linBase = (uint64_t)height * width;
       for (int p = 0; p < 2; ++p) {
         const uint8_t* src = frame.data[p + 1];
-        uint8_t* rdst = uvDst + (uint64_t)p * physRows * yrowpitch;
         int stride = frame.stride[p + 1];
-        for (int i = 0; i < physRows; ++i) {
-          memcpy(rdst + (uint64_t)i * yrowpitch,
-                 src + (uint64_t)(2 * i) * stride, halfWidth);
-          memcpy(rdst + (uint64_t)i * yrowpitch + halfWidth,
-                 src + (uint64_t)(2 * i + 1) * stride, halfWidth);
+        for (int r = 0; r < uvHeight; ++r) {
+          uint64_t lin =
+              linBase + (uint64_t)p * uvSize + (uint64_t)r * halfWidth;
+          memcpy(bfdata + lin / width * yrowpitch + lin % width,
+                 src + (uint64_t)r * stride, halfWidth);
         }
       }
     }

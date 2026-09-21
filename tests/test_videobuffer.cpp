@@ -1,9 +1,11 @@
 // SwVideoBuffer form/to 布局契约单测
-// 契约: IImageBuffer 恒 packed (yuv420P 的 UV 物理行为 [偶 uvW | 奇 uvW | pad]),
-//       YUVFrame 恒 split (逻辑行等距, stride[1] = rowPitch/2)
-// 锁两个已修 bug:
+// 契约: IImageBuffer 恒 packed (色度按 width 宽纹理线性摆放, 与 shader
+//       yuv2rgbaV1/rgba2yuvV1 的线性寻址互逆; 奇数色度行时 V 平面起点在半行上),
+//       YUVFrame 恒 split (tight rowPitch=width, U/V 连续平面, 逻辑行等距)
+// 锁已修 bug:
 //   ① form 引用带 padding 的 flat 420P 帧 → GPU 按 packed 错读奇数行 (竖条纹)
-//   ② to() 产出 packed 视图 → ffmpeg/逐行读消费者奇数行左移
+//   ② 旧打包按物理行成对摆放且 physRows=uvH/2 丢末行 → 720x406 底部 4 行绿
+//     (shader 行对齐 V 基址差半行 + split 视图 V 基址错一条 stride 行, 双缺陷)
 #include <doctest.h>
 
 #include <cstdint>
@@ -137,29 +139,29 @@ TEST_CASE("to: 紧凑buffer零拷贝产出split视图") {
   CHECK(out.data[2] == buf.getPointer() + 6 * 4 + 6);
 }
 
-TEST_CASE("to: 带padding必须给tmp, split奇数行等距可读") {
+TEST_CASE("to: 带padding必须给tmp, split紧缩成tight等距可读") {
   FlatFrame ff = makeFlat420P(8);
   SwVideoBuffer buf;
   buf.form(ff.frame, true);
   YUVFrame out = {};
   // 无 tmp 且需要重排 → 拒绝
   CHECK_FALSE(buf.to(out));
-  // 有 tmp → split 逻辑行等距 (stripe 回归锁): stride[1] = rowPitch/2 = 4,
-  // 逻辑行 0/1 从行首逐字节读, 奇数行不再左移
+  // 有 tmp → unpack 紧缩为 rowPitch=width 的连续 split: stride = width/2 = 3,
+  // U/V 各占 uvSize 字节连续摆放, 逻辑行等距
   ImageBuffer tmp;
   REQUIRE(buf.to(out, &tmp));
-  CHECK(out.stride[0] == 8);
-  CHECK(out.stride[1] == 4);
-  CHECK(out.stride[2] == 4);
+  CHECK(out.stride[0] == 6);
+  CHECK(out.stride[1] == 3);
+  CHECK(out.stride[2] == 3);
   CHECK(out.data[1][0] == 0x11);
   CHECK(out.data[1][2] == 0x11);
-  CHECK(out.data[1][4] == 0x22);  // 逻辑行 1 在 4 处 (重排后)
-  CHECK(out.data[1][6] == 0x22);
+  CHECK(out.data[1][3] == 0x22);  // 逻辑行 1 紧随 (tight, 无 pad 夹层)
+  CHECK(out.data[1][5] == 0x22);
   CHECK(out.data[2][0] == 0x33);
-  CHECK(out.data[2][4] == 0x44);
+  CHECK(out.data[2][3] == 0x44);
   // Y 逐字节等于源
   for (int i = 0; i < 4; ++i) {
-    CHECK(std::memcmp(out.data[0] + 8 * i, ff.mem.data() + 8 * i, 8) == 0);
+    CHECK(std::memcmp(out.data[0] + 6 * i, ff.mem.data() + 8 * i, 6) == 0);
   }
   // 原 buffer 未被修改 (packed 奇行仍在 +3)
   CHECK(buf.getPointer()[8 * 4 + 3] == 0x22);
@@ -198,6 +200,109 @@ TEST_CASE("to: nv12带padding零拷贝视图") {
   CHECK(out.stride[0] == 8);
   CHECK(out.stride[1] == 8);
   CHECK(out.data[1] == buf.getPointer() + 8 * 4);
+}
+
+namespace {
+
+// 奇数色度行 flat 420P: w=8 h=6 → uvW=4, uvH=3 (奇), stride1 = stride0/2
+struct OddFlatFrame {
+  std::vector<uint8_t> mem;
+  YUVFrame frame = {};
+};
+
+OddFlatFrame makeOddFlat420P(int stride0) {
+  const int w = 8, h = 6, uvH = 3;
+  const int stride1 = stride0 / 2;
+  OddFlatFrame ff;
+  const int ySize = stride0 * h, uSize = stride1 * uvH;
+  ff.mem.resize(ySize + 2 * uSize);
+  ff.frame.data[0] = ff.mem.data();
+  ff.frame.data[1] = ff.mem.data() + ySize;
+  ff.frame.data[2] = ff.frame.data[1] + uSize;
+  ff.frame.stride[0] = stride0;
+  ff.frame.stride[1] = stride1;
+  ff.frame.stride[2] = stride1;
+  ff.frame.format = {w, h, YuvType::yuv420P};
+  std::memset(ff.frame.data[0], 0x80, ySize);
+  // U 逻辑行 0/1/2 = 0x11/0x22/0x33, V 逻辑行 0/1/2 = 0x44/0x55/0x66
+  const uint8_t uPat[3] = {0x11, 0x22, 0x33};
+  const uint8_t vPat[3] = {0x44, 0x55, 0x66};
+  for (int r = 0; r < uvH; ++r) {
+    std::memset(ff.frame.data[1] + r * stride1, uPat[r], stride1);
+    std::memset(ff.frame.data[2] + r * stride1, vPat[r], stride1);
+  }
+  return ff;
+}
+
+}  // namespace
+
+TEST_CASE("form: 奇数色度行packed按线性布局, 末行不丢") {
+  OddFlatFrame ff = makeOddFlat420P(12);  // w=8 带 4 字节 padding
+  SwVideoBuffer buf;
+  buf.form(ff.frame, true);
+  const ImageFormat fmt = buf.getImageFormat();
+  CHECK(fmt.width == 8);
+  CHECK(fmt.height == 9);  // 6*3/2
+  CHECK(fmt.rowPitch == 12);
+  // shader 线性寻址镜像: lin = h*w + p*uvSize + r*uvW, 字节 = lin/w*pitch + lin%w
+  // U 行落在 72/76/84, V 行落在 88/96/100 (V 起点 88 在半行上)
+  const uint8_t* p = buf.getPointer();
+  const int lin2byte[2][3] = {{72, 76, 84}, {88, 96, 100}};
+  const uint8_t pat[2][3] = {{0x11, 0x22, 0x33}, {0x44, 0x55, 0x66}};
+  for (int p1 = 0; p1 < 2; ++p1) {
+    for (int r = 0; r < 3; ++r) {
+      for (int c = 0; c < 4; ++c) {
+        CHECK(p[lin2byte[p1][r] + c] == pat[p1][r]);
+      }
+    }
+  }
+  CHECK(p[104] == 0);  // V 末行后仅余尾 padding
+}
+
+TEST_CASE("to: 奇数色度行split视图含末行, V基址=uvSize") {
+  OddFlatFrame ff = makeOddFlat420P(12);
+  SwVideoBuffer buf;
+  buf.form(ff.frame, true);
+  YUVFrame out = {};
+  ImageBuffer tmp;
+  REQUIRE(buf.to(out, &tmp));
+  CHECK(tmp.getImageFormat().rowPitch == 8);  // unpack 紧缩为 tight
+  CHECK(out.stride[0] == 8);
+  CHECK(out.stride[1] == 4);
+  CHECK(out.stride[2] == 4);
+  CHECK(out.data[2] - out.data[1] == 4 * 3);  // V 基址 = uvSize, 不再错一条行距
+  // 全部 3 条逻辑行逐字节还原 (含旧实现丢失的末行 → 4行绿回归锁)
+  for (int r = 0; r < 3; ++r) {
+    CHECK(std::memcmp(out.data[1] + r * 4, ff.frame.data[1] + r * 6, 4) == 0);
+    CHECK(std::memcmp(out.data[2] + r * 4, ff.frame.data[2] + r * 6, 4) == 0);
+  }
+}
+
+TEST_CASE("to: 422P奇高紧排split视图V基址正确") {
+  const int w = 8, h = 5, uvH = 5;
+  std::vector<uint8_t> mem(8 * h + 2 * (4 * uvH));
+  YUVFrame frame = {};
+  frame.data[0] = mem.data();
+  frame.data[1] = mem.data() + 8 * h;
+  frame.data[2] = frame.data[1] + 4 * uvH;
+  frame.stride[0] = 8;
+  frame.stride[1] = 4;
+  frame.stride[2] = 4;
+  frame.format = {w, h, YuvType::yuv422P};
+  std::memset(frame.data[0], 0x80, 8 * h);
+  std::memset(frame.data[1], 0x11, 4 * uvH);
+  std::memset(frame.data[2], 0x55, 4 * uvH);
+  SwVideoBuffer buf;
+  buf.form(frame, false);  // 紧排连续 → 引用
+  CHECK(buf.bDataRef());
+  YUVFrame out = {};
+  ImageBuffer tmp;
+  REQUIRE(buf.to(out, &tmp));
+  // V 基址 = uvPitch*uvHeight = 4*5 = 20, 与实际平面落点重合
+  CHECK(out.data[1] == buf.getPointer() + 8 * h);
+  CHECK(out.data[2] == out.data[1] + 4 * uvH);
+  CHECK(out.data[2][0] == 0x55);
+  CHECK(out.data[2][4 * uvH - 1] == 0x55);
 }
 
 }  // namespace avox

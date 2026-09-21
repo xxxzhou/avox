@@ -12,15 +12,10 @@ layout (std140, binding = 2) uniform UBO
 	mat4 colorMat;  // 行优先 YUV->RGB, UV 的 -0.5 已折进偏移列, 用法 vec4(yuv,1)*colorMat
 } ubo;
 
-int u22u1(ivec2 uv, int step) {
-	return uv.y * step + uv.x;
-}
-
-ivec2 u12u2(int index, int step) {
-	ivec2 uv;
-	uv.y = index / step;
-	uv.x = index - uv.y*step;// % 花费高?
-	return uv;
+// 色度线性位置 -> 纹理坐标: 打包侧(copyPlaneYUV2TightlyBuffer)按width宽线性
+// 摆放色度, 奇数色度行时V平面起点在半行上, 行对齐式表达不了(10bit V5同款通式)
+ivec2 lin2coord(int pos, int width) {
+	return ivec2(pos % width, pos / width);
 }
 
 // yuv420sp
@@ -58,9 +53,11 @@ void yuv420p(){
     if(uv.x >= size.x/2 || uv.y >= size.y/2){
         return;
     }
-	ivec2 nuv = u12u2(u22u1(uv.xy, size.x/2), size.x);
-	ivec2 uindex = nuv + ivec2(0,size.y);
-	ivec2 vindex = nuv + ivec2(0,size.y*5/4);
+	int uvW = size.x/2;
+	int uPos = size.x*size.y + uv.y*uvW + uv.x;
+	int vPos = uPos + uvW*(size.y/2);
+	ivec2 uindex = lin2coord(uPos, size.x);
+	ivec2 vindex = lin2coord(vPos, size.x);
 
 	float y1 = imageLoad(inTex,ivec2(uv.x*2,uv.y*2)).r;
 	float y2 = imageLoad(inTex,ivec2(uv.x*2+1,uv.y*2)).r;
@@ -117,9 +114,11 @@ void yuv422p(){
     if(uv.x >= size.x/2 || uv.y >= size.y){
         return;
     }
-	ivec2 nuv = u12u2(u22u1(uv.xy, size.x/2), size.x);
-	ivec2 uindex = ivec2(0,size.y)+nuv;
-	ivec2 vindex = ivec2(0,size.y*3/2)+nuv;
+	int uvW = size.x/2;
+	int uPos = size.x*size.y + uv.y*uvW + uv.x;
+	int vPos = uPos + uvW*size.y;
+	ivec2 uindex = lin2coord(uPos, size.x);
+	ivec2 vindex = lin2coord(vPos, size.x);
 
 	float y1 = imageLoad(inTex,ivec2(uv.x*2,uv.y)).r;
 	float y2 = imageLoad(inTex,ivec2(uv.x*2+1,uv.y)).r;
