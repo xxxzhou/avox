@@ -1059,10 +1059,10 @@ bool H264Parse::parsePpsSyntax() {
     br.u(1, pps.pic_scaling_matrix_present_flag);
     if (pps.pic_scaling_matrix_present_flag) {
       int32_t loopTime =
-          ((sps->chroma_format_idc != H264ChromaFormat::MMP_H264_CHROMA_444)
-               ? 2
-               : 6) *
-          pps.transform_8x8_mode_flag;
+          6 + ((sps->chroma_format_idc != H264ChromaFormat::MMP_H264_CHROMA_444)
+                   ? 2
+                   : 6) *
+                  pps.transform_8x8_mode_flag;
       pps.pic_scaling_list_present_flag.resize(loopTime);
       pps.ScalingList4x4.resize(6);
       pps.UseDefaultScalingMatrix4x4Flag.resize(6);
