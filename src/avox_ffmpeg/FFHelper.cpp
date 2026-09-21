@@ -118,6 +118,12 @@ VCodecId ffVCodec(AVCodecID codecId) {
       return VCodecId::mpeg2;
     case AV_CODEC_ID_MPEG4:
       return VCodecId::mpeg4;
+    case AV_CODEC_ID_MSMPEG4V1:
+      return VCodecId::msmpeg4v1;
+    case AV_CODEC_ID_MSMPEG4V2:
+      return VCodecId::msmpeg4v2;
+    case AV_CODEC_ID_MSMPEG4V3:
+      return VCodecId::msmpeg4v3;
     case AV_CODEC_ID_H263:
       return VCodecId::h263;
     case AV_CODEC_ID_FLV1:
