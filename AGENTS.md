@@ -107,7 +107,7 @@ SWIG 绑定: `swig/csharp/`, `swig/nodejs/`, `swig/python/` (Java 绑定构建�
 - **Godot Android 打包:** 全流程见 [platform/godot/docs/新机器Android打包.md](platform/godot/docs/新机器Android打包.md)，一键脚本 `platform/godot/build_android_godot.sh`
 - **VSCode 卡顿:** 工作区缓存按路径累积所致，解法见 [doc/tools/VSCode卡顿排查.md](doc/tools/VSCode卡顿排查.md)，别重拉 clone 或改名
 - **子模块重置:** `git -C 3rdparty/sherpa-onnx reset --hard HEAD`
-- **GLSL:** `glsl/` 编译为 `.spv`，自动复制到 `build/.../glsl/`
+- **GLSL:** 改 `glsl/source/*.comp` 后**必须手动重编** `python glsl/compileglsl.py`（需 PATH 有 glslangValidator；`cmake --build`/build_windows.py 都不含此步），产物自动复制到 `install/AMD64/{Debug,Release}/assets/glsl/`。只改 .comp 不重编则运行时仍加载旧 spv
 
 ## 外部依赖库路径
 
