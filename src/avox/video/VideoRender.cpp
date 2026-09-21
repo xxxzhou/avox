@@ -91,6 +91,7 @@ bool VideoRender::screenShot(ImageBuffer* imageBuffer_) {
   bShotComplete = std::make_shared<std::promise<bool>>();
   std::future<bool> bShotSingal = bShotComplete->get_future();
   imageBuffer = imageBuffer_;
+  shotGen.fetch_add(1);  // 开新单
   // 渲染线程检测到flag后，调用fetchFrame
   bShotFlag = true;
   // 等待渲染线程里调用fetchFrame完成,发送通知
@@ -99,6 +100,8 @@ bool VideoRender::screenShot(ImageBuffer* imageBuffer_) {
     return bShotSingal.get();
   }
   bShotFlag = false;
+  // 作废: 调用方拿到false后可能随即释放buffer, 渲染线程回写前靠shotGen弃写
+  shotGen.fetch_add(1);
   LOGFLF(LogLevel::warn, "screenShot timeout");
   return false;
 }
@@ -108,13 +111,18 @@ void VideoRender::checkShot() {
   if (bShotFlag.exchange(false)) {
     LOGFLF(LogLevel::info, "start screen shot,ms:", timeStampMS());
     if (bShotComplete) {
-      bool bRet = fetchFrame(imageBuffer);
+      ImageBuffer* buf = imageBuffer;
+      uint32_t gen = shotGen.load();
+      bool bRet = fetchFrame(buf);
       // 如果GPU渲染拿不到,并且是CPU输入,直接用CPU转换
-      if (!bRet && cpuIn) {
-        bRet = yuvframe2Rgba(yuvFrame, imageBuffer, colorSpace);
+      if (!bRet && cpuIn && gen == shotGen.load()) {
+        bRet = yuvframe2Rgba(yuvFrame, buf, colorSpace);
       }
-      bShotComplete->set_value(bRet);
-      LOGFLF(LogLevel::info, "screen shot:", bRet, " ms:", timeStampMS());
+      // 等待方已超时作废: buffer可能已释放, 不再回写也不发通知
+      if (gen == shotGen.load()) {
+        bShotComplete->set_value(bRet);
+        LOGFLF(LogLevel::info, "screen shot:", bRet, " ms:", timeStampMS());
+      }
     }
   }
 }

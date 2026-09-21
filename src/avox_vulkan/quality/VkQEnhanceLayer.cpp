@@ -325,7 +325,10 @@ void VkQEnhanceLayer::runPostprocess() {
   outTexs[0]->addBarrier(cmd, VK_IMAGE_LAYOUT_GENERAL,
                          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                          VK_ACCESS_SHADER_READ_BIT);
-  postprocessCmd->submit();
+  // 提交失败/等待超时: 本轮后处理放弃, outTexs保持上一帧内容
+  if (!postprocessCmd->submit()) {
+    LOGFLF(LogLevel::warn, "quality postprocess submit failed, skip");
+  }
 }
 
 // ── 主线程帧处理 ──

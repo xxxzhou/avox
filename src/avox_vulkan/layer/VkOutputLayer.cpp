@@ -413,8 +413,10 @@ bool VkOutputLayer::fetchData(IImageBuffer* buffer) {
   inTexs[0]->addBarrier(cmd, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                         VK_PIPELINE_STAGE_TRANSFER_BIT,
                         VK_ACCESS_TRANSFER_WRITE_BIT);
-  // 等待GPU执行完成
-  vkCommand->submit();
+  // 提交失败/等待超时: outBuffer内容不可信, 严禁再download到调用方buffer
+  if (!vkCommand->submit()) {
+    return false;
+  }
   // 下载到CPU
   if (outBuffer && outBuffer->getBufferSize() > 0) {
     // patchFormat

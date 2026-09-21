@@ -72,6 +72,9 @@ class AVOX_EXPORT VideoRender : public OptionLink {
   // 调用截图，需要同步调用
   std::mutex mtxShot;
   std::atomic<bool> bShotFlag = false;
+  // 截帧代际: 每次开单/超时作废各+1, 渲染线程回写前校验, 拦下
+  // "等待方超时返回后buffer已被释放仍回写"的UAF(两次截帧交叠时bool会互相复位)
+  std::atomic<uint32_t> shotGen{0};
   ImageBuffer* imageBuffer = nullptr;
   // 一次截图使用一次，每次使用需要重新创建
   std::shared_ptr<std::promise<bool>> bShotComplete;
@@ -127,7 +130,8 @@ class AVOX_EXPORT VideoRender : public OptionLink {
   // 抓帧发起一般不在渲染线程，所以这需要别的线程调用设置flag
   // 在渲染线程检测到flag后，调用fetchFrame,并发送通知
   // 发起线程在得到通知后，返回数据，这样调用方可在任意数据同步获取数据
-  // 设置最多2秒超时，最长可能堵塞调用方2秒
+  // 设置最多1秒超时，最长可能堵塞调用方1秒; 超时作废后buffer可能被释放,
+  // 渲染线程靠shotGen校验弃写
   bool screenShot(ImageBuffer* imageBuffer);
   void checkShot();
   // 渲染线程关闭，重置资源，画面成空白

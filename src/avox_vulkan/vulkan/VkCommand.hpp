@@ -38,7 +38,8 @@ class VkCommand : public VkContextRef {
   void fill(VkBuffer src, int32_t size, int32_t offset = 0, uint32_t value = 0);
   void record(VkBuffer src, VkBuffer dest, int32_t destOffset, int32_t size);
 
-  void submit();
+  // 提交并等待GPU完成; 返回false=提交失败或等待超时, 调用方不得再消费输出资源
+  bool submit();
   void reset();
 
   inline VkCommandBuffer getCommandBuffer() { return cmd; }
