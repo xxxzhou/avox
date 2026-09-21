@@ -167,6 +167,13 @@ void AVSource::processVideo(AvoxPacket& packet) {
   // log(LogLevel::info, "pts:", packet.pts, " dts:", packet.dts);
   // 视频配置帧,有些IO可能会把多个配置帧与一个I帧合并发送
   VCodecId vcodecId = videoTracks[packet.index].codecId;
+  // 非NALU编码(rv40/wmv3/vc1/mpeg2等)整包直发: 码流里的00 00 01只是巧合
+  // 字节, annexb拆片从起始码起头, 首个伪起始码之前的前导字节不落入任何
+  // 分片被丢弃, 回拼后整帧截断 → 参考链污染全程花屏 (RM/RV40 实证)
+  if (vcodecId != VCodecId::h264 && vcodecId != VCodecId::h265) {
+    singleVideo(packet);
+    return;
+  }
   if (packet.data.size <= 4) {
     return;
   }
