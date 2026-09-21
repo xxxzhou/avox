@@ -146,10 +146,15 @@ void WindowRender::render(const avox::VideoFrame& frame) {
   }
   // 如果由vulkan渲染到窗口，把上面GPU结果渲染到vulkan管线中
   if (bVulkan && vkVideoRender) {
-    // linux等无原生渲染器平台pVideoRender为空,传null上下文
-    vkVideoRender->renderFrame(frame,
-                               pVideoRender ? pVideoRender->getGpuContext()
-                                            : nullptr);
+    // 只在当前帧是硬解GPU帧时才把原生RT上下文交给vulkan(NV12已在此转RGBA)。
+    // CPU帧由vulkan自行上传平面; 而track跨媒体复用, getGpuContext()在换源后
+    // 仍是上一场硬解遗留的旧RT, 无条件喂入会把新场输入槽格式翻成旧尺寸/格式,
+    // 管线协商失败整场黑屏(2026-09-21 panvox 硬解→软解切换实证)
+    IRenderContext* gpuContext =
+        (pVideoRender && frame.buffer->getBufferType() != VBufferType::cpu)
+            ? pVideoRender->getGpuContext()
+            : nullptr;
+    vkVideoRender->renderFrame(frame, gpuContext);
   }
   onRenderOut();
 }
