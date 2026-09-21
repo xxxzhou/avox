@@ -172,10 +172,17 @@ void VDecoderTask::flush() {
   if (decode) {
     decode->flush();
   }
+  // seek 会连同包队列一起清掉, 扣着的簇属于旧位置, 一起作废
+  flattener.reset();
 }
 
 void VDecoderTask::onRunTask() {
   TickChecker check(delayMs);
+  // 输入连续排空的轮数阈值: 到它才认定 EOF 并放出尾簇
+  const int32_t kTailIdleRounds = 300;
+  int32_t idleRounds = 0;
+  // 摊平的标称帧长取容器声明值; 无 fps 信息(0)时摊平器整体旁路
+  flattener.setup(srcDesc.fps > 1.0 ? (int64_t)(1000.0 / srcDesc.fps) : 0);
   // 如果有配置数据，可能是切换解码器保留的
   if (!configPackets.empty()) {
     for (int32_t i = 0; i < configPackets.size(); ++i) {
@@ -267,8 +274,30 @@ void VDecoderTask::onRunTask() {
       }
     }
     // 多个I帧分片是否需要合并在一起?
-    bool bGet = trackContext->getPacketQueue().dequeueAction(
-        [&](const PacketBufPtr& packetPtr) { tempPtr->form(*packetPtr); });
+    // 摊平器只 peek 队头 pts 定簇, 认领的包才出队; 正常流的单包簇位移恒 0,
+    // 配置包与无标称帧率时走原 dequeueAction 路径, pts 一律不动
+    bool bGet = false;
+    PacketBufPtr head = nullptr;
+    auto& packetQueue = trackContext->getPacketQueue();
+    if (packetQueue.peek(head) && !head->configType() &&
+        flattener.feed(head->pts) && packetQueue.dequeue(head)) {
+      flattener.take(head);
+    } else {
+      bGet = packetQueue.dequeueAction(
+          [&](const PacketBufPtr& packetPtr) { tempPtr->form(*packetPtr); });
+    }
+    // 尾簇: 输入排空(本地文件常已读完全部包)后必须放出来, 否则最后一簇扣死.
+    // 用排空轮数而不是队列 close 来判, 直播长静默也会走到这里, 但一次只错一簇
+    if (!bGet && flattener.pending() && packetQueue.empty() &&
+        ++idleRounds > kTailIdleRounds) {
+      flattener.finish();
+      idleRounds = 0;
+    }
+    if (!bGet) {
+      bGet = flattener.pop([&](const PacketBufPtr& pkt) {
+        tempPtr->form(*pkt);
+      });
+    }
     DecodeResult result = DecodeResult::dataNoReady;
     if (bGet) {
       // 给track记录当前解码包的PTS

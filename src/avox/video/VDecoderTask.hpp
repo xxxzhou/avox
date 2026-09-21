@@ -5,6 +5,7 @@
 
 #include "../module/RunTask.hpp"
 #include "../player/MPCommon.hpp"
+#include "PtsFlattener.hpp"
 #include "VideoDecoder.hpp"
 
 namespace avox {
@@ -38,6 +39,8 @@ protected:
   // 配置帧变化
   bool bDecodeUpdate = false;
   std::mutex configMutex;
+  // 老容器簇状畸形时间戳摊平(只影响送解码器的 pts, 不动容器与导出)
+  PtsFlattener flattener;
 
 protected:
   class VideoTrack *trackContext = nullptr;
