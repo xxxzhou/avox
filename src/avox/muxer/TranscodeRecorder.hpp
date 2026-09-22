@@ -99,7 +99,6 @@ class TranscodeRecorder : public IRecorder,
   virtual void close() override;
   virtual RecorderState getState() override { return state; }
   virtual bool seek(int64_t posMs) override;
-  virtual bool isSeeking() override { return bSeeking.load(); }
   virtual int64_t getDuration() override;
   virtual ISourceInfo* getSourceInfo() override;
   // 返回内置的参数设置器(open前设置生效)

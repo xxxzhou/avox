@@ -59,7 +59,8 @@ enum class MuxerType {
   XX(opening, 1, "opening")        \
   XX(recording, 2, "recording")    \
   XX(completed, 3, "completed")    \
-  XX(failed, 4, "failed")
+  XX(failed, 4, "failed")          \
+  XX(seeking, 5, "seeking")
 
 enum class RecorderState : int16_t {
 #define XX(name, value, str) name = value,
@@ -166,12 +167,9 @@ class IRecorder {
   virtual RecorderState getState() = 0;
   // seek 到相对位置(毫秒),内部自动加 basetime;
   // 未 recording/源不可 seek 返回false
+  // seek 进行中状态机切到 seeking(经 onStateChange 事件对外), 完成回
+  // recording; 调用方亦可轮询 getState()==seeking
   virtual bool seek(int64_t posMs) { return false; }
-  // seek 是否进行中(doSeek 在编码线程执行: 置位→关队列→flush→IO定位→清位);
-  // false 表示 IO 已定位、定位后的新帧开始流动。调用方可在 seek() 后轮询
-  // 此态替代固定宽限; 注意 seek() 仅入队, 轮询应等 true 出现(或短超时)
-  // 再等 false, 避免把「尚未开始」误读成「已完成」
-  virtual bool isSeeking() { return false; }
   // 源总时长(毫秒),<=0 表示直播/未知(不可 seek);recording 后有效
   virtual int64_t getDuration() { return 0; }
   // 源信息(track 描述/canSeek);recording 前返回 nullptr

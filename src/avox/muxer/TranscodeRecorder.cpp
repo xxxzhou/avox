@@ -658,6 +658,9 @@ void TranscodeRecorder::doSeek() {
   }
   // bSeeking:跳过回调中的 GPU/音频处理(含 flushDecoders 同步重入的尾帧)
   bSeeking.store(true);
+  // 对外可见的 seeking 态(经 onStateChange 派发事件); bSeeking 是内部
+  // 丢帧闸, 二者并存: 标志管行为, 状态管对外可观测
+  setRecState(RecorderState::seeking);
   // 关闭队列:解码线程 enqueueWait 不阻塞直接返回,编码线程 dequeue 返回 false
   vFrameQueue.setClose(true);
   aFrameQueue.setClose(true);
@@ -672,6 +675,11 @@ void TranscodeRecorder::doSeek() {
   vFrameQueue.setClose(false);
   aFrameQueue.setClose(false);
   bSeeking.store(false);
+  // 仅当仍处于 seeking 时回 recording: doSeek 期间 close() 把态改成
+  // completed/failed 的场景不强行覆盖
+  if (state == RecorderState::seeking) {
+    setRecState(RecorderState::recording);
+  }
   LOGFLF(LogLevel::info, "seek done, abs pts:", seekTargetMs.load());
 }
 
