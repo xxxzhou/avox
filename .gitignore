@@ -149,6 +149,7 @@ assets/video/hls*
 # FFmpeg GPL 构建备份 (LGPL 替换后留档, 不入库)
 3rdparty/library/windows/ffmpeg/bin-gpl-backup*/
 .workbuddy
+.workbuddy-ai
 .githooks
 platform/android/AvoxJava/testbed/src/main/assets/
 script/ass/_cache/
