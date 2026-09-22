@@ -75,6 +75,10 @@ class AVOX_EXPORT VideoRender : public OptionLink {
   // 截帧代际: 每次开单/超时作废各+1, 渲染线程回写前校验, 拦下
   // "等待方超时返回后buffer已被释放仍回写"的UAF(两次截帧交叠时bool会互相复位)
   std::atomic<uint32_t> shotGen{0};
+  // 截帧干活段互斥: checkShot的fetchFrame/回写段持锁, stopShot(拆线前)持锁
+  // 等待出段——保证stopShot返回后无渲染线程仍在写buffer, 调用方拆buffer才安全
+  // (panvox 0922 08:58堆损坏: recorder close拆线窗口截帧仍打进来拿悬空buffer)
+  std::mutex mtxShotUse;
   ImageBuffer* imageBuffer = nullptr;
   // 一次截图使用一次，每次使用需要重新创建
   std::shared_ptr<std::promise<bool>> bShotComplete;
@@ -134,6 +138,9 @@ class AVOX_EXPORT VideoRender : public OptionLink {
   // 渲染线程靠shotGen校验弃写
   bool screenShot(ImageBuffer* imageBuffer);
   void checkShot();
+  // 拆线/重置前作废在飞截帧单并等渲染线程出干活段: 作废在飞单(等待方立即拿到
+  // false放行), 再等checkShot走出fetchFrame段; 返回后调用方拆buffer/图资源才安全
+  void stopShot();
   // 渲染线程关闭，重置资源，画面成空白
   void closeResource();
 

@@ -106,21 +106,47 @@ bool VideoRender::screenShot(ImageBuffer* imageBuffer_) {
   return false;
 }
 
+void VideoRender::stopShot() {
+  // 1) 与screenShot发起同锁: 拒新单, 作废在飞单, 等待方立即拿到false放行
+  {
+    std::unique_lock<std::mutex> lock(mtxShot);
+    bShotFlag = false;
+    shotGen.fetch_add(1);
+    if (bShotComplete) {
+      // 上单可能已正常通知(screenShot拿到结果返回), promise只许set一次
+      try {
+        bShotComplete->set_value(false);
+      } catch (...) {
+        // 已满足: 等待方早已放行, 无需再作废
+      }
+      bShotComplete.reset();
+    }
+    imageBuffer = nullptr;
+  }
+  // 2) 等渲染线程走出截帧干活段(锁释放即checkShot已出段);
+  // 返回后调用方拆buffer/图资源才不会有渲染线程仍在写
+  std::lock_guard<std::mutex> use(mtxShotUse);
+}
+
 void VideoRender::checkShot() {
   // 是否需要截图
   if (bShotFlag.exchange(false)) {
     LOGFLF(LogLevel::info, "start screen shot,ms:", timeStampMS());
     if (bShotComplete) {
+      // 干活段持锁: stopShot在拆buffer前等这段走完
+      std::lock_guard<std::mutex> use(mtxShotUse);
       ImageBuffer* buf = imageBuffer;
+      // 控制块本地快照: stopShot/下一单reset成员后, set_value仍落在活控制块上
+      std::shared_ptr<std::promise<bool>> cb = bShotComplete;
       uint32_t gen = shotGen.load();
       bool bRet = fetchFrame(buf);
       // 如果GPU渲染拿不到,并且是CPU输入,直接用CPU转换
       if (!bRet && cpuIn && gen == shotGen.load()) {
         bRet = yuvframe2Rgba(yuvFrame, buf, colorSpace);
       }
-      // 等待方已超时作废: buffer可能已释放, 不再回写也不发通知
+      // 等待方已超时/关闭作废: buffer可能已释放, 不再回写也不发通知
       if (gen == shotGen.load()) {
-        bShotComplete->set_value(bRet);
+        cb->set_value(bRet);
         LOGFLF(LogLevel::info, "screen shot:", bRet, " ms:", timeStampMS());
       }
     }
@@ -128,6 +154,9 @@ void VideoRender::checkShot() {
 }
 
 void VideoRender::closeResource() {
+  // 先作废在飞截帧单并等干活段出闸, 再拆图, 拦"拆线窗口截帧仍写buffer"
+  // (panvox 0922堆损坏)
+  stopShot();
   releaseGraph();
   bResetFlag = true;
 }
