@@ -1,10 +1,19 @@
 // D3D11 共享输出通路验证 (模拟 Unity D3D11 后端):
 // avox VK 管线 -> 底层自建 NT 共享纹理 -> 本进程第二个 D3D11 设备打开并复制读回
 // 安全规矩: OpenSharedResource1 仅单次尝试, 失败即退出, 严禁重试
+// 撕裂探针: 连续读回共享纹理, 与参考帧逐行哈希比对。读值分类:
+//   unchanged(全行同参考) / full(新整帧) / partial(部分行同旧帧+部分不同)
+// partial 即撕裂候选: 与随后整帧验证 —— 部分行 bit==旧帧 && 其余行 bit==新帧
+// = 新旧帧时间混合(消费侧读到写一半的纹理); 行与新旧帧都不等 = 上游内容损坏。
+// 候选抓三联 BMP(prev/cand/next) 供人工确认(静态背景的合法新帧行哈希形态
+// 与撕裂相同, 最终判读看图: 撕裂帧有内容时间错位的横切缝)。
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
+#include <string>
 #include <thread>
+#include <vector>
 
 #include <d3d11.h>
 #include <d3d11_1.h>
@@ -15,50 +24,56 @@
 
 using namespace avox;
 
-static uint64_t sampleChecksum(ID3D11DeviceContext* ctx, ID3D11Texture2D* staging,
-                               const D3D11_TEXTURE2D_DESC& desc) {
-  D3D11_MAPPED_SUBRESOURCE map = {};
-  if (FAILED(ctx->Map(staging, 0, D3D11_MAP_READ, 0, &map))) {
-    return 0;
+// 24bit BMP 直出 (无外部依赖, 撕裂判读要看图)
+static void dumpBmp(const uint8_t* pixels, uint32_t w, uint32_t h,
+                    uint32_t pitch, const char* path) {
+  const uint32_t rowBytes = w * 3;
+  const uint32_t pad = (4 - (rowBytes & 3)) & 3;
+  const uint32_t dataSize = (rowBytes + pad) * h;
+  const uint32_t fileSize = 54 + dataSize;
+  FILE* f = fopen(path, "wb");
+  if (!f) return;
+  uint8_t hdr[54] = {};
+  hdr[0] = 'B'; hdr[1] = 'M';
+  memcpy(hdr + 2, &fileSize, 4);
+  hdr[10] = 54;                          // pixel data offset
+  hdr[14] = 40;                          // BITMAPINFOHEADER
+  memcpy(hdr + 18, &w, 4);
+  memcpy(hdr + 22, &h, 4);
+  hdr[26] = 1;                           // planes
+  hdr[28] = 24;                          // bpp
+  memcpy(hdr + 34, &dataSize, 4);
+  fwrite(hdr, 1, 54, f);
+  std::vector<uint8_t> row(rowBytes + pad, 0);
+  for (int32_t y = (int32_t)h - 1; y >= 0; --y) {  // BMP 自下而上
+    const uint8_t* src = pixels + (uint32_t)y * pitch;
+    for (uint32_t x = 0; x < w; ++x) {
+      row[x * 3 + 0] = src[x * 4 + 0];  // BGRA -> BGR
+      row[x * 3 + 1] = src[x * 4 + 1];
+      row[x * 3 + 2] = src[x * 4 + 2];
+    }
+    fwrite(row.data(), 1, rowBytes + pad, f);
   }
-  // 网格采样: 首像素 + 中心 + 若干网格点, 记录 BGRA 原始字节
-  uint64_t sum = 0;
-  int points[][2] = {{2, 2}, {desc.Width / 2, desc.Height / 2},
-                     {desc.Width - 3, desc.Height - 3}, {desc.Width / 4, desc.Height / 2},
-                     {(desc.Width * 3) / 4, desc.Height / 2}};
-  for (auto& pt : points) {
-    const uint8_t* p = (const uint8_t*)map.pData + pt[1] * map.RowPitch + pt[0] * 4;
-    sum = sum * 1000003u + p[0] + p[1] * 256u + p[2] * 65536u + p[3] * 16777216u;
-  }
-  ctx->Unmap(staging, 0);
-  return sum;
+  fclose(f);
+  printf("dumped: %s\n", path);
 }
 
-// 共享纹理内容转储 (D3D11 侧视角的地面真值, 行序按映射顺序 = 纹理行序)
-static void dumpPpm(ID3D11DeviceContext* ctx, ID3D11Texture2D* staging,
-                    const D3D11_TEXTURE2D_DESC& desc, const char* path) {
-  D3D11_MAPPED_SUBRESOURCE map = {};
-  if (FAILED(ctx->Map(staging, 0, D3D11_MAP_READ, 0, &map))) {
-    return;
+// 全行逐字哈希(FNV-1a, 4字节步进): 行 bit 相同则哈希同, 静态区/颗粒差异都分辨
+static uint64_t hashRow(const uint8_t* row, uint32_t rowBytes) {
+  uint64_t h = 1469598103934665603ull;
+  for (uint32_t off = 0; off + 4 <= rowBytes; off += 4) {
+    uint32_t v = 0;
+    memcpy(&v, row + off, 4);
+    h = (h ^ v) * 1099511628211ull;
   }
-  FILE* f = fopen(path, "wb");
-  if (f) {
-    fprintf(f, "P6\n%u %u\n255\n", desc.Width, desc.Height);
-    for (UINT y = 0; y < desc.Height; ++y) {
-      const uint8_t* row = (const uint8_t*)map.pData + y * map.RowPitch;
-      for (UINT x = 0; x < desc.Width; ++x) {
-        fwrite(row + x * 4, 1, 3, f);
-      }
-    }
-    fclose(f);
-    printf("dumped: %s\n", path);
-  }
-  ctx->Unmap(staging, 0);
+  return h;
 }
 
 int main(int argc, char** argv) {
   const char* video = argc > 1 ? argv[1] : "D://Back//美好.mp4";
   int durationSec = argc > 2 ? atoi(argv[2]) : 10;
+  const char* outDir = argc > 3 ? argv[3] : ".";
+  int seekMs = argc > 4 ? atoi(argv[4]) : 0;  // 跳到运动段(片头静态测不出撕裂)
   printf("video: %s, duration: %ds\n", video, durationSec);
   // ── 播放器: VK 离屏管线 + D3D11 共享输出 ──
   IMediaPlayer* mp = createMediaPlayer();
@@ -92,6 +107,7 @@ int main(int argc, char** argv) {
     printf("FAIL: shared texture handle timeout (10s)\n");
     return 1;
   }
+  if (seekMs > 0) mp->seek(seekMs);  // 图就绪后再跳, 避开静态片头
   uint64_t fenceHandle = getVkOutputDx11FenceHandle(sr);
   printf("tex NT handle: 0x%llx, fence NT handle: 0x%llx\n",
          (unsigned long long)texHandle, (unsigned long long)fenceHandle);
@@ -134,7 +150,7 @@ int main(int argc, char** argv) {
     printf("FAIL: create staging\n");
     return 1;
   }
-  // 打开共享 fence (可选)
+  // 打开共享 fence (诊断: 完成值应逐帧单调, 回退=引擎信号问题)
   ID3D11Fence* fenceB = nullptr;
   if (fenceHandle) {
     ID3D11Device5* devB5 = nullptr;
@@ -143,12 +159,25 @@ int main(int argc, char** argv) {
                              __uuidof(ID3D11Fence), (void**)&fenceB);
       devB5->Release();
     }
-    if (!fenceB) printf("warn: OpenSharedFence failed (sync polling disabled)\n");
+    if (!fenceB) printf("warn: OpenSharedFence failed (fence diagnostics disabled)\n");
   }
-  // ── 读回循环: 每帧复制->读回->校验, 检测画面变化 ──
-  uint64_t lastSum = 0;
-  int changedFrames = 0, totalReads = 0, dumpCount = 0;
+  // ── 撕裂探针状态 ──
+  const uint32_t H = desc.Height;
+  const uint32_t rowBytes = desc.Width * 4;
+  const size_t bufBytes = (size_t)rowBytes * H;
+  std::vector<uint64_t> refHash(H, 0), curHash(H, 0);       // ref=上一整帧
+  std::vector<uint64_t> candHash(H, 0);                     // 候选帧行哈希快照
+  std::vector<uint8_t> refPixels(bufBytes, 0);              // prev dump 用像素
+  std::vector<uint8_t> candPixels(bufBytes, 0);             // cand dump 用像素
+  std::vector<uint8_t> candSameRef(H, 0);                   // 候选行是否同旧帧
+  bool hasRef = false;
+  bool hasCand = false;
+  int candSeq = 0;
+  long long nReads = 0, nSame = 0, nFull = 0, nCand = 0, nGarbage = 0;
+  uint64_t fenceRegress = 0, lastFence = 0;
   auto tStart = std::chrono::steady_clock::now();
+  auto tStats = tStart;
+  int statsEpoch = 0;
   while (true) {
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                        std::chrono::steady_clock::now() - tStart)
@@ -160,27 +189,100 @@ int main(int argc, char** argv) {
       DispatchMessage(&msg);
     }
     ctxB->CopyResource(staging, texB);
-    uint64_t sum = sampleChecksum(ctxB, staging, desc);
-    if (elapsed > 5000 && dumpCount == 0) {
-      dumpCount++;
-      dumpPpm(ctxB, staging, desc, "shared_dump.ppm");
+    D3D11_MAPPED_SUBRESOURCE map = {};
+    if (FAILED(ctxB->Map(staging, 0, D3D11_MAP_READ, 0, &map))) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      continue;
     }
-    if (sum) {
-      totalReads++;
-      if (sum != lastSum) {
-        changedFrames++;
-        UINT64 fv = fenceB ? fenceB->GetCompletedValue() : 0;
-        printf("[%3lldms] checksum changed (#%d), fence=%llu\n",
-               (long long)elapsed, changedFrames, (unsigned long long)fv);
-        lastSum = sum;
+    nReads++;
+    if (fenceB) {
+      const uint64_t fv = fenceB->GetCompletedValue();
+      if (fv < lastFence) fenceRegress++;  // 完成值回退=信号取号异常
+      lastFence = fv;
+    }
+    // 行哈希 + 与参考帧比对
+    uint32_t sameRows = 0;
+    for (uint32_t y = 0; y < H; ++y) {
+      const uint8_t* row = (const uint8_t*)map.pData + (size_t)y * map.RowPitch;
+      curHash[y] = hashRow(row, rowBytes);
+      if (hasRef && curHash[y] == refHash[y]) sameRows++;
+    }
+    const double matchFrac = hasRef ? (double)sameRows / H : 0.0;
+    if (!hasRef || matchFrac >= 0.999) {
+      // 首帧/同帧重复读: 首帧采纳为参考
+      nSame++;
+      if (!hasRef) {
+        memcpy(refPixels.data(), map.pData, bufBytes);
+        for (uint32_t y = 0; y < H; ++y) refHash[y] = curHash[y];
+        hasRef = true;
       }
+    } else if (matchFrac < 0.35) {
+      // 新整帧: 先验证挂起候选(与新帧比对), 再采纳为参考
+      nFull++;
+      if (hasCand) {
+        hasCand = false;
+        uint32_t matchRef = 0, matchNew = 0;
+        for (uint32_t y = 0; y < H; ++y) {
+          if (candSameRef[y]) {
+            matchRef++;
+          } else {
+            const uint8_t* row =
+                (const uint8_t*)map.pData + (size_t)y * map.RowPitch;
+            if (hashRow(row, rowBytes) == candHash[y]) matchNew++;
+          }
+        }
+        // neither: 候选中与旧帧不同、也与随后新帧不同的行(既非混合也非静态)
+        const uint32_t matchNeither = H - matchRef - matchNew;
+        printf("[cand%03d verdict] old=%u new=%u neither=%u / %u rows, fence=%llu\n",
+               candSeq, matchRef, matchNew, matchNeither, H,
+               fenceB ? (unsigned long long)lastFence : 0ull);
+        if (matchNeither * 10 >= H) nGarbage++;
+        if (candSeq < 12) {  // 三联取证: prev(参考像素)/cand(快照)/next(本帧)
+          char p[512];
+          snprintf(p, sizeof(p), "%s/tear_cand%03d_prev.bmp", outDir, candSeq);
+          dumpBmp(refPixels.data(), desc.Width, H, rowBytes, p);
+          snprintf(p, sizeof(p), "%s/tear_cand%03d_cand.bmp", outDir, candSeq);
+          dumpBmp(candPixels.data(), desc.Width, H, rowBytes, p);
+          snprintf(p, sizeof(p), "%s/tear_cand%03d_next.bmp", outDir, candSeq);
+          dumpBmp((const uint8_t*)map.pData, desc.Width, H, map.RowPitch, p);
+        }
+        candSeq++;
+      }
+      memcpy(refPixels.data(), map.pData, bufBytes);
+      for (uint32_t y = 0; y < H; ++y) refHash[y] = curHash[y];
+    } else {
+      // 部分行同旧帧: 撕裂候选(或高静态重叠的合法新帧, 看 dump 判读)
+      nCand++;
+      memcpy(candPixels.data(), map.pData, bufBytes);
+      for (uint32_t y = 0; y < H; ++y) {
+        candSameRef[y] = (curHash[y] == refHash[y]) ? 1 : 0;
+        candHash[y] = curHash[y];
+      }
+      hasCand = true;
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    ctxB->Unmap(staging, 0);
+    // 5s 一行统计
+    auto now = std::chrono::steady_clock::now();
+    if (std::chrono::duration_cast<std::chrono::milliseconds>(now - tStats).count() >= 5000) {
+      tStats = now;
+      printf("[stats %d] reads=%lld same=%lld full=%lld cand=%lld garbage=%lld "
+             "fence=%llu regress=%llu\n",
+             statsEpoch++, nReads, nSame, nFull, nCand, nGarbage,
+             fenceB ? (unsigned long long)lastFence : 0ull,
+             (unsigned long long)fenceRegress);
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
-  printf("---- result: reads=%d changed=%d fence=%s ----\n", totalReads,
-         changedFrames, fenceB ? "ok" : "unavailable");
-  bool pass = totalReads > 0 && changedFrames >= 3;
-  printf(pass ? "PASS\n" : "FAIL\n");
+  printf("---- result: reads=%lld full=%lld cand=%lld garbage=%lld "
+         "fence-regress=%llu ----\n",
+         nReads, nFull, nCand, nGarbage, (unsigned long long)fenceRegress);
+  if (nCand > 0) {
+    printf("TEAR CANDIDATES: %d dumped, inspect tear_cand*_{prev,cand,next}.bmp "
+           "(torn = cand is a time-mixed horizontal cut of prev/next)\n",
+           candSeq < 12 ? candSeq : 12);
+  }
+  bool pass = nReads > 0 && nFull >= 3 && nCand == 0 && nGarbage == 0;
+  printf(pass ? "PASS\n" : (nCand > 0 || nGarbage > 0 ? "TEAR-SUSPECT\n" : "FAIL\n"));
   if (fenceB) fenceB->Release();
   staging->Release();
   texB->Release();
@@ -188,5 +290,5 @@ int main(int argc, char** argv) {
   devB->Release();
   disableVkOutputDx11(sr);
   mp->close();
-  return pass ? 0 : 1;
+  return pass ? 0 : 2;
 }
