@@ -458,10 +458,11 @@ bool H264Parse::parseSpsSyntax() {
           } else {
             if (!parseScalingListSyntax(
                     sps.ScalingList8x8[i - 6], 64,
-                    sps.UseDefaultScalingMatrix8x8Flag[i])) {
+                    // 同 PPS: 8x8 标志索引域是 i-6(本分支当前不可达, 一并修正)
+                    sps.UseDefaultScalingMatrix8x8Flag[i - 6])) {
               return false;
             }
-            if (sps.UseDefaultScalingMatrix8x8Flag[i] == 1) {
+            if (sps.UseDefaultScalingMatrix8x8Flag[i - 6] == 1) {
               if (i % 2 == 0) {
                 sps.ScalingList8x8[i - 6] = Default_8x8_Intra;
               } else {
@@ -1083,10 +1084,11 @@ bool H264Parse::parsePpsSyntax() {
           } else {
             if (!parseScalingListSyntax(
                     pps.ScalingList8x8[i - 6], 64,
-                    pps.UseDefaultScalingMatrix8x8Flag[i])) {
+                    // 8x8 标志与 ScalingList8x8 同索引域(i-6): 写 [i] 会越界写坏堆
+                    pps.UseDefaultScalingMatrix8x8Flag[i - 6])) {
               return false;
             }
-            if (pps.UseDefaultScalingMatrix8x8Flag[i] == 1) {
+            if (pps.UseDefaultScalingMatrix8x8Flag[i - 6] == 1) {
               // TODO
             }
           }
