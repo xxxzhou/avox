@@ -122,6 +122,13 @@ AVOX_EXPORT float countInRange(IImageBuffer* inBuf, int32_t x, int32_t y,
 // swig转别的语言会自动深拷贝到对应语言的字符串类型中,不用管
 AVOX_EXPORT const char* getImageBase64(IImageBuffer* buffer,
                                       const IEncodeConfig& config);
+// 同 getImageBase64 的编码路径(stb 同款编码器), 但直出原始编码字节,
+// 免掉 base64 编解码的双倍绕转。内部 thread_local 缓冲, 每次调用覆盖;
+// 指针只在同线程下一次调用前有效; 返回 nullptr 且 *outSize=0 = 编码失败。
+// 跨 DLL 只过 POD 与指针(同 AvoxCodec.h 口径), 不过 STL 容器
+AVOX_EXPORT const uint8_t* getImageBytes(IImageBuffer* buffer,
+                                         const IEncodeConfig& config,
+                                         int32_t* outSize);
 }
 
 }

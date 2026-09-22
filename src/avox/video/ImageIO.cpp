@@ -206,6 +206,35 @@ const char* getImageBase64(IImageBuffer* buffer, const IEncodeConfig& config) {
   return sResult.c_str();
 }
 
+const uint8_t* getImageBytes(IImageBuffer* buffer,
+                             const IEncodeConfig& config, int32_t* outSize) {
+  if (outSize) *outSize = 0;
+  ImageBuffer* imageBuffer = dynamic_cast<ImageBuffer*>(buffer);
+  if (!imageBuffer) {
+    LOGFLF(LogLevel::warn, "buffer is not ImageBuffer");
+    return nullptr;
+  }
+  ImageFormat format = imageBuffer->getImageFormat();
+  int32_t width = format.width;
+  int32_t height = format.height;
+  int32_t pitch = format.rowPitch;
+  if (pitch == 0) {
+    pitch = width * getPixelSize(format.imageType);
+  }
+  uint8_t* data = imageBuffer->getPointer();
+  int channels = getStbChannels(format.imageType);
+  // thread_local: 并发调用(如多路抽帧)各线程独立缓冲, 不像 getImageBase64
+  // 的全局单缓冲那样在 mutex 上把并发编码串行化
+  static thread_local std::vector<uint8_t> sBytes;
+  sBytes.clear();
+  if (!encodeToBuffer(config, width, height, pitch, channels, data, sBytes)) {
+    LOGFLF(LogLevel::warn, "image encode failed");
+    return nullptr;
+  }
+  if (outSize) *outSize = (int32_t)sBytes.size();
+  return sBytes.data();
+}
+
 bool resizeImage(IImageBuffer* inBuf, IImageBuffer* outBuf, int32_t width,
                  int32_t height) {
   if (!inBuf || !outBuf || width <= 0 || height <= 0) {
