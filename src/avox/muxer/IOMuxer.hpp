@@ -39,6 +39,14 @@ class IOMuxer : public IMuxerContext, public RunTask {
   std::string url = "";
   // 开始推流的基本包时间
   int64_t basePts = AVOX_NOVALID_PTS;
+  // dts 回退体检(2026-09-22): muxer 硬要求 dts 非递减, 但上游可能给出回退值
+  // (B帧解码顺序 / seek 重新定位 / PTS 无效被上游合成)。此处**只计数不修正**:
+  // 修正会掩盖上游缺陷, 而计数让每次录制自带"时间轴有没有被搞坏"的证据。
+  // 音视频 dts 各自单调(见 pushPacket 音频分支注释), 必须分流跟踪 —— 混在一起
+  // 会因音视频交错而全是误报。
+  int64_t lastMuxVideoDts = AVOX_NOVALID_PTS;
+  int64_t lastMuxAudioDts = AVOX_NOVALID_PTS;
+  uint64_t dtsBackwardCount = 0;
   // 跨包同帧合并: 多slice编码时, 同dts的多个视频包用append合并
   // 大部分时候为nullptr(不分片), 只有同dts多包时才分配
   PacketBufPtr preBuffer;
@@ -58,6 +66,10 @@ class IOMuxer : public IMuxerContext, public RunTask {
   void setAudioDesc(const ATrackDesc& desc);
   ATrackDesc getAudioDesc() const { return aDesc; }
   void pushPacket(PacketBufPtr packet);
+  // 记录一个"真正交给 muxer"的包 dts(见成员注释); dts 回退时计数, 首次回退打一条 warn
+  void noteMuxDts(int64_t dts, int32_t packtype);
+  // dts 回退累计次数(0 = 本次录制时间轴全程非递减)
+  uint64_t getDtsBackwardCount() const { return dtsBackwardCount; }
   void onError(AVError err, const char* msg);
   void close();
   void flushPendingAu();

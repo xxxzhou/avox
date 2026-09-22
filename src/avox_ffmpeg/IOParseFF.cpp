@@ -624,10 +624,19 @@ void IOParseFF::onRunTask() {
     if (packType == PackType::subtitles && refPkt->pts == AV_NOPTS_VALUE) {
       continue;
     }
-    // 时间全转成毫秒
-    refPkt->pts = av_rescale_q(refPkt->pts, st->time_base, {1, 1000});
-    refPkt->dts = av_rescale_q(refPkt->dts, st->time_base, {1, 1000});
-    refPkt->duration = av_rescale_q(refPkt->duration, st->time_base, {1, 1000});
+    // 时间全转成毫秒。`AV_NOPTS_VALUE` 必须原样保留, 不能参与换算:
+    // av_rescale_q(AV_NOPTS_VALUE) 会算出一个"看似普通"的垃圾值(实测 INT64_MIN 被改成
+    // INT64_MIN+1), 下游只能靠"巨大负值"去猜它是无效值 —— 是运气不是设计。
+    // 字幕分支(:624)此前已做同样防护, 这里把 video/audio + duration 补齐。
+    if (refPkt->pts != AV_NOPTS_VALUE) {
+      refPkt->pts = av_rescale_q(refPkt->pts, st->time_base, {1, 1000});
+    }
+    if (refPkt->dts != AV_NOPTS_VALUE) {
+      refPkt->dts = av_rescale_q(refPkt->dts, st->time_base, {1, 1000});
+    }
+    if (refPkt->duration != AV_NOPTS_VALUE) {
+      refPkt->duration = av_rescale_q(refPkt->duration, st->time_base, {1, 1000});
+    }
     AvoxPacket packet = ffAvoxPacket(refPkt);
     packet.packtype = (int32_t)packType;
     packet.prefixSize = prefixSize;

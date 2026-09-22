@@ -87,6 +87,20 @@ void IOMuxer::setAudioDesc(const ATrackDesc& desc) {
   bHaveAudio = true;
 }
 
+void IOMuxer::noteMuxDts(int64_t dts, int32_t packtype) {
+  const bool bVideo = (packtype == (int32_t)PackType::video);
+  int64_t& lastDts = bVideo ? lastMuxVideoDts : lastMuxAudioDts;
+  if (lastDts != AVOX_NOVALID_PTS && dts != AVOX_NOVALID_PTS && dts < lastDts) {
+    ++dtsBackwardCount;
+    // 只在首次回退打完整信息, 之后仅累计 —— 一次 seek 就可能连续上百包, 全打会刷爆日志
+    if (dtsBackwardCount == 1) {
+      LOGFLF(LogLevel::warn, "mux dts backward, now:", dts, " pre:", lastDts,
+             " track:", bVideo ? "video" : "audio");
+    }
+  }
+  lastDts = dts;
+}
+
 void IOMuxer::pushPacket(PacketBufPtr packet) {
   // 无running()守卫: 本方法仅worker线程(onRunTask)调用, close后仍需排干
   // 队列残留包(离线快速转封装时尾部几十帧全在此), 丢弃会截短成片;
@@ -142,10 +156,17 @@ void IOMuxer::pushPacket(PacketBufPtr packet) {
       flushPendingAu();
       preBuffer = std::make_shared<PacketBuf>();
       preBuffer->form(*packet);
+      // 新 AU 起点才计入体检: 上面 append 分支是同帧多 slice(同 dts), 算不得新帧;
+      // 而此前被丢弃的包(dts<0 / 纯SEI / AUD)根本没交给 muxer, 也不该计入
+      noteMuxDts(packet->dts, (int32_t)PackType::video);
     }
   } else if (packType == PackType::audio || packType == PackType::aconfig) {
     // 音频与视频是不同stream, dts各自单调, 音频不需要冲视频AU
     AvoxPacket audioData = getPacket(packet);
+    if (packType == PackType::audio) {
+      // 配置包(aconfig)不是样本, 不参与 dts 单调性体检
+      noteMuxDts(packet->dts, (int32_t)PackType::audio);
+    }
     onPushPacket(audioData);
   }
 }
