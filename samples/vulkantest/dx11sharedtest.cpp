@@ -74,6 +74,7 @@ int main(int argc, char** argv) {
   int durationSec = argc > 2 ? atoi(argv[2]) : 10;
   const char* outDir = argc > 3 ? argv[3] : ".";
   int seekMs = argc > 4 ? atoi(argv[4]) : 0;  // 跳到运动段(片头静态测不出撕裂)
+  int dumpEverySec = argc > 5 ? atoi(argv[5]) : 0;  // >0: 每隔N秒落地整帧(地面真值取证)
   printf("video: %s, duration: %ds\n", video, durationSec);
   // ── 播放器: VK 离屏管线 + D3D11 共享输出 ──
   IMediaPlayer* mp = createMediaPlayer();
@@ -165,16 +166,23 @@ int main(int argc, char** argv) {
   const uint32_t H = desc.Height;
   const uint32_t rowBytes = desc.Width * 4;
   const size_t bufBytes = (size_t)rowBytes * H;
+  // 池>1: 句柄逐帧轮换 —— 按值缓存已开纹理, 新值单次尝试(同 AMD 防重试规矩)
+  uint64_t poolHandles[8] = {};
+  ID3D11Texture2D* poolTexs[8] = {};
+  int poolCacheCount = 0;
+  long long poolOpens = 0, poolSwitches = 0;
+  // 首开纹理入缓存: 轮换回绕/重建回访直接命中, 不重复 Open; 释放统一走缓存
+  poolHandles[0] = texHandle;
+  poolTexs[0] = texB;
+  poolCacheCount = 1;
   std::vector<uint64_t> refHash(H, 0), curHash(H, 0);       // ref=上一整帧
-  std::vector<uint64_t> candHash(H, 0);                     // 候选帧行哈希快照
   std::vector<uint8_t> refPixels(bufBytes, 0);              // prev dump 用像素
   std::vector<uint8_t> candPixels(bufBytes, 0);             // cand dump 用像素
-  std::vector<uint8_t> candSameRef(H, 0);                   // 候选行是否同旧帧
   bool hasRef = false;
-  bool hasCand = false;
-  int candSeq = 0;
-  long long nReads = 0, nSame = 0, nFull = 0, nCand = 0, nGarbage = 0;
+  long long nReads = 0, nSame = 0, nFull = 0, nTorn = 0;
   uint64_t fenceRegress = 0, lastFence = 0;
+  long long lastDumpMs = -1000000;
+  long long lastAssertMs = -1000000;
   auto tStart = std::chrono::steady_clock::now();
   auto tStats = tStart;
   int statsEpoch = 0;
@@ -188,6 +196,61 @@ int main(int argc, char** argv) {
       TranslateMessage(&msg);
       DispatchMessage(&msg);
     }
+    // 图重建(字幕加载/分辨率协商等)会重造输出层并丢失 dx11 声明 —— 与
+    // Unity/Godot 桥同款, 主循环周期性幂等重声明, 不只依赖启动期
+    if (elapsed >= lastAssertMs + 500) {
+      lastAssertMs = elapsed;
+      enableVkOutputDx11(sr);
+    }
+    // 逐帧轮换/重建句柄跟踪: 池>1 走缓存切换; 池=1 只在句柄变化(图重建)时
+    // 单次重开, 防读死纹理. 新句柄开成即重置参考帧(内容流换了, 旧参考必误判)
+    {
+      const uint64_t curHandle = getVkOutputDx11Handle(sr);
+      if (curHandle && curHandle != texHandle) {
+        int slot = -1;
+        for (int i = 0; i < poolCacheCount; ++i) {
+          if (poolHandles[i] == curHandle) {
+            slot = i;
+            break;
+          }
+        }
+        if (slot >= 0) {
+          texB = poolTexs[slot];
+          texHandle = curHandle;
+          poolSwitches++;
+          printf("[ev] t=%lldms switch-cached 0x%llx\n", elapsed,
+                 (unsigned long long)curHandle);
+        } else {
+          ID3D11Device1* d1 = nullptr;
+          ID3D11Texture2D* t = nullptr;
+          HRESULT ohr = E_NOINTERFACE;
+          if (SUCCEEDED(devB->QueryInterface(__uuidof(ID3D11Device1), (void**)&d1))) {
+            ohr = d1->OpenSharedResource1((HANDLE)(uintptr_t)curHandle,
+                                          __uuidof(ID3D11Texture2D), (void**)&t);
+            d1->Release();
+          }
+          if (SUCCEEDED(ohr) && t && poolCacheCount < 8) {
+            poolHandles[poolCacheCount] = curHandle;
+            poolTexs[poolCacheCount] = t;
+            poolCacheCount++;
+            poolOpens++;
+            texB = t;
+            texHandle = curHandle;
+            hasRef = false;  // 新内容流: 参考帧作废, 首读重新采纳
+            printf("[ev] t=%lldms open-new 0x%llx ref-reset\n", elapsed,
+                   (unsigned long long)curHandle);
+          } else if (SUCCEEDED(ohr) && t) {
+            // 缓存满: 只切不存(该值不再重开), 引用由 texB 持有到下次切换
+            texB = t;
+            texHandle = curHandle;
+            hasRef = false;
+          } else {
+            printf("pool handle open failed hr=0x%08lx handle=0x%llx\n", ohr,
+                   (unsigned long long)curHandle);
+          }
+        }
+      }
+    }
     ctxB->CopyResource(staging, texB);
     D3D11_MAPPED_SUBRESOURCE map = {};
     if (FAILED(ctxB->Map(staging, 0, D3D11_MAP_READ, 0, &map))) {
@@ -200,92 +263,84 @@ int main(int argc, char** argv) {
       if (fv < lastFence) fenceRegress++;  // 完成值回退=信号取号异常
       lastFence = fv;
     }
-    // 行哈希 + 与参考帧比对
+    // 行哈希 + 与参考帧比对; 撕裂判据=瞬态性: 变化读后立刻重读同一张纹理,
+    // 重读不同=写入进行中被读到(真撕裂), 重读相同=稳定合法帧(慢摇静态重叠
+    // 的合法新帧 matchFrac 0.35-0.7, 与撕裂同带, 阈值法不可分 — 09-23 教训)
     uint32_t sameRows = 0;
     for (uint32_t y = 0; y < H; ++y) {
       const uint8_t* row = (const uint8_t*)map.pData + (size_t)y * map.RowPitch;
       curHash[y] = hashRow(row, rowBytes);
       if (hasRef && curHash[y] == refHash[y]) sameRows++;
     }
-    const double matchFrac = hasRef ? (double)sameRows / H : 0.0;
-    if (!hasRef || matchFrac >= 0.999) {
-      // 首帧/同帧重复读: 首帧采纳为参考
+    if (!hasRef || sameRows == H) {
       nSame++;
       if (!hasRef) {
-        memcpy(refPixels.data(), map.pData, bufBytes);
         for (uint32_t y = 0; y < H; ++y) refHash[y] = curHash[y];
         hasRef = true;
       }
-    } else if (matchFrac < 0.35) {
-      // 新整帧: 先验证挂起候选(与新帧比对), 再采纳为参考
-      nFull++;
-      if (hasCand) {
-        hasCand = false;
-        uint32_t matchRef = 0, matchNew = 0;
-        for (uint32_t y = 0; y < H; ++y) {
-          if (candSameRef[y]) {
-            matchRef++;
-          } else {
-            const uint8_t* row =
-                (const uint8_t*)map.pData + (size_t)y * map.RowPitch;
-            if (hashRow(row, rowBytes) == candHash[y]) matchNew++;
-          }
-        }
-        // neither: 候选中与旧帧不同、也与随后新帧不同的行(既非混合也非静态)
-        const uint32_t matchNeither = H - matchRef - matchNew;
-        printf("[cand%03d verdict] old=%u new=%u neither=%u / %u rows, fence=%llu\n",
-               candSeq, matchRef, matchNew, matchNeither, H,
-               fenceB ? (unsigned long long)lastFence : 0ull);
-        if (matchNeither * 10 >= H) nGarbage++;
-        if (candSeq < 12) {  // 三联取证: prev(参考像素)/cand(快照)/next(本帧)
-          char p[512];
-          snprintf(p, sizeof(p), "%s/tear_cand%03d_prev.bmp", outDir, candSeq);
-          dumpBmp(refPixels.data(), desc.Width, H, rowBytes, p);
-          snprintf(p, sizeof(p), "%s/tear_cand%03d_cand.bmp", outDir, candSeq);
-          dumpBmp(candPixels.data(), desc.Width, H, rowBytes, p);
-          snprintf(p, sizeof(p), "%s/tear_cand%03d_next.bmp", outDir, candSeq);
-          dumpBmp((const uint8_t*)map.pData, desc.Width, H, map.RowPitch, p);
-        }
-        candSeq++;
-      }
-      memcpy(refPixels.data(), map.pData, bufBytes);
-      for (uint32_t y = 0; y < H; ++y) refHash[y] = curHash[y];
     } else {
-      // 部分行同旧帧: 撕裂候选(或高静态重叠的合法新帧, 看 dump 判读)
-      nCand++;
+      // 内容相对参考有变: 重读判瞬态
       memcpy(candPixels.data(), map.pData, bufBytes);
-      for (uint32_t y = 0; y < H; ++y) {
-        candSameRef[y] = (curHash[y] == refHash[y]) ? 1 : 0;
-        candHash[y] = curHash[y];
+      ctxB->Unmap(staging, 0);
+      ctxB->CopyResource(staging, texB);
+      D3D11_MAPPED_SUBRESOURCE remap = {};
+      if (FAILED(ctxB->Map(staging, 0, D3D11_MAP_READ, 0, &remap))) {
+        continue;
       }
-      hasCand = true;
+      uint32_t diffRows = 0;
+      for (uint32_t y = 0; y < H; ++y) {
+        const uint8_t* rrow = (const uint8_t*)remap.pData + (size_t)y * remap.RowPitch;
+        if (hashRow(rrow, rowBytes) != curHash[y]) diffRows++;
+      }
+      ctxB->Unmap(staging, 0);
+      if (diffRows * 20 >= H) {
+        // 真撕裂: 候选时刻的瞬态内容 vs 写完后的稳定内容
+        nTorn++;
+        if (nTorn <= 8) {
+          char p2[512];
+          snprintf(p2, sizeof(p2), "%s/torn%03d_torn.bmp", outDir, (int)nTorn);
+          dumpBmp(candPixels.data(), desc.Width, H, rowBytes, p2);
+          snprintf(p2, sizeof(p2), "%s/torn%03d_settled.bmp", outDir, (int)nTorn);
+          dumpBmp((const uint8_t*)remap.pData, desc.Width, H, remap.RowPitch, p2);
+        }
+        printf("[ev] t=%lldms TORN diffRows=%u/%u tex=0x%llx\n", elapsed,
+               diffRows, H, (unsigned long long)texHandle);
+        // 参考不动: 撕裂帧不采纳
+      } else {
+        // 稳定新帧: 采纳为参考
+        nFull++;
+        for (uint32_t y = 0; y < H; ++y) refHash[y] = curHash[y];
+      }
+      continue;  // 已 Unmap/处理完两张
     }
     ctxB->Unmap(staging, 0);
     // 5s 一行统计
     auto now = std::chrono::steady_clock::now();
     if (std::chrono::duration_cast<std::chrono::milliseconds>(now - tStats).count() >= 5000) {
       tStats = now;
-      printf("[stats %d] reads=%lld same=%lld full=%lld cand=%lld garbage=%lld "
+      printf("[stats %d] reads=%lld same=%lld full=%lld torn=%lld "
              "fence=%llu regress=%llu\n",
-             statsEpoch++, nReads, nSame, nFull, nCand, nGarbage,
+             statsEpoch++, nReads, nSame, nFull, nTorn,
              fenceB ? (unsigned long long)lastFence : 0ull,
              (unsigned long long)fenceRegress);
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
-  printf("---- result: reads=%lld full=%lld cand=%lld garbage=%lld "
-         "fence-regress=%llu ----\n",
-         nReads, nFull, nCand, nGarbage, (unsigned long long)fenceRegress);
-  if (nCand > 0) {
-    printf("TEAR CANDIDATES: %d dumped, inspect tear_cand*_{prev,cand,next}.bmp "
-           "(torn = cand is a time-mixed horizontal cut of prev/next)\n",
-           candSeq < 12 ? candSeq : 12);
+  printf("---- result: reads=%lld full=%lld torn=%lld "
+         "fence-regress=%llu pool-opens=%lld pool-switches=%lld ----\n",
+         nReads, nFull, nTorn, (unsigned long long)fenceRegress,
+         poolOpens, poolSwitches);
+  if (nTorn > 0) {
+    printf("TEARS: %lld (transient re-read verified), inspect torn*_*.bmp\n", nTorn);
   }
-  bool pass = nReads > 0 && nFull >= 3 && nCand == 0 && nGarbage == 0;
-  printf(pass ? "PASS\n" : (nCand > 0 || nGarbage > 0 ? "TEAR-SUSPECT\n" : "FAIL\n"));
+  bool pass = nReads > 0 && nFull >= 3 && nTorn == 0;
+  printf(pass ? "PASS\n" : (nTorn > 0 ? "TEAR-DETECTED\n" : "FAIL\n"));
   if (fenceB) fenceB->Release();
   staging->Release();
-  texB->Release();
+  // texB 始终指向缓存内(或未入缓存的泄漏路径不重复释放), 统一释放缓存
+  for (int i = 0; i < poolCacheCount; ++i) {
+    if (poolTexs[i]) poolTexs[i]->Release();
+  }
   ctxB->Release();
   devB->Release();
   disableVkOutputDx11(sr);
