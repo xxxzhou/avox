@@ -48,6 +48,12 @@ class VideoTrack : public TAVTrack<VideoFramePtr>,
 
   int32_t maxDropCount = 5;
   int64_t dropDuration = 100;
+  // 帧入口钳位游标: B帧重排输出/容器爆发戳会让帧pts倒跳或过密
+  int64_t lastInPts = AVOX_NOVALID_PTS;
+  // 钳位标称帧距, onVideoDesc按流fps计算(解码器配置优先, IO元数据兜底)
+  int64_t nominalFrameMs = 40;
+  // 帧入口单调网格钳位, 倒跳/过密时按标称帧距续格
+  void restampFramePts(int64_t& pts);
 
  public:
   RingBuffer<VideoFramePtr>& getFrameQueue() { return frameQueue; }

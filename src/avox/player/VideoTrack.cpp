@@ -68,6 +68,9 @@ void VideoTrack::onVideoDesc() {
   }
   windowRender->setFPS(dparams.fps);
   dropDuration = (int32_t)(1000.0 / windowRender->getFPS()) * 2;
+  // 钳位步长用流自身fps, 与渲染器解耦(渲染侧fps可能被改写)
+  double clampFps = dparams.fps > 1.0 ? dparams.fps : srcDesc.fps;
+  nominalFrameMs = clampFps > 1.0 ? (int64_t)(1000.0 / clampFps) : 40;
   // 字幕画布坐标系 = srcDesc(与 attachSubtitle 的轨通道 storage 同源);
   // 不用 dparams——部分硬解路径上报的高度非视频真实高度(如 1080p 报 270),
   // 会导致文本字号按错的比例缩放
@@ -97,20 +100,38 @@ void VideoTrack::onHdrMeta(const HdrMeta& hdrMeta) {
   }
 }
 
+// B帧重排输出会把包级改写过的pts按乱序吐出(best_effort_timestamp取自
+// dts链), 容器爆发戳(RM成对1ms)则过密; 两者都让duration变负/过小,
+// 触发sync jump并成对背靠背渲染。按标称帧距续格, 真实大间隔不受影响
+void VideoTrack::restampFramePts(int64_t& pts) {
+  if (pts == AVOX_NOVALID_PTS) {
+    return;
+  }
+  if (lastInPts != AVOX_NOVALID_PTS &&
+      pts < lastInPts + std::max<int64_t>(1, nominalFrameMs / 2)) {
+    pts = lastInPts + nominalFrameMs;
+  }
+  lastInPts = pts;
+}
+
 void VideoTrack::onDecode(const YUVFrame& frame) {
   // 压入Frame队列,这里队列如果满了，会一直阻塞解码线程
   // Packet不能覆盖，但是帧应该是覆盖过去
   // 直播应该是覆盖，而本地播放应该是等待？
   // 因为直播过来IO与播放应该是相同的，而本地IO会很快
-  frameQueue.enqueueWait<YUVFrame>(frame, copyBufHost);
+  YUVFrame out = frame;
+  restampFramePts(out.pts);
+  frameQueue.enqueueWait<YUVFrame>(out, copyBufHost);
   // frameQueue.enqueue<YUVFrame>(frame, copyBufHost, true);
-  logDecode(frame.pts, frame.keyFrame);
+  logDecode(out.pts, out.keyFrame);
 }
 
 void VideoTrack::onDecodeGpu(const GpuFrame& frame) {
-  frameQueue.enqueueWait<GpuFrame>(frame, copyBufGpu);
+  GpuFrame out = frame;
+  restampFramePts(out.pts);
+  frameQueue.enqueueWait<GpuFrame>(out, copyBufGpu);
   // frameQueue.enqueue<GpuFrame>(frame, copyBufGpu, true);
-  logDecode(frame.pts, frame.keyFrame);
+  logDecode(out.pts, out.keyFrame);
 }
 
 void VideoTrack::onVideoComplete() {
@@ -341,6 +362,8 @@ void VideoTrack::flush() {
   frameQueue.clear();
   clock->reset();
   bResetBase = true;
+  // 钳位游标随队列复位, seek回跳的第一帧不能被续格前推
+  lastInPts = AVOX_NOVALID_PTS;
   // 记录flush
   PBMediaAction pb = {};
   pb.mediaObject = MediaObject::track;
