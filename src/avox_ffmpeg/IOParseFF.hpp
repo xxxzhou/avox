@@ -47,6 +47,8 @@ protected:
 private:
   // 解析IO流媒体格式
   bool parseStream(int32_t streamId, AVCodecParameters *codecpar);
+  // avformat_open_input(重)打开, fmtCtx 接管; FFmpeg9 保底补查须重开, 不能同上下文二次探测
+  int reopenInput();
   // PGS 位图字幕解码(§3.6): 选中该轨时 IO 循环喂包, 出 RGBA 画布
   bool parsePgsFrame(int32_t streamId, const AVPacket* pkt, int64_t ptsMs);
   bool parseH26xConfig(int32_t streamId, const uint8_t *extradata, int32_t size,

@@ -267,8 +267,10 @@ bool IOParseFF::parsePgsFrame(int32_t streamId, const AVPacket* pkt,
   return true;
 }
 
-void IOParseFF::onRunTask() {
-  // 解析IO流媒体格式
+// 重建探测字典并 avformat_open_input(fmtCtx 接管), 返回 ffmpeg 错误码(0=成功)。
+// FFmpeg9 起 find_stream_info 返回即释放各流探测态(sti->info), 同上下文二次调用踩空指针,
+// fast probe 保底补查只能整链重开, 故从 onRunTask 抽出复用。
+int IOParseFF::reopenInput() {
   AVFormatContext* temp = avformat_alloc_context();
   temp->interrupt_callback.callback = decode_interrupt_cb;
   temp->interrupt_callback.opaque = this;
@@ -315,13 +317,22 @@ void IOParseFF::onRunTask() {
   av_dict_set(&dict, "http_persistent", httpPersistent ? "1" : "0", 0);
   // 强制重复发送 SPS/PPS
   // av_dict_set(&dict, "repeat_headers", "1", 0);
-  // 起播耗时拆解 (a02-T1): open_input 与 find_stream_info 分段
-  const auto ioOpenStart = std::chrono::steady_clock::now();
   int ret = avformat_open_input(&temp, url.c_str(), nullptr, &dict);
   av_dict_free(&dict);
   if (ret < 0) {
     AVOX_FFMEPG_LOG(ret, "avformat_open_input failed")
     avformat_free_context(temp);
+    return ret;
+  }
+  fmtCtx = getUniquePtr(temp);
+  return 0;
+}
+
+void IOParseFF::onRunTask() {
+  // 起播耗时拆解 (a02-T1): open_input 与 find_stream_info 分段
+  const auto ioOpenStart = std::chrono::steady_clock::now();
+  int ret = reopenInput();
+  if (ret < 0) {
     dispatch(&IAVSourceOb::onError, ffIoError(ret), "open input failed");
     return;
   }
@@ -329,7 +340,6 @@ void IOParseFF::onRunTask() {
       std::chrono::duration_cast<std::chrono::milliseconds>(
           std::chrono::steady_clock::now() - ioOpenStart)
           .count();
-  fmtCtx = getUniquePtr(temp);
   // 检查是否有全局头,相应的SPS/VPS/ATDS保存在extradata里
   if (fmtCtx->iformat->flags & AVFMT_GLOBALHEADER) {
   }
@@ -345,7 +355,6 @@ void IOParseFF::onRunTask() {
       strstr(fmtName, "matroska") || strstr(fmtName, "avi") ||
       strstr(fmtName, "flv");
   const bool bFastProbe = bLocalUrl && bIndexedContainer;
-  const int64_t kDefaultProbeSize = 5000000;  // AVOption 默认 5MB
   if (bFastProbe) {
     fmtCtx->probesize = 1024 * 1024;          // 1MB
     fmtCtx->max_analyze_duration = 1000000;   // 1s(微秒)
@@ -376,8 +385,12 @@ void IOParseFF::onRunTask() {
     if (bNeedFullProbe) {
       LOGFLF(LogLevel::info,
              "[metrics] fast probe insufficient, fallback full probe");
-      fmtCtx->probesize = kDefaultProbeSize;
-      fmtCtx->max_analyze_duration = 0;  // 0=默认自动
+      // FFmpeg9 探测态已随上次 find_stream_info 释放: 重开上下文按默认参数整探
+      fmtCtx.reset();
+      if ((ret = reopenInput()) < 0) {
+        dispatch(&IAVSourceOb::onError, ffIoError(ret), "open input failed");
+        return;
+      }
       if ((ret = avformat_find_stream_info(fmtCtx.get(), nullptr)) < 0) {
         AVOX_FFMEPG_LOG(ret, "avformat_find_stream_info fallback failed");
         dispatch(&IAVSourceOb::onError, ffIoError(ret), "open stream failed");
@@ -624,10 +637,8 @@ void IOParseFF::onRunTask() {
     if (packType == PackType::subtitles && refPkt->pts == AV_NOPTS_VALUE) {
       continue;
     }
-    // 时间全转成毫秒。`AV_NOPTS_VALUE` 必须原样保留, 不能参与换算:
-    // av_rescale_q(AV_NOPTS_VALUE) 会算出一个"看似普通"的垃圾值(实测 INT64_MIN 被改成
-    // INT64_MIN+1), 下游只能靠"巨大负值"去猜它是无效值 —— 是运气不是设计。
-    // 字幕分支(:624)此前已做同样防护, 这里把 video/audio + duration 补齐。
+    // 时间全转成毫秒; `AV_NOPTS_VALUE` 原样保留 —— av_rescale_q 会把它算成
+    // "看似普通"的垃圾值(实测 INT64_MIN→INT64_MIN+1), 下游只能靠猜。
     if (refPkt->pts != AV_NOPTS_VALUE) {
       refPkt->pts = av_rescale_q(refPkt->pts, st->time_base, {1, 1000});
     }
