@@ -18,6 +18,7 @@ void Dx11SharedTex::release() {
   interopTex.Reset();
   fence.Reset();
   interopFence.Reset();
+  fenceSignalVal.store(0);
   context4.Reset();
   interopContext.Reset();
   interopContext4.Reset();
@@ -33,6 +34,21 @@ void Dx11SharedTex::releaseHandles() {
   if (interopFenceHandle) {
     CloseHandle(interopFenceHandle);
     interopFenceHandle = nullptr;
+  }
+}
+
+uint64_t Dx11SharedTex::nextFenceSignal(ID3D11Fence* f) {
+  // max(计数器, 完成值)+1: 完成值兜底外部首次打开/他方已推进的场景,
+  // 计数器保证连续 signal 严格逐帧 +1(完成值会滞后于提交值)。
+  const uint64_t completed = f->GetCompletedValue();
+  uint64_t cur = fenceSignalVal.load(std::memory_order_relaxed);
+  for (;;) {
+    const uint64_t base = cur < completed ? completed : cur;
+    if (fenceSignalVal.compare_exchange_weak(cur, base + 1,
+                                             std::memory_order_relaxed,
+                                             std::memory_order_relaxed)) {
+      return base + 1;
+    }
   }
 }
 
@@ -183,12 +199,12 @@ void Dx11SharedTex::copyTexture(ID3D11Texture2D* destTex, bool shared2tex) {
   if (shared2tex) {
     if (currentFence % 2 == AVOX_DX11_MUTEX_READ) {
       context4->CopyResource(destTex, texture->texture.Get());
-      context4->Signal(fence.Get(), currentFence + 1);
+      context4->Signal(fence.Get(), nextFenceSignal(fence.Get()));
     }
   } else {
     if (currentFence % 2 == AVOX_DX11_MUTEX_WRITE) {
       context4->CopyResource(texture->texture.Get(), destTex);
-      context4->Signal(fence.Get(), currentFence + 1);
+      context4->Signal(fence.Get(), nextFenceSignal(fence.Get()));
     }
   }
 }
@@ -214,7 +230,8 @@ void Dx11SharedTex::interopTexture(IRenderContext* renderContext,
         //  log(LogLevel::info, "x1:", currentFence);
         interopContext->CopyResource(dxtexture, interopTex.Get());
         HRESULT hr =
-            interopContext4->Signal(interopFence.Get(), currentFence + 1);
+            interopContext4->Signal(interopFence.Get(),
+                                    nextFenceSignal(interopFence.Get()));
       }
     } else {
       // 设计成不等待,二种状态
@@ -222,9 +239,10 @@ void Dx11SharedTex::interopTexture(IRenderContext* renderContext,
       if (currentFence % 2 == AVOX_DX11_MUTEX_WRITE) {
         //  log(LogLevel::info, "x2:", currentFence);
         interopContext->CopyResource(interopTex.Get(), dxtexture);
-        // 从结果上来看,设定的fence value不能少于本身
+        // 设定值由提交侧计数器取号: 严格在上一个提交值之上 +1, 不会低于本身
         HRESULT hr =
-            interopContext4->Signal(interopFence.Get(), currentFence + 1);
+            interopContext4->Signal(interopFence.Get(),
+                                    nextFenceSignal(interopFence.Get()));
         if (FAILED(hr)) {
           // AVOX_WIN_LOG(hr, "shard texture signal failed");
         }
@@ -288,8 +306,7 @@ void Dx11SharedTex::signalFence() {
   if (!fence || !context4) {
     return;
   }
-  uint64_t currentFence = fence->GetCompletedValue();
-  context4->Signal(fence.Get(), currentFence + 1);
+  context4->Signal(fence.Get(), nextFenceSignal(fence.Get()));
 }
 
 bool Dx11SharedTex::canInteropRead() {
@@ -312,8 +329,8 @@ void Dx11SharedTex::signalInteropFence() {
   if (!interopFence || !interopContext4) {
     return;
   }
-  uint64_t currentFence = interopFence->GetCompletedValue();
-  HRESULT hr = interopContext4->Signal(interopFence.Get(), currentFence + 1);
+  HRESULT hr = interopContext4->Signal(interopFence.Get(),
+                                       nextFenceSignal(interopFence.Get()));
   if (FAILED(hr)) {
     AVOX_WIN_LOG(hr, "shared texture interop signal failed");
   }

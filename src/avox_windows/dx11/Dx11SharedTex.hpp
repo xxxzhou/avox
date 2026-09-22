@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Dx11Resource.hpp"
+#include <atomic>
 
 namespace avox {
 
@@ -51,6 +52,11 @@ class Dx11SharedTex : public IDx11Context {
   MComPtr<ID3D11DeviceContext4> interopContext4 = nullptr;
   //
   ImageFormat vformat = {};
+
+  // fence 的提交侧单调计数: Signal 基准不能取 GetCompletedValue()(GPU 落后时
+  // 多帧会重复 signal 同一值, 逐帧计数退化)。fence 与 interopFence 是同一底层
+  // fence 的两个设备侧视图, 共用这一个计数取号。
+  std::atomic<uint64_t> fenceSignalVal{0};
 
  protected:
   // 释放所有资源（可被子类重写）
@@ -111,6 +117,8 @@ class Dx11SharedTex : public IDx11Context {
   void updateInteropDevice(ID3D11Device* device);
   // 释放共享句柄（保留纹理等资源）
   void releaseHandles();
+  // 给底层 fence 取下一个提交侧单调递增值并占号
+  uint64_t nextFenceSignal(ID3D11Fence* f);
 };
 
 bool copySharedToTexture(IDx11Context* context, Dx11SharedTex* sharedTex);
