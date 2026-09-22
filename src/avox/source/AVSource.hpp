@@ -177,6 +177,9 @@ class AVOX_EXPORT AVSource : public BaseSource,
   std::string rtspTransport = "tcp";
   // HTTP 连接复用(keep-alive), 默认关; io.http.persistent 配置
   int32_t httpPersistent = 0;
+  // HTTP 自定义请求头(CRLF 分隔)与 UA 覆盖; io.http.headers / io.http.useragent
+  std::string httpHeaders;
+  std::string httpUserAgent;
   bool bLogPacket = false;
 
  public:

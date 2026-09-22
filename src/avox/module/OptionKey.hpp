@@ -32,6 +32,11 @@ namespace avox {
 #define AVOX_MP_SYNC_TYPE_INT "mp.synctype"
 // IMediaPlayer里的getOption设置的key
 #define AVOX_MP_IO_TIMEOUT_MS_INT "io.timeout.ms"
+// HTTP 自定义请求头, CRLF 分隔的 "Key: value" 行(云盘直链要带
+// UA/Access-Token 的源用; 空=不下发)
+#define AVOX_MP_IO_HTTP_HEADERS_STR "io.http.headers"
+// HTTP User-Agent 覆盖(FFmpeg 默认 Lavf/x.y): 云盘直链校验 UA 的源用
+#define AVOX_MP_IO_HTTP_USERAGENT_STR "io.http.useragent"
 // ffmpeg拉流可以设置成udp tcp
 #define AVOX_MP_IO_RTSP_TRANSPORT_STR "io.rtsp.transport"
 // RTSP拉流倍速(点播/NVR回放源,PLAY带Scale;仅zlmediakit IO生效,直播源无效)

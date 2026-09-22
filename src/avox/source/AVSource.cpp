@@ -120,6 +120,14 @@ void AVSource::onOptionChange(const char* key, ArgType type) {
   } else if (equalsIgnoreCase(key, AVOX_MP_IO_HTTP_PERSISTENT_INT)) {
     httpPersistent = option->getInt(key);
     LOGFLF(LogLevel::info, "option:", key, " change:", httpPersistent);
+  } else if (equalsIgnoreCase(key, AVOX_MP_IO_HTTP_HEADERS_STR)) {
+    httpHeaders = option->getString(key);
+    // 头里可能带鉴权信息(Access-Token 等), 不落日志值
+    LOGFLF(LogLevel::info, "option:", key, " change: len=",
+           (int32_t)httpHeaders.size());
+  } else if (equalsIgnoreCase(key, AVOX_MP_IO_HTTP_USERAGENT_STR)) {
+    httpUserAgent = option->getString(key);
+    LOGFLF(LogLevel::info, "option:", key, " change:", httpUserAgent);
   } else if (equalsIgnoreCase(key, AVOX_LOG_SOURCE_INPACKET_BOOL)) {
     bLogPacket = option->getBool(key);
     LOGFLF(LogLevel::info, "option:", key, " change:", bLogPacket);

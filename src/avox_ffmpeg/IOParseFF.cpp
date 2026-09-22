@@ -315,6 +315,14 @@ int IOParseFF::reopenInput() {
   // discard 视频后音频采样在文件里被视频数据隔开, 每 seek 一次 range 请求,
   // 短连接下就是一次 TCP+TLS 握手, 公网上开销不可忽略
   av_dict_set(&dict, "http_persistent", httpPersistent ? "1" : "0", 0);
+  // 云盘直链等校验 UA/携带鉴权头的源(io.http.useragent / io.http.headers);
+  // 头块为 CRLF 分隔的 "Key: value" 行, 仅 http 协议消费, 本地文件无感
+  if (!httpUserAgent.empty()) {
+    av_dict_set(&dict, "user_agent", httpUserAgent.c_str(), 0);
+  }
+  if (!httpHeaders.empty()) {
+    av_dict_set(&dict, "headers", httpHeaders.c_str(), 0);
+  }
   // 强制重复发送 SPS/PPS
   // av_dict_set(&dict, "repeat_headers", "1", 0);
   int ret = avformat_open_input(&temp, url.c_str(), nullptr, &dict);
