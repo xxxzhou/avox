@@ -1236,11 +1236,26 @@ void MediaPlayer::collectStatus() {
     return;
   }
   bAVAlign = true;
-  int64_t ioDiff = std::abs(audioStatus.ioTime - videoStatus.ioTime);
+  // 音频无效pts透传时ioTime停在最后一个真实pts(RMVB约2s一个), 直接对比
+  // 会误判不对齐; 改比解码输出时间轴(音频侧为nextPts修正值), 任一侧
+  // 还没出解码帧时跳过本轮IO对齐判定(不与ioTime混比, 参考点不同)
+  int64_t ioDiff = 0;
+  if (audioStatus.decodeOutTime != AVOX_NOVALID_PTS &&
+      videoStatus.decodeOutTime != AVOX_NOVALID_PTS) {
+    ioDiff =
+        std::abs(audioStatus.decodeOutTime - videoStatus.decodeOutTime);
+  }
+  // 渲染时钟联判: 音频无效pts透传后两条队列深度可长期差2-4s(包数封顶
+  // 粒度不同), 解码位对比会贴阈值抖动甚至锁死关同步; 渲染时钟差才是
+  // 播放对齐的真相, 任一渲染时钟未知(启动期)不判
+  bool bRenderKnown = audioStatus.renderTime != AVOX_NOVALID_PTS &&
+                      videoStatus.renderTime != AVOX_NOVALID_PTS;
   int64_t renderDiff =
-      std::abs(audioStatus.renderTime - videoStatus.renderTime);
+      bRenderKnown
+          ? std::abs(audioStatus.renderTime - videoStatus.renderTime)
+          : 0;
   // 音频与视频是否对齐,IO包与渲染时间都在delayMs内
-  if (ioDiff > delayMs * 2) {
+  if (ioDiff > delayMs * 2 && bRenderKnown && renderDiff > delayMs) {
     bAVAlign = false;
     // 自动调整的速度，在不对齐的情况下，恢复1.0x
     if (cspeed == 1.0 && clock->getSpeed() != 1.0) {

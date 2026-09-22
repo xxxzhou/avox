@@ -53,6 +53,7 @@ void AudioTrack::onAudioDesc() {
   assert(frameSize > 0);
   curFrame.setSize(frameSize);
   curFrame.setPts(AVOX_NOVALID_PTS);
+  nextPts = AVOX_NOVALID_PTS;
   // 渲染器
   renderTask->start(this);
 }
@@ -66,7 +67,21 @@ void AudioTrack::onDecode(const AvoxAFrame& frame) {
   uint8_t* data = frame.buffer.data;
   int32_t size = frame.buffer.size;
   // frame的开始pts
-  int64_t spts = frame.pts;
+  int64_t spts = frame.pts;  
+  // RMVB/cook 在无AVOX_NOVALID_PTS时
+  // 重新锚定采样数才是唯一准确的时间度量。  
+  if (nextPts != AVOX_NOVALID_PTS) {
+    if (spts != AVOX_NOVALID_PTS &&
+        std::abs(spts - nextPts) > AVOX_NOSYNC_THRESHOLD) {
+      // 真实pts且偏差大才重锚, 无效pts沿用采样推进的时间轴
+      nextPts = spts;
+    } else {
+      spts = nextPts;
+    }
+  }
+  if (spts != AVOX_NOVALID_PTS) {
+    nextPts = spts + getAudioFrameMs(decodeDesc, size);
+  }
   // 检查音频数据量与PTS间隔时长
   if (!startCheck || spts < checkPts ||
       std::abs(curFrame.getPts() - spts) > checkInterval / 2) {
@@ -100,7 +115,7 @@ void AudioTrack::onDecode(const AvoxAFrame& frame) {
   if (mediaPlayer) {
     SubtitleView* subtitleView = mediaPlayer->getSubtitleView();
     if (subtitleView) {
-      subtitleView->inputSpeech(frame.buffer, frame.pts);
+      subtitleView->inputSpeech(frame.buffer, spts);
     }
   }
   logDecode(spts, size);
@@ -238,6 +253,7 @@ void AudioTrack::flush() {
   //
   curFrame.clear();
   curFrame.setPts(AVOX_NOVALID_PTS);
+  nextPts = AVOX_NOVALID_PTS;
   startCheck = false;
   checkDataSize = 0;
   // 记录flush
@@ -250,6 +266,7 @@ void AudioTrack::flush() {
 
 void AudioTrack::updateSeekTime(int64_t seekTime) {
   curFrame.setPts(seekTime);
+  nextPts = seekTime;
   clock->update(seekTime);
 }
 

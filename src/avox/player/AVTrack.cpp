@@ -87,8 +87,10 @@ void AVTrack::pushPacket(const AvoxPacket& data) {
   packetQueue.enqueueWait<AvoxPacket>(data, copyBuf);
   // 显示小bit
   rateCounter.record(data.data.size * 8);
-  // 记录IO线程输入PTS
-  queueStatus.ioTime = data.pts;
+  // 记录IO线程输入PTS; 无效pts透传时保持上一个有效值, 供对齐检查
+  if (data.pts != AVOX_NOVALID_PTS) {
+    queueStatus.ioTime = data.pts;
+  }
   queueStatus.queueSize = packetQueue.size();
   // 记录码率
   if (mpPingback->canLogBitrate() && rateCounter.bTrigger()) {
@@ -100,8 +102,10 @@ void AVTrack::pushPacket(const AvoxPacket& data) {
 }
 
 void AVTrack::pullPacket(PacketBufPtr packet) {
-  // 记录解码器输入PTS
-  queueStatus.decodeInTime = packet->pts;
+  // 记录解码器输入PTS; 无效pts不覆盖, 保持最后一个有效值
+  if (packet->pts != AVOX_NOVALID_PTS) {
+    queueStatus.decodeInTime = packet->pts;
+  }
   queueStatus.queueSize = packetQueue.size();
 }
 

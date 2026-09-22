@@ -6,6 +6,10 @@
 
 namespace avox {
 
+// 异常PTS阈值: -1000000000(约11天), 合法的流不会出现这么大的负值;
+// ffmpeg拉流可能出现特别小的值如-102481911520608620,会打穿下游
+constexpr int64_t kInvalidPtsThreshold = -1000000000LL;
+
 AVSource::AVSource() {
   videoInfo.type = TrackType::video;
   audioInfo.type = TrackType::audio;
@@ -352,10 +356,8 @@ void AVSource::singleVideo(AvoxPacket& packet) {
 }
 
 bool AVSource::reviseInvalidPts(AvoxPacket& packet, TrackInfos& info) {
-  // 使用 -1000000000 (约11天) 作为阈值, 通常合法的流不会出现这么大的负值
-  // ffmpeg拉流,可能出现特别小的值如-102481911520608620,可以导致android硬解器出错
-  const int64_t INVALID_PTS_THRESHOLD = -1000000000LL;
-  if (packet.pts < INVALID_PTS_THRESHOLD) {
+  // 仅视频进入: 垃圾/NOPTS按fps递推合成; 音频在alignPacketPts归一为NOPTS透传
+  if (packet.pts < kInvalidPtsThreshold) {
     // FFmpeg解封装HLS时, 部分I帧组(VPS/SPS/PPS/IDR)的PTS/DTS是垃圾值
     // (如-102481911520608620), zlmediakit拉流无此问题
     // 修正为prePts+1, 同一帧的多个NAL(连续invalid pts)共享同一个修正值,
@@ -364,7 +366,7 @@ bool AVSource::reviseInvalidPts(AvoxPacket& packet, TrackInfos& info) {
     int64_t invalidDts = packet.dts;
     if (!info.tracks.empty()) {
       auto& track = info.tracks[packet.index];
-      // 合成帧时长: 视频按轨道fps, 无fps信息/音频给40ms保底
+        // 合成帧时长: 视频按轨道fps, 无fps信息给40ms保底
       int64_t frameDur = 40;
       // 同帧共享包数上限: h264/h265一帧可拆出参数集组(SPS/PPS/IDR=3包);
       // 无nalu结构编码(mpeg1/2/4,wmv,rv)每包即整帧, 共享会造成时间戳翻倍
@@ -396,7 +398,7 @@ bool AVSource::reviseInvalidPts(AvoxPacket& packet, TrackInfos& info) {
     } else {
       packet.pts = 0;
     }
-    if (packet.dts < INVALID_PTS_THRESHOLD) {
+    if (packet.dts < kInvalidPtsThreshold) {
       packet.dts = packet.pts;
     }
     LOGFLF(LogLevel::info, "invalid pts:", invalidPts,
@@ -418,7 +420,14 @@ void AVSource::alignPacketPts(AvoxPacket& packet) {
   if (type == PackType::video || type == PackType::vconfig) {
     reviseInvalidPts(packet, videoInfo);
   } else if (type == PackType::audio || type == PackType::aconfig) {
-    reviseInvalidPts(packet, audioInfo);
+    // 音频不合成时间: 源层无法知道包时长, 垃圾值归一为NOPTS透传,
+    // 无效pts由AudioTrack按实际解码采样数推进(nextPts)
+    if (packet.pts < kInvalidPtsThreshold) {
+      packet.pts = AVOX_NOVALID_PTS;
+    }
+    if (packet.dts < kInvalidPtsThreshold) {
+      packet.dts = AVOX_NOVALID_PTS;
+    }
   }
   // 检测HLS分片重叠的重复GOP, 命中则丢弃该包(不做后续基准/同步/prePts更新)
   if (checkDupGop(packet)) {
@@ -449,7 +458,9 @@ void AVSource::alignPacketPts(AvoxPacket& packet) {
              "no keyframe flag in 50 packets, use first pts as base:",
              videoInfo.basePts);
     }
-  } else if (type == PackType::audio && audioInfo.basePts == AVOX_NOVALID_PTS) {
+  } else if (type == PackType::audio &&
+             audioInfo.basePts == AVOX_NOVALID_PTS &&
+             packet.pts != AVOX_NOVALID_PTS) {
     // 音频如果在有视频的情况下，以视频关键帧后包为基准
     if (videoInfo.trackSize > 0) {
       if (videoInfo.basePts != AVOX_NOVALID_PTS) {
@@ -494,7 +505,9 @@ void AVSource::alignPacketPts(AvoxPacket& packet) {
     }
     // log(LogLevel::info, "video pts:", packet.pts, " dts:", packet.dts);
   } else if (type == PackType::audio || type == PackType::aconfig) {
-    if (audioInfo.basePts != AVOX_NOVALID_PTS) {
+    // 无效pts不更新prePts, 保持最后一个真实值供跳变检测与position
+    if (audioInfo.basePts != AVOX_NOVALID_PTS &&
+        packet.pts != AVOX_NOVALID_PTS) {
       audioInfo.tracks[packet.index].prePts = packet.pts;
     }
   }
