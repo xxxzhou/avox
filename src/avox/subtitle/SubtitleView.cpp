@@ -62,9 +62,12 @@ void SubtitleView::checkWindowRender() {
     pushedSlot = Slot::none;
     pushCanvasTransform();
   } else if (!bShow && canvasLayer) {
-    disableRenderCanvas(windowRender);
-    canvasLayer = nullptr;
-    lastSeq = 0;
+    // 粘性层: 播放期摘/挂层都会全图重建(VK 设备资源再建在部分驱动上会
+    // 死锁, 0923 内封→外挂切换崩), 空窗只清内容不清层
+    if (lastSeq != 0) {
+      canvasLayer->clearCanvas();
+      lastSeq = 0;
+    }
   }
 }
 
@@ -293,52 +296,61 @@ void SubtitleView::closeSubtitle() {
 // ---- 轨槽通道 ----
 
 bool SubtitleView::openTrackChannel() {
-  if (overlay) {
-    return true;
+  {
+    std::lock_guard<std::mutex> lock(mtx);
+    if (overlay) {
+      return true;
+    }
   }
   // 未装插件 → create 返回 nullptr → 降级为无字幕轨(不崩)
-  overlay = AvoxManager::Get().assOverlayHub.create("libass");
-  if (!overlay) {
+  IAssOverlay* created = AvoxManager::Get().assOverlayHub.create("libass");
+  if (!created) {
     LOGFLF(LogLevel::info, "subtitle view: no libass plugin, track off");
     return false;
   }
-  if (!overlay->init(storageW, storageH)) {
-    delete overlay;
-    overlay = nullptr;
+  if (!created->init(storageW, storageH)) {
+    delete created;
     return false;
   }
   // 轨级样式覆盖补发(a01-T3): 建通道前设置的值在 init 后生效
-  overlay->setStyleScale(assScale.load(std::memory_order_relaxed));
+  created->setStyleScale(assScale.load(std::memory_order_relaxed));
   {
     std::lock_guard<std::mutex> lock(assStyleMtx);
-    overlay->setStyleFont(assFontFamily.c_str());
+    created->setStyleFont(assFontFamily.c_str());
   }
+  // 发布走 mtx: 渲染/IO 线程锁内读 overlay 指针
+  std::lock_guard<std::mutex> lock(mtx);
+  if (overlay) {
+    delete created;
+    return true;
+  }
+  overlay = created;
   LOGFLF(LogLevel::info, "subtitle view: track channel open storage:",
          storageW, "x", storageH);
   return true;
 }
 
 void SubtitleView::closeTrackChannel() {
+  // 锁内完成全部状态摘除(trackLoaded/overlay 指针), 锁外析构: 渲染/IO 线程
+  // 都是锁内解引用 overlay, 摘除后不可能再碰已 shutdown/delete 的对象
+  IAssOverlay* dead = nullptr;
   {
     std::lock_guard<std::mutex> lock(mtx);
     chunks.clear();
-  }
-  if (overlay) {
-    overlay->shutdown();
-    delete overlay;
-    overlay = nullptr;
-  }
-  trackLoaded = false;
-  {
-    std::lock_guard<std::mutex> lock(mtx);
     pgsFrames.clear();
+    lastPgsSeq = 0;
+    trackLoaded = false;
+    dead = overlay;
+    overlay = nullptr;
+    lastSeq = 0;
   }
-  lastPgsSeq = 0;
-  if (canvasLayer && windowRender) {
-    disableRenderCanvas(windowRender);
-    canvasLayer = nullptr;
+  if (dead) {
+    dead->shutdown();
+    delete dead;
   }
-  lastSeq = 0;
+  // 画布层摘除不在这里做: 播放器线程碰 disableRenderCanvas/图重建旗标会与
+  // 渲染线程的 resetGraph 互踩(0923 内封→外挂切换崩)。checkWindowRender
+  // 每帧按胜者槽位重算 bShow, 下一帧自会摘/挂
 }
 
 bool SubtitleView::loadTrack(const char* extradata, int32_t size) {
@@ -374,7 +386,9 @@ bool SubtitleView::loadTextFile(const char* path) {
   if (!path) {
     return false;
   }
-  closeFileContent();
+  // 持 mtx 解析: 渲染线程锁内读 subtitleFile, 不隔离则 items 重建期即 UAF
+  std::lock_guard<std::mutex> lock(mtx);
+  closeFileContentUnlocked();
   fileEnabled = subtitleFile.loadFile(path);
   return fileEnabled;
 }
@@ -408,6 +422,7 @@ void SubtitleView::setAssScale(float scale) {
   }
   assScale.store(scale, std::memory_order_relaxed);
   // overlay 的 setStyleScale 在 plugin 侧即刻生效; 无插件时 openTrackChannel 补发
+  std::lock_guard<std::mutex> lock(mtx);
   if (overlay) {
     overlay->setStyleScale(scale);
   }
@@ -418,11 +433,16 @@ void SubtitleView::setAssFont(const char* family) {
     std::lock_guard<std::mutex> lock(assStyleMtx);
     assFontFamily = family != nullptr ? family : "";
   }
-  // plugin 侧注册 library overrides + 当前轨 force-style; 锁内拷贝串保证
-  // c_str() 有效(plugin 同步拷走)。不持 mtx: 插件不会回调本视图, 无死锁
-  std::lock_guard<std::mutex> lock(assStyleMtx);
+  // 局部拷贝保证 c_str() 有效(plugin 同步拷走); overlay 调用走 mtx 防
+  // 与通道拆除并发
+  std::string familyCopy;
+  {
+    std::lock_guard<std::mutex> lock(assStyleMtx);
+    familyCopy = assFontFamily;
+  }
+  std::lock_guard<std::mutex> lock(mtx);
   if (overlay) {
-    overlay->setStyleFont(assFontFamily.c_str());
+    overlay->setStyleFont(familyCopy.c_str());
   }
 }
 
@@ -528,11 +548,12 @@ void SubtitleView::renderTrack(int64_t ptsMs) {
   // ASS 预喂窗口随平移, PGS 画布按到期放行(delay=0 保持原无条件快照)
   const int64_t delay = delayMs_.load(std::memory_order_relaxed);
   const int64_t subPts = ptsMs - delay;
-  const AssCanvas* canvas = nullptr;
+  AssCanvas canvas = {};  // 锁内组装的稳定快照, 锁外只碰视图自有内存
+  bool changed = false;
   {
     // 锁内只做短操作(喂包/取快照); 长持锁会卡死 IO 线程的 pushChunk
     std::lock_guard<std::mutex> lock(mtx);
-    if (trackLoaded.load()) {
+    if (trackLoaded.load() && overlay) {
       // ASS 轨: 播放时钟前的小窗口预喂(补偿帧间隔与渲染延迟)
       while (!chunks.empty() && chunks.front().ptsMs <= subPts + 120) {
         SubChunk& c = chunks.front();
@@ -542,8 +563,18 @@ void SubtitleView::renderTrack(int64_t ptsMs) {
                               c.durationMs);
         chunks.pop_front();
       }
-      // libass 画布双缓冲, 内容到下一次 render 前有效 → 锁外使用安全
-      canvas = overlay->render(subPts);
+      // 画布拷进 assStable: overlay 可能在锁外被拆除, 锁外引用插件内存即 UAF
+      const AssCanvas* c = overlay->render(subPts);
+      if (c && c->seq != lastSeq) {
+        if (c->rgba) {
+          assStable.assign(c->rgba, c->rgba + (size_t)c->stride * c->height);
+          canvas = *c;
+          canvas.rgba = assStable.data();
+        } else {
+          canvas = *c;  // 空帧(无像素): 只递 seq 让消费方清层
+        }
+        changed = true;
+      }
     } else if (!pgsFrames.empty()) {
       // PGS 轨: 按(延迟平移后的)播放位置取不越于它的最新一帧, 其之前的帧
       // 就地回收; 有延迟时未到期帧不显示(等价上一条延长, 与旧口径一致)
@@ -573,18 +604,16 @@ void SubtitleView::renderTrack(int64_t ptsMs) {
         }
       }
       // 无到期帧: 维持当前快照(初始空快照 seq=0 与 lastSeq 初值相同, 零上传)
-      canvas = &pgsSnapshot;
+      canvas = pgsSnapshot;
+      changed = canvas.seq != lastSeq;
     }
   }
-  if (!canvas) {
-    return;  // 轨未加载且无 PGS 画布: 本帧无内容
+  if (!changed) {
+    return;  // 轨未加载且无 PGS 画布, 或内容未变 — 本帧零上传
   }
-  if (canvas->seq == lastSeq) {
-    return;  // 内容未变, 零上传
-  }
-  lastSeq = canvas->seq;
-  if (canvas->rgba) {
-    canvasLayer->updateCanvas(*canvas);
+  lastSeq = canvas.seq;
+  if (canvas.rgba) {
+    canvasLayer->updateCanvas(canvas);
   } else {
     canvasLayer->clearCanvas();
   }
@@ -597,6 +626,7 @@ void SubtitleView::renderText(int64_t ptsMs) {
   }
 #ifdef AVOX_ENABLE_FREETYPE
   const char* text = nullptr;
+  std::string textBuf;  // 文件槽锁内拷串 — 播放器线程可能正在重建 items
   // 槽位定源: ASR 槽只查识别结果(流式部分结果优先兜底, 实时口播不吃延迟),
   // 文件槽只查文件(按平移时钟查, 字幕延迟生效)
   if (slots.active() == Slot::asr) {
@@ -612,9 +642,12 @@ void SubtitleView::renderText(int64_t ptsMs) {
     }
   } else {
     // 外挂文本槽: 字幕延迟生效(正=延后查询)
-    auto* item = subtitleFile.getCurrent(ptsMs - delayMs_.load(std::memory_order_relaxed));
+    std::lock_guard<std::mutex> lock(mtx);
+    auto* item = subtitleFile.getCurrent(
+        ptsMs - delayMs_.load(std::memory_order_relaxed));
     if (item && !item->text.empty()) {
-      text = item->text.c_str();
+      textBuf = item->text;
+      text = textBuf.c_str();
     }
   }
   // 样式快照灌入(锁内拷副本, 锁外渲染): 文本槽把全局变换吃进样式,
@@ -659,6 +692,11 @@ void SubtitleView::inputSpeech(const AvoxData& data, int64_t pts) {
 }
 
 void SubtitleView::closeFileContent() {
+  std::lock_guard<std::mutex> lock(mtx);
+  closeFileContentUnlocked();
+}
+
+void SubtitleView::closeFileContentUnlocked() {
   if (fileEnabled) {
     subtitleFile.clear();
     fileEnabled = false;

@@ -72,6 +72,7 @@ class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
   // 外挂编码探测结果(.ass/.ssa 走 overlay 记录, 文本路径走 SubtitleFile;
   // 未探测/卸载后 unknown)
   virtual SubtitleEncoding getFileEncoding() override {
+    std::lock_guard<std::mutex> lock(mtx);  // overlay/subtitleFile 生命周期
     if (overlay) {
       const SubtitleEncoding enc = overlay->getFileEncoding();
       if (enc != SubtitleEncoding::unknown) {
@@ -153,6 +154,8 @@ class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
   void checkWindowRender();
   void closeTrackChannel();
   void closeFileContent();
+  // 持 mtx 版本(loadTextFile 等已在锁内的路径用)
+  void closeFileContentUnlocked();
   void closeAsrContent();
   // 槽位被顶掉时的视图侧拆除(轨=关通道; 外挂=清文件; ASR=停识别)
   void teardownSlot(Slot slot);
@@ -236,6 +239,9 @@ class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
   std::vector<uint8_t> pgsStable;  // 渲染线程持有的稳定拷贝(updateCanvas 用)
   AssCanvas pgsSnapshot = {};
   int32_t lastPgsSeq = 0;
+  // libass 画布的渲染线程稳定拷贝(同 pgsStable): overlay 随时可能被播放器
+  // 线程拆除, 锁外引用插件内存即 use-after-free
+  std::vector<uint8_t> assStable;
 };
 
 }
