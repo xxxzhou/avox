@@ -240,8 +240,13 @@ bool WasAudioRender::full() {
     return lastQueueMs;
   }
   int32_t paddingMs = padding * 1000 / renderDesc.sampleRate;
-  // 大约是超过80ms,就让它满了
-  if (paddingMs >= frameMs * 2) {
+  // 顶到设备缓冲的一半(至少2块)。原来只顶到 frameMs*2(80ms), 而渲染线程唤醒
+  // 抖动实测可达64ms、每次只喂40ms, 余量不足1块 —— 实测8秒内 padding 归零一次,
+  // 设备缓冲被抽干就是爆音/杂音的直接来源。
+  // 共享模式下设备缓冲通常200ms, 顶到100ms只多约20ms延迟。
+  int32_t deviceMs = sampleCount * 1000 / renderDesc.sampleRate;
+  int32_t targetMs = std::max(frameMs * 2, deviceMs / 2);
+  if (paddingMs >= targetMs) {
     return true;
   }
   return false;
