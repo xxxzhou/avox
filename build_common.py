@@ -394,6 +394,8 @@ def build_macos(cmake_args):
         "-DCMAKE_CXX_COMPILER=/usr/bin/clang++",
         "-DCMAKE_C_COMPILER=/usr/bin/clang",
         f"-DCMAKE_OSX_ARCHITECTURES={arch_map[AVOX_TARGET_ARCH]}",
+        # toolchain 第897行会用自身 DEPLOYMENT_TARGET 旋钮 FORCE 覆盖, 必须传旋钮而非只传 CMAKE_OSX_DEPLOYMENT_TARGET
+        f"-DDEPLOYMENT_TARGET={AVOX_MACOS_DEPLOYMENT_TARGET}",
         f"-DCMAKE_OSX_DEPLOYMENT_TARGET={AVOX_MACOS_DEPLOYMENT_TARGET}",
         "-DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO",
         f"-DPLATFORM={platform_map[AVOX_TARGET_ARCH]}",
