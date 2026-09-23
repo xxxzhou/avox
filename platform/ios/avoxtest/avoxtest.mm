@@ -14,6 +14,7 @@
 #include "AvoxPlayer.h"
 #include "AvoxLog.h"
 // 播放回归矩阵: 用例表与判定口径与 Windows/Linux 宿主共用同一份
+#include "playmatrix/PlayAssets.hpp"
 #include "playmatrix/PlayMatrix.hpp"
 
 // 进程内 ZLM 服务端 C API (只调 API, 不改第三方库)
@@ -427,12 +428,16 @@ static Endpoints lanEndpoints(void) {
   return ep;
 }
 
-// 本地文件源: wall_long(300s h264)/wall_1 与 wall_265(h265), 生成命令见 README
+// 本地文件源: wall_long(300s h264)/wall_265(h265) 走 bundle/资源目录优先
+// (生成命令见 README); 其余 ~26 个资产端点 (hdr10/字幕/VP9/Hi10P/mkv/ts/ps/…)
+// 由共享的 fillDefaultAssets 按 AVOX_PM_ASSET_DIR / 逐级上溯补齐 —— 此前只接
+// fileH264/fileH265, 对应用例全部静默 off, 离线子集凭空多 20+ 条 skip
 static void fillLocalSources(Endpoints& ep) {
   NSString* w1 = findMedia(@"wall_long", @"mp4") ?: findMedia(@"wall_1", @"mp4");
   NSString* w265 = findMedia(@"wall_265", @"mp4");
   if (w1) ep.fileH264 = w1.UTF8String;
   if (w265) ep.fileH265 = w265.UTF8String;
+  fillDefaultAssets(ep);
 }
 
 // 每条用例结束 → 上屏 + 日志 (iOS 大字列表; macOS 只看 stdout 的判定行)
