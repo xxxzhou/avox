@@ -51,6 +51,11 @@ void ARenderTask::speed(double speed) {
 }
 
 void ARenderTask::flush() {
+  if (tempo) {
+    // seek冲刷: 丢弃插件内残留窗, 输出映射待下帧重锚
+    tempo->reset();
+    tempoAnchorSet = false;
+  }
   if (audioRender) {
     audioRender->flush();
   }
@@ -71,7 +76,7 @@ void ARenderTask::onRunTask() {
   int64_t baseTime = 0;
   int64_t basePts = 0;
   bool baseSet = false;
-  // cframe帧长时间,前面一般会重组成40ms,可以自己定义
+  // cframe帧长时间,前面会重组成40ms,可以自己定义
   int32_t frameMs = trackContext->getFrameMS();
   while (running()) {
     // 检查暂停
@@ -122,6 +127,64 @@ void ARenderTask::onRunTask() {
         baseSet = true;
       }
       AvoxData inData = {frame.point(), frame.getSize(), true};
+      // 变速不变调: 插件处理器在位走 tempo, 缺位降级变调重采样(历史行为)
+      if (speed != 1.0 && !tempo && !tempoTried) {
+        tempoTried = true;
+        tempo.reset(AvoxManager::Get().audioTempoHub.create("soundtouch"));
+        if (tempo && !tempo->init(renderDesc)) {
+          tempo.reset();
+        }
+      }
+      bool bTempo = false;
+      if (speed != 1.0 && tempo) {
+        bTempo = true;
+        // 档位切换只在渲染线程生效(setTempo 平滑过渡无需冲刷)
+        if (tempoSpeed != speed) {
+          tempo->setTempo(speed);
+          tempoSpeed = speed;
+        }
+      } else if (tempo && tempoActive) {
+        // 回常速: 旁路 tempo 并丢弃残留窗(与 flush 同口径)
+        tempo->reset();
+        tempoAnchorSet = false;
+      }
+      tempoActive = bTempo;
+      if (bTempo) {
+        // 输出块与输入帧不再对齐: 从冲刷后首帧锚定, 输出按 speed 折算源时间推进
+        if (!tempoAnchorSet) {
+          tempoAnchorSet = true;
+          tempoEmitMs = currentPts;
+          tempoFeedMs = currentPts;
+        }
+        int64_t inMs = (int64_t)getSamples(inData.size, renderDesc) * 1000 /
+                       renderDesc.sampleRate;
+        tempoFeedMs += inMs;
+        tempo->process(inData);
+        AvoxData out = {};
+        bool bRendered = false;
+        while (tempo->receive(out) > 0) {
+          int64_t chunkStartMs = tempoEmitMs;
+          tempoEmitMs += (int64_t)((double)getSamples(out.size, renderDesc) *
+                                   1000.0 * speed / renderDesc.sampleRate);
+          // 输出映射不能越过已喂入的源(换档瞬间的折算误差钳位)
+          if (tempoEmitMs > tempoFeedMs) {
+            tempoEmitMs = tempoFeedMs;
+          }
+          // 给渲染器输出块
+          audioRender->render(out, chunkStartMs);
+          bRendered = true;
+        }
+        if (bRendered) {
+          // 设备积压1ms输出音频=speed ms源时间(与常速路径的 -queuedMS 口径不同)
+          int64_t queuedMS = audioRender->getQueueMS();
+          trackContext->updateClock(tempoEmitMs - (int64_t)(queuedMS * speed));
+        }
+        // 相机录制(原速帧)
+        trackContext->muxerFrame(frame);
+        // 记录当前包时间(输入域, 供上方跳变检测/节奏基准用)
+        framePts = currentPts;
+        trackContext->onFrameResult(true);
+      } else {
       // 在这可以应用速度变化如SoundTouch处理变化后的数据
       if (speed != 1.0) {
         AudioDesc changeDesc = renderDesc;
@@ -166,6 +229,7 @@ void ARenderTask::onRunTask() {
       // 更新时钟
       trackContext->updateClock(playPts);
       trackContext->onFrameResult(true);
+      }
       // 基于PTS计算下次渲染的预期时间
       int64_t expectedTime = baseTime + (currentPts - basePts) / speed;
       int64_t sleepMs = expectedTime - now;

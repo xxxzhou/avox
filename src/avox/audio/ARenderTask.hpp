@@ -4,6 +4,7 @@
 #include "../player/MPCommon.hpp"
 #include "../player/Player.hpp"
 #include "AudioOutput.hpp"
+#include "IAudioTempo.hpp"
 
 #ifdef AVOX_ENABLE_FFMPEG
 #include "avox_ffmpeg/FFResample.hpp"
@@ -33,6 +34,18 @@ protected:
   // 同步视频
   std::unique_ptr<FFResample> syncResmaple;
 #endif
+  // 变速不变调处理器(首个变速帧时经 audioTempoHub 懒创建, 缺位降级变调重采样)
+  std::unique_ptr<IAudioTempo> tempo;
+  // 工厂只探一次(create 触发插件懒加载扫描, 失败不复扫)
+  bool tempoTried = false;
+  // tempo 是否生效(回常速时 reset 丢弃残留窗)
+  bool tempoActive = false;
+  // 输出↔源时间映射锚(seek冲刷/回常速后重锚): emitMs=下一输出块源pts, feedMs=已喂源结束pts
+  bool tempoAnchorSet = false;
+  int64_t tempoEmitMs = 0;
+  int64_t tempoFeedMs = 0;
+  // 当前档位(只在渲染线程调 setTempo, 避免与 process 跨线程竞争)
+  double tempoSpeed = 1.0;
 
 public:
   // 这时解码器已初始化

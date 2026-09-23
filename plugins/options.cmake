@@ -34,3 +34,6 @@ option(AVOX_ENABLE_G2O "build avox_calib g2o graph optimizers (needs 3rdparty/g2
 option(AVOX_ENABLE_ASS "build avox_ass ASS/PGS subtitle overlay plugin (real rendering needs avox-ass-deps prebuilt libs)" ON)
 # avox-ass-deps 产物目录(布局: include/ + lib/ + bin/); 空 = 骨架模式
 set(AVOX_ASS_DEPS_DIR "" CACHE PATH "avox-ass-deps dist dir (libass prebuilt); empty = skeleton only")
+# avox_tempo: 音频变速不变调 (SoundTouch WSOLA, 插件静态链入; 预编译依赖库仓
+# library/<platform>/soundtouch, 构建脚本 script/soundtouch/build_windows.py; 未就位自动跳过)
+option(AVOX_ENABLE_TEMPO "build avox_tempo speed-without-pitch plugin (SoundTouch)" ON)

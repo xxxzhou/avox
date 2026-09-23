@@ -13,6 +13,7 @@
 #include "../avatar/BodyImpl.hpp"
 #include "../audio/AudioProcess.hpp"
 #include "../audio/AudioRender.hpp"
+#include "../audio/IAudioTempo.hpp"
 #include "../AvoxPlayer.h"
 #include "../muxer/IOMuxer.hpp"
 #include "../AvoxVision.h"
@@ -158,6 +159,10 @@ class AVOX_EXPORT AvoxManager {
   // IAssOverlay 见 subtitle/IAssOverlay.hpp)。未装插件 create 返 nullptr → 调用方
   // 降级为不渲染内封特效字幕轨。必须追加在全部成员末尾 (ABI 约束同上)。
   RegeditFactory<IAssOverlay> assOverlayHub;
+  // 音频变速不变调工厂 (plugins/avox_tempo loadModule 时 reg "soundtouch"; 接口
+  // IAudioTempo 见 audio/IAudioTempo.hpp)。ARenderTask 变速帧时 create, 未装插件
+  // 返 nullptr → 降级现有变调重采样。必须追加在全部成员末尾 (ABI 约束同上)。
+  RegeditFactory<IAudioTempo> audioTempoHub;
 
  private:
   bool bInit = false;
