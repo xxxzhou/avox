@@ -27,7 +27,8 @@
 // 界面走查取消旗标: 关窗置位, runAll 在下一条用例前退出 (判定行口径不变)
 std::atomic<bool> g_walkCancel{false};
 
-@interface PmWalkDelegate : NSWindowDelegate
+// NSWindowDelegate 是 protocol 不是 class, 须继承 NSObject 并采纳协议
+@interface PmWalkDelegate : NSObject <NSWindowDelegate>
 @end
 @implementation PmWalkDelegate
 - (void)windowWillClose:(NSNotification*)note {
