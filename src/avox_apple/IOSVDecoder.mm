@@ -132,7 +132,7 @@ DecodeResult IOSVDecoder::onPreDecoder() {
     status = CMVideoFormatDescriptionCreateFromH264ParameterSets(
         kCFAllocatorDefault, 2, parameterSetPointers, parameterSetSizes, 4,
         &videoFormatDescription);
-  } else {
+  } else if (codecDesc.vcodecId == VCodecId::h265) {
     if (packets.size() < 3) {
       return DecodeResult::noConfig;
     }
