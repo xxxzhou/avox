@@ -1,5 +1,8 @@
 #pragma once
 
+// 整文件条件编译: libsmb2 就位才定义此宏(CMakeLists, cmake/FindLibsmb2.cmake)
+#ifdef AVOX_REMOTE_SMB
+
 #include <atomic>
 #include <memory>
 #include <mutex>
@@ -118,4 +121,6 @@ class SmbSource : public IRemoteSource, public RunTask {
   std::string resolvedBuf;  // resolve 返回缓冲(会话内稳定)
 };
 
-}
+}  // namespace avox
+
+#endif  // AVOX_REMOTE_SMB

@@ -1,5 +1,8 @@
 #pragma once
 
+// 整文件条件编译: libsmb2 就位才定义此宏(CMakeLists, cmake/FindLibsmb2.cmake)
+#ifdef AVOX_REMOTE_SMB
+
 #include <atomic>
 #include <memory>
 
@@ -101,4 +104,6 @@ class IOParseSmb : public AVSource, public RunTask {
   bool interruptIo() const { return bInterruptRead.load(); }
 };
 
-}
+}  // namespace avox
+
+#endif  // AVOX_REMOTE_SMB

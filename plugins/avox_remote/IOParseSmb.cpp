@@ -1,3 +1,6 @@
+// 整文件条件编译: libsmb2 就位才定义此宏(CMakeLists, cmake/FindLibsmb2.cmake)
+#ifdef AVOX_REMOTE_SMB
+
 #include "IOParseSmb.hpp"
 
 #include <algorithm>
@@ -626,3 +629,5 @@ void IOParseSmb::onOptionChange(const char* key, ArgType type) {
 }
 
 }
+
+#endif  // AVOX_REMOTE_SMB
