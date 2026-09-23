@@ -411,6 +411,8 @@ double IOParseZM::progress() const { return cProgress; }
 int64_t IOParseZM::position() const { return cPosition; }
 
 void IOParseZM::onSpeed() {
+  // 标定真倍速语义: AVSource::setSpeed 依据它决定是否做 I 帧模式预判
+  bSpeedAble = true;
   if (!zlPlayer) {
     return;
   }

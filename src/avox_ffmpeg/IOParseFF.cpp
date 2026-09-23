@@ -1009,6 +1009,9 @@ double IOParseFF::progress() const {
 }
 
 void IOParseFF::onSpeed() {
+  // ffmpeg IO 无倍速语义(包流不变), 保持 bSpeedAble=false:
+  // AVSource::setSpeed 不做 I 帧模式预判
+  bSpeedAble = false;
   if (speed != 1.0) {
     // ffmpeg无发送Scale的手段(av_dict无对应选项),倍速仅zlmediakit IO支持
     LOGFLF(LogLevel::warn, "speed:", speed,

@@ -160,6 +160,9 @@ class AVOX_EXPORT AVSource : public BaseSource,
   bool bvcc = false;
   // 速度
   double speed = 1.0;
+  // IO 侧有真倍速语义(zlmediakit 服务端 trick-play, onSpeed 里置位);
+  // ffmpeg 本地/VOD 包流不随倍速改变, 置 false → setSpeed 不做 I 帧模式预判
+  bool bSpeedAble = false;
   // 快速读取模式(录制场景)：speed>1时IO层非阻塞读取，尽快消费数据
   bool bFastRead = false;
   // 上一个I帧的时间

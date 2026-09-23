@@ -150,6 +150,10 @@ class MediaPlayer : public IMediaPlayer,
   // 同一判据: 若各自写 speed>4, 选项关掉时音频包正常流却仍免超时, 真实解码故障
   // 会被永久吞掉。播放器线程写(cmdSpeed / onOptionChange), 解码线程读, 故用 atomic
   std::atomic<bool> bIFrameOnlyActive{false};
+  // tempo 变速播放生效中(cmdSpeed 时按 cspeed!=1 且 tempo 插件在位标定):
+  // 生效期间音频解码轴按 speed×墙钟领先视频轴属结构性现象, collectStatus
+  // 的 ioDiff 对齐看门狗判据失真, 跳过之(对齐由视频 computeDelay 跟主时钟保证)
+  std::atomic<bool> bTempoPlayback{false};
 
   // IO在播放器线程,全在播放器线程计算
   double ioPrecent = 0.0;

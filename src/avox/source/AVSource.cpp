@@ -26,8 +26,14 @@ void AVSource::setSpeed(double speed_) {
     return;
   }
   speed = speed_;
-  // 倍速时预判进入I帧模式，收到P/B帧会自动退出
-  if (speed > 1 && !bIFrameMode) {
+  // 先让 IO 侧应用倍速并标定 bSpeedAble
+  onSpeed();
+  // 倍速时预判进入I帧模式，收到P/B帧会自动退出。
+  // 仅对 IO 有真倍速语义的源(zlmediakit): 服务端切流有 I 帧窗口期。
+  // ffmpeg 本地/VOD 包流不随倍速改变, 预判只会静音音频+把时钟交给
+  // 静音车道硬灌(2x 下 pos 锯齿、tap 断流, tempo.pipe.* 实证), 且退出
+  // 依赖 P/B 包抵达 singleVideo, 视频消费链一旦背压就可能长期滞留。
+  if (speed > 1 && bSpeedAble && !bIFrameMode) {
     bIFrameMode = true;
     iFrameCount = 0;
     lastIFramePts = AVOX_NOVALID_PTS;
@@ -38,7 +44,6 @@ void AVSource::setSpeed(double speed_) {
     lastIFramePts = AVOX_NOVALID_PTS;
     dispatch(&IAVSourceOb::onIFrameMode, false);
   }
-  onSpeed();
 }
 
 bool AVSource::open(const char* url_) {

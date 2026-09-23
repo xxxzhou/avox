@@ -1245,6 +1245,14 @@ void MediaPlayer::collectStatus() {
   if (cspeed > 4.0) {
     return;
   }
+  // tempo 变速播放: 音频解码轴按 speed×墙钟领先视频轴是结构性的,
+  // ioDiff/renderDiff 阈值判据会把"队列深度差"误判成"不对齐"而误关同步
+  // (关同步后滞后的视频时钟接管播放进度, 2x 长播实证 pos 塌方)。
+  // 对齐由视频 computeDelay 跟音频主时钟保证, 这里跳过看门狗。
+  if (bTempoPlayback.load()) {
+    bAVAlign = true;
+    return;
+  }
   bAVAlign = true;
   // 音频无效pts透传时ioTime停在最后一个真实pts(RMVB约2s一个), 直接对比
   // 会误判不对齐; 改比解码输出时间轴(音频侧为nextPts修正值), 任一侧
@@ -1455,6 +1463,7 @@ void MediaPlayer::cmdPlaying() { setState(PlayerState::playing); }
 
 void MediaPlayer::cmdClose() {
   // log(LogLevel::info, "media player close");
+  bTempoPlayback.store(false);
   // 清空原有的track
   for (const auto& atrack : audioTracks) {
     if (atrack && atrack->vaild()) {
@@ -1641,6 +1650,15 @@ void MediaPlayer::cmdBuffering() {
 void MediaPlayer::cmdSpeed(SpeedCommandPtr cmd) {
   bool wasIFrameOnly = bIFrameOnlyActive.load();
   cspeed = cmd->getData();
+  // tempo 插件在位且非 1x: 闩锁 tempo 播放态(create 兼带触发插件懒加载)。
+  // 回 1x 不复位: 0.5x/2x 期积累的 A/V 解码轴发散要等队列排空才收敛,
+  // 期间 ioDiff 看门狗仍会误触发; 闩锁随 close/open 复位。
+  if (cspeed != 1.0) {
+    IAudioTempo* tempoProbe =
+        AvoxManager::Get().audioTempoHub.create("soundtouch");
+    bTempoPlayback.store(tempoProbe != nullptr);
+    delete tempoProbe;
+  }
   setSpeed(cspeed);
   // 倍速变了,重算 >4x 只I帧的生效真值(onPacket 与音频解码线程共用)
   updateIFrameOnly();
