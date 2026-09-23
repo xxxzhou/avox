@@ -313,6 +313,13 @@ int main(int argc, char** argv) {
       }
       continue;  // 已 Unmap/处理完两张
     }
+    // 周期性整帧落盘 (地面真值取证): 稳定读的当前内容, 文件名带时刻
+    if (dumpEverySec > 0 && elapsed >= lastDumpMs + dumpEverySec * 1000) {
+      lastDumpMs = elapsed;
+      char p3[512];
+      snprintf(p3, sizeof(p3), "%s/dump_t%06lld.bmp", outDir, elapsed);
+      dumpBmp((const uint8_t*)map.pData, desc.Width, H, map.RowPitch, p3);
+    }
     ctxB->Unmap(staging, 0);
     // 5s 一行统计
     auto now = std::chrono::steady_clock::now();
