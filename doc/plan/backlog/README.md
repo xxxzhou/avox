@@ -1,6 +1,6 @@
 # avox backlog 功能计划集 (A-1 ~ A-19)
 
-> 状态: 进行中 · 上次核对: 2026-09-19 · 权威源: -
+> 状态: 进行中 · 上次核对: 2026-09-23 · 权威源: -
 
 
 日期:2026-09-15 · 来源:[panvox/docs/backlog.md](../../../../panvox/docs/backlog.md) 第一节「avox 引擎仓」。
@@ -22,7 +22,7 @@
 | A-7 avox_subtitle CLI | P1 | M3 | 计划就绪 | sherpa/翻译/CLI 骨架在,批量管线与 SRT 写出为零 | [a07](a07-subtitle-cli.md) |
 | A-8 音频软解兜底 | P1 | M3 | **T1/T2 已落地(09-18 提前),待库重编+T3** | 枚举/映射/未知轨株连已修;truehd 待编译机重编部署库,下混(T3)为零 | [a08](a08-audio-fallback.md) |
 | A-9 HDR/DV | P1 | M4 | 计划就绪 | tone map 三车道已完成;直通待真机;DV/SDR→HDR 零 | [a09](a09-hdr-dv.md) |
-| A-10 蓝光原盘 | P1 | M3.5 | 零起点 | 无 libbluray、无 chapter 结构,仅 resolve 注释预留 | [a10](a10-blu-ray.md) |
+| A-10 蓝光原盘 | P1 | 下版本 | **推迟下版本(09-23 拍板:本版不做 DVD/蓝光)** | 无 libbluray、无 chapter 结构,仅 resolve 注释预留;DVD 原不在 A-10 范围,一并顺延 | [a10](a10-blu-ray.md) |
 | A-11 超分/插帧产品化 | P1 | M4 | **只做离线超分(口径 09-19),实时搁置** | 离线管线 P0 已收口(843b4b2),剩 P-17 产品入口集成;实时侧(Anime4K 分档/能力探测/RIFE)维持搁置不补 | [a11](a11-superres-frc.md) |
 | A-12 Hi10P/AV1 软解兜底 | P1 | M4 | 计划就绪 | 视频无运行时回退链;AV1 连枚举都没有 | [a12](a12-hi10p-av1.md) |
 | A-13 刷新率自适应 | P1 | M4 | 零起点 | vsync 硬编码、无显示模式枚举、无 setter 透出 | [a13](a13-refresh-rate.md) |
