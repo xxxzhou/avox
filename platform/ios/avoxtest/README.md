@@ -43,7 +43,9 @@ webrtc 为 `connected && firstFrame && fps>0`。
 
 ```bash
 # 测试源生成 (仅 loop 模式需要)
-ffmpeg -f lavfi -i testsrc2=size=480x270:rate=15:duration=300 -c:v libx264 -crf 30 -pix_fmt yuv420p wall_long.mp4
+# wall_long 必须是 640x360@30 —— 共享用例表 probe-field-mp4 对 ep.fileH264 的
+# 期望硬编码 640x360@30 yuv420P, 尺寸/帧率不符会误判 FAIL (实测 480x270@15 即挂)
+ffmpeg -f lavfi -i testsrc2=size=640x360:rate=30:duration=300 -c:v libx264 -crf 30 -pix_fmt yuv420p wall_long.mp4
 ffmpeg -f lavfi -i testsrc2=size=640x360:rate=15:duration=60  -c:v libx265 -crf 30 -pix_fmt yuv420p -tag:v hvc1 wall_265.mp4
 ```
 

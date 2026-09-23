@@ -441,12 +441,44 @@ static void onCaseResult(const std::string& id, bool pass, const std::string& no
             note.empty() ? nil : [NSString stringWithUTF8String:note.c_str()]);
 }
 
+// 共享用例表的环境变量通道 (Apple 宿主没有命令行开关, 与桌面宿主的
+// --out=/--skip=/--only= 同义; 三者在桌面侧由 play_regress.py 拼参进来, Apple 侧
+// run_apple 提前 return 只传 env, 宿主必须自己接 —— 不接则 --offline/--skip/--only
+// 全部失效, 产物目录也永远落到 CWD 且跨轮残留不被清)
+static void applyEnvOptions(RunOptions& opt) {
+  if (const char* v = getenv("AVOX_PM_OUT")) {
+    opt.outDir = v;
+  }
+  if (const char* v = getenv("AVOX_PM_SKIP")) {
+    std::string s = v;
+    size_t pos = 0;
+    while (pos <= s.size()) {
+      size_t comma = s.find(',', pos);
+      std::string id = s.substr(
+          pos, comma == std::string::npos ? std::string::npos : comma - pos);
+      if (!id.empty()) {
+        opt.skip.push_back(id);
+      }
+      if (comma == std::string::npos) {
+        break;
+      }
+      pos = comma + 1;
+    }
+  }
+  if (const char* v = getenv("AVOX_PM_ONLY")) {
+    opt.only = v;
+  }
+}
+
 static void startPlayMatrix(void* surface, Endpoints ep, RunOptions opt) {
   setenv("AVOX_IO_PLAN", "ffmpeg", 1);  // 拉流统一走 ffmpeg9 IO, webrtc 忽略此项
+  applyEnvOptions(opt);
   dispatch_async(dispatch_get_global_queue(0, 0), ^{
     std::vector<PlayCase> cases = buildCases(ep);
-    ulog(@"[matrix] cases=%d host=%s file264=%s file265=%s", (int)cases.size(),
-         ep.host.c_str(), ep.fileH264.c_str(), ep.fileH265.c_str());
+    ulog(@"[matrix] cases=%d host=%s file264=%s file265=%s skip=%d only=%s out=%s",
+         (int)cases.size(), ep.host.c_str(), ep.fileH264.c_str(),
+         ep.fileH265.c_str(), (int)opt.skip.size(),
+         opt.only.empty() ? "-" : opt.only.c_str(), opt.outDir.c_str());
     runAll(cases, surface, opt);
     finishSummary();
   });
