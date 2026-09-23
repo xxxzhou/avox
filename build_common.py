@@ -580,8 +580,6 @@ def get_onnxruntime_paths(platform, arch):
 
     # 3. 父目录的 avox_library
     paths.append(os.path.join(script_dir, "..", "avox_library", "3rdparty", "library", platform, "onnxruntime"))
-    # 过渡兜底: 旧目录名
-    paths.append(os.path.join(script_dir, "..", "avc_library", "3rdparty", "library", platform, "onnxruntime"))
 
     return paths
 
@@ -663,8 +661,6 @@ def find_openssl(platform):
     script_dir = os.path.dirname(os.path.abspath(__file__))
     paths.append(os.path.join(script_dir, "3rdparty", "library", platform, "openssl"))
     paths.append(os.path.join(script_dir, "..", "avox_library", "3rdparty", "library", platform, "openssl"))
-    # 过渡兜底: 旧目录名
-    paths.append(os.path.join(script_dir, "..", "avc_library", "3rdparty", "library", platform, "openssl"))
 
     for base_path in paths:
         include_dir = os.path.join(base_path, "include", "openssl", "ssl.h")

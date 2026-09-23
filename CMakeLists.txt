@@ -48,7 +48,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake")
 # 外部依赖库根目录 (webrtc, onnxruntime, opencv 等大型库)
 # 优先级: 1. CMake 命令行参数 (-DAVOX_EXTERNAL_LIBRARY_DIR=xxx)
 #        2. 环境变量 AVOX_EXTERNAL_LIBRARY_DIR
-#        3. 默认 ../avox_library (与 avox 同级目录, 旧名 avox_library 过渡兜底)
+#        3. 默认 ../avox_library (与 avox 同级目录)
 if(DEFINED AVOX_EXTERNAL_LIBRARY_DIR)
     # 使用命令行传入的值
     get_filename_component(AVOX_EXTERNAL_LIBRARY_DIR "${AVOX_EXTERNAL_LIBRARY_DIR}" REALPATH)
@@ -56,13 +56,11 @@ elseif(DEFINED ENV{AVOX_EXTERNAL_LIBRARY_DIR})
     # 使用环境变量
     get_filename_component(AVOX_EXTERNAL_LIBRARY_DIR "$ENV{AVOX_EXTERNAL_LIBRARY_DIR}" REALPATH)
 else()
-    # 默认: 与 avox 同级的 avox_library 目录 (旧目录名 avc_library 未改名时兜底)
-    get_filename_component(AVOX_EXTERNAL_LIBRARY_DIR "${CMAKE_SOURCE_DIR}/.." REALPATH)
-    if(EXISTS "${AVOX_EXTERNAL_LIBRARY_DIR}/avox_library")
-        set(AVOX_EXTERNAL_LIBRARY_DIR "${AVOX_EXTERNAL_LIBRARY_DIR}/avox_library")
-    else()
-        set(AVOX_EXTERNAL_LIBRARY_DIR "${AVOX_EXTERNAL_LIBRARY_DIR}/avc_library")
-    endif()
+    # 默认: 与 avox 同级的 avox_library 目录
+    get_filename_component(AVOX_EXTERNAL_LIBRARY_DIR "${CMAKE_SOURCE_DIR}/../avox_library" REALPATH)
+endif()
+if(NOT EXISTS "${AVOX_EXTERNAL_LIBRARY_DIR}")
+    message(FATAL_ERROR "AVOX_EXTERNAL_LIBRARY_DIR not found: ${AVOX_EXTERNAL_LIBRARY_DIR} (clone xxxzhou/avox_library as a sibling of avox, or pass -DAVOX_EXTERNAL_LIBRARY_DIR=<path>)")
 endif()
 message(STATUS "AVOX_EXTERNAL_LIBRARY_DIR: ${AVOX_EXTERNAL_LIBRARY_DIR}")
 
