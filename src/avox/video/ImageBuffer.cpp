@@ -92,11 +92,17 @@ bool yuvframe2Rgba(const YUVFrame& frame, IImageBuffer* buffer,
     const uint8_t* vRow =
         bNv12 ? uRow : frame.data[2] + (size_t)(row / 2) * frame.stride[2];
     uint8_t* rgbaRow = rgba + (size_t)row * rgbaStride;
+    // NV12 色度索引: 每 2x2 图像块一组 U,V, UV 行宽 = width 字节 (宽 640 →
+    // 320 组 × 2 字节)。图像列 c → 色度列 c/2 → U 在字节 (c/2)*2, V 在 +1。
+    // 旧写法 uRow[col*2] 把色度当宽度×2 字节采样: col≥width/2 即越界读到
+    // 下一 UV 行, 最末图像行越出缓冲读零页 → 右下角大片纯绿假亮 (macOS
+    // subprobe UV 探针实证: 交付缓冲干净, 假亮全在此转换引入)
     for (int32_t col = 0; col < width; ++col) {
-      // 420P色度半宽采样点col/2; NV12字节交错对[col*2]=[U,V]
+      int32_t ci = col / 2;
+      // 420P色度半宽采样点ci; NV12字节交错对[ci*2]=[U,V]
       float yn = yRow[col] / 255.0f;
-      float un = (bNv12 ? uRow[col * 2] : uRow[col / 2]) / 255.0f;
-      float vn = (bNv12 ? uRow[col * 2 + 1] : vRow[col / 2]) / 255.0f;
+      float un = (bNv12 ? uRow[ci * 2] : uRow[ci]) / 255.0f;
+      float vn = (bNv12 ? uRow[ci * 2 + 1] : vRow[ci]) / 255.0f;
       float r = yn * mat.row0.x + un * mat.row0.y + vn * mat.row0.z + mat.row0.w;
       float g = yn * mat.row1.x + un * mat.row1.y + vn * mat.row1.z + mat.row1.w;
       float b = yn * mat.row2.x + un * mat.row2.y + vn * mat.row2.z + mat.row2.w;

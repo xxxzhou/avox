@@ -263,10 +263,6 @@ void MetalRender::publishCpuFrame(CVImageBufferRef imageBuffer) {
   // 上报, 不再硬编码 —— 否则 10bit 硬解帧会被谎报成 nv12 (yuvout-h264-hi10p
   // 哨兵在 macOS 实证 type-mismatch: VideoToolbox 能解 High10, 帧是 P010)
   cpuPublishedType = bTenBit ? YuvType::p010 : YuvType::nv12;
-  LOGFLF(LogLevel::info, "publishCpuFrame pbType:", (int32_t)pbType,
-         " publishedType:", (int32_t)cpuPublishedType,
-         " size:", (int32_t)CVPixelBufferGetWidth(imageBuffer),
-         "x", (int32_t)CVPixelBufferGetHeight(imageBuffer));
   if (!bTenBit &&
       pbType != kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange &&
       pbType != kCVPixelFormatType_420YpCbCr8BiPlanarFullRange) {
