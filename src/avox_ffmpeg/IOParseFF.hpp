@@ -1,5 +1,6 @@
 #pragma once
 
+#include <deque>
 #include <memory>
 #include <set>
 
@@ -45,6 +46,11 @@ protected:
   // 置位, 读循环丢视频包直到首个 KEY 包; 500 包防呆防不打 KEY 标志的封装
   std::atomic<bool> bWaitKeyframe{false};
   int32_t waitKeyframeDrops = 0;  // IO 线程专用计数
+  // seek 落点校验预读包: 校验须直读 fmtCtx 才知道落点, 读出的包不能丢(音轨
+  // 开头尤其不能缺), 暂存待读循环优先原序下发; 非关键视频包校验期即丢弃(与
+  // 门闸同语义), 尾包是首个关键视频包。仅 seekTo 持 fmtCtx 独占期(IO 线程
+  // bIoPausedAck 停放)写入, 读循环单清
+  std::deque<AVPacket*> seekStash;
   // PGS 解码器(首个 PGS 流在轨扫描期即建): 以流索引喂包门控
   std::unique_ptr<PgsDecoder> pgsDec = nullptr;
   int32_t pgsStreamId = -1;  // PGS 解码器对应的 ffmpeg 流索引(非局部轨号)
@@ -56,6 +62,12 @@ private:
   int reopenInput();
   // PGS 位图字幕解码(§3.6): 选中该轨时 IO 循环喂包, 出 RGBA 画布
   bool parsePgsFrame(int32_t streamId, const AVPacket* pkt, int64_t ptsMs);
+  // seek 落点校验: 直读 fmtCtx 到首个视频包记落点(ms), 到首个关键视频包停
+  // (包数/时长兜底); 读出的包进 seekStash 回灌. 返回是否拿到视频落点
+  bool verifySeekLanding(int32_t videoStreamId, int64_t& landedMs,
+                         bool& sawKey);
+  // 清空 seekStash(av_packet_free)
+  void clearSeekStash();
   bool parseH26xConfig(int32_t streamId, const uint8_t *extradata, int32_t size,
                        AVCodecID codeId);
   void parseAACConfig(int32_t streamId, const uint8_t *extradata, int32_t size);

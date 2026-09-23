@@ -547,33 +547,41 @@ void IOParseFF::onRunTask() {
       sleepTask(false, 10);
       continue;
     }
-    AVPacketPtr pkt = getUniquePtr(av_packet_alloc());
-    if ((ret = av_read_frame(fmtCtx.get(), pkt.get())) < 0) {
-      if (ret == AVERROR_EOF) {
-        bEof = true;
-        if (!bEofNotified.exchange(true)) {
-          dispatch(&IAVSourceOb::onComplete);
+    AVPacketPtr pkt = nullptr;
+    if (!seekStash.empty()) {
+      // seekTo 落点校验预读的包优先原序下发(见 seekStash): 校验直读 fmtCtx
+      // 的产出不能丢, 尾部关键视频包保证解码从 I 帧起步
+      pkt = getUniquePtr(seekStash.front());
+      seekStash.pop_front();
+    } else {
+      pkt = getUniquePtr(av_packet_alloc());
+      if ((ret = av_read_frame(fmtCtx.get(), pkt.get())) < 0) {
+        if (ret == AVERROR_EOF) {
+          bEof = true;
+          if (!bEofNotified.exchange(true)) {
+            dispatch(&IAVSourceOb::onComplete);
+          }
+          continue;
         }
-        continue;
+        // 被 seek 打断(interrupt_callback 返回1)或非阻塞暂无数据: 继续循环,
+        // 循环顶会处理暂停. 打断窗口(preSeek→pauseTask 之间约 50ms)内循环顶尚
+        // 未暂停, 会在此 EXIT→continue 裸转, 必须阻塞 sleep 避免 100% CPU 空转
+        if (ret == AVERROR_EXIT || ret == AVERROR(EAGAIN)) {
+          sleepTask(false, 1);
+          continue;
+        }
+        // seek 打断窗口内(preSeek/seekTo 置位 bInterruptRead)的 INVALIDDATA
+        // 是打断的副产物: 网络读被截停时 mov demuxer 把它报成 "partial
+        // file"(而非干净的 EXIT), 不是真实故障. 直接 continue 回循环顶, 等
+        // seekTo pauseTask→pauseing() 持 ack 安全重定位
+        if (bInterruptRead.load()) {
+          continue;
+        }
+        // 其余 IO 错误(OSS 截断 range 致 INVALIDDATA / 连接断开等): 上报错误
+        AVOX_FFMEPG_LOG(ret, "read frame failed");
+        dispatch(&IAVSourceOb::onError, ffIoError(ret), "read frame failed");
+        break;
       }
-      // 被 seek 打断(interrupt_callback 返回1)或非阻塞暂无数据: 继续循环,
-      // 循环顶会处理暂停. 打断窗口(preSeek→pauseTask 之间约 50ms)内循环顶尚
-      // 未暂停, 会在此 EXIT→continue 裸转, 必须阻塞 sleep 避免 100% CPU 空转
-      if (ret == AVERROR_EXIT || ret == AVERROR(EAGAIN)) {
-        sleepTask(false, 1);
-        continue;
-      }
-      // seek 打断窗口内(preSeek/seekTo 置位 bInterruptRead)的 INVALIDDATA
-      // 是打断的副产物: 网络读被截停时 mov demuxer 把它报成 "partial
-      // file"(而非干净的 EXIT), 不是真实故障. 直接 continue 回循环顶, 等
-      // seekTo pauseTask→pauseing() 持 ack 安全重定位
-      if (bInterruptRead.load()) {
-        continue;
-      }
-      // 其余 IO 错误(OSS 截断 range 致 INVALIDDATA / 连接断开等): 上报错误
-      AVOX_FFMEPG_LOG(ret, "read frame failed");
-      dispatch(&IAVSourceOb::onError, ffIoError(ret), "read frame failed");
-      break;
     }
     int32_t streamId = pkt->stream_index;
     auto st = fmtCtx->streams[streamId];
@@ -676,6 +684,8 @@ void IOParseFF::onRunTask() {
     processPacket(packet);
     sleepTask(true, 1);
   }
+  // 退出前清 seek 预读残留(线程随 close/reopen 重走 onRunTask, 不许跨开播携带)
+  clearSeekStash();
 }
 
 bool IOParseFF::onOpen() {
@@ -725,6 +735,11 @@ SeekType IOParseFF::seekType() const {
 
 void IOParseFF::seekTo(double progress) {}
 
+// seek 落点容差(毫秒): BACKWARD 落点=目标前最近关键帧, RM 关键帧间距可达
+// 数十秒; min=target 变体实测落在目标后 1~2s, 向前容差 2s 够
+static constexpr int64_t kSeekLandFwdTolMs = 2000;
+static constexpr int64_t kSeekLandBackTolMs = 30000;
+
 void IOParseFF::preSeek() {
   // 撤背压(pauseIOPacket)同时打断: 读线程失背压后第一次 av_read_frame 即被
   // interrupt 截停返回 AVERROR_EXIT → 循环顶 if(pauseing()) 持 ack 等待 seekTo.
@@ -770,13 +785,59 @@ bool IOParseFF::seekTo(int64_t pos) {
   // IO 线程已确认不在读, 清除打断标记, 让 avformat_seek_file 自身不被中断
   bInterruptRead.store(false);
   const int64_t target_ts = pos * 1000;
-  if (st == SeekType::normal) {
-    int ret = avformat_seek_file(fmtCtx.get(), -1, INT64_MIN, target_ts,
-                                 INT64_MAX, AVSEEK_FLAG_BACKWARD);
+  // 上轮 seek 预读包若有残留(IO 线程停放未消费到), 先清再装填本轮校验结果
+  clearSeekStash();
+  // 落点校验只在本地文件做: RM/AVI 等老容器索引损坏时 avformat_seek_file
+  // 落点不可信(方子传CD1 实测续播 seek 落回片头), 而纯 ffmpeg 同上下文重试
+  // 即落准(seekprobe12) —— 校验不过就换变体重试; 网络流保持原行为不动
+  bool bVerifyLanding =
+      bIoAcked && st == SeekType::normal && sourceMode == AVSourceMode::local;
+  int32_t videoStreamId = -1;
+  if (bVerifyLanding) {
+    for (int32_t i = 0; i < fmtCtx->nb_streams; i++) {
+      auto* vs = fmtCtx->streams[i];
+      if (vs->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
+          (vs->disposition & AV_DISPOSITION_ATTACHED_PIC) == 0 &&
+          vs->discard != AVDISCARD_ALL) {
+        videoStreamId = i;
+        break;
+      }
+    }
+    bVerifyLanding = videoStreamId >= 0;
+  }
+  // 变体重定位: 0=-1 BACKWARD(现行) 1=-1 min=target(向后落惯用法, 落点在
+  // 目标后一关键帧) 2=视频流 BACKWARD; 纯 ffmpeg 实测视频流 FORWARD 惯用法
+  // 恒落文件尾, 不纳入
+  auto rawSeek = [this, &pos, &videoStreamId](int32_t variant) -> bool {
+    const int64_t targetUs = pos * 1000;
+    int ret = 0;
+    if (variant == 2 && videoStreamId >= 0) {
+      auto* vs = fmtCtx->streams[videoStreamId];
+      const int64_t ts = av_rescale_q(pos, {1, 1000}, vs->time_base);
+      const int64_t maxTs =
+          av_rescale_q(fmtCtx->duration, {1, AV_TIME_BASE}, vs->time_base);
+      ret = avformat_seek_file(fmtCtx.get(), videoStreamId, INT64_MIN, ts,
+                               maxTs > ts ? maxTs : INT64_MAX,
+                               AVSEEK_FLAG_BACKWARD);
+    } else if (variant == 1) {
+      ret = avformat_seek_file(fmtCtx.get(), -1, targetUs, targetUs, INT64_MAX,
+                               0);
+    } else {
+      ret = avformat_seek_file(fmtCtx.get(), -1, INT64_MIN, targetUs,
+                               INT64_MAX, AVSEEK_FLAG_BACKWARD);
+    }
     if (ret < 0) {
       AVOX_FFMEPG_LOG(ret, "avformat_seek_file failed");
+      return false;
     }
-    bSeek = (ret == 0);
+    return true;
+  };
+  if (st == SeekType::normal) {
+    bSeek = rawSeek(0);
+    // 被打断/interrupt 竞态误杀的一次性失败(同上下文重试即准)给一次重试
+    if (!bSeek && bVerifyLanding) {
+      bSeek = rawSeek(0);
+    }
   } else if (st == SeekType::time) {
     // 基于字节位置的跳转 (单位：字节)
     if (fmtCtx->pb) {
@@ -788,12 +849,73 @@ bool IOParseFF::seekTo(int64_t pos) {
       bSeek = (ret == 0);
     }
   }
+  // 落点校验+纠偏: 首个视频包 pts 偏差超容差(向前 2s/向后 30s)则换变体
+  // 重试, 取偏差最小者; 始终超差也归位最优落点并留痕
+  int64_t landedMs = AV_NOPTS_VALUE;
+  bool sawKey = false;
+  if (bSeek && bVerifyLanding) {
+    const bool bLanded = verifySeekLanding(videoStreamId, landedMs, sawKey);
+    const int64_t dev = bLanded ? landedMs - pos : 0;
+    if (bLanded && (dev > kSeekLandFwdTolMs || dev < -kSeekLandBackTolMs)) {
+      LOGFLF(LogLevel::warn, "seek mislanded, landed:", landedMs, " target:",
+             pos, ", retry variants");
+      int32_t bestVariant = -1;
+      int32_t currentVariant = 0;
+      int64_t bestAbsDev = dev < 0 ? -dev : dev;
+      int64_t finalLanded = landedMs;
+      bool finalKey = sawKey;
+      for (int32_t v = 1; v <= 2; v++) {
+        clearSeekStash();
+        if (!rawSeek(v)) {
+          continue;
+        }
+        int64_t land2 = AV_NOPTS_VALUE;
+        bool key2 = false;
+        if (!verifySeekLanding(videoStreamId, land2, key2)) {
+          continue;
+        }
+        currentVariant = v;
+        const int64_t dev2 = land2 - pos;
+        if (dev2 <= kSeekLandFwdTolMs && dev2 >= -kSeekLandBackTolMs) {
+          bestVariant = v;
+          bestAbsDev = dev2 < 0 ? -dev2 : dev2;
+          finalLanded = land2;
+          finalKey = key2;
+          break;
+        }
+        const int64_t abs2 = dev2 < 0 ? -dev2 : dev2;
+        if (abs2 < bestAbsDev) {
+          bestVariant = v;
+          bestAbsDev = abs2;
+          finalLanded = land2;
+          finalKey = key2;
+        }
+      }
+      // 终态归位最优落点再校验装填 stash: 基线若仍是最优, v1/v2 尝试已动过
+      // demuxer, 重定+重校验; 最后一次成功尝试恰是最优则免
+      if (bestVariant != currentVariant) {
+        clearSeekStash();
+        int64_t land3 = AV_NOPTS_VALUE;
+        bool key3 = false;
+        if (rawSeek(bestVariant >= 0 ? bestVariant : 0) &&
+            verifySeekLanding(videoStreamId, land3, key3)) {
+          finalLanded = land3;
+          finalKey = key3;
+        }
+      }
+      landedMs = finalLanded;
+      sawKey = finalKey;
+    }
+    LOGFLF(LogLevel::info, "seek landed:", landedMs, " target:", pos,
+           " key:", sawKey ? 1 : 0, " stash:", (int32_t)seekStash.size());
+  }
   // 读线程若已 EOF 停放: 复位让它从新位置继续读(否则 seek 无人读, 管道静止)
   if (bSeek) {
     bEofNotified.store(false);
     bEofReset.store(true);
-    // 门闸开启: 解码器已被 seek 冲洗, 首包必须关键帧(见成员注释)
-    bWaitKeyframe.store(true);
+    // 门闸: 落点校验已在 stash 尾备好关键视频包则解除; 未校验/未见关键包
+    // 照旧武装, 由读循环丢到首个 KEY 包(见 bWaitKeyframe 成员注释)
+    bWaitKeyframe.store(!sawKey);
     waitKeyframeDrops = 0;
   }
   // 恢复IO线程
@@ -802,6 +924,60 @@ bool IOParseFF::seekTo(int64_t pos) {
     pgsDec->flush();
   }
   return bSeek;
+}
+
+bool IOParseFF::verifySeekLanding(int32_t videoStreamId, int64_t& landedMs,
+                                  bool& sawKey) {
+  landedMs = AV_NOPTS_VALUE;
+  sawKey = false;
+  if (!fmtCtx || videoStreamId < 0) {
+    return false;
+  }
+  // 兜底上限: RM 音视频交织下首视频包就在前几个包, 256 包/1s 远够
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::milliseconds(1000);
+  AVPacketPtr pkt = getUniquePtr(av_packet_alloc());
+  for (int32_t i = 0; i < 256; i++) {
+    if (std::chrono::steady_clock::now() > deadline) {
+      LOGFLF(LogLevel::warn, "seek landing verify timeout, packets:", i);
+      break;
+    }
+    if (av_read_frame(fmtCtx.get(), pkt.get()) < 0) {
+      break;
+    }
+    auto* st = fmtCtx->streams[pkt->stream_index];
+    if (st->disposition & AV_DISPOSITION_ATTACHED_PIC) {
+      av_packet_unref(pkt.get());
+      continue;
+    }
+    if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
+        pkt->stream_index == videoStreamId) {
+      if (landedMs == AV_NOPTS_VALUE && pkt->pts != AV_NOPTS_VALUE) {
+        landedMs = av_rescale_q(pkt->pts, st->time_base, {1, 1000});
+      }
+      if (pkt->flags & AV_PKT_FLAG_KEY) {
+        // 关键视频包入 stash 尾: 下游门闸可解除, 解码从 I 帧起步
+        sawKey = true;
+        seekStash.push_back(pkt.release());
+        break;
+      }
+      // 非关键视频包丢弃(与门闸同语义): 校验读出的 P 帧喂解码器正是
+      // 缺参考花屏源
+      av_packet_unref(pkt.get());
+      continue;
+    }
+    // 音频/字幕等包原序入 stash 回灌, 音轨开头不能缺
+    seekStash.push_back(pkt.release());
+    pkt = getUniquePtr(av_packet_alloc());
+  }
+  return landedMs != AV_NOPTS_VALUE;
+}
+
+void IOParseFF::clearSeekStash() {
+  for (auto* p : seekStash) {
+    av_packet_free(&p);
+  }
+  seekStash.clear();
 }
 
 int64_t IOParseFF::duration() const {
