@@ -75,6 +75,7 @@ int main(int argc, char** argv) {
   const char* outDir = argc > 3 ? argv[3] : ".";
   int seekMs = argc > 4 ? atoi(argv[4]) : 0;  // 跳到运动段(片头静态测不出撕裂)
   int dumpEverySec = argc > 5 ? atoi(argv[5]) : 0;  // >0: 每隔N秒落地整帧(地面真值取证)
+  int earlySeekMs = argc > 6 ? atoi(argv[6]) : 0;  // >0: open后N毫秒即seek(复刻panvox续播时序)
   printf("video: %s, duration: %ds\n", video, durationSec);
   // ── 播放器: VK 离屏管线 + D3D11 共享输出 ──
   IMediaPlayer* mp = createMediaPlayer();
@@ -84,6 +85,14 @@ int main(int argc, char** argv) {
   sr->setVulkan(true);
   sr->setSurface(nullptr);
   mp->open(video);
+  std::thread earlySeek;
+  if (earlySeekMs > 0 && seekMs > 0) {
+    earlySeek = std::thread([mp, seekMs, earlySeekMs]() {
+      std::this_thread::sleep_for(std::chrono::milliseconds(earlySeekMs));
+      printf("[probe] early seek(%dms) -> %dms\n", earlySeekMs, seekMs);
+      mp->seek(seekMs);
+    });
+  }
   // 管线异步构建: enable 幂等, 轮询重试直到 outputLayer 就绪
   bool enabled = false;
   for (int i = 0; i < 100 && !enabled; ++i) {
@@ -108,7 +117,8 @@ int main(int argc, char** argv) {
     printf("FAIL: shared texture handle timeout (10s)\n");
     return 1;
   }
-  if (seekMs > 0) mp->seek(seekMs);  // 图就绪后再跳, 避开静态片头
+  if (seekMs > 0 && earlySeekMs <= 0)
+    mp->seek(seekMs);  // 图就绪后再跳, 避开静态片头; early 模式由线程提前跳
   uint64_t fenceHandle = getVkOutputDx11FenceHandle(sr);
   printf("tex NT handle: 0x%llx, fence NT handle: 0x%llx\n",
          (unsigned long long)texHandle, (unsigned long long)fenceHandle);
@@ -351,6 +361,7 @@ int main(int argc, char** argv) {
   ctxB->Release();
   devB->Release();
   disableVkOutputDx11(sr);
+  if (earlySeek.joinable()) earlySeek.join();
   mp->close();
   return pass ? 0 : 2;
 }
