@@ -877,13 +877,6 @@ void disableVkOutputDx11(ISurfaceRender* sr) {
   LOGFLF(LogLevel::info, "disableVkOutputDx11: done");
 }
 
-void setVkOutputFrameGate(ISurfaceRender* sr, void* eventHandle) {
-  VkOutputLayer* outputLayer = getVkOutputLayerDx11(sr);
-  if (!outputLayer) {
-    return;
-  }
-  outputLayer->setFrameGate(eventHandle);
-}
 #else
 // 非 Windows 无 D3D11 互操作, 保留导出符号
 bool enableVkOutputDx11(ISurfaceRender* sr) {
@@ -897,10 +890,6 @@ uint64_t getVkOutputDx11Handle(ISurfaceRender* sr) {
 uint64_t getVkOutputDx11FenceHandle(ISurfaceRender* sr) {
   (void)sr;
   return 0;
-}
-void setVkOutputFrameGate(ISurfaceRender* sr, void* eventHandle) {
-  (void)sr;
-  (void)eventHandle;
 }
 void disableVkOutputDx11(ISurfaceRender* sr) { (void)sr; }
 #endif
@@ -1021,7 +1010,6 @@ bool enableVkOutputDx11(ISurfaceRender* sr) {
 }
 uint64_t getVkOutputDx11Handle(ISurfaceRender* sr) { return 0; }
 uint64_t getVkOutputDx11FenceHandle(ISurfaceRender* sr) { return 0; }
-void setVkOutputFrameGate(ISurfaceRender* sr, void* eventHandle) {}
 void disableVkOutputDx11(ISurfaceRender* sr) {}
 bool enableVkInput(ISurfaceRender* sr, int32_t w, int32_t h) {
   LOGFLF(LogLevel::warn, "enableVkInput: Vulkan not enabled");

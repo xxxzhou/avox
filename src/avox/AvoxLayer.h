@@ -605,10 +605,6 @@ AVOX_EXPORT uint64_t getVkOutputDx11Handle(ISurfaceRender* sr);
 // 共享 fence NT 句柄: 外部 OpenSharedFence 后 GetCompletedValue 轮询同步
 // 每帧拷入完成后 avox 会 Signal 一次 (0 表示不可用)
 AVOX_EXPORT uint64_t getVkOutputDx11FenceHandle(ISurfaceRender* sr);
-// 渲染帧闸(可选, Windows): 传入 Win32 自动复位事件句柄, 每帧写入共享纹理前
-// avox 等待它(上限100ms防呆) — 直通消费端 blit 完成后再放行下一帧,
-// 消除跨 API 写读重叠。传 0 关闭; 不设置零开销; 层重建后需重设。
-AVOX_EXPORT void setVkOutputFrameGate(ISurfaceRender* sr, void* eventHandle);
 // 关闭 D3D11 共享输出并重置管线
 AVOX_EXPORT void disableVkOutputDx11(ISurfaceRender* sr);
 

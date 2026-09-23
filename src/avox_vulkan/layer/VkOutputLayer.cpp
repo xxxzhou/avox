@@ -173,14 +173,6 @@ void VkOutputLayer::onUnInit() {
 }
 
 void VkOutputLayer::onCommand() {
-#ifdef WIN32
-  // 直通帧闸: 消费端把上一帧 blit 完才放行本帧写入共享纹理,
-  // 消除 avox 写(N+1) 与消费端读(N) 跨 API 并发的块级拼贴。
-  // 100ms 防呆: 消费端卡死/关闭时降级为旧行为, 不拖死管线。
-  if (frameGateEv && bDx11Output && winImage && winImage->getInit()) {
-    ::WaitForSingleObject(frameGateEv, 100);
-  }
-#endif
   VkCommandBuffer cmd = getCurrentCmdBuffer();
   if (paramet.bCpu) {
     inTexs[0]->addBarrier(cmd, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,

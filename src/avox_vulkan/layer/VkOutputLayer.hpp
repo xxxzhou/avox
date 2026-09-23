@@ -17,7 +17,7 @@ namespace avox {
 
 class VkOutputLayer : public VOutputLayer, public VkLayer {
   AVOX_LAYER_GETNAME(VkOutputLayer)
- public:
+
   VkOutputLayer(/* args */);
   virtual ~VkOutputLayer();
 
@@ -32,7 +32,6 @@ class VkOutputLayer : public VOutputLayer, public VkLayer {
   bool bWinInterop = false;
   // D3D11 共享输出: 无外部 IRenderContext, 由 enableVkOutputDx11 直接开启
   bool bDx11Output = false;
-  void* frameGateEv = nullptr;
 #elif __ANDROID__
   std::unique_ptr<VkAndImage> vkAndImage = nullptr;
   bool bAndInterop = false;
@@ -87,9 +86,6 @@ class VkOutputLayer : public VOutputLayer, public VkLayer {
   // 开关底层自建 NT 共享纹理输出 (VK 每帧拷入, 外部 DX11 设备打开复制)
   void setDx11Output(bool bDx11);
   bool getDx11Output() const { return bDx11Output; }
-  // 渲染帧闸: 每帧写入共享纹理前等待的 Win32 自动复位事件(可空)。
-  // 直通消费端 blit 完成后 SetEvent 放行, 消除跨 API 写读重叠
-  void setFrameGate(void* ev) { frameGateEv = ev; }
 #endif
 #ifdef __APPLE__
   // IOSurface 导出访问 (enableVkOutput/getVkOutputHandle 用)
