@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "updated": "2026-09-13",
-  "_说明": "Panvox AI 字幕翻译厂商目录 (llm_settings.dart 联网热更新源)。字段: label/apiUrl/apiPath/keyUrl/models[{id,name,free,note}]。更新本文件推送到 main 后, 客户端 10 分钟内自动生效 (启动与打开配置对话框时拉取)。收费档排在免费档前。",
+  "updated": "2026-09-23",
+  "_说明": "Panvox AI 字幕翻译厂商目录 (llm_settings.dart 联网热更新源)。字段: label/apiUrl/apiPath/keyUrl/models[{id,name,free,note,default}]。default:true = 该厂商默认推荐模型 (须有图片理解能力), 客户端选厂商时预选, 每厂商至多一个。更新本文件推送到 main 后, 客户端 10 分钟内自动生效 (启动与打开配置对话框时拉取)。收费档排在免费档前。",
   "vendors": [
     {
       "label": "智谱 GLM",
@@ -10,7 +10,7 @@
       "keyUrl": "https://open.bigmodel.cn/usercenter/apikeys",
       "models": [
         { "id": "glm-5.3", "name": "GLM-5.3", "free": false, "note": "旗舰" },
-        { "id": "glm-5.3-flash", "name": "GLM-5.3-Flash", "free": false, "note": "低价" },
+        { "id": "glm-5.3-flash", "name": "GLM-5.3-Flash", "free": false, "note": "低价", "default": true },
         { "id": "glm-4.7-flash", "name": "GLM-4.7-Flash", "free": true, "note": "完全免费" },
         { "id": "glm-4.5-flash", "name": "GLM-4.5-Flash", "free": true, "note": "免费" }
       ]
@@ -22,7 +22,7 @@
       "keyUrl": "https://platform.deepseek.com/api_keys",
       "models": [
         { "id": "deepseek-v4-pro", "name": "DeepSeek-V4-Pro", "free": false, "note": "旗舰" },
-        { "id": "deepseek-v4-flash", "name": "DeepSeek-V4-Flash", "free": false, "note": "低价" }
+        { "id": "deepseek-v4-flash", "name": "DeepSeek-V4-Flash", "free": false, "note": "低价", "default": true }
       ]
     },
     {
