@@ -49,8 +49,8 @@ AVOX_IOS_DEPLOYMENT_TARGET = "15.0"
 # iOS 支持的架构，arm64 为真机，x86_64 为模拟器
 AVOX_IOS_ARCH_LIST = ["arm64"]  
 
-# macOS 部署目标版本(arm64 下限 11.0)
-AVOX_MACOS_DEPLOYMENT_TARGET = "11.0"
+# macOS 部署目标版本(arm64 下限 12.0 — Xcode 27 工具链最低支持 12.0)
+AVOX_MACOS_DEPLOYMENT_TARGET = "12.0"
 
 
 def get_current_target():
