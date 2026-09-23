@@ -15,6 +15,7 @@
 #include <thread>
 #include <vector>
 
+#include <windows.h>
 #include <d3d11.h>
 #include <d3d11_1.h>
 #include <d3d11_4.h>
@@ -122,6 +123,44 @@ int main(int argc, char** argv) {
   uint64_t fenceHandle = getVkOutputDx11FenceHandle(sr);
   printf("tex NT handle: 0x%llx, fence NT handle: 0x%llx\n",
          (unsigned long long)texHandle, (unsigned long long)fenceHandle);
+  // ── 跨进程实验: 共享纹理/fence NT 句柄 DuplicateHandle 进显示进程 ──
+  // argv[7]=显示进程PID argv[8]=句柄文件路径。NT 句柄值仅本进程有效,
+  // 跨进程必须 DuplicateHandle 后把目标进程内的句柄值写盘。
+  if (argc > 8) {
+    const DWORD readerPid = (DWORD)atoi(argv[7]);
+    HANDLE hReader =
+        OpenProcess(PROCESS_DUP_HANDLE, FALSE, readerPid);
+    if (!hReader) {
+      printf("FAIL: OpenProcess(reader=%lu) err=%lu\n", readerPid,
+             GetLastError());
+      return 1;
+    }
+    HANDLE hTexDup = nullptr;
+    HANDLE hFenceDup = nullptr;
+    if (!DuplicateHandle(GetCurrentProcess(),
+                         (HANDLE)(uintptr_t)texHandle, hReader, &hTexDup, 0,
+                         FALSE, DUPLICATE_SAME_ACCESS) ||
+        !DuplicateHandle(GetCurrentProcess(),
+                         (HANDLE)(uintptr_t)fenceHandle, hReader, &hFenceDup,
+                         0, FALSE, DUPLICATE_SAME_ACCESS)) {
+      printf("FAIL: DuplicateHandle err=%lu\n", GetLastError());
+      return 1;
+    }
+    FILE* hf = nullptr;
+    fopen_s(&hf, argv[8], "w");
+    if (!hf) {
+      printf("FAIL: write handles file %s\n", argv[8]);
+      return 1;
+    }
+    fprintf(hf, "tex=%llu fence=%llu\n",
+            (unsigned long long)(uintptr_t)hTexDup,
+            (unsigned long long)(uintptr_t)hFenceDup);
+    fclose(hf);
+    printf("handles exported: tex=%llu fence=%llu -> %s\n",
+           (unsigned long long)(uintptr_t)hTexDup,
+           (unsigned long long)(uintptr_t)hFenceDup, argv[8]);
+    CloseHandle(hReader);
+  }
   // ── 模拟 Unity 设备: 自己建一个 D3D11 设备 ──
   ID3D11Device* devB = nullptr;
   ID3D11DeviceContext* ctxB = nullptr;
