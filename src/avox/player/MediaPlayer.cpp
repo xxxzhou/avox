@@ -614,10 +614,20 @@ void MediaPlayer::cmdSetSubtitleTrack(int32_t index) {
     LOGFLF(LogLevel::warn, "setSubtitleTrack: no valid video track");
     return;
   }
+  // 内封文本轨(mov_text/SRT): 采样不是 ASS, 视图内转对白行(渲染缺口收口)
+  const ISTrackDesc* desc =
+      ioSource ? ioSource->getSubtitleDesc(index) : nullptr;
+  const bool textTrack = desc && desc->codecId() == SCodecId::srt;
   if (!extradata.empty()) {
     if (!subtitleView->loadTrack(extradata.data(),
                                  (int32_t)extradata.size())) {
       LOGFLF(LogLevel::warn, "setSubtitleTrack: load extradata failed");
+    }
+  } else if (textTrack) {
+    if (!subtitleView->loadTextTrack()) {
+      LOGFLF(LogLevel::warn, "setSubtitleTrack: text track load failed");
+    } else {
+      LOGFLF(LogLevel::info, "setSubtitleTrack: text track loaded");
     }
   } else {
     LOGFLF(LogLevel::info, "setSubtitleTrack: no extradata yet (srt/pgs?)");

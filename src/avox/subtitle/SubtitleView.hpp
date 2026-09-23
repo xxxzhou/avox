@@ -137,6 +137,8 @@ class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
   bool isTrackLoaded() const { return trackLoaded.load(); }
   // 内封轨: 喂 ASS/SSA 剧本头(MKV extradata), 之后 processChunk
   bool loadTrack(const char* extradata, int32_t size);
+  // 内封文本轨(mov_text/SRT): 合成最小 ASS 剧本头, 包采样转对白行喂 libass
+  bool loadTextTrack();
   // 外挂样式文件: .ass 直载, .srt 转 ASS(插件内实现)
   bool loadTrackFile(const char* path);
   // 外挂纯文本文件(.srt 等): TextRasterizer 路径
@@ -216,6 +218,8 @@ class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
   // libass 轨就绪(loadTrack/loadTrackFile 成功)前, chunk 全部丢弃:
   // ass_process_chunk 无 track 时是空操作, 排队反而会白占内存
   std::atomic<bool> trackLoaded{false};
+  // 内封文本轨模式: 包采样(mov_text/SRT)不是 ASS, pushChunk 内转对白行
+  bool textMode_ = false;
   std::mutex mtx;
   struct SubChunk {
     std::vector<char> data;

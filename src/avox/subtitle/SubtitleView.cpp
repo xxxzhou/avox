@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 
 #include "../module/AvoxManager.hpp"
 #include "../module/LogHelper.hpp"
@@ -10,6 +11,61 @@
 namespace avox {
 
 static constexpr int32_t kMaxPendingChunks = 512;
+
+// 内封文本采样 → ass_process_chunk 对白行("ReadOrder,Layer,Style,...,Text",
+// 时间走调用入参)。mov_text(tx3g) 样本是 2 字节大端长度 + UTF-8 文本(可尾随
+// 样式 atom); MKV SRT 无前缀 — 前缀长度对不上就整包按文本。剥富文本标签,
+// 换行折 \N, 剥花括号防 ASS 覆盖块注入。
+static std::string textSampleToAssChunk(const char* data, int32_t size) {
+  if (!data || size <= 0) {
+    return {};
+  }
+  const auto* d = (const uint8_t*)data;
+  size_t off = 0;
+  if (size >= 2) {
+    const uint32_t len = (uint32_t)((d[0] << 8) | d[1]);
+    if (len > 0 && 2 + len <= (size_t)size) {
+      off = 2;
+    }
+  }
+  std::string line;
+  line.reserve((size_t)size);
+  bool inTag = false;
+  for (size_t i = off; i < (size_t)size; ++i) {
+    const char ch = (char)d[i];
+    if (ch == 0) {
+      break;  // 尾随样式 atom 的容错截断
+    }
+    if (ch == '\r') {
+      continue;
+    }
+    if (ch == '\n') {
+      line += "\\N";
+      continue;
+    }
+    if (ch == '<') {
+      inTag = true;
+      continue;
+    }
+    if (ch == '>') {
+      inTag = false;
+      continue;
+    }
+    if (inTag || ch == '{' || ch == '}') {
+      continue;
+    }
+    line += ch;
+  }
+  while (line.size() >= 2 && line.compare(line.size() - 2, 2, "\\N") == 0) {
+    line.resize(line.size() - 2);
+  }
+  if (line.empty()) {
+    return {};
+  }
+  std::string out = "0,0,Default,,0,0,0,,";
+  out += line;
+  return out;
+}
 
 SubtitleView::SubtitleView() = default;
 
@@ -122,7 +178,7 @@ SubtitleView::Slot SubtitleView::activateAsr() {
   }
   subtitleAsr.loadAsr();
   asrEnabled = true;
-  lastSeq = -1;
+  lastSeq = -1;  // 换源强制重传
   return prev;
 }
 
@@ -340,9 +396,11 @@ void SubtitleView::closeTrackChannel() {
     pgsFrames.clear();
     lastPgsSeq = 0;
     trackLoaded = false;
+    textMode_ = false;
     dead = overlay;
     overlay = nullptr;
-    lastSeq = 0;
+    // lastSeq 不动: 粘性层上画布内容仍在屏, 空窗清屏交给 checkWindowRender
+    // 的 lastSeq!=0 判定 (在此谎报 0 会跳过 clearCanvas, 字幕残影不散)
   }
   if (dead) {
     dead->shutdown();
@@ -364,6 +422,31 @@ bool SubtitleView::loadTrack(const char* extradata, int32_t size) {
   // (ass_flush_events) 会把 extradata 里可能带的事件一并清掉; 只有
   // resetEvents(seek 后旧事件作废) 才需要 flush
   lastSeq = -1;  // 强制清层
+  textMode_ = false;
+  trackLoaded = ok;
+  return ok;
+}
+
+bool SubtitleView::loadTextTrack() {
+  std::lock_guard<std::mutex> lock(mtx);
+  textMode_ = true;
+  if (!overlay) {
+    return false;
+  }
+  // 合成最小 ASS 剧本(PlayRes=storage + Default 底部居中, 同插件外挂
+  // srt 路径口径): 内封文本包(mov_text/SRT)采样转对白行后喂 libass
+  char head[512];
+  std::snprintf(head, sizeof(head),
+                "[Script Info]\nScriptType: v4.00+\nPlayResX: %d\nPlayResY: %d\n\n"
+                "[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, "
+                "OutlineColour, BackColour, Bold, Italic, BorderStyle, Outline, "
+                "Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
+                "Style: Default,sans-serif,54,&H00FFFFFF,&H00000000,&H00000000,"
+                "0,0,1,2,0,2,60,60,40,1\n",
+                storageW > 0 ? storageW : 1920, storageH > 0 ? storageH : 1080);
+  bool ok = overlay->loadTrack(head, (int32_t)std::strlen(head));
+  chunks.clear();
+  lastSeq = -1;
   trackLoaded = ok;
   return ok;
 }
@@ -378,6 +461,7 @@ bool SubtitleView::loadTrackFile(const char* path) {
   // 不 flush: 外挂 .ass 的事件就是 loadFile(ass_read_file) 载进来的, 这里 flush
   // 会当场清空 —— 曾导致"加载成功(subOk=1)却零渲染"; 清层交给 lastSeq=-1
   lastSeq = -1;
+  textMode_ = false;
   trackLoaded = ok;
   return ok;
 }
@@ -390,6 +474,7 @@ bool SubtitleView::loadTextFile(const char* path) {
   std::lock_guard<std::mutex> lock(mtx);
   closeFileContentUnlocked();
   fileEnabled = subtitleFile.loadFile(path);
+  lastSeq = -1;  // 换源强制重传, 防画布 seq 域撞车残留旧内容
   return fileEnabled;
 }
 
@@ -455,11 +540,23 @@ void SubtitleView::pushChunk(const char* data, int32_t size, int64_t ptsMs,
   if (!overlay) {
     return;
   }
+  const char* feed = data;
+  int32_t feedSize = size;
+  std::string converted;
+  if (textMode_) {
+    // 内封文本采样(mov_text/SRT)不是 ASS 对白, 先转 chunk(堆拷贝换指针)
+    converted = textSampleToAssChunk(data, size);
+    if (converted.empty()) {
+      return;
+    }
+    feed = converted.data();
+    feedSize = (int32_t)converted.size();
+  }
   if (chunks.size() >= kMaxPendingChunks) {
     chunks.pop_front();  // 消费端卡死时丢最旧, 防无限堆积
   }
   SubChunk& c = chunks.emplace_back();
-  c.data.assign(data, data + size);
+  c.data.assign(feed, feed + feedSize);
   c.ptsMs = ptsMs;
   c.durationMs = durationMs;
 }
