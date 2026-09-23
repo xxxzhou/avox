@@ -588,6 +588,20 @@ void IOParseFF::onRunTask() {
       if (bDisableVideo) {
         continue;
       }
+      // seek 后等关键帧(见 bWaitKeyframe 成员注释): 非关键包不喂解码器
+      if (bWaitKeyframe.load()) {
+        if (pkt->flags & AV_PKT_FLAG_KEY) {
+          bWaitKeyframe.store(false);
+          LOGFLF(LogLevel::info, "seek keyframe gate passed, dropped:",
+                 waitKeyframeDrops);
+        } else if (++waitKeyframeDrops > 500) {
+          bWaitKeyframe.store(false);
+          LOGFLF(LogLevel::warn, "seek keyframe gate: no keyframe in ",
+                 waitKeyframeDrops, " packets, passing through");
+        } else {
+          continue;
+        }
+      }
     } else if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
       packType = PackType::audio;
       // 跳过的不支持音频流不进路由: aIndexMaps 无映射, 会错轨/越界
@@ -778,6 +792,9 @@ bool IOParseFF::seekTo(int64_t pos) {
   if (bSeek) {
     bEofNotified.store(false);
     bEofReset.store(true);
+    // 门闸开启: 解码器已被 seek 冲洗, 首包必须关键帧(见成员注释)
+    bWaitKeyframe.store(true);
+    waitKeyframeDrops = 0;
   }
   // 恢复IO线程
   resumeTask();

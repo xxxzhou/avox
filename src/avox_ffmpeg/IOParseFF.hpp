@@ -40,6 +40,11 @@ protected:
   // 读满 → EOF → 之后任何 seek 都再也拿不到数据(录制产物缺失/画面静止)。
   std::atomic<bool> bEofReset{false};     // seekTo 成功后置位: 叫醒停放的读线程
   std::atomic<bool> bEofNotified{false};  // onComplete 每次 EOF 只报一次
+  // seek 后等关键帧门闸: RM 等脏索引封装的 avformat_seek_file 落点不可靠,
+  // 解码器从 P/B 帧起步缺参考 → 花屏散块(方子传CD1 断点续播必现)。seek 成功
+  // 置位, 读循环丢视频包直到首个 KEY 包; 500 包防呆防不打 KEY 标志的封装
+  std::atomic<bool> bWaitKeyframe{false};
+  int32_t waitKeyframeDrops = 0;  // IO 线程专用计数
   // PGS 解码器(首个 PGS 流在轨扫描期即建): 以流索引喂包门控
   std::unique_ptr<PgsDecoder> pgsDec = nullptr;
   int32_t pgsStreamId = -1;  // PGS 解码器对应的 ffmpeg 流索引(非局部轨号)
