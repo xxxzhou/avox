@@ -477,7 +477,9 @@ def check_module_zlmediakit():
     elif get_current_target() == "ios":
         bin_dri = os.path.join(project_root, f"3rdparty/zlmediakit/release/{AVOX_TARGET_SYSTEM}/{AVOX_BUILD_TYPE}/{AVOX_BUILD_TYPE}/libmk_api{suffix}")
     elif get_current_target() == "macos":
-        bin_dri = os.path.join(project_root, f"3rdparty/zlmediakit/release/{AVOX_TARGET_SYSTEM}/{AVOX_BUILD_TYPE}/{AVOX_BUILD_TYPE}/libmk_api{suffix}")
+        # ZLMediaKit 自身用 CMAKE_SYSTEM_NAME(Darwin) 拼输出目录, 产物落在 release/darwin 而非 release/macos;
+        # 且 macOS 产物是 .dylib(get_system_lib_suffix 的 else 分支给 .a, 那是给 fdk-aac/freetype 静态库用的)
+        bin_dri = os.path.join(project_root, f"3rdparty/ZLMediaKit/release/darwin/{AVOX_BUILD_TYPE}/{AVOX_BUILD_TYPE}/libmk_api.dylib")
     elif get_current_target() == "linux":
         # linux大小写敏感
         bin_dri = os.path.join(project_root, f"3rdparty/ZLMediaKit/release/{AVOX_TARGET_SYSTEM}/{AVOX_BUILD_TYPE}/libmk_api{suffix}")

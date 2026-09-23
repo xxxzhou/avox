@@ -85,6 +85,10 @@ message(STATUS "Build Directory: ${CMAKE_BINARY_DIR}")
 string(TOLOWER ${CMAKE_SYSTEM_NAME} CMAKE_SYSTEM_NAME_LOWER)
 if(ONLY_LINUX OR ANDROID)   
     set(AVOX_MOEDULE_BUILD_DIR "${CMAKE_SOURCE_DIR}/build/${CMAKE_SYSTEM_NAME_LOWER}")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    # macOS: CMAKE_SYSTEM_NAME 是 Darwin, 但 build_mac.py 落盘目录是 build/macos,
+    # 不特判会让各 Find 模块去 build/Darwin 找 fdk-aac/freetype/sherpa/sentencepiece 产物
+    set(AVOX_MOEDULE_BUILD_DIR "${CMAKE_SOURCE_DIR}/build/macos")
 else()
     set(AVOX_MOEDULE_BUILD_DIR "${CMAKE_SOURCE_DIR}/build/${CMAKE_SYSTEM_NAME}")
 endif()

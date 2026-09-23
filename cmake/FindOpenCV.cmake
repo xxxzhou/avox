@@ -211,6 +211,92 @@ elseif(WIN32)
         endif()
     endif()
 
+elseif(APPLE)
+    # ---------- macOS ----------
+    # 库仓目录关系对齐 windows(avc_library 3rdparty/library/darwin/opencv),
+    # 但 macOS 无 vc16 那层: include/ + lib/ (或 opencv2.framework)
+    set(OpenCV_DIR_NAMES
+        "darwin/opencv/opencv-${OpenCV_VERSION}-macosx"
+        "darwin/opencv"
+        "mac/opencv"
+    )
+
+    foreach(dir_name ${OpenCV_DIR_NAMES})
+        foreach(search_path ${OpenCV_SEARCH_PATHS})
+            if(EXISTS "${search_path}/${dir_name}")
+                set(OpenCV_DIR "${search_path}/${dir_name}")
+                break()
+            endif()
+        endforeach()
+        if(OpenCV_DIR)
+            break()
+        endif()
+    endforeach()
+
+    if(OpenCV_DIR)
+        if(EXISTS "${OpenCV_DIR}/opencv2.framework")
+            # framework 形式(与 iOS 一致)
+            set(OpenCV_FRAMEWORK "${OpenCV_DIR}/opencv2.framework")
+            set(OpenCV_INCLUDE_DIRS "${OpenCV_FRAMEWORK}/Headers")
+            set(OpenCV_LIBRARIES "${OpenCV_FRAMEWORK}")
+        else()
+            set(OpenCV_BUILD_DIR "")
+            foreach(sub_dir ${OpenCV_DIR} "${OpenCV_DIR}/build")
+                if(EXISTS "${sub_dir}/lib" AND EXISTS "${sub_dir}/include")
+                    set(OpenCV_BUILD_DIR ${sub_dir})
+                    break()
+                endif()
+            endforeach()
+
+            if(OpenCV_BUILD_DIR)
+                set(OpenCV_INCLUDE_DIRS "${OpenCV_BUILD_DIR}/include")
+                set(OpenCV_LIB_DIR "${OpenCV_BUILD_DIR}/lib")
+
+                # opencv_world(单库) 优先, 兜底 brew 风格的 opencv4/opencv_core
+                find_library(OpenCV_LIBRARY
+                    NAMES opencv_world4130 opencv_world opencv4 opencv_core
+                    PATHS ${OpenCV_LIB_DIR}
+                    NO_DEFAULT_PATH
+                )
+
+                if(OpenCV_LIBRARY)
+                    set(OpenCV_LIBRARIES ${OpenCV_LIBRARY})
+                endif()
+            endif()
+        endif()
+    endif()
+
+    # 兜底: 系统/Homebrew 的 OpenCV(带 OpenCVConfig.cmake)
+    # brew 前缀可能是自定义的(如 ~/.homebrew), 依次取 HOMEBREW_PREFIX / brew --prefix / 常见默认
+    if(NOT OpenCV_LIBRARIES)
+        set(_ocv_brew_prefixes "")
+        if(DEFINED ENV{HOMEBREW_PREFIX})
+            list(APPEND _ocv_brew_prefixes "$ENV{HOMEBREW_PREFIX}")
+        endif()
+        find_program(_OCV_BREW_EXECUTABLE brew)
+        if(_OCV_BREW_EXECUTABLE)
+            execute_process(COMMAND ${_OCV_BREW_EXECUTABLE} --prefix
+                OUTPUT_VARIABLE _ocv_brew_out OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_QUIET)
+            if(_ocv_brew_out)
+                list(APPEND _ocv_brew_prefixes "${_ocv_brew_out}")
+            endif()
+        endif()
+        list(APPEND _ocv_brew_prefixes /opt/homebrew /usr/local)
+
+        set(_ocv_cmake_paths "")
+        foreach(_p ${_ocv_brew_prefixes})
+            list(APPEND _ocv_cmake_paths "${_p}/lib/cmake/opencv4")
+        endforeach()
+
+        set(_TEMP_MODULE_PATH ${CMAKE_MODULE_PATH})
+        set(CMAKE_MODULE_PATH "")
+        find_package(OpenCV QUIET PATHS ${_ocv_cmake_paths})
+        set(CMAKE_MODULE_PATH ${_TEMP_MODULE_PATH})
+        if(OpenCV_FOUND)
+            message(STATUS "Using system OpenCV: ${OpenCV_VERSION} (${OpenCV_DIR})")
+        endif()
+    endif()
 elseif(UNIX AND NOT APPLE)
     # ---------- Linux ----------
     # Linux 使用预编译包或源码构建
@@ -300,6 +386,8 @@ else()
         message(STATUS "    python script/opencv/down_opencv_ios.py")
     elseif(WIN32)
         message(STATUS "    python script/opencv/down_opencv_windows.py")
+    elseif(APPLE)
+        message(STATUS "    放置 macOS 版 OpenCV 到库仓 3rdparty/library/darwin/opencv/{include,lib} (见该目录 README.md)")
     elseif(UNIX AND NOT APPLE)
         message(STATUS "    python script/opencv/down_opencv_linux.py")
     endif()

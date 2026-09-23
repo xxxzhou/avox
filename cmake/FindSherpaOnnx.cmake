@@ -17,6 +17,15 @@ elseif(IOS)
     set(SHERPA_LIB_DIR ${AVOX_MOEDULE_BUILD_DIR}/sherpa-onnx/${CMAKE_BUILD_TYPE}-iphoneos)
 elseif(ANDROID)
     set(SHERPA_LIB_DIR ${AVOX_MOEDULE_BUILD_DIR}/sherpa-onnx/lib)
+elseif(APPLE)
+    # macOS(Xcode 多配置生成器): 库落在 sherpa-onnx/lib/<Config>/, 兼容顶层 <Config>/ 与 lib/
+    set(SHERPA_LIB_DIR ${AVOX_MOEDULE_BUILD_DIR}/sherpa-onnx/lib/${CMAKE_BUILD_TYPE})
+    if(NOT EXISTS "${SHERPA_LIB_DIR}")
+        set(SHERPA_LIB_DIR ${AVOX_MOEDULE_BUILD_DIR}/sherpa-onnx/${CMAKE_BUILD_TYPE})
+    endif()
+    if(NOT EXISTS "${SHERPA_LIB_DIR}")
+        set(SHERPA_LIB_DIR ${AVOX_MOEDULE_BUILD_DIR}/sherpa-onnx/lib)
+    endif()
 elseif(UNIX)
     set(SHERPA_LIB_DIR ${AVOX_MOEDULE_BUILD_DIR}/sherpa-onnx/lib)
 endif()
@@ -30,8 +39,9 @@ else()
     file(GLOB SHERPA_ALL_LIBS "${SHERPA_LIB_DIR}/*.a")
 endif()
 
-# Android 需要添加 onnxruntime 库
-if(ANDROID AND ONNX_FOUND)
+# Android / macOS 需要额外链接 onnxruntime: sherpa 静态库对 ORT 是未定义符号
+# (nm -u libsherpa-onnx-core.a 里有 _OrtGetApiBase), 与 avox_onnx 插件共用同一份运行时
+if((ANDROID OR APPLE) AND ONNX_FOUND AND SHERPA_ALL_LIBS)
     set(SHERPA_LIBRARYS ${SHERPA_ALL_LIBS} ${ONNXRUNTIME_LIBRARIES})
     message(STATUS "Added onnxruntime library: ${ONNXRUNTIME_LIBRARIES}")
 else()

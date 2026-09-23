@@ -192,6 +192,48 @@ elseif(WIN32)
         endif()
     endif()
 
+elseif(APPLE)
+    # ---------- macOS ----------
+    # 库仓目录关系对齐 windows(onnxruntime/<包名>/{include,lib}), 包名用官方 osx 命名;
+    # 兼容 darwin/onnxruntime 直接摊平放 include/lib 的旧布局
+    set(ONNXRUNTIME_IS_STATIC OFF)
+
+    # 搜索路径
+    set(ONNXRUNTIME_DIR_NAMES
+        "darwin/onnxruntime/onnxruntime-osx-arm64-${ONNXRUNTIME_VERSION}"
+        "darwin/onnxruntime/onnxruntime-osx-x86_64-${ONNXRUNTIME_VERSION}"
+        "darwin/onnxruntime/onnxruntime-osx-universal2-${ONNXRUNTIME_VERSION}"
+        "darwin/onnxruntime"
+        "mac/onnxruntime"
+    )
+
+    foreach(dir_name ${ONNXRUNTIME_DIR_NAMES})
+        foreach(search_path ${ONNXRUNTIME_SEARCH_PATHS})
+            if(EXISTS "${search_path}/${dir_name}/include/onnxruntime_c_api.h")
+                set(ONNXRUNTIME_DIR "${search_path}/${dir_name}")
+                break()
+            endif()
+        endforeach()
+        if(ONNXRUNTIME_DIR)
+            break()
+        endif()
+    endforeach()
+
+    if(ONNXRUNTIME_DIR)
+        set(ONNXRUNTIME_INCLUDE_DIRS "${ONNXRUNTIME_DIR}/include")
+        set(ONNXRUNTIME_LIB_DIR "${ONNXRUNTIME_DIR}/lib")
+
+        # 官方 osx 包只出 dylib(libonnxruntime.dylib -> libonnxruntime.<ver>.dylib)
+        find_library(ONNXRUNTIME_LIBRARY
+            NAMES onnxruntime
+            PATHS ${ONNXRUNTIME_LIB_DIR}
+            NO_DEFAULT_PATH
+        )
+
+        if(ONNXRUNTIME_LIBRARY)
+            set(ONNXRUNTIME_LIBRARIES ${ONNXRUNTIME_LIBRARY})
+        endif()
+    endif()
 elseif(UNIX)
     # ---------- Linux ----------
     set(ONNXRUNTIME_IS_STATIC OFF)
@@ -256,6 +298,8 @@ else()
         message(STATUS "    python script/onnx/down_onnxruntime_ios.py")
     elseif(WIN32)
         message(STATUS "    python script/onnx/down_onnxruntime_windows.py")
+    elseif(APPLE)
+        message(STATUS "    放置 darwin/onnxruntime/onnxruntime-osx-arm64-${ONNXRUNTIME_VERSION}/{include,lib} 到库仓")
     elseif(UNIX)
         message(STATUS "    python script/onnx/down_onnxruntime_linux.py")
     endif()
