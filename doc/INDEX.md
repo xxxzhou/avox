@@ -26,7 +26,7 @@ avox 是跨平台音视频播放器 SDK，支持直播流、本地媒体、硬�
 | [code-wiki](code-wiki/README.md) | 代码架构 Wiki: 概览/目录/核心类/依赖/构建 |
 | [ai](ai/) | AI 功能: inpaint 图像修复、语音转文字 |
 | [build](build/) | 构建: 脚本/CMake、Android、FFmpeg、SWIG |
-| [tools](tools/) | 开发工具: VSCode/Wireshark/ffmpeg/git/trae |
+| [tools](tools/) | 开发工具: VSCode/Wireshark/ffmpeg/git/trae/冻结排查 |
 | [plan](plan/) | 设计与规划方案 · 功能计划集 [backlog/README.md](plan/backlog/README.md) (panvox 双仓对齐 A-1~A-19) |
 | [test](test/环境与插件总览.md) | 测试: 环境与插件关系地图 / 测试与修复工作流 / 发布检查清单 / 功能测试矩阵 —— **测试整体移交同级 `../avox-test` 仓**，功能完成后到那边跑测试（见其 README.md）；本目录为过渡期副本 |
 
@@ -136,6 +136,7 @@ avox 是跨平台音视频播放器 SDK，支持直播流、本地媒体、硬�
 | [Wireshark](tools/Wireshark.md) | 抓包分析 |
 | [ffmpeg](tools/ffmpeg.md) | ffmpeg 命令 |
 | [trae](tools/trae.md) | trae 使用 |
+| [冻结报告承接](tools/freeze-triage.md) | 冻结名片/dump 分析路数(维护者) |
 
 ---
 
