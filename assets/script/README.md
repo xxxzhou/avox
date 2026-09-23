@@ -81,11 +81,11 @@ python assets/script/fetch_assets.py --list --json               # 结构化输�
 | 仓库 | 角色 | 形态 |
 |------|------|------|
 | [`xxxzhou/avox_model`](https://github.com/xxxzhou/avox_model) | AI 模型 | inpaint=git-lfs 单文件；stt=release zip（扁平）；translation=已量化 int8 LFS；ocr=det/rec onnx + 字典 (LFS)。**未收 AOT-GAN** |
-| [`xxxzhou/avc_library`](https://github.com/xxxzhou/avc_library) | 预编译库 | 见下 |
+| [`xxxzhou/avox_library`](https://github.com/xxxzhou/avox_library) | 预编译库 | 见下 |
 
 > git-lfs 文件用 `https://github.com/<repo>/raw/<branch>/<path>` 取真实内容（自动 302 到 media）；勿用 `raw.githubusercontent.com`（返回 lfs pointer）。
 
-`avc_library` 平台覆盖（`3rdparty/library/<平台>/<库>/`）：
+`avox_library` 平台覆盖（`3rdparty/library/<平台>/<库>/`）：
 
 | 平台 | onnxruntime | opencv |
 |------|-------------|--------|
@@ -93,8 +93,8 @@ python assets/script/fetch_assets.py --list --json               # 结构化输�
 | android | `libonnxruntime.a`（静态） | 未收录 |
 | linux / ios | 未收录 | 未收录 |
 
-> 完整开发库（含 `.lib`/头文件）仍需 `git clone avc_library ../avc_library` 供 CMake 构建；本清单只取**运行时 DLL**。
-> sherpa-onnx / sentencepiece 不在 avc_library：sherpa DLL 靠 `build_windows.py` 编译，sentencepiece 静态链入。
+> 完整开发库（含 `.lib`/头文件）仍需 `git clone avox_library ../avox_library` 供 CMake 构建；本清单只取**运行时 DLL**。
+> sherpa-onnx / sentencepiece 不在 avox_library：sherpa DLL 靠 `build_windows.py` 编译，sentencepiece 静态链入。
 
 ---
 
@@ -157,7 +157,7 @@ fetch_assets.py --select id1,id2 --root <部署根> --platform <plat> [--json]
 ## 已知限制
 
 - **AOT-GAN**：avox_model 未收录，`manual`，需自备。
-- **sherpa-onnx DLL**：avc_library 未收录，`build`（`build_windows.py` 编译）。
+- **sherpa-onnx DLL**：avox_library 未收录，`build`（`build_windows.py` 编译）。
 - **GPU/CUDA**：`onnxruntime_providers_shared.dll` + CUDA 运行时不在自动获取范围（CPU 够用）。
-- **linux/ios 运行时库**：avc_library 未收录，`manual` 指引官方源；收录后填 `platforms.<plat>` URL 即可。
+- **linux/ios 运行时库**：avox_library 未收录，`manual` 指引官方源；收录后填 `platforms.<plat>` URL 即可。
 - **android/ios 不跑此脚本**：走 APK/assets 打包，`manual` 标注仅作清单完整性。

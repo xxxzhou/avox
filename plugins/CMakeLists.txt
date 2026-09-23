@@ -15,9 +15,9 @@ if(ANDROID)
   # 其余插件在 Android 无预编译依赖(opencv 等)或链接不完整(sherpa 等), 一并排除。
   set(PLUGINS_DYNAMIC avox_torrent)
   # webrtc 插件: 宿主把 libavox_webrtc.so 复制到可写目录后 setPluginsDir 动态加载
-  # (依赖 avc_library/build/android/release/libwebrtc_nosym.a; console 无 JVM 用不了 webrtc)
+  # (依赖 avox_library/build/android/release/libwebrtc_nosym.a; console 无 JVM 用不了 webrtc)
   list(APPEND PLUGINS_DYNAMIC avox_webrtc)
-  # avox_remote/avox_ass: 预编译依赖已入库 avc_library(android/libsmb2、android/ass,
+  # avox_remote/avox_ass: 预编译依赖已入库 avox_library(android/libsmb2、android/ass,
   # 构建脚本 script/smb2|ass/build_android.py), so 由宿主 setPluginsDir 指向
   # jniLibs 动态加载(与 webrtc 同模式)
   list(APPEND PLUGINS_DYNAMIC avox_remote avox_ass)

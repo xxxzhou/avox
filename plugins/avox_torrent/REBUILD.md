@@ -1,14 +1,14 @@
 # avox_torrent 依赖重编指引(新机器)
 
 目标: 在新机器上编译 libtorrent 预编译产物(Windows + Android)并入库, 使 avox 的 avox_torrent 插件可构建。
-产物不进 git, 按 avc_library 惯例放置; avox 侧由 `cmake/FindLibtorrent.cmake` 自动查找。
+产物不进 git, 按 avox_library 惯例放置; avox 侧由 `cmake/FindLibtorrent.cmake` 自动查找。
 
 ## 一. 目录约定(工作区根 = github/)
 
 ```
 github/
 ├── avox/                          # 主工程
-├── avc_library/3rdparty/library/    # 产物入库位置(git 管理, 只收最终产物)
+├── avox_library/3rdparty/library/    # 产物入库位置(git 管理, 只收最终产物)
 ├── libtorrent/                      # 本依赖源项目(v2.0.14)
 └── boost/                           # 仅头文件, 不入 git
 ```
@@ -34,7 +34,7 @@ github/
 ```bash
 python build_windows.py
 ```
-- 自动: 配置(静态+/MT/OpenSSL MT静态) → 编 torrent-rasterbar → 安装到 `../avc_library/3rdparty/library/windows/libtorrent/{include,lib}`
+- 自动: 配置(静态+/MT/OpenSSL MT静态) → 编 torrent-rasterbar → 安装到 `../avox_library/3rdparty/library/windows/libtorrent/{include,lib}`
 - 产物: `lib/torrent-rasterbar.lib`(约110MB Release 静态库)
 - 重编: `AVOX_FORCE_RECONFIGURE=1 python build_windows.py` 或 `--clean`
 
@@ -54,9 +54,9 @@ python build_windows.py
 python build_android.py                       # 默认 arm64-v8a + armeabi-v7a
 python build_android.py --abi arm64-v8a       # 单ABI
 ```
-- 产物: `../avc_library/3rdparty/library/android/libtorrent/<abi>/{include,lib/torrent-rasterbar.a}`
+- 产物: `../avox_library/3rdparty/library/android/libtorrent/<abi>/{include,lib/torrent-rasterbar.a}`
 - 参数: API level 24+, `-DANDROID_STL=c++_static`(与 avox Android 侧一致), 其余选项同 Windows
-- OpenSSL 按 ABI 自动探测库仓预编译(`avc_library/3rdparty/library/android/openssl/<abi>/{libssl.a,libcrypto.a}`):
+- OpenSSL 按 ABI 自动探测库仓预编译(`avox_library/3rdparty/library/android/openssl/<abi>/{libssl.a,libcrypto.a}`):
   有则 encryption=ON(NDK 下 find_path 被 sysroot 重根, 脚本已显式钉住三件套路径), 没有则该 ABI 降级 encryption=OFF。
   当前 arm64-v8a 有预编译 OpenSSL(加密开), armeabi-v7a 暂无(加密关; 补编 v7a OpenSSL 入库后重跑脚本即自动升级)
 - ⚠️ armeabi-v7a 需 NDK 内含 32 位工具链; 缺失时先只编 arm64

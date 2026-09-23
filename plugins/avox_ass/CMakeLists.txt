@@ -8,8 +8,8 @@ if(NOT AVOX_ENABLE_ASS)
   return()
 endif()
 
-# 默认探测 avc_library 的预编译产物(路径走根 CMake 的 AVOX_EXTERNAL_LIBRARY_DIR:
-# -D 参数 > 环境变量 > 默认 ../avc_library; 可用 AVOX_ASS_DEPS_DIR 显式覆盖)
+# 默认探测 avox_library 的预编译产物(路径走根 CMake 的 AVOX_EXTERNAL_LIBRARY_DIR:
+# -D 参数 > 环境变量 > 默认 ../avox_library; 可用 AVOX_ASS_DEPS_DIR 显式覆盖)
 # WIN32 守卫: android/apple 交叉构建宿主也是 Windows 盘, 不守卫会抢先命中 windows 产物
 if(NOT AVOX_ASS_DEPS_DIR
    AND WIN32

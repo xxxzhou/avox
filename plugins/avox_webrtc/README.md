@@ -93,7 +93,7 @@ player->open();   // 内部 connect, onLocalSdp 时 sendLocalSdp, 远端消息�
 2. 用 `script/webrtc/gclient_webrtc.bat` 同步源码
 3. 切到目标分支（如 m138 → branch-heads/7204），gclient sync -D
 4. 各平台用 `script/webrtc/` 下对应脚本：Windows `.\webrtc_build_windows.ps1 release`，mac/ios/android/linux 用同名 `.sh`
-5. Windows 脚本剥符号产 webrtc_nosym.lib 时，llvm-strip 会把 `boringssl_asm` 成员（GNU as 产出 COFF）的**整个符号表**剥掉（非仅调试信息），导致链接报 `ChaCha20_ctr32_*`/`vpaes_*` 等 73 个 LNK2019——脚本已内置"剥后删除 asm 坏成员、回插原始成员重建索引"的修复；编完拷 `obj/webrtc*.lib` 到 avc_library `build/windows/release/`
+5. Windows 脚本剥符号产 webrtc_nosym.lib 时，llvm-strip 会把 `boringssl_asm` 成员（GNU as 产出 COFF）的**整个符号表**剥掉（非仅调试信息），导致链接报 `ChaCha20_ctr32_*`/`vpaes_*` 等 73 个 LNK2019——脚本已内置"剥后删除 asm 坏成员、回插原始成员重建索引"的修复；编完拷 `obj/webrtc*.lib` 到 avox_library `build/windows/release/`
 
 ## 平台注意
 

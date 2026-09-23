@@ -5,7 +5,7 @@
 #
 # libtorrent 引用方式与 opencv/onnxruntime 一致: 独立项目预编译进库仓
 #   源项目: D:/Work/github/libtorrent (python build_windows.py)
-#   产物:   ../avc_library/3rdparty/library/windows/libtorrent/{include,lib}
+#   产物:   ../avox_library/3rdparty/library/windows/libtorrent/{include,lib}
 # 由顶层 AVOXOptions.cmake find_package(Libtorrent) 解析(AVOX_ENABLE_TORRENT 关闭时降级)
 if(NOT AVOX_ENABLE_TORRENT)
   message(STATUS "avox_torrent plugin: 未启用, 跳过")

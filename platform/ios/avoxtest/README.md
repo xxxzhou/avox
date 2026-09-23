@@ -54,7 +54,7 @@ ffmpeg -f lavfi -i testsrc2=size=640x360:rate=15:duration=60  -c:v libx265 -crf 
 ```bash
 cmake -B build \
   -DAVOX_LIB_DIR=<SDK安装>/aarch64/Release \
-  -DAVOX_WEBRTC_LIB=<avc_library>/build/darwin/release/libwebrtc_nosym.a
+  -DAVOX_WEBRTC_LIB=<avox_library>/build/darwin/release/libwebrtc_nosym.a
 cmake --build build
 ./build/avoxtest            # LAN 矩阵, echo $? 看结果
 ./build/avoxtest --win      # 出窗口: 画面 + 判定横幅
@@ -70,7 +70,7 @@ AVOX_MATRIX=loop ./build/avoxtest   # 进程内回环
 cmake -G Xcode -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphoneos \
   -DCMAKE_OSX_ARCHITECTURES=arm64 \
   -DAVOX_LIB_DIR=<SDK安装>/Release \
-  -DAVOX_WEBRTC_LIB=<avc_library>/build/ios/release/libwebrtc_nosym.a \
+  -DAVOX_WEBRTC_LIB=<avox_library>/build/ios/release/libwebrtc_nosym.a \
   -B build-ios
 open build-ios/avoxtest.xcodeproj   # 选真机, Run (自动签名)
 ```
@@ -90,7 +90,7 @@ open build-ios/avoxtest.xcodeproj   # 选真机, Run (自动签名)
 
 ## 说明
 
-- webrtc 架构: 客户端走独立的 libwebrtc (avc_library 产物), 服务端在独立部署的
+- webrtc 架构: 客户端走独立的 libwebrtc (avox_library 产物), 服务端在独立部署的
   ZLM 服务端 —— mk_api 本身**不需要** ENABLE_WEBRTC。因此进程内回环模式
   (AVOX_MATRIX=loop) 不含 webrtc 用例能力属设计使然; LAN 模式的 webrtc 用例
   走独立 ZLM 服务端, 不受影响

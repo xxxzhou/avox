@@ -8,13 +8,13 @@
 #   cmake -G Xcode -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphoneos \
 #     -DCMAKE_OSX_ARCHITECTURES=arm64 \
 #     -DAVOX_LIB_DIR=<install>/Release -DAVOX_INCLUDE_DIR=<install>/include \
-#     -DAVOX_WEBRTC_LIB=<avc_library>/build/ios/release/libwebrtc_nosym.a ..
+#     -DAVOX_WEBRTC_LIB=<avox_library>/build/ios/release/libwebrtc_nosym.a ..
 #   xcodebuild/Xcode 点 Run
 #
 # macOS 无头 (跑完退出, 退出码 0=全过):
 #   cmake -B build -DAVOX_LIB_DIR=<install>/aarch64/Release \
 #     -DAVOX_INCLUDE_DIR=<install>/include \
-#     -DAVOX_WEBRTC_LIB=<avc_library>/build/darwin/release/libwebrtc_nosym.a ..
+#     -DAVOX_WEBRTC_LIB=<avox_library>/build/darwin/release/libwebrtc_nosym.a ..
 #   cmake --build build && ./build/avoxtest
 #
 # 运行模式 (avoxtest.mm 内 AVOX_MATRIX/AVOX_IO_PLAN 环境变量):
@@ -60,7 +60,7 @@ endfunction()
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
   # ── iOS 真机 app: 静态链全部 SDK 依赖 ──
   set(AVOX_LIB_DIR "${AVOX_LIB_DIR}" CACHE PATH "目录: libavox.a/libavcodec.a/...")
-  set(AVOX_WEBRTC_LIB "${AVOX_WEBRTC_LIB}" CACHE FILEPATH "libwebrtc_nosym.a (avc_library ios 产物)")
+  set(AVOX_WEBRTC_LIB "${AVOX_WEBRTC_LIB}" CACHE FILEPATH "libwebrtc_nosym.a (avox_library ios 产物)")
   set(AVOX_LIBEXT_CODEC "${ZLM_DIR}/release/ios/Release/Release/libext-codec.a" CACHE FILEPATH "ZLM ext-codec")
   add_executable(avoxtest MACOSX_BUNDLE avoxtest.mm)
   avoxtest_include_dirs()
@@ -116,7 +116,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 else()
   # ── macOS 无头验证: 裸可执行, 离屏解码, 跑完 exit(0/1) ──
   set(AVOX_LIB_DIR "${AVOX_LIB_DIR}" CACHE PATH "目录: libavox.a/libavcodec.a/...")
-  set(AVOX_WEBRTC_LIB "${AVOX_WEBRTC_LIB}" CACHE FILEPATH "libwebrtc_nosym.a (avc_library darwin 产物)")
+  set(AVOX_WEBRTC_LIB "${AVOX_WEBRTC_LIB}" CACHE FILEPATH "libwebrtc_nosym.a (avox_library darwin 产物)")
   add_executable(avoxtest avoxtest.mm)
   avoxtest_include_dirs()
   add_library(mk_api SHARED IMPORTED)

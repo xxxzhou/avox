@@ -11,7 +11,7 @@
 | `godot/` | Godot 离线工具（`idle_bake.py` avatar 待机微动烘焙 → `../platform/godot/tools/src/avatar/idle_bake.json`） |
 | `torrent/` | torrent 播放分步基准（`torrent_bench.py`，驱动 `../samples/functest/torrentbench.cpp`；见 `../plugins/avox_torrent/README.md`） |
 | `ffmpeg/` | 从源码构建 FFmpeg（`build_ffmpeg.py`，多 flavor 白名单，`--deploy` 换库进 3rdparty） |
-| `smb2/` | 构建 libsmb2 预编译库（`build_windows.py`，静态 /MT，产物进 avc_library） |
+| `smb2/` | 构建 libsmb2 预编译库（`build_windows.py`，静态 /MT，产物进 avox_library） |
 | `webrtc/` | 构建 WebRTC（`.bat`/`.sh`/`.ps1`，Windows/Android/iOS） |
 | `onnx/` | 下载 ONNX Runtime 开发库（各平台，含 `.lib`） |
 | `opencv/` | 下载 OpenCV 开发包 |
@@ -27,7 +27,7 @@
 
 ## 旧分散下载脚本（向后兼容，部分过时）
 
-下列脚本仍可独立运行，但运行时资源获取**推荐用 [`../assets/script/fetch_assets.py`](../assets/script/fetch_assets.py) 统一入口**（新机制已用 `avox_model`/`avc_library` 源替代它们的下载逻辑）：
+下列脚本仍可独立运行，但运行时资源获取**推荐用 [`../assets/script/fetch_assets.py`](../assets/script/fetch_assets.py) 统一入口**（新机制已用 `avox_model`/`avox_library` 源替代它们的下载逻辑）：
 
 | 目录 | 脚本 | 状态 |
 |------|------|------|

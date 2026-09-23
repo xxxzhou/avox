@@ -10,7 +10,7 @@
 #     android/release/    # libwebrtc_nosym.a / libwebrtc.a
 #     ios/release/        # libwebrtc_nosym.a / libwebrtc.a
 #     darwin/release/     # libwebrtc_nosym.a (macOS)
-# 优先链接无符号_nosym版(avc_library入库的), 找不到时回退带符号版(本机自编)
+# 优先链接无符号_nosym版(avox_library入库的), 找不到时回退带符号版(本机自编)
 
 # 确定 WebRTC 根目录
 # 优先使用 AVOX_EXTERNAL_LIBRARY_DIR (在根 CMakeLists.txt 中定义)
@@ -19,7 +19,7 @@ if(DEFINED AVOX_EXTERNAL_LIBRARY_DIR)
 else()
     # 向后兼容：未定义时计算默认值
     get_filename_component(AVOX_PARENT_DIR ${CMAKE_SOURCE_DIR}/.. REALPATH)
-    set(WEBRTC_BASE_DIR "${AVOX_PARENT_DIR}/avc_library")
+    set(WEBRTC_BASE_DIR "${AVOX_PARENT_DIR}/avox_library")
 endif()
 
 # 设置头文件和库目录
@@ -43,7 +43,7 @@ find_path(WEBRTC_INCLUDE_DIR
     NO_DEFAULT_PATH)
 set(WEBRTC_INCLUDE_DIRS ${WEBRTC_INCLUDE_DIR})
 
-# WebRTC 依赖 abseil，头文件在 avc_library/src/third_party/abseil-cpp
+# WebRTC 依赖 abseil，头文件在 avox_library/src/third_party/abseil-cpp
 set(ABSL_INCLUDE_DIR "${WEBRTC_SOURCE_DIR}/third_party/abseil-cpp")
 if(EXISTS ${ABSL_INCLUDE_DIR})
     list(APPEND WEBRTC_INCLUDE_DIRS ${ABSL_INCLUDE_DIR})

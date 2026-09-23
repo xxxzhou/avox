@@ -1,7 +1,7 @@
 # ASS 字幕栈 Android 预编译(aarch64) — 全静态 .a, 供 avox_ass 插件 android
 # STATIC 模式连同插件源码链进 libavox.so(设计见 doc/plan/player/ASS字幕渲染计划.md §3.8)
 #
-# 产物: <avc_library>/3rdparty/library/android/ass/{include,lib}
+# 产物: <avox_library>/3rdparty/library/android/ass/{include,lib}
 #   libass.a + libfribidi.a + libharfbuzz.a + libfreetype.a + 各自 .pc/头文件
 #
 # 关键决策(对齐 §3.8):
@@ -24,7 +24,7 @@ TARGET = "android"
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 AVC_LIBRARY = (os.environ.get("ASS_DEPS_AVC_LIBRARY")
                or os.environ.get("AVOX_EXTERNAL_LIBRARY_DIR")
-               or os.path.join(os.path.dirname(ROOT), "avc_library"))
+               or os.path.join(os.path.dirname(ROOT), "avox_library"))
 PREFIX = os.environ.get(
     "ASS_DEPS_PREFIX", os.path.join(AVC_LIBRARY, "3rdparty", "library", TARGET, "ass"))
 # 与 windows 脚本共享源码缓存(dl/src), 减少重复下载

@@ -565,7 +565,7 @@ def copy_glsl_files():
 def get_onnxruntime_paths(platform, arch):
     """
     获取 ONNX Runtime 搜索路径列表
-    优先级: 1. AVOX_EXTERNAL_LIBRARY_DIR 环境变量 2. 本地 3rdparty 3. 父目录 avc_library
+    优先级: 1. AVOX_EXTERNAL_LIBRARY_DIR 环境变量 2. 本地 3rdparty 3. 父目录 avox_library
     """
     paths = []
 
@@ -578,7 +578,9 @@ def get_onnxruntime_paths(platform, arch):
     script_dir = os.path.dirname(os.path.abspath(__file__))
     paths.append(os.path.join(script_dir, "3rdparty", "library", platform, "onnxruntime"))
 
-    # 3. 父目录的 avc_library
+    # 3. 父目录的 avox_library
+    paths.append(os.path.join(script_dir, "..", "avox_library", "3rdparty", "library", platform, "onnxruntime"))
+    # 过渡兜底: 旧目录名
     paths.append(os.path.join(script_dir, "..", "avc_library", "3rdparty", "library", platform, "onnxruntime"))
 
     return paths
@@ -649,7 +651,7 @@ def find_openssl(platform):
     搜索路径优先级:
       1. AVOX_EXTERNAL_LIBRARY_DIR 环境变量
       2. 本地 3rdparty/library/{platform}/openssl
-      3. 父目录 avc_library/3rdparty/library/{platform}/openssl
+      3. 父目录 avox_library/3rdparty/library/{platform}/openssl
 
     Returns:
       找到的目录路径，未找到返回 None
@@ -660,6 +662,8 @@ def find_openssl(platform):
         paths.append(os.path.join(external_lib, "3rdparty", "library", platform, "openssl"))
     script_dir = os.path.dirname(os.path.abspath(__file__))
     paths.append(os.path.join(script_dir, "3rdparty", "library", platform, "openssl"))
+    paths.append(os.path.join(script_dir, "..", "avox_library", "3rdparty", "library", platform, "openssl"))
+    # 过渡兜底: 旧目录名
     paths.append(os.path.join(script_dir, "..", "avc_library", "3rdparty", "library", platform, "openssl"))
 
     for base_path in paths:
@@ -671,7 +675,7 @@ def find_openssl(platform):
         if os.path.exists(lib_dir):
             print(f"找到 OpenSSL 库目录: {base_path}")
             return base_path
-        # avc_library 结构: openssl/arm64-v8a/libssl.so
+        # avox_library 结构: openssl/arm64-v8a/libssl.so
         if platform == "android":
             for arch in ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]:
                 arch_dir = os.path.join(base_path, arch)

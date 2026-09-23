@@ -12,7 +12,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 
 # GitHub Release 配置
-GITHUB_REPO = "xxxzhou/avc_library"
+GITHUB_REPO = "xxxzhou/avox_library"
 
 def get_version():
     try:

@@ -2,7 +2,7 @@
 # 查找 Real-ESRGAN 模型权重(VkQEnhanceLayer 画质增强; 数据文件, 无头文件/库)
 #
 # 权重权威位置: 本仓 assets/models/quality/(平台无关, 大文件暂走宿主注入,
-# 未进 LFS); ../avc_library/assets/models 是历史路径, 仅作迁移期兜底
+# 未进 LFS); ../avox_library/assets/models 是历史路径, 仅作迁移期兜底
 # 用法:
 #   find_package(RealEsrgan QUIET)
 #
@@ -24,12 +24,12 @@ if(DEFINED AVOX_EXTERNAL_LIBRARY_DIR)
     set(RealEsrgan_SEARCH_PATHS
         ${PROJECT_SOURCE_DIR}/assets/models
         ${AVOX_EXTERNAL_LIBRARY_DIR}/assets/models
-        ${PROJECT_SOURCE_DIR}/../avc_library/assets/models
+        ${PROJECT_SOURCE_DIR}/../avox_library/assets/models
     )
 else()
     set(RealEsrgan_SEARCH_PATHS
         ${PROJECT_SOURCE_DIR}/assets/models
-        ${PROJECT_SOURCE_DIR}/../avc_library/assets/models
+        ${PROJECT_SOURCE_DIR}/../avox_library/assets/models
     )
 endif()
 

@@ -6,7 +6,7 @@ import sys
 # SoundTouch macOS arm64 / iOS arm64 静态库构建(与 build_windows.py 同源, 2.4.1)
 # 纯 C++17, 无外部依赖, LGPL-2.1
 # 产物布局(与 windows/soundtouch 同构):
-#   <avc_library>/3rdparty/library/<darwin|ios>/soundtouch/{include/soundtouch, lib/libSoundTouch.a}
+#   <avox_library>/3rdparty/library/<darwin|ios>/soundtouch/{include/soundtouch, lib/libSoundTouch.a}
 #
 # 源码仓不在 avox 内(上游保持原样): 脚本自动 shallow clone 2.4.1 到 _cache;
 # 也可 --src 指定已 clone 的目录
@@ -23,7 +23,7 @@ LIB_PLATFORM = "darwin" if TARGET == "macos" else "ios"
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 AVC_LIBRARY = (os.environ.get("AVC_SOUNDTOUCH_AVC_LIBRARY")
                or os.environ.get("AVOX_EXTERNAL_LIBRARY_DIR")
-               or os.path.join(os.path.dirname(ROOT), "avc_library"))
+               or os.path.join(os.path.dirname(ROOT), "avox_library"))
 OUT_DIR = os.path.join(AVC_LIBRARY, "3rdparty", "library", LIB_PLATFORM, "soundtouch")
 CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_cache")
 SRC_DEFAULT = os.path.join(CACHE, "soundtouch")

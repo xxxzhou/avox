@@ -111,6 +111,6 @@ SWIG 绑定: `swig/csharp/`, `swig/nodejs/`, `swig/python/` (Java 绑定构建�
 
 ## 外部依赖库路径
 
-大型依赖库 (WebRTC、ONNX Runtime、OpenCV 等) 在同级 `../avc_library` (git clone xxxzhou/avc_library)：预编译库在 `3rdparty/library/<android|ios|windows>/`，WebRTC 源码在 `src/`；同级另有 avox-godot/avox-ue/avox-unity 插件仓。
+大型依赖库 (WebRTC、ONNX Runtime、OpenCV 等) 在同级 `../avox_library` (git clone xxxzhou/avox_library)：预编译库在 `3rdparty/library/<android|ios|windows>/`，WebRTC 源码在 `src/`；同级另有 avox-godot/avox-ue/avox-unity 插件仓。
 
-自定义路径: 环境变量 `AVOX_EXTERNAL_LIBRARY_DIR` 或 CMake 参数 `-DAVOX_EXTERNAL_LIBRARY_DIR=<路径>`，默认自动查找 `../avc_library`。
+自定义路径: 环境变量 `AVOX_EXTERNAL_LIBRARY_DIR` 或 CMake 参数 `-DAVOX_EXTERNAL_LIBRARY_DIR=<路径>`，默认自动查找 `../avox_library`。

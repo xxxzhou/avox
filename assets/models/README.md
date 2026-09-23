@@ -115,7 +115,7 @@ python script/inpaint/yolo_to_onnx.py yolo11x_watermark.pt -o watermark.onnx -s 
 python assets/script/fetch_assets.py --select quality_realesrgan_x4v3   # 落 assets/models/quality/
 ```
 
-- 构建期 `cmake/FindRealEsrgan.cmake` 可选定位 (`assets/models` 优先, `../avc_library` 遗留兜底), 命中即拷进运行目录; 缺失不阻塞构建
+- 构建期 `cmake/FindRealEsrgan.cmake` 可选定位 (`assets/models` 优先, `../avox_library` 遗留兜底), 命中即拷进运行目录; 缺失不阻塞构建
 - 运行期缺权重自动降级: 录制走纯转码, 实时轨不挂增强层; 宿主也可直接注入 modelsRoot
 - 自导出(仅开发期, 从官方 .pth 重导): `script/realesrgan/export_onnx.py`。注意 ONNX 导出非字节确定 —— 本地重导的文件与 manifest 版本 sha 不同属正常, 功能等价, 分发以 manifest 版本为准
 

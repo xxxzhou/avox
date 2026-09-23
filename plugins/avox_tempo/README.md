@@ -3,7 +3,7 @@
 > 状态: 已落地(Windows; 其余平台待库产物与装载验证) · 上次核对: 2026-09-23 · 权威源: ->
 
 目标: `IMediaPlayer::speed` 的音频侧从「重采样变调」升级为 **tempo 变速不变调**，五端(Windows/Android/iOS/macOS/Linux)统一生效。
-依赖模式照抄 avox_remote↔libsmb2：源码仓拉到同级 `D:\Work\github\soundtouch` → `script/soundtouch/` 预编译入库仓 `avc_library` → `cmake/FindSoundTouch.cmake` → 插件 `find_package` 条件编译，**缺库自动跳过**（未装插件 = 行为与现状一致）。
+依赖模式照抄 avox_remote↔libsmb2：源码仓拉到同级 `D:\Work\github\soundtouch` → `script/soundtouch/` 预编译入库仓 `avox_library` → `cmake/FindSoundTouch.cmake` → 插件 `find_package` 条件编译，**缺库自动跳过**（未装插件 = 行为与现状一致）。
 
 ## 落地记录 (2026-09-23)
 
@@ -46,8 +46,8 @@ frameQueue ───────────────────────
 
 - 源码: `D:\Work\github\soundtouch`，钉 tag 2.4.1(与 `cmake/FindLibsmb2.cmake` 钉 6.2 同口径)。
 - `script/soundtouch/build_windows.py` 镜像 `script/smb2/build_windows.py`: CMake 编静态库(/MT 对齐主仓)，产物
-  `avc_library/3rdparty/library/windows/soundtouch/{include/soundtouch/*.h, lib/SoundTouch.lib}`。
-- `cmake/FindSoundTouch.cmake` 镜像 `cmake/FindLibsmb2.cmake`: 搜 `$ENV{SOUNDTOUCH_DIR}` + `../avc_library/3rdparty/library` + 仓内 `3rdparty/library`；平台目录 `windows|ios|darwin|linux|android/<abi>`；判 `include/soundtouch/SoundTouch.h`；出 `SOUNDTOUCH_INCLUDE_DIRS` / `SOUNDTOUCH_LIBRARIES`。
+  `avox_library/3rdparty/library/windows/soundtouch/{include/soundtouch/*.h, lib/SoundTouch.lib}`。
+- `cmake/FindSoundTouch.cmake` 镜像 `cmake/FindLibsmb2.cmake`: 搜 `$ENV{SOUNDTOUCH_DIR}` + `../avox_library/3rdparty/library` + 仓内 `3rdparty/library`；平台目录 `windows|ios|darwin|linux|android/<abi>`；判 `include/soundtouch/SoundTouch.h`；出 `SOUNDTOUCH_INCLUDE_DIRS` / `SOUNDTOUCH_LIBRARIES`。
 - 后续: `build_android.py` / `build_apple.py` / `build_linux.py` 镜像 `script/smb2/` 同名脚本。
 
 ## T2 核心接入(无插件行为不变)

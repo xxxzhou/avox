@@ -41,8 +41,8 @@ jobs:
       - name: Clone Library Repository (onnxruntime small files)
         uses: actions/checkout@v4
         with:
-          repository: xxxzhou/avc_library
-          path: avc_library
+          repository: xxxzhou/avox_library
+          path: avox_library
           token: ${{ secrets.AVOX_LIBRARY_TOKEN }}
           sparse-checkout: |
             3rdparty/library/windows/onnxruntime
@@ -52,27 +52,27 @@ jobs:
         uses: actions/cache@v4
         id: cache-prebuilt
         with:
-          path: avc_library
+          path: avox_library
           key: prebuilt-v1.0.0-windows-v2
 
       - name: Download Prebuilt Libraries (from Release)
         if: steps.cache-prebuilt.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          mkdir -p avc_library/build/windows/release
-          mkdir -p avc_library/3rdparty/library/windows/onnxruntime/onnxruntime-win-x64-1.23.2/lib
+          mkdir -p avox_library/build/windows/release
+          mkdir -p avox_library/3rdparty/library/windows/onnxruntime/onnxruntime-win-x64-1.23.2/lib
 
           TOKEN="${{ secrets.AVOX_LIBRARY_TOKEN }}"
-          BASE="https://github.com/xxxzhou/avc_library/releases/download/v1.0.0"
+          BASE="https://github.com/xxxzhou/avox_library/releases/download/v1.0.0"
 
           curl -sL -H "Authorization: token $TOKEN" "$BASE/webrtc-windows-x64.lib" \
-            -o avc_library/build/windows/release/webrtc.lib && echo "webrtc OK"
+            -o avox_library/build/windows/release/webrtc.lib && echo "webrtc OK"
 
           curl -sL -H "Authorization: token $TOKEN" "$BASE/onnxruntime.lib" \
-            -o avc_library/3rdparty/library/windows/onnxruntime/onnxruntime-win-x64-1.23.2/lib/onnxruntime.lib && echo "onnxruntime.lib OK"
+            -o avox_library/3rdparty/library/windows/onnxruntime/onnxruntime-win-x64-1.23.2/lib/onnxruntime.lib && echo "onnxruntime.lib OK"
 
           curl -sL -H "Authorization: token $TOKEN" "$BASE/onnxruntime_providers_shared.lib" \
-            -o avc_library/3rdparty/library/windows/onnxruntime/onnxruntime-win-x64-1.23.2/lib/onnxruntime_providers_shared.lib && echo "onnxruntime_providers_shared.lib OK"
+            -o avox_library/3rdparty/library/windows/onnxruntime/onnxruntime-win-x64-1.23.2/lib/onnxruntime_providers_shared.lib && echo "onnxruntime_providers_shared.lib OK"
 
       - name: Cache AI Models
         uses: actions/cache@v4
@@ -204,7 +204,7 @@ jobs:
           PYTHONIOENCODING: utf-8
           AVOX_BUILD_TYPE: Release
           CMAKE_CI: ON
-          AVOX_EXTERNAL_LIBRARY_DIR: ${{ github.workspace }}\avc_library
+          AVOX_EXTERNAL_LIBRARY_DIR: ${{ github.workspace }}\avox_library
 
       - name: Run unit tests (Windows)
         shell: pwsh
@@ -278,7 +278,7 @@ jobs:
           PYTHONIOENCODING: utf-8
           AVOX_BUILD_TYPE: Release
           CMAKE_CI: ON
-          AVOX_EXTERNAL_LIBRARY_DIR: ${{ github.workspace }}\avc_library
+          AVOX_EXTERNAL_LIBRARY_DIR: ${{ github.workspace }}\avox_library
 
       - name: Build AvaPlayer Desktop
         run: |
@@ -340,27 +340,27 @@ jobs:
         uses: actions/cache@v4
         id: cache-prebuilt
         with:
-          path: avc_library
+          path: avox_library
           key: prebuilt-v1.0.0-android-v2
 
       - name: Download Prebuilt Libraries (from Release)
         if: steps.cache-prebuilt.outputs.cache-hit != 'true'
         run: |
           # Create directories
-          mkdir -p avc_library/build/android/release
-          mkdir -p avc_library/3rdparty/library/android/onnxruntime/onnxruntime-android-arm64-v8a-static_lib-1.23.2/lib
+          mkdir -p avox_library/build/android/release
+          mkdir -p avox_library/3rdparty/library/android/onnxruntime/onnxruntime-android-arm64-v8a-static_lib-1.23.2/lib
 
           # Download webrtc-android-arm64.a
           curl -sL -H "Authorization: token ${{ secrets.AVOX_LIBRARY_TOKEN }}" \
-            "https://api.github.com/repos/xxxzhou/avc_library/releases/tags/v1.0.0" | python3 -c \
+            "https://api.github.com/repos/xxxzhou/avox_library/releases/tags/v1.0.0" | python3 -c \
             "import sys,json; assets=json.load(sys.stdin)['assets']; print([a['browser_download_url'] for a in assets if 'android-arm64' in a['name'] and 'onnx' not in a['name']][0])" | \
-            xargs -I{} curl -sL -H "Authorization: token ${{ secrets.AVOX_LIBRARY_TOKEN }}" {} -o avc_library/build/android/release/libwebrtc.a
+            xargs -I{} curl -sL -H "Authorization: token ${{ secrets.AVOX_LIBRARY_TOKEN }}" {} -o avox_library/build/android/release/libwebrtc.a
 
           # Download onnxruntime-android-arm64.a
           curl -sL -H "Authorization: token ${{ secrets.AVOX_LIBRARY_TOKEN }}" \
-            "https://api.github.com/repos/xxxzhou/avc_library/releases/tags/v1.0.0" | python3 -c \
+            "https://api.github.com/repos/xxxzhou/avox_library/releases/tags/v1.0.0" | python3 -c \
             "import sys,json; assets=json.load(sys.stdin)['assets']; print([a['browser_download_url'] for a in assets if 'onnxruntime-android-arm64' in a['name']][0])" | \
-            xargs -I{} curl -sL -H "Authorization: token ${{ secrets.AVOX_LIBRARY_TOKEN }}" {} -o avc_library/3rdparty/library/android/onnxruntime/onnxruntime-android-arm64-v8a-static_lib-1.23.2/lib/libonnxruntime.a
+            xargs -I{} curl -sL -H "Authorization: token ${{ secrets.AVOX_LIBRARY_TOKEN }}" {} -o avox_library/3rdparty/library/android/onnxruntime/onnxruntime-android-arm64-v8a-static_lib-1.23.2/lib/libonnxruntime.a
 
           echo "Downloaded prebuilt libraries"
 
@@ -504,16 +504,16 @@ jobs:
           ls -la onnxruntime-android-arm64-v8a-static_lib-1.23.2/
           ls -la onnxruntime-android-arm64-v8a-static_lib-1.23.2/include/ || echo "include not found"
 
-      - name: Link ONNX Runtime to avc_library
+      - name: Link ONNX Runtime to avox_library
         run: |
-          mkdir -p $GITHUB_WORKSPACE/avc_library/3rdparty/library/android/onnxruntime
+          mkdir -p $GITHUB_WORKSPACE/avox_library/3rdparty/library/android/onnxruntime
           # Remove existing symlink or directory if exists
-          rm -rf $GITHUB_WORKSPACE/avc_library/3rdparty/library/android/onnxruntime/onnxruntime-android-arm64-v8a-static_lib-1.23.2
+          rm -rf $GITHUB_WORKSPACE/avox_library/3rdparty/library/android/onnxruntime/onnxruntime-android-arm64-v8a-static_lib-1.23.2
           ln -nsf $HOME/onnxruntime/onnxruntime-android-arm64-v8a-static_lib-1.23.2 \
-            $GITHUB_WORKSPACE/avc_library/3rdparty/library/android/onnxruntime/onnxruntime-android-arm64-v8a-static_lib-1.23.2
+            $GITHUB_WORKSPACE/avox_library/3rdparty/library/android/onnxruntime/onnxruntime-android-arm64-v8a-static_lib-1.23.2
           # Verify structure
-          ls -la $GITHUB_WORKSPACE/avc_library/3rdparty/library/android/onnxruntime/
-          ls -la $GITHUB_WORKSPACE/avc_library/3rdparty/library/android/onnxruntime/onnxruntime-android-arm64-v8a-static_lib-1.23.2/include/ || echo "include not found in symlink"
+          ls -la $GITHUB_WORKSPACE/avox_library/3rdparty/library/android/onnxruntime/
+          ls -la $GITHUB_WORKSPACE/avox_library/3rdparty/library/android/onnxruntime/onnxruntime-android-arm64-v8a-static_lib-1.23.2/include/ || echo "include not found in symlink"
 
       - name: Build C++ SDK
         run: |
@@ -523,7 +523,7 @@ jobs:
           PYTHONIOENCODING: utf-8
           AVOX_BUILD_TYPE: Release
           CMAKE_CI: ON
-          AVOX_EXTERNAL_LIBRARY_DIR: ${{ github.workspace }}/avc_library
+          AVOX_EXTERNAL_LIBRARY_DIR: ${{ github.workspace }}/avox_library
           AVOX_EXTRA_CMAKE_ARGS: "-DAVOX_ENABLE_TRANSLATION=ON -DAVOX_ENABLE_SHERPA=ON -DAVOX_ENABLE_SWIG_JAVA=OFF"
 
       - name: Verify C++ SDK (Android)

@@ -4,11 +4,11 @@
 
 
 > 2026-09-13 调研与规划,同日启动实施。
-> **M1 已完成**:四库产物出全并入库 **avc_library** `3rdparty/library/windows/ass/`
+> **M1 已完成**:四库产物出全并入库 **avox_library** `3rdparty/library/windows/ass/`
 > (Windows: ass-9.dll/ass.lib、fribidi-0.dll、harfbuzz.dll、freetype.dll;
 > fribidi/libass 已无 CMakeLists,走 meson + vcvars 批处理编排,pkg-config 用
 > pkgconf 自编,构建脚本 script/ass/build_windows.py——与 script/webrtc 同模式:
-> 脚本在 avox,大件产物进 avc_library);
+> 脚本在 avox,大件产物进 avox_library);
 > 核心接口 IAssOverlay + assOverlayHub(末尾追加)就位;插件 DYNAMIC 模式编译/
 > 加载/查表/降级全通,samples/functest/asstest 全绿。
 > **M3 插件侧提前完成**:AssOverlay 真实 libass 渲染(最小 .ass → loadFile →
@@ -109,7 +109,7 @@ libass 内部处理)。**PGS 不再是纯二期**:overlay 通道按"双源"设�
 ### 3.1 avox_ass 磁力模块与预编译产物
 
 **预编译产物**(实施落地:avoxx 仓 `script/ass/build_windows.py` 编排,产物入
-**avc_library** 仓 `3rdparty/library/windows/ass/`,与 script/webrtc 同模式)
+**avox_library** 仓 `3rdparty/library/windows/ass/`,与 script/webrtc 同模式)
 libass + FriBidi + HarfBuzz(+ 各自依赖)多平台产物——
 
 | 平台 | 产物 | 对应模块模式 |
@@ -118,7 +118,7 @@ libass + FriBidi + HarfBuzz(+ 各自依赖)多平台产物——
 | Android arm64 | 静态 .a(NDK) | STATIC(静态注册,jniLibs 不能枚举目录) |
 | Apple(iOS/macOS) | 静态 .a | STATIC(App Store 禁止加载第三方可执行代码) |
 
-- 版本 pin 死(脚本头注释),升级 = 改 tag 重出;产物随 avc_library 仓分发,
+- 版本 pin 死(脚本头注释),升级 = 改 tag 重出;产物随 avox_library 仓分发,
   插件 CMake 默认探测 sibling 目录,找到即真实链接。
 - FreeType:核心 avox_freetype 静态链一份、依赖栈原本再带一份——**Windows 已消除**:
   freetype/harfbuzz 静态链入 ass-9.dll(FTL/MIT 许可允许; fribidi LGPL 保持动态),
@@ -231,7 +231,7 @@ remux 原盘片源的主流字幕轨(海外收藏党/Emby 资源,含外语片 fo
 - **meson 交叉编译(M5 落地时)**:Android 需 NDK cross file(arm64-v8a,
   android-24 起),libass setup 用 --pkg-config-path 指目标机前缀;iOS/macOS 用
   xcrun clang(CC/CXX)+ 相应 -isysroot,macOS universal 出两架构后 lipo 合并;
-  产物目录按 avc_library 惯例 3rdparty/library/{android,darwin,ios}/ass。
+  产物目录按 avox_library 惯例 3rdparty/library/{android,darwin,ios}/ass。
 
 ## 4. 里程碑(单人 1.5~2 周)
 

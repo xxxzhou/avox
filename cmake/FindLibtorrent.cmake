@@ -22,7 +22,7 @@ set(Libtorrent_VERSION "2.0.14")
 # 默认搜索路径: 库仓(library/<platform>/libtorrent) 与 工程内3rdparty 兜底
 set(Libtorrent_SEARCH_PATHS
     $ENV{LIBTORRENT_DIR}
-    ${PROJECT_SOURCE_DIR}/../avc_library/3rdparty/library
+    ${PROJECT_SOURCE_DIR}/../avox_library/3rdparty/library
     ${PROJECT_SOURCE_DIR}/3rdparty/library
 )
 

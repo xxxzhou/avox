@@ -21,7 +21,7 @@ set(SoundTouch_VERSION "2.4.1")
 # 默认搜索路径: 库仓(library/<platform>/soundtouch) 与 工程内3rdparty 兜底
 set(SoundTouch_SEARCH_PATHS
     $ENV{SOUNDTOUCH_DIR}
-    ${PROJECT_SOURCE_DIR}/../avc_library/3rdparty/library
+    ${PROJECT_SOURCE_DIR}/../avox_library/3rdparty/library
     ${PROJECT_SOURCE_DIR}/3rdparty/library
 )
 

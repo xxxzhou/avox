@@ -6,7 +6,7 @@ import sys
 # libsmb2 macOS arm64 / iOS arm64 静态库构建(与 build_windows.py 同源, libsmb2-6.2)
 # 纯 C, 无外部依赖(加密走内置实现), LGPL
 # 产物布局(与 windows/libsmb2 同构):
-#   <avc_library>/3rdparty/library/<darwin|ios>/libsmb2/{include/smb2, lib/libsmb2.a}
+#   <avox_library>/3rdparty/library/<darwin|ios>/libsmb2/{include/smb2, lib/libsmb2.a}
 #
 # 源码仓不在 avox 内(上游保持原样): 脚本自动 shallow clone libsmb2-6.2 到 _cache;
 # 也可 --src 指定已 clone 的目录
@@ -23,7 +23,7 @@ LIB_PLATFORM = "darwin" if TARGET == "macos" else "ios"
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 AVC_LIBRARY = (os.environ.get("ASS_DEPS_AVC_LIBRARY")
                or os.environ.get("AVOX_EXTERNAL_LIBRARY_DIR")
-               or os.path.join(os.path.dirname(ROOT), "avc_library"))
+               or os.path.join(os.path.dirname(ROOT), "avox_library"))
 OUT_DIR = os.path.join(AVC_LIBRARY, "3rdparty", "library", LIB_PLATFORM, "libsmb2")
 CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_cache")
 SRC_DEFAULT = os.path.join(CACHE, "libsmb2")

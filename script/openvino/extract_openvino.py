@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-从 OpenVINO python wheel 提取 C++ runtime (最小 GPU 集) 到 avc_library。
+从 OpenVINO python wheel 提取 C++ runtime (最小 GPU 集) 到 avox_library。
 
 OpenVINO 的 ORT Execution Provider 没有官方预编译包(NuGet 404, GitHub release 无),
 要用 OpenVINO 只能走原生 C++ runtime。pip install openvino 的 wheel 内含完整 C++
@@ -46,13 +46,13 @@ KEEP_OTHER = ["cache.json"]  # GPU 内核缓存, 加速首次推理
 
 
 def find_avox_library():
-    """avc_library 路径: 环境变量 > ../avc_library"""
+    """avox_library 路径: 环境变量 > ../avox_library"""
     env = os.environ.get("AVOX_EXTERNAL_LIBRARY_DIR")
     if env and os.path.isdir(env):
         return env
     script_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(os.path.dirname(script_dir))
-    candidate = os.path.normpath(os.path.join(project_root, "..", "avc_library"))
+    candidate = os.path.normpath(os.path.join(project_root, "..", "avox_library"))
     return candidate
 
 
@@ -68,7 +68,7 @@ def copy_tree(src, dst, label):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="提取 OpenVINO C++ runtime 到 avc_library")
+    parser = argparse.ArgumentParser(description="提取 OpenVINO C++ runtime 到 avox_library")
     parser.add_argument("--src", default=r"D:/tmp/qenv/Lib/site-packages/openvino",
                         help="pip openvino 包路径 (含 include/ libs/)")
     parser.add_argument("--version", default=VERSION)

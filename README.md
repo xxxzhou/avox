@@ -190,12 +190,12 @@ avox 的能力来自多年的持续积累：
 
 ### 外部依赖库
 
-大型依赖库（WebRTC、ONNX Runtime、OpenCV 等）存放在与本项目同级的 `../avc_library` 目录，默认自动查找。可通过环境变量或 CMake 参数自定义：
+大型依赖库（WebRTC、ONNX Runtime、OpenCV 等）存放在与本项目同级的 `../avox_library` 目录，默认自动查找。可通过环境变量或 CMake 参数自定义：
 
 ```bash
-export AVOX_EXTERNAL_LIBRARY_DIR=/path/to/avc_library
+export AVOX_EXTERNAL_LIBRARY_DIR=/path/to/avox_library
 # 或
-cmake -DAVOX_EXTERNAL_LIBRARY_DIR=/path/to/avc_library ...
+cmake -DAVOX_EXTERNAL_LIBRARY_DIR=/path/to/avox_library ...
 ```
 
 ### 编译命令

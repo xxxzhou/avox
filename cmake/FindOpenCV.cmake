@@ -19,7 +19,7 @@ include(FindPackageHandleStandardArgs)
 # 版本
 set(OpenCV_VERSION "4.13.0")
 
-# 默认搜索路径 (avc_library 与项目内 3rdparty/library 目录结构一致: windows/opencv, android/opencv ...)
+# 默认搜索路径 (avox_library 与项目内 3rdparty/library 目录结构一致: windows/opencv, android/opencv ...)
 set(OpenCV_SEARCH_PATHS
     $ENV{OpenCV_DIR}
     ${PROJECT_SOURCE_DIR}/3rdparty/library
@@ -213,7 +213,7 @@ elseif(WIN32)
 
 elseif(APPLE)
     # ---------- macOS ----------
-    # 库仓目录关系对齐 windows(avc_library 3rdparty/library/darwin/opencv),
+    # 库仓目录关系对齐 windows(avox_library 3rdparty/library/darwin/opencv),
     # 但 macOS 无 vc16 那层: include/ + lib/ (或 opencv2.framework)
     set(OpenCV_DIR_NAMES
         "darwin/opencv/opencv-${OpenCV_VERSION}-macosx"

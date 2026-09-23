@@ -22,9 +22,9 @@ import subprocess
 import sys
 
 AVOX_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-# 源码目录默认与 avox 平级; 输出进 avc_library 库仓(与 avox 平级)
+# 源码目录默认与 avox 平级; 输出进 avox_library 库仓(与 avox 平级)
 DEFAULT_SRC = os.path.join(os.path.dirname(AVOX_ROOT), "libsmb2")
-DEFAULT_OUT = os.path.join(os.path.dirname(AVOX_ROOT), "avc_library",
+DEFAULT_OUT = os.path.join(os.path.dirname(AVOX_ROOT), "avox_library",
                            "3rdparty", "library", "windows", "libsmb2")
 OUT_DIR = os.environ.get("AVC_LIBSMB2_OUT", DEFAULT_OUT)
 

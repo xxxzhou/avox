@@ -21,7 +21,7 @@ set(Libsmb2_VERSION "6.2")
 # 默认搜索路径: 库仓(library/<platform>/libsmb2) 与 工程内3rdparty 兜底
 set(Libsmb2_SEARCH_PATHS
     $ENV{LIBSMB2_DIR}
-    ${PROJECT_SOURCE_DIR}/../avc_library/3rdparty/library
+    ${PROJECT_SOURCE_DIR}/../avox_library/3rdparty/library
     ${PROJECT_SOURCE_DIR}/3rdparty/library
 )
 

@@ -21,7 +21,7 @@ import sys
 
 AVOX_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DEFAULT_SRC = os.path.join(os.path.dirname(AVOX_ROOT), "soundtouch")
-DEFAULT_OUT = os.path.join(os.path.dirname(AVOX_ROOT), "avc_library",
+DEFAULT_OUT = os.path.join(os.path.dirname(AVOX_ROOT), "avox_library",
                            "3rdparty", "library", "linux", "soundtouch")
 
 

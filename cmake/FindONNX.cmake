@@ -34,7 +34,7 @@ else()
     # 向后兼容
     set(ONNXRUNTIME_SEARCH_PATHS
         $ENV{ONNXRUNTIME_DIR}
-        ${PROJECT_SOURCE_DIR}/avc_library/3rdparty/library
+        ${PROJECT_SOURCE_DIR}/avox_library/3rdparty/library
         ${PROJECT_SOURCE_DIR}/3rdparty/library
     )
 endif()

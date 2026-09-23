@@ -32,7 +32,7 @@ adb install -r avox_tools_debug.apk
 | Android SDK 组件 | 编译/签名 | Studio 的 SDK Manager: NDK **26.1.10909125**、SDK Platform **android-35**、Build-Tools **35+**、Platform-Tools |
 | Godot 4.7 编辑器 | 导出 APK | 本仓库用的 `D:\Work\godot\godot.exe` (4.7.1.stable) |
 | Godot **Android 导出模板** | 导出必需 | 见下"导出模板" |
-| avc_library | 预编译大库 | `git clone xxxzhou/avc_library` 到 avox 同级 (openssl/onnxruntime/libtorrent android 产物都在) |
+| avox_library | 预编译大库 | `git clone xxxzhou/avox_library` 到 avox 同级 (openssl/onnxruntime/libtorrent android 产物都在) |
 | libtorrent 源项目 | 重编 libtorrent android 预编译 | 见 `plugins/avox_torrent/REBUILD.md` (只需在新机器跑一次它的 android 部分) |
 | boost 1.86 头文件 | libtorrent 编译 | `../boost`(布局 `boost/boost/version.hpp`), 同 REBUILD.md |
 

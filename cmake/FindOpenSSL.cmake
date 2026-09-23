@@ -41,7 +41,7 @@ if(DEFINED AVOX_EXTERNAL_LIBRARY_DIR)
     list(APPEND _OPENSSL_EXTERNAL_PATHS "${AVOX_EXTERNAL_LIBRARY_DIR}/3rdparty/library")
 endif()
 # 向后兼容
-list(APPEND _OPENSSL_EXTERNAL_PATHS "${PROJECT_SOURCE_DIR}/../avc_library/3rdparty/library")
+list(APPEND _OPENSSL_EXTERNAL_PATHS "${PROJECT_SOURCE_DIR}/../avox_library/3rdparty/library")
 list(APPEND _OPENSSL_EXTERNAL_PATHS "${PROJECT_SOURCE_DIR}/3rdparty/library")
 
 # ========== 平台检测 ==========

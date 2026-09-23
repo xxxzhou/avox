@@ -11,7 +11,7 @@ import tarfile
 #     对齐 plugins/avox_ass/CMakeLists.txt 非 Windows 分支"静态 .a 自包含"的约定
 #   - iOS 走 meson cross file + CMAKE_SYSTEM_NAME=iOS 交叉, arm64 真机 SDK
 #   - fontconfig 显式关(走 CoreText, 免 host brew 字体库混入)
-# 产物: <avc_library>/3rdparty/library/<darwin|ios>/ass/{include/ass, lib/libass.a}
+# 产物: <avox_library>/3rdparty/library/<darwin|ios>/ass/{include/ass, lib/libass.a}
 # (布局对齐 windows/ass 的 include+lib; 依赖许可见 build_windows.py 头注:
 #  libass ISC / harfbuzz MIT / freetype FTL / fribidi LGPL-2.1+ 静态内嵌)
 #
@@ -30,7 +30,7 @@ LIB_PLATFORM = "darwin" if TARGET == "macos" else "ios"
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 AVC_LIBRARY = (os.environ.get("ASS_DEPS_AVC_LIBRARY")
                or os.environ.get("AVOX_EXTERNAL_LIBRARY_DIR")
-               or os.path.join(os.path.dirname(ROOT), "avc_library"))
+               or os.path.join(os.path.dirname(ROOT), "avox_library"))
 PREFIX = os.path.join(AVC_LIBRARY, "3rdparty", "library", LIB_PLATFORM, "ass")
 CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_cache")
 DL = os.path.join(CACHE, "dl")

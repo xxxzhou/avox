@@ -117,7 +117,7 @@ libtorrent 独立项目维护, **不在本仓库编译**:
 
 1. 源项目: `D:\Work\github\libtorrent`(`git clone --branch v2.0.14 https://github.com/arvidn/libtorrent.git` + `git submodule update --init deps/try_signal`)
 2. Boost 头文件(仅头文件用法): `D:\Work\github\boost`(官方发布包内的 `boost/` 目录)
-3. 在 libtorrent 目录执行 `python build_windows.py` → 产物安装到 `../avc_library/3rdparty/library/windows/libtorrent/{include,lib}`(静态 /MT; encryption 默认 ON, OpenSSL MT 静态版封进 lib, 无 DLL 依赖)
+3. 在 libtorrent 目录执行 `python build_windows.py` → 产物安装到 `../avox_library/3rdparty/library/windows/libtorrent/{include,lib}`(静态 /MT; encryption 默认 ON, OpenSSL MT 静态版封进 lib, 无 DLL 依赖)
 4. 本仓库 `cmake/FindLibtorrent.cmake` 自动查找; 找不到时 `AVOX_ENABLE_TORRENT` 自动降级关闭(构建日志可见)
 5. 插件产物: `<输出>/plugins/avox_torrent.dll`, ModuleMgr 懒加载扫描注册(首次 `open` 自动加载, MediaPlayer::cmdOpen 已挂 `ensureStarted` 触发点; `createRemoteSource` 同样触发懒加载)
 

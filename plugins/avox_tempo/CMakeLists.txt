@@ -4,7 +4,7 @@
 #
 # SoundTouch 引用方式与 libsmb2 一致: 独立源码仓预编译进库仓
 #   源项目: D:/Work/github/soundtouch (本仓 script/soundtouch/build_windows.py, checkout 2.4.1)
-#   产物:   ../avc_library/3rdparty/library/<platform>/soundtouch/{include,lib}
+#   产物:   ../avox_library/3rdparty/library/<platform>/soundtouch/{include,lib}
 # 由 cmake/FindSoundTouch.cmake 解析; 未就位时本插件整体跳过
 if(NOT AVOX_ENABLE_TEMPO)
   message(STATUS "avox_tempo plugin: 未启用, 跳过")

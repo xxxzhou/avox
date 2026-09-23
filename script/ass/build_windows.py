@@ -6,8 +6,8 @@ import tarfile
 import urllib.request
 
 # ASS 字幕栈预编译(fribidi/freetype/harfbuzz/libass) — Windows x64
-# 产物: < sibling >/avc_library/3rdparty/library/ass/windows/{bin,lib,include}
-# (与 script/webrtc 同模式: 脚本在 avox, 大件产物进 avc_library 仓;
+# 产物: < sibling >/avox_library/3rdparty/library/ass/windows/{bin,lib,include}
+# (与 script/webrtc 同模式: 脚本在 avox, 大件产物进 avox_library 仓;
 #  可用环境变量 ASS_DEPS_PREFIX 覆盖输出位置)
 # avox_ass 插件构建时默认探测该目录(AVOX_ASS_DEPS_DIR 可覆盖), 见 plugins/avox_ass/CMakeLists.txt
 #
@@ -23,11 +23,11 @@ import urllib.request
 
 TARGET = "windows"
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-# avc_library 位置与根 CMake 同优先级: ASS_DEPS_AVC_LIBRARY > AVOX_EXTERNAL_LIBRARY_DIR > ../avc_library
+# avox_library 位置与根 CMake 同优先级: ASS_DEPS_AVC_LIBRARY > AVOX_EXTERNAL_LIBRARY_DIR > ../avox_library
 AVC_LIBRARY = (os.environ.get("ASS_DEPS_AVC_LIBRARY")
                or os.environ.get("AVOX_EXTERNAL_LIBRARY_DIR")
-               or os.path.join(os.path.dirname(ROOT), "avc_library"))
-# avc_library 惯例: 平台在前 → 3rdparty/library/<platform>/<lib>
+               or os.path.join(os.path.dirname(ROOT), "avox_library"))
+# avox_library 惯例: 平台在前 → 3rdparty/library/<platform>/<lib>
 PREFIX = os.environ.get(
     "ASS_DEPS_PREFIX", os.path.join(AVC_LIBRARY, "3rdparty", "library", TARGET, "ass"))
 CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_cache")

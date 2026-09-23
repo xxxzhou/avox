@@ -3,13 +3,13 @@
   "description": "avox 插件运行时资源清单（唯一权威）。统一脚本 fetch_assets.py 读取本文件执行下载/解压/转发。仅收录【运行时】所需资源: AI 模型 (平台无关) + 运行时动态库 (平台相关, 见 item.platforms); 不含 .lib/静态库/链接期产物。后期新增只需追加一条 item。",
   "usage": "python assets/script/fetch_assets.py --list            # 列出全部及就绪状态 (当前平台)\n        python assets/script/fetch_assets.py --list --platform linux   # 指定平台视角\n        python assets/script/fetch_assets.py --interactive   # 交互式多选\n        python assets/script/fetch_assets.py --select sherpa_sense_voice,inpaint_lama\n        python assets/script/fetch_assets.py --plugin avox_sherpa --all\n        python assets/script/fetch_assets.py --list --json    # 供 avox_cmd 内置 python 执行器调用",
   "sources": {
-    "avc_library": {
-      "repo": "https://github.com/xxxzhou/avc_library",
+    "avox_library": {
+      "repo": "https://github.com/xxxzhou/avox_library",
       "role": "第三方预编译库仓库",
-      "note": "平台覆盖: windows (onnxruntime.dll + opencv_world4130.dll, 均动态) + android (onnxruntime 为静态库, 无运行时独立 DLL); 暂未收录 linux/ios。windows DLL 位于 3rdparty/library/windows/<库>/... (onnxruntime.dll 真实文件, opencv_world4130.dll 为 git-lfs)。完整开发库 (含 .lib/头文件) 请 git clone 到 ../avc_library 供 CMake 构建用, 本清单只取运行时 DLL。"
+      "note": "平台覆盖: windows (onnxruntime.dll + opencv_world4130.dll, 均动态) + android (onnxruntime 为静态库, 无运行时独立 DLL); 暂未收录 linux/ios。windows DLL 位于 3rdparty/library/windows/<库>/... (onnxruntime.dll 真实文件, opencv_world4130.dll 为 git-lfs)。完整开发库 (含 .lib/头文件) 请 git clone 到 ../avox_library 供 CMake 构建用, 本清单只取运行时 DLL。"
     },
-    "avc_model": {
-      "repo": "https://github.com/xxxzhou/avc_model",
+    "avox_model": {
+      "repo": "https://github.com/xxxzhou/avox_model",
       "role": "AI 模型仓库 (模型分发的唯一正式源)",
       "note": "模型平台无关。大模型 (stt 等) 经 GitHub release zip 分发 (镜像可代理 release, 但不代理 git-lfs/raw 大文件, 勿用 raw 做 LFS 源); 小文本文件可用 raw。发布流程: 本地按 verify_files 打平铺 zip → 传 release (tag 与文件名对应) → 回填本清单 sha256。staging 工具: panvox 仓库 2026-09-14 已在 ../avox-release-staging 备好 zip。 raw 之外 media.githubusercontent.com/media/xxxzhou/<repo>/main/<path> 可直连同一 git 对象 (LFS 与普通文件均通, 绕开 raw.githubusercontent); gh-proxy 偶发 403 限流。"
     }
@@ -33,12 +33,12 @@
       "source": "avox_model git-lfs",
       "files": [
         {
-          "url": "https://github.com/xxxzhou/avc_model/raw/main/assets/models/inpaint/lama_base.onnx",
+          "url": "https://github.com/xxxzhou/avox_model/raw/main/assets/models/inpaint/lama_base.onnx",
           "name": "lama_base.onnx",
           "size_mb": 198,
           "sha256": "1faef5301d78db7dda502fe59966957ec4b79dd64e16f03ed96913c7a4eb68d6",
           "mirrors": [
-            "https://media.githubusercontent.com/media/xxxzhou/avc_model/main/assets/models/inpaint/lama_base.onnx"
+            "https://media.githubusercontent.com/media/xxxzhou/avox_model/main/assets/models/inpaint/lama_base.onnx"
           ]
         }
       ],
@@ -57,12 +57,12 @@
       "source": "avox_model git-lfs",
       "files": [
         {
-          "url": "https://github.com/xxxzhou/avc_model/raw/main/assets/models/inpaint/yolo26m-seg_watermark.onnx",
+          "url": "https://github.com/xxxzhou/avox_model/raw/main/assets/models/inpaint/yolo26m-seg_watermark.onnx",
           "name": "yolo26m-seg_watermark.onnx",
           "size_mb": 90,
           "sha256": "ca42b56e9472ba9e77c8703114b9ee379561810cccb9c2e57e8c18f3a7f44613",
           "mirrors": [
-            "https://media.githubusercontent.com/media/xxxzhou/avc_model/main/assets/models/inpaint/yolo26m-seg_watermark.onnx"
+            "https://media.githubusercontent.com/media/xxxzhou/avox_model/main/assets/models/inpaint/yolo26m-seg_watermark.onnx"
           ]
         }
       ],
@@ -94,7 +94,7 @@
       "source": "avox_model git-lfs",
       "files": [
         {
-          "url": "https://github.com/xxxzhou/avc_model/raw/main/assets/models/ocr/ch_PP-OCRv6_det.onnx",
+          "url": "https://github.com/xxxzhou/avox_model/raw/main/assets/models/ocr/ch_PP-OCRv6_det.onnx",
           "name": "ch_PP-OCRv6_det.onnx",
           "size_mb": 59,
           "sha256": "eb13b44b25bb36f89528b68720af8a61d9cf381176107f465db1757b65d086e1",
@@ -104,7 +104,7 @@
           ]
         },
         {
-          "url": "https://github.com/xxxzhou/avc_model/raw/main/assets/models/ocr/ch_PP-OCRv6_rec.onnx",
+          "url": "https://github.com/xxxzhou/avox_model/raw/main/assets/models/ocr/ch_PP-OCRv6_rec.onnx",
           "name": "ch_PP-OCRv6_rec.onnx",
           "size_mb": 20,
           "sha256": "5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634",
@@ -114,7 +114,7 @@
           ]
         },
         {
-          "url": "https://github.com/xxxzhou/avc_model/raw/main/assets/models/ocr/ppocr_keys_v1.txt",
+          "url": "https://github.com/xxxzhou/avox_model/raw/main/assets/models/ocr/ppocr_keys_v1.txt",
           "name": "ppocr_keys_v1.txt",
           "sha256": "d051391881962ec266c4b4ee7b6a493fa2aeabaa2cd9ee369148cf3f6980af99"
         }
@@ -133,10 +133,10 @@
       "type": "model",
       "method": "download",
       "dest": "assets/models/stt/zh-en",
-      "source": "avc_model release stt-zh-en",
+      "source": "avox_model release stt-zh-en",
       "files": [
         {
-          "url": "https://github.com/xxxzhou/avc_model/releases/download/stt-zh-en/stt-zh-en.zip",
+          "url": "https://github.com/xxxzhou/avox_model/releases/download/stt-zh-en/stt-zh-en.zip",
           "size_mb": 168,
           "sha256": "c459b13d87665736b5b712d969031b9ae3429f7992d684300cc9f186a848de61"
         }
@@ -151,7 +151,7 @@
         "joiner-epoch-99-avg-1.int8.onnx",
         "tokens.txt"
       ],
-      "note": "Transducer encoder/joiner (int8) + decoder (fp32) + tokens。zip 内扁平无顶层目录。用于 SherpaRecognizer 流式模式。源为 avc_model release (tag stt-zh-en); zip 平铺; sha256 为已打包 zip 实测值。 备用源组 fallback_files = HF csukuangfj 官方仓同款散件 (与 avc_model LFS 逐字节一致, sha 实测回填), release zip 全源失败时自动切换。",
+      "note": "Transducer encoder/joiner (int8) + decoder (fp32) + tokens。zip 内扁平无顶层目录。用于 SherpaRecognizer 流式模式。源为 avox_model release (tag stt-zh-en); zip 平铺; sha256 为已打包 zip 实测值。 备用源组 fallback_files = HF csukuangfj 官方仓同款散件 (与 avox_model LFS 逐字节一致, sha 实测回填), release zip 全源失败时自动切换。",
       "fallback_files": [
         {
           "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/resolve/main/encoder-epoch-99-avg-1.int8.onnx",
@@ -187,7 +187,7 @@
           "sha256": "a8e0e4ec53810e433789b54a5c0134a7eaa2ffca595a6334d54c00da858841d3",
           "mirrors": [
             "https://hf-mirror.com/csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/resolve/main/tokens.txt",
-            "https://github.com/xxxzhou/avc_model/raw/main/assets/models/stt/zh-en/tokens.txt"
+            "https://github.com/xxxzhou/avox_model/raw/main/assets/models/stt/zh-en/tokens.txt"
           ]
         }
       ]
@@ -199,10 +199,10 @@
       "type": "model",
       "method": "download",
       "dest": "assets/models/stt/sense-voice",
-      "source": "avc_model release stt-sense-voice",
+      "source": "avox_model release stt-sense-voice",
       "files": [
         {
-          "url": "https://github.com/xxxzhou/avc_model/releases/download/stt-sense-voice/stt-sense-voice.zip",
+          "url": "https://github.com/xxxzhou/avox_model/releases/download/stt-sense-voice/stt-sense-voice.zip",
           "size_mb": 153,
           "sha256": "01cd43984b3c465cfddefe6e9d90923d93e54f57ab809d75945edce1c08da71c"
         }
@@ -216,7 +216,7 @@
         "tokens.txt",
         "silero_vad.onnx"
       ],
-      "note": "SenseVoice (中/英/日/韩/粤, 带 ITN 标点) + Silero VAD。zip 内扁平。用于 SherpaSenseVoice 离线模式。源为 avc_model release (tag stt-sense-voice); zip 平铺含 model.int8.onnx/tokens.txt/silero_vad.onnx; sha256 为已打包 zip 实测值。 备用源组 fallback_files = HF SenseVoice 官方仓 (model.int8/tokens 与 avc_model 逐字节一致) + silero_vad (avc_model raw/media, 与 k2-fsa asr-models release 同字节)。",
+      "note": "SenseVoice (中/英/日/韩/粤, 带 ITN 标点) + Silero VAD。zip 内扁平。用于 SherpaSenseVoice 离线模式。源为 avox_model release (tag stt-sense-voice); zip 平铺含 model.int8.onnx/tokens.txt/silero_vad.onnx; sha256 为已打包 zip 实测值。 备用源组 fallback_files = HF SenseVoice 官方仓 (model.int8/tokens 与 avox_model 逐字节一致) + silero_vad (avox_model raw/media, 与 k2-fsa asr-models release 同字节)。",
       "fallback_files": [
         {
           "url": "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/model.int8.onnx",
@@ -234,16 +234,16 @@
           "sha256": "f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc",
           "mirrors": [
             "https://hf-mirror.com/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/tokens.txt",
-            "https://github.com/xxxzhou/avc_model/raw/main/assets/models/stt/sense-voice/tokens.txt"
+            "https://github.com/xxxzhou/avox_model/raw/main/assets/models/stt/sense-voice/tokens.txt"
           ]
         },
         {
-          "url": "https://github.com/xxxzhou/avc_model/raw/main/assets/models/stt/sense-voice/silero_vad.onnx",
+          "url": "https://github.com/xxxzhou/avox_model/raw/main/assets/models/stt/sense-voice/silero_vad.onnx",
           "name": "silero_vad.onnx",
           "size_mb": 0.6,
           "sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6",
           "mirrors": [
-            "https://media.githubusercontent.com/media/xxxzhou/avc_model/main/assets/models/stt/sense-voice/silero_vad.onnx"
+            "https://media.githubusercontent.com/media/xxxzhou/avox_model/main/assets/models/stt/sense-voice/silero_vad.onnx"
           ]
         }
       ]
@@ -286,25 +286,25 @@
       "source": "avox_model git-lfs",
       "files": [
         {
-          "url": "https://github.com/xxxzhou/avc_model/raw/main/assets/models/translation/opus-mt-ja-zh/encoder_model_int8.onnx",
+          "url": "https://github.com/xxxzhou/avox_model/raw/main/assets/models/translation/opus-mt-ja-zh/encoder_model_int8.onnx",
           "name": "encoder_model_int8.onnx",
           "size_mb": 50,
           "sha256": "9a9d4e292e1d489dd927a413abc2f1b5dba8c58175df7ae0b55805d524b97562",
           "mirrors": [
-            "https://media.githubusercontent.com/media/xxxzhou/avc_model/main/assets/models/translation/opus-mt-ja-zh/encoder_model_int8.onnx"
+            "https://media.githubusercontent.com/media/xxxzhou/avox_model/main/assets/models/translation/opus-mt-ja-zh/encoder_model_int8.onnx"
           ]
         },
         {
-          "url": "https://github.com/xxxzhou/avc_model/raw/main/assets/models/translation/opus-mt-ja-zh/decoder_model_int8.onnx",
+          "url": "https://github.com/xxxzhou/avox_model/raw/main/assets/models/translation/opus-mt-ja-zh/decoder_model_int8.onnx",
           "name": "decoder_model_int8.onnx",
           "size_mb": 88,
           "sha256": "a2ded9361af122ea3bf87e04e9bbf534bf4798b218cb941be7ca1fa29a167511",
           "mirrors": [
-            "https://media.githubusercontent.com/media/xxxzhou/avc_model/main/assets/models/translation/opus-mt-ja-zh/decoder_model_int8.onnx"
+            "https://media.githubusercontent.com/media/xxxzhou/avox_model/main/assets/models/translation/opus-mt-ja-zh/decoder_model_int8.onnx"
           ]
         },
         {
-          "url": "https://github.com/xxxzhou/avc_model/raw/main/assets/models/translation/opus-mt-ja-zh/source.spm",
+          "url": "https://github.com/xxxzhou/avox_model/raw/main/assets/models/translation/opus-mt-ja-zh/source.spm",
           "name": "source.spm",
           "size_mb": 1.3,
           "sha256": "25103859c8bbbe317e69b07551c55c53dc7943eebf078c56fbf5bc7f96d63289",
@@ -314,7 +314,7 @@
           ]
         },
         {
-          "url": "https://github.com/xxxzhou/avc_model/raw/main/assets/models/translation/opus-mt-ja-zh/target.spm",
+          "url": "https://github.com/xxxzhou/avox_model/raw/main/assets/models/translation/opus-mt-ja-zh/target.spm",
           "name": "target.spm",
           "size_mb": 1.3,
           "sha256": "fe81460cde65383464718c26789ff8c5d818719c3f2c2c3cd36f42532579c56e",
@@ -342,12 +342,12 @@
       "source": "avox_model (普通 git 文件, 4.6MB 无需 LFS)",
       "files": [
         {
-          "url": "https://github.com/xxxzhou/avc_model/raw/main/assets/models/quality/realesrgan-general-x4v3.onnx",
+          "url": "https://github.com/xxxzhou/avox_model/raw/main/assets/models/quality/realesrgan-general-x4v3.onnx",
           "name": "realesrgan-general-x4v3.onnx",
           "size_mb": 4.6,
           "sha256": "3a26ad82f4a6e9f24dd4d8b46bb655cc81b12e4687d100fa50ca97ac13c0f930",
           "mirrors": [
-            "https://media.githubusercontent.com/media/xxxzhou/avc_model/main/assets/models/quality/realesrgan-general-x4v3.onnx"
+            "https://media.githubusercontent.com/media/xxxzhou/avox_model/main/assets/models/quality/realesrgan-general-x4v3.onnx"
           ]
         }
       ],
@@ -517,17 +517,17 @@
       "type": "library",
       "method": "download",
       "dest": "plugins",
-      "source": "avc_library 3rdparty/library/<平台>/onnxruntime",
+      "source": "avox_library 3rdparty/library/<平台>/onnxruntime",
       "platforms": {
         "windows": {
           "files": [
             {
-              "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/onnxruntime/onnxruntime-win-x64-MT-Release-1.23.2/lib/onnxruntime.dll",
+              "url": "https://github.com/xxxzhou/avox_library/raw/main/3rdparty/library/windows/onnxruntime/onnxruntime-win-x64-MT-Release-1.23.2/lib/onnxruntime.dll",
               "name": "onnxruntime.dll",
               "size_mb": 14.4,
               "sha256": "102e19d55820d7609bb6deb67074a0a6cbfabb6be474b9b3013022b1459b71c7",
               "mirrors": [
-                "https://media.githubusercontent.com/media/xxxzhou/avc_library/main/3rdparty/library/windows/onnxruntime/onnxruntime-win-x64-MT-Release-1.23.2/lib/onnxruntime.dll"
+                "https://media.githubusercontent.com/media/xxxzhou/avox_library/main/3rdparty/library/windows/onnxruntime/onnxruntime-win-x64-MT-Release-1.23.2/lib/onnxruntime.dll"
               ]
             }
           ],
@@ -537,7 +537,7 @@
         },
         "linux": {
           "method": "manual",
-          "note": "avc_library 暂未收录 linux; 从 ONNX Runtime 官方 release 取 onnxruntime-linux-x64-1.23.2.tgz, 解压 lib/libonnxruntime.so 放入 plugins/。"
+          "note": "avox_library 暂未收录 linux; 从 ONNX Runtime 官方 release 取 onnxruntime-linux-x64-1.23.2.tgz, 解压 lib/libonnxruntime.so 放入 plugins/。"
         },
         "android": {
           "method": "manual",
@@ -548,7 +548,7 @@
           "note": "iOS 强制静态链接 (onnxruntime.framework/.a), 无运行时独立库; 且 iOS 不允许动态加载第三方库。"
         }
       },
-      "note": "v1.23.2 运行时库, avox_onnx/inpaint/ocr/translation 共用。注意: 必须使用静态链 VC 运行时的版本 (14.4MB, 无 MSVCP140 依赖); 微软官方 CPU release (动态链 MSVCP140, 13.5MB) 在 plugins/ 目录下 DllMain 初始化失败 (err=1114)。windows CPU 模式只需 onnxruntime.dll; CUDA(GPU) 模式另需 onnxruntime_providers_shared.dll + CUDA 运行时库, 不在此自动获取。 avc_library 目录已改名 onnxruntime-win-x64-MT-Release-1.23.2 (commit 25182111), 旧路径 URL 404 已修; 备用 media 直连。"
+      "note": "v1.23.2 运行时库, avox_onnx/inpaint/ocr/translation 共用。注意: 必须使用静态链 VC 运行时的版本 (14.4MB, 无 MSVCP140 依赖); 微软官方 CPU release (动态链 MSVCP140, 13.5MB) 在 plugins/ 目录下 DllMain 初始化失败 (err=1114)。windows CPU 模式只需 onnxruntime.dll; CUDA(GPU) 模式另需 onnxruntime_providers_shared.dll + CUDA 运行时库, 不在此自动获取。 avox_library 目录已改名 onnxruntime-win-x64-MT-Release-1.23.2 (commit 25182111), 旧路径 URL 404 已修; 备用 media 直连。"
     },
     {
       "id": "openvino_dll",
@@ -557,109 +557,109 @@
       "type": "library",
       "method": "download",
       "dest": "plugins",
-      "source": "avc_library 3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib",
+      "source": "avox_library 3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib",
       "platforms": {
         "windows": {
           "files": [
             {
-              "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino.dll",
+              "url": "https://github.com/xxxzhou/avox_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino.dll",
               "name": "openvino.dll",
               "size_mb": 15.1,
               "sha256": "5b690008afc2dbace4373a0f6677ef81b26d1cd6dccb6745d05cbd35f91d2ef0",
               "mirrors": [
-                "https://media.githubusercontent.com/media/xxxzhou/avc_library/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino.dll"
+                "https://media.githubusercontent.com/media/xxxzhou/avox_library/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino.dll"
               ]
             },
             {
-              "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_onnx_frontend.dll",
+              "url": "https://github.com/xxxzhou/avox_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_onnx_frontend.dll",
               "name": "openvino_onnx_frontend.dll",
               "size_mb": 4.3,
               "sha256": "220ffe8eb5ada8d174fab7617ebbacd837592969ea5e7bf04d1a889b358fec94",
               "mirrors": [
-                "https://media.githubusercontent.com/media/xxxzhou/avc_library/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_onnx_frontend.dll"
+                "https://media.githubusercontent.com/media/xxxzhou/avox_library/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_onnx_frontend.dll"
               ]
             },
             {
-              "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_ir_frontend.dll",
+              "url": "https://github.com/xxxzhou/avox_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_ir_frontend.dll",
               "name": "openvino_ir_frontend.dll",
               "sha256": "cb1c2ddb8ea53dba96b991295636a453099fab249213e453fc0294dcbce79314",
               "mirrors": [
-                "https://media.githubusercontent.com/media/xxxzhou/avc_library/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_ir_frontend.dll"
+                "https://media.githubusercontent.com/media/xxxzhou/avox_library/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_ir_frontend.dll"
               ]
             },
             {
-              "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_intel_gpu_plugin.dll",
+              "url": "https://github.com/xxxzhou/avox_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_intel_gpu_plugin.dll",
               "name": "openvino_intel_gpu_plugin.dll",
               "size_mb": 35.2,
               "sha256": "eb29153ee6e098aedc40fb873c86094693be49e208793df471ef0bdd14d17ced",
               "mirrors": [
-                "https://media.githubusercontent.com/media/xxxzhou/avc_library/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_intel_gpu_plugin.dll"
+                "https://media.githubusercontent.com/media/xxxzhou/avox_library/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_intel_gpu_plugin.dll"
               ]
             },
             {
-              "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_intel_cpu_plugin.dll",
+              "url": "https://github.com/xxxzhou/avox_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_intel_cpu_plugin.dll",
               "name": "openvino_intel_cpu_plugin.dll",
               "size_mb": 42.8,
               "sha256": "715b12a679e365994821bc4a8290371c3ab13f4622fd3c3a59392521b9f0c345",
               "mirrors": [
-                "https://media.githubusercontent.com/media/xxxzhou/avc_library/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_intel_cpu_plugin.dll"
+                "https://media.githubusercontent.com/media/xxxzhou/avox_library/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_intel_cpu_plugin.dll"
               ]
             },
             {
-              "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_auto_plugin.dll",
+              "url": "https://github.com/xxxzhou/avox_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_auto_plugin.dll",
               "name": "openvino_auto_plugin.dll",
               "sha256": "71ec0ce30859c822aea0dd1b44bc2c3208be9330f3a8fd3dbbef8c8343d37f7c",
               "mirrors": [
-                "https://media.githubusercontent.com/media/xxxzhou/avc_library/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_auto_plugin.dll"
+                "https://media.githubusercontent.com/media/xxxzhou/avox_library/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_auto_plugin.dll"
               ]
             },
             {
-              "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_hetero_plugin.dll",
+              "url": "https://github.com/xxxzhou/avox_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_hetero_plugin.dll",
               "name": "openvino_hetero_plugin.dll",
               "sha256": "53c2dc99743db121c2d4da7e482407266cddb1706bcc7bb111526be38757c1a4",
               "mirrors": [
-                "https://media.githubusercontent.com/media/xxxzhou/avc_library/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_hetero_plugin.dll"
+                "https://media.githubusercontent.com/media/xxxzhou/avox_library/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/openvino_hetero_plugin.dll"
               ]
             },
             {
-              "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/tbb12.dll",
+              "url": "https://github.com/xxxzhou/avox_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/tbb12.dll",
               "name": "tbb12.dll",
               "sha256": "11d3ff73510927ff96a92099db95c8409b80838a6a9fc2895142bce8b17a36a1",
               "mirrors": [
-                "https://media.githubusercontent.com/media/xxxzhou/avc_library/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/tbb12.dll"
+                "https://media.githubusercontent.com/media/xxxzhou/avox_library/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/tbb12.dll"
               ]
             },
             {
-              "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/tbbbind_2_5.dll",
+              "url": "https://github.com/xxxzhou/avox_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/tbbbind_2_5.dll",
               "name": "tbbbind_2_5.dll",
               "sha256": "b67d275cbd5e1914d86921955f545897f41d6690de36bdcea3277c376355cdb8",
               "mirrors": [
-                "https://media.githubusercontent.com/media/xxxzhou/avc_library/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/tbbbind_2_5.dll"
+                "https://media.githubusercontent.com/media/xxxzhou/avox_library/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/tbbbind_2_5.dll"
               ]
             },
             {
-              "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/tbbmalloc.dll",
+              "url": "https://github.com/xxxzhou/avox_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/tbbmalloc.dll",
               "name": "tbbmalloc.dll",
               "sha256": "5a756a4afaee8566fe2fbd4a2152409b43102e94e63de7548f73c505105a9e4d",
               "mirrors": [
-                "https://media.githubusercontent.com/media/xxxzhou/avc_library/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/tbbmalloc.dll"
+                "https://media.githubusercontent.com/media/xxxzhou/avox_library/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/tbbmalloc.dll"
               ]
             },
             {
-              "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/tbbmalloc_proxy.dll",
+              "url": "https://github.com/xxxzhou/avox_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/tbbmalloc_proxy.dll",
               "name": "tbbmalloc_proxy.dll",
               "sha256": "612a584f9847570162f358218ef8d37cd05fe6a914888bf5b8d89210b89fc6d7",
               "mirrors": [
-                "https://media.githubusercontent.com/media/xxxzhou/avc_library/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/tbbmalloc_proxy.dll"
+                "https://media.githubusercontent.com/media/xxxzhou/avox_library/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/tbbmalloc_proxy.dll"
               ]
             },
             {
-              "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/cache.json",
+              "url": "https://github.com/xxxzhou/avox_library/raw/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/cache.json",
               "name": "cache.json",
               "size_mb": 8.4,
               "sha256": "0b2ad2a99516a3411ce3fef274e8ae2880b41a6f00c9bac6768cd4a94b87c41c",
               "mirrors": [
-                "https://media.githubusercontent.com/media/xxxzhou/avc_library/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/cache.json"
+                "https://media.githubusercontent.com/media/xxxzhou/avox_library/main/3rdparty/library/windows/openvino/openvino-win-x64-2026.2/lib/cache.json"
               ]
             }
           ],
@@ -670,7 +670,7 @@
         },
         "linux": {
           "method": "manual",
-          "note": "avc_library 暂未收录 linux openvino; 从 OpenVINO 官方 linux release 取包, 解压 runtime/lib/intel64/Release 下 openvino*.so + 对应 plugins/ + TBB .so 放入运行目录。"
+          "note": "avox_library 暂未收录 linux openvino; 从 OpenVINO 官方 linux release 取包, 解压 runtime/lib/intel64/Release 下 openvino*.so + 对应 plugins/ + TBB .so 放入运行目录。"
         },
         "android": {
           "method": "manual",
@@ -681,7 +681,7 @@
           "note": "iOS 不启用 OpenVINO (强制静态链接), 走 ORT/CoreML。"
         }
       },
-      "note": "OpenVINO 2026.2 C++ runtime, avox_openvino plugin 用, VkQEnhanceLayer(Real-ESRGAN) 经它跑 Intel iGPU FP16。11 dll + cache.json(GPU 内核缓存, 加速首次推理), 全部 openvino.dll 同目录(plugins/), LoadLibrary 自动找到。构建期经 FindOpenVINO.cmake DEP_DLLS 已自动拷贝; 本项用于无构建产物的部署分发。无此库时 VkQEnhanceLayer 自动降级 ORT CPU。大 dll(gpu/cpu plugin)在 avc_library 走 git-lfs, raw/ URL 自动 302 取真实内容。"
+      "note": "OpenVINO 2026.2 C++ runtime, avox_openvino plugin 用, VkQEnhanceLayer(Real-ESRGAN) 经它跑 Intel iGPU FP16。11 dll + cache.json(GPU 内核缓存, 加速首次推理), 全部 openvino.dll 同目录(plugins/), LoadLibrary 自动找到。构建期经 FindOpenVINO.cmake DEP_DLLS 已自动拷贝; 本项用于无构建产物的部署分发。无此库时 VkQEnhanceLayer 自动降级 ORT CPU。大 dll(gpu/cpu plugin)在 avox_library 走 git-lfs, raw/ URL 自动 302 取真实内容。"
     },
     {
       "id": "opencv_dll",
@@ -690,26 +690,26 @@
       "type": "library",
       "method": "download",
       "dest": "plugins",
-      "source": "avc_library 3rdparty/library/windows/opencv",
+      "source": "avox_library 3rdparty/library/windows/opencv",
       "platforms": {
         "windows": {
           "files": [
             {
-              "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/opencv/build/x64/vc16/bin/opencv_world4130.dll",
+              "url": "https://github.com/xxxzhou/avox_library/raw/main/3rdparty/library/windows/opencv/build/x64/vc16/bin/opencv_world4130.dll",
               "name": "opencv_world4130.dll",
               "size_mb": 65,
               "sha256": "d6ad6fcc7908e8e90625fa8614d0480b111d7cc887054ed01a3ed2ad5f872d79",
               "mirrors": [
-                "https://media.githubusercontent.com/media/xxxzhou/avc_library/main/3rdparty/library/windows/opencv/build/x64/vc16/bin/opencv_world4130.dll"
+                "https://media.githubusercontent.com/media/xxxzhou/avox_library/main/3rdparty/library/windows/opencv/build/x64/vc16/bin/opencv_world4130.dll"
               ]
             },
             {
-              "url": "https://github.com/xxxzhou/avc_library/raw/main/3rdparty/library/windows/opencv/build/x64/vc16/bin/opencv_videoio_ffmpeg4130_64.dll",
+              "url": "https://github.com/xxxzhou/avox_library/raw/main/3rdparty/library/windows/opencv/build/x64/vc16/bin/opencv_videoio_ffmpeg4130_64.dll",
               "name": "opencv_videoio_ffmpeg4130_64.dll",
               "size_mb": 27,
               "sha256": "fcc614672159094a35815b7ea2819a648cbf86c30d90c57e8c6ba1432f594548",
               "mirrors": [
-                "https://media.githubusercontent.com/media/xxxzhou/avc_library/main/3rdparty/library/windows/opencv/build/x64/vc16/bin/opencv_videoio_ffmpeg4130_64.dll"
+                "https://media.githubusercontent.com/media/xxxzhou/avox_library/main/3rdparty/library/windows/opencv/build/x64/vc16/bin/opencv_videoio_ffmpeg4130_64.dll"
               ]
             }
           ],
@@ -719,11 +719,11 @@
         },
         "linux": {
           "method": "manual",
-          "note": "avc_library 未收录 linux opencv; 用系统 libopencv_world.so 或从 OpenCV 官方获取放入 plugins/。"
+          "note": "avox_library 未收录 linux opencv; 用系统 libopencv_world.so 或从 OpenCV 官方获取放入 plugins/。"
         },
         "android": {
           "method": "manual",
-          "note": "android 用静态 opencv (sdk native libs) 链入, avc_library 未收录独立动态库。"
+          "note": "android 用静态 opencv (sdk native libs) 链入, avox_library 未收录独立动态库。"
         }
       },
       "note": "v4.13.0。opencv_world4130.dll 主库 (avox_opencv/inpaint/ocr 共用); opencv_videoio_ffmpeg4130_64.dll 为 videoio 的 ffmpeg 后端 (用到视频读写时需要, 否则可选)。"
@@ -735,7 +735,7 @@
       "type": "library",
       "method": "build",
       "dest": "plugins",
-      "source_ref": "git submodule 3rdparty/sherpa-onnx (k2-fsa/sherpa-onnx); avc_library 未收录预编译",
+      "source_ref": "git submodule 3rdparty/sherpa-onnx (k2-fsa/sherpa-onnx); avox_library 未收录预编译",
       "build_command": "python build_windows.py",
       "platforms": {
         "windows": {
@@ -757,7 +757,7 @@
           "note": "iOS 强制静态链接, 无运行时独立库。"
         }
       },
-      "note": "由 build_windows.py (或对应平台 build 脚本) 编译并复制到 plugins/。avc_library 无预编译, 不能下载; 如已有构建产物, 直接确认 plugins/ 下存在即可。"
+      "note": "由 build_windows.py (或对应平台 build 脚本) 编译并复制到 plugins/。avox_library 无预编译, 不能下载; 如已有构建产物, 直接确认 plugins/ 下存在即可。"
     }
   ],
   "github_mirrors": [

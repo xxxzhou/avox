@@ -53,4 +53,4 @@ fi
 echo "Build successful!"
 echo "Static library(带符号): $BUILD_DIR/obj/libwebrtc.a"
 echo "Static library(无符号): $BUILD_DIR/obj/libwebrtc_nosym.a"
-echo "拷贝到SDK依赖目录: cp $BUILD_DIR/obj/libwebrtc_nosym.a <avc_library>/build/linux/release/"
+echo "拷贝到SDK依赖目录: cp $BUILD_DIR/obj/libwebrtc_nosym.a <avox_library>/build/linux/release/"

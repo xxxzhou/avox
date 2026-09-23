@@ -91,7 +91,7 @@ if ($llvmStrip -and $llvmAr) {
   Remove-Item -Recurse -Force $tmpDir
   Write-Host "Static library(带符号): $BUILD_DIR\obj\webrtc.lib"
   Write-Host "Static library(无符号): $BUILD_DIR\obj\webrtc_nosym.lib"
-  Write-Host "拷贝到SDK依赖目录: cp obj\webrtc*.lib <avc_library>\build\windows\release\"
+  Write-Host "拷贝到SDK依赖目录: cp obj\webrtc*.lib <avox_library>\build\windows\release\"
 } else {
   Write-Host "Warning: llvm-strip/llvm-ar not found, skip nosym lib"
   Write-Host "Static library(带符号): $BUILD_DIR\obj\webrtc.lib"

@@ -10,7 +10,7 @@
 #   OPENVINO_LIBRARIES    - openvino.lib (链接期)
 #   OPENVINO_DLLS         - 运行时 dll + cache.json (Windows, DEP_DLLS 用)
 #
-# 前置: python script/openvino/extract_openvino.py 提取 runtime 到 avc_library
+# 前置: python script/openvino/extract_openvino.py 提取 runtime 到 avox_library
 
 include(FindPackageHandleStandardArgs)
 
@@ -24,7 +24,7 @@ if(DEFINED AVOX_EXTERNAL_LIBRARY_DIR)
     )
 else()
     set(OPENVINO_SEARCH_PATHS
-        ${PROJECT_SOURCE_DIR}/avc_library/3rdparty/library
+        ${PROJECT_SOURCE_DIR}/avox_library/3rdparty/library
         ${PROJECT_SOURCE_DIR}/3rdparty/library
     )
 endif()
