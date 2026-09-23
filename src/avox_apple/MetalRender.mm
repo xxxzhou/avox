@@ -134,7 +134,11 @@ NSString *const nv12trgbBody = AVOX_SHADER_STRING(
                                    texture2d<float> uvTexture [[texture(1)]],
                                    sampler sampler [[sampler(0)]],
                                    constant FragParams& params [[buffer(0)]],
-                                   constant float colorMat[16] [[buffer(1)]]) {
+                                   // macOS 26 新 Metal 编译器拒绝 [[buffer(n)]]
+                                   // 修饰数组参数("buffer attribute cannot be
+                                   // applied to types", 2677 列实证), 改指针
+                                   // 形式; shader 内 colorMat[i] 访问不变
+                                   constant float* colorMat [[buffer(1)]]) {
       float y = yTexture.sample(sampler, in.texCoord).r;
       float2 uv = uvTexture.sample(sampler, in.texCoord).rg;
       float3 rgb;
@@ -447,7 +451,12 @@ void MetalRender::createPipelineState() {
                                                 options:nil
                                                   error:&libraryError];
   if (!library) {
-    LOGFLF(LogLevel::warn, "failed to create library");
+    // 运行时 MSL 编译失败只报一句 failed 无从排查(macOS 26 实证),
+    // 把编译器诊断带上: 语法/类型错误都在 localizedDescription 里
+    LOGFLF(LogLevel::warn, "failed to create library:",
+           libraryError.localizedDescription
+               ? libraryError.localizedDescription.UTF8String
+               : "(no description)");
     return;
   }
   id<MTLFunction> vertexFunction =
