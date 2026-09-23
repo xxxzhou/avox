@@ -29,6 +29,10 @@ public:
   std::vector<uint8_t> cpuPack;
   bool bCpuPublished = false;
   uint32_t publishedTick = 0;
+  // 已发布CPU帧的真实类型: VT 硬解 P010(x420) 时是 p010 而非 nv12 ——
+  // 交付 type 若硬编码 nv12 会把 10bit 帧谎报成 8bit (yuvout-h264-hi10p
+  // 哨兵用例在 macOS 实证 type-mismatch)。publishCpuFrame 按 pbType 填写
+  YuvType cpuPublishedType = YuvType::nv12;
 
  protected:
   virtual void onSetSurface() override;

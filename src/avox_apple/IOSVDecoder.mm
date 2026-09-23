@@ -132,6 +132,15 @@ DecodeResult IOSVDecoder::onPreDecoder() {
     status = CMVideoFormatDescriptionCreateFromH264ParameterSets(
         kCFAllocatorDefault, 2, parameterSetPointers, parameterSetSizes, 4,
         &videoFormatDescription);
+    // 10bit 家族探测: profile_idc ∈ {High10=110, High422=122, High444=244}。
+    // SPS NAL 布局 [0]头+[1]profile+[2]constraint+[3]level, profile 字节处
+    // EPB 不可能出现(同 h265 Main10 探测口径)。此前缺失 → hi10p 流恒按
+    // 8bit 处理, VT 硬解静默折 8bit 交付 (yuvout-h264-hi10p 哨兵实证)
+    streamBitDepth =
+        (spsData.size() > 1 && (spsData[1] == 110 || spsData[1] == 122 ||
+                                spsData[1] == 244))
+            ? 10
+            : 8;
   } else if (codecDesc.vcodecId == VCodecId::h265) {
     if (packets.size() < 3) {
       return DecodeResult::noConfig;
@@ -214,6 +223,14 @@ DecodeResult IOSVDecoder::onPreDecoder() {
   // GLES 兼容, 且 iOS 26 已移除 OpenGL ES, 带 GLES 兼容键建会话会挂在废弃
   // GL 路径上 (真机实测视频解码线程停在会话创建, 包队列积压零帧)
   OSType dstFmt = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;
+  // Apple 平台 VT 的 H264 硬解只有 8bit NV12 输出能力: 10bit 请求 x420 会
+  // "创建成功"但实际仍吐 '420v' 静默折 8bit (macOS 26 实证, 帧回调 pbType
+  // 实测)。h264 High10 流直接放弃硬解车道 → 选型链回软解, 保住 10bit 交付
+  // 契约 (yuvout-h264-hi10p 哨兵用例: expect yuv420P10)
+  if (codecDesc.vcodecId == VCodecId::h264 && streamBitDepth == 10) {
+    LOGFLF(LogLevel::warn, "vt h264 has no 10bit output, give up hw lane");
+    return DecodeResult::openFailed;
+  }
   if (codecDesc.vcodecId == VCodecId::h265 && streamBitDepth == 10) {
     dstFmt = kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange;
   }
@@ -225,16 +242,13 @@ DecodeResult IOSVDecoder::onPreDecoder() {
       kCFAllocatorDefault, videoFormatDescription, nullptr,
       (__bridge CFDictionaryRef)attr, &callback, &decompressionSession);
   if (status != noErr && dstFmt != kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange) {
-    LOGFLF(LogLevel::warn, "x420 output unsupported, fallback nv12, status:",
+    // 10bit 流拒绝折 8bit 输出: 平台不支持 x420 时整个硬解车道放弃
+    // (openFailed → 选型链回软解, 交付保住 yuv420P10); 旧的"回退 nv12 继续硬解"
+    // 会静默把 10bit 折成 8bit, 违反交付契约 —— 哨兵 yuvout-h264-hi10p 的存在
+    // 就是为抓这类隐性降质
+    LOGFLF(LogLevel::warn, "x420 output unsupported, give up hw lane, status:",
            (int32_t)status);
-    streamBitDepth = 8;
-    dstFmt = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;
-    attr = [NSDictionary
-        dictionaryWithObjectsAndKeys: [NSNumber numberWithInt:dstFmt],
-            (id)kCVPixelBufferPixelFormatTypeKey, nil];
-    status = VTDecompressionSessionCreate(
-        kCFAllocatorDefault, videoFormatDescription, nullptr,
-        (__bridge CFDictionaryRef)attr, &callback, &decompressionSession);
+    return DecodeResult::openFailed;
   }
   LOGFLF(LogLevel::info, "ios vt decompression session created, status:",
          (int)status);
