@@ -32,9 +32,12 @@ bool checkAvccPacket(const uint8_t* data, int32_t size) {
 }
 
 void copyBuf(PacketBufPtr& pack, const AvoxPacket& data) {
-  if (pack) {
-    pack->form(data);
-  }
+  // 环形队列的槽在 dequeue 后残留 shared_ptr, 回绕复用该槽时 pack 指向的
+  // 旧对象可能仍被下游持有(flattener 扣住的簇/解码侧), 就地 form 会改写
+  // 它们的 pts/size/buff —— 本地文件读满队列(1000 槽≈33s)回绕恰踩扣住的
+  // 首簇, WMV3 起播首 I 帧被改写成 GOP 中段 P 帧(开头花屏 3 秒的根因)。
+  // 无条件换新对象, 不复用旧包(下面 form 本就白做, pack 随即被替换)。
+  (void)pack;
   pack = std::make_shared<PacketBuf>(data);
 }
 

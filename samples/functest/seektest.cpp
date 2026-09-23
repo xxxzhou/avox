@@ -282,8 +282,8 @@ int main(int argc, char* argv[]) {
     if (avutil) {
       auto setLevel = (void (*)(int))GetProcAddress(avutil, "av_log_set_level");
       if (setLevel) {
-        setLevel(48);  // AV_LOG_INFO
-        std::printf("ffmpeg log level -> INFO\n");
+        setLevel(48);  // AV_LOG_DEBUG
+        std::printf("ffmpeg log level -> DEBUG\n");
       }
     }
   }
