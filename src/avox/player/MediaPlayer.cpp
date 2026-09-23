@@ -1676,6 +1676,16 @@ void MediaPlayer::cmdSpeed(SpeedCommandPtr cmd) {
         renderTime);
     seek(renderTime);
   }
+  // 升速从<=4x跨入>4x(仅播放中): 全量模式已在包队列积压几十秒P/B旧包,
+  // I帧门闸(onPacket)只拦新包, 旧包要解码排干(秒级~几十秒)才进I帧模式。
+  // 可seek源重定位到渲染位置: flush冲掉旧包, demux重起步的包全过已置位
+  // 门闸, 立即以纯I帧运行。已在>4x内调速(如8x→6x)无积压不触发
+  if (state == PlayerState::playing && !wasIFrameOnly && cspeed > 4 &&
+      renderTime > 0 && ioSource && ioSource->seekType() != SeekType::none) {
+    log(LogLevel::info, "speed up to >4x, re-position to render time:",
+        renderTime);
+    seek(renderTime);
+  }
   log(LogLevel::info, "media player set speed:", cspeed,
       ", need close sync:", cspeed > 4);
 }

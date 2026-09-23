@@ -25,14 +25,9 @@ void AVTrack::onInitDesc() {
   packetQueue.setClose(false);
   // 接受mediaplay选项变化
   if (mediaPlayer) {
-    int64_t duration = mediaPlayer->getDuration();
-    if (duration > 0) {
-      // 点播/下载源: 假定1个包是40ms,1000个包是40s,够把一个片断下载完
-      packetQueue.setMaxSize(1000);
-    } else {
-      // 直播缓冲200个(≈8秒@40ms): 过大延迟高, 过小抖动卡, 且要容忍音视频PTS相差约2秒
-      packetQueue.setMaxSize(200);
-    }
+    // 点播/直播统一200(≈8秒@40ms): 队列深度只决定demux领先量与断流容忍,
+    // 下载完成时刻≈播放时长-领先量, 加深不加速下载只费内存; 容忍A/V PTS相差约2秒
+    packetQueue.setMaxSize(200);
   }
   // 记录Track有效
   PBMediaAction pb = {};
