@@ -103,12 +103,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     "-framework VideoToolbox" "-framework IOSurface" "-framework CoreFoundation"
     "-framework Security"
     z bz2 lzma iconv c++)
-  # AAC 解码器可选项: iOS SDK 安装树未必都有 (faad 缺失时 fdk-aac 兜底)
-  foreach(optlib faad fdk-aac)
-    if(EXISTS "${AVOX_LIB_DIR}/lib${optlib}.a")
-      target_link_libraries(avoxtest PRIVATE "${AVOX_LIB_DIR}/lib${optlib}.a")
-    endif()
-  endforeach()
   set_target_properties(avoxtest PROPERTIES
     MACOSX_BUNDLE_GUI_IDENTIFIER "com.zhouxin.avoxtest"
     XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${TEAM_ID}"
@@ -131,6 +125,7 @@ else()
     "-Wl,-force_load,${AVOX_LIB_DIR}/libavox.a"
     "${AVOX_LIB_DIR}/libavcodec.a" "${AVOX_LIB_DIR}/libavformat.a"
     "${AVOX_LIB_DIR}/libavutil.a" "${AVOX_LIB_DIR}/libswresample.a"
+    "${AVOX_LIB_DIR}/libfreetype.a"
     "${AVOX_LIB_DIR}/libvolk.a"
     "${AVOX_WEBRTC_LIB}"
     "-framework AudioUnit"
@@ -148,6 +143,14 @@ else()
   set_target_properties(avoxtest PROPERTIES
     BUILD_RPATH "${AVOX_LIB_DIR}")
 endif()
+
+# AAC 解码器可选项: SDK 安装树未必都有 (faad 缺失时 fdk-aac 兜底)
+# 两个平台都要, 且 libavox.a 里 FdkaacDecoder/FdkaacEncoder 被编进来时必须有对应实现
+foreach(optlib faad fdk-aac)
+  if(EXISTS "${AVOX_LIB_DIR}/lib${optlib}.a")
+    target_link_libraries(avoxtest PRIVATE "${AVOX_LIB_DIR}/lib${optlib}.a")
+  endif()
+endforeach()
 
 # ── 回环模式编译开关 (AVOX_MATRIX=loop 运行时需要 ffmpeg 头 + 测试源) ──
 if(AVOX_FFMPEG_INCLUDE)
