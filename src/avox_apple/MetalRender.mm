@@ -9,9 +9,6 @@
 #import <CoreVideo/CVDisplayLink.h>
 #include <mach/mach_time.h>
 #include <TargetConditionals.h>
-#if TARGET_OS_OSX
-#import <AppKit/AppKit.h>
-#endif
 #include <atomic>
 #include <mutex>
 #include <thread>
@@ -198,59 +195,22 @@ MetalRender::MetalRender() { renderType = RenderType::Metal; updateColorMat(); }
 MetalRender::~MetalRender() { releaseGraph(); }
 
 void MetalRender::onSetSurface() {
-// macOS 宿主(UE/Unity/Flutter)常给 NSView 而非 CAMetalLayer: 直接发 layer 消息
-// 会 unrecognized selector(2026-09-24 panvox 实证)。取视图 layer 并确保为
-// CAMetalLayer; iOS 或宿主直给 layer 的路径行为不变
-#if TARGET_OS_OSX
-  NSView *view = (NSView *)surface;
-  if ([view isKindOfClass:[NSView class]]) {
-    // 本函数跑在 surface render 线程, 而动 NSView 的层是 UI 操作: 不在主线程
-    // 会触发 AppKit 线程断言抛异常 -> 渲染任务整条挂掉(黑屏, 2026-09-24 实证)
-    __block CAMetalLayer *grabbed = nil;
-    void (^grabLayer)(void) = ^{
-      view.wantsLayer = YES;
-      if (![view.layer isKindOfClass:[CAMetalLayer class]]) {
-        CAMetalLayer *created = [CAMetalLayer layer];
-        created.device = device ? device : MTLCreateSystemDefaultDevice();
-        created.frame = NSRectToCGRect(view.bounds);
-        created.contentsScale = view.window
-                                    ? view.window.backingScaleFactor
-                                    : [NSScreen mainScreen].backingScaleFactor;
-        view.layer = created;
-      }
-      grabbed = (CAMetalLayer *)view.layer;
-    };
-    if ([NSThread isMainThread]) {
-      grabLayer();
-    } else {
-      dispatch_sync(dispatch_get_main_queue(), grabLayer);
-    }
-    metalLayer = grabbed;
-  } else {
-    metalLayer = (CAMetalLayer *)surface;
-  }
-#else
+  // NSView -> CAMetalLayer 的归一已上提到 getNativeSurface(见 Window.cpp), 到这里
+  // surface 必是层(device 也兜底过), 下游各后端无需各自再判
   metalLayer = (CAMetalLayer *)surface;
-#endif
-  // framebufferOnly 保持默认 YES(留住 drawable 直达合成器的快路); 抓帧已走
-  // FFmpeg 直解, 需要旧的可读 framebuffer 时设 AVOX_FB_READABLE=1
-  if (metalLayer) {
-    static const bool bFbReadable = [] {
-      const char* e = getenv("AVOX_FB_READABLE");
-      return e && strcmp(e, "1") == 0;
-    }();
-    if (bFbReadable) {
-      metalLayer.framebufferOnly = NO;
-    }
-    // 宿主层可能没挂 device(panvox 的 AppKitView 路径实测到过): 无 device 的
-    // 层 nextDrawable 会抛 NSException, 整条渲染任务被 RunTask 兜底吞掉=黑屏
-    if (!metalLayer.device) {
-      metalLayer.device = device ? device : MTLCreateSystemDefaultDevice();
-    }
-    // CAMetalLayer 默认 BGRA8Unorm, 而渲染管线(255行)固定 RGBA8Unorm,
-    // 不对齐会被 Metal 校验层断言(iOS 实测): framebuffer 与 pipeline 格式必须一致
-    metalLayer.pixelFormat = MTLPixelFormatRGBA8Unorm;
+  if (!metalLayer) {
+    return;
   }
+  // fetchFrame 从 drawable blit 取帧, framebufferOnly=YES 的 drawable 不能作 blit 源
+  // -> screenShot 恒败; 直通快路未测出收益, 要它(并放弃抓帧)才设 AVOX_FB_ONLY=1
+  static const bool bFbOnly = [] {
+    const char* e = getenv("AVOX_FB_ONLY");
+    return e && strcmp(e, "1") == 0;
+  }();
+  metalLayer.framebufferOnly = bFbOnly ? YES : NO;
+  // CAMetalLayer 默认 BGRA8Unorm, 而渲染管线(255行)固定 RGBA8Unorm,
+  // 不对齐会被 Metal 校验层断言(iOS 实测): framebuffer 与 pipeline 格式必须一致
+  metalLayer.pixelFormat = MTLPixelFormatRGBA8Unorm;
 }
 
 bool MetalRender::vaildAndInitGraph() {
@@ -663,19 +623,21 @@ static void ensureVsyncLink() {
   });
 }
 
-// 唤醒点固定在 vsync 边界后 ~0ms 处, 绘制+commit 落进同一周期 → 下一边界统一上屏
+// 唤醒点取在 vsync 边界前 3ms: 睡到边界本身会被 sleep_for 过冲推过界, commit 归到
+// 下一边界白等一周期(实测相位 +2.0ms -> +13.1ms, 33ms:50ms 由 1.6:1 升到 2.0:1)
 static void waitVsyncPhase() {
   const int64_t period = gVsyncPeriodNs.load(std::memory_order_relaxed);
   const int64_t last = gLastVsyncNs.load(std::memory_order_relaxed);
   if (period <= 0 || last <= 0) {
     return;
   }
+  const int64_t kLeadNs = 3000000;
   const int64_t nowNs = machNowNs();
-  int64_t next = last + ((nowNs - last) / period + 1) * period;
-  while (next - nowNs < 3000000) {  // 留 3ms 唤醒+提交余量
-    next += period;
+  int64_t wake = last + ((nowNs - last) / period + 1) * period - kLeadNs;
+  if (wake <= nowNs) {  // 提前量已被吃光: 顺延一个周期
+    wake += period;
   }
-  const int64_t waitNs = next - nowNs;
+  const int64_t waitNs = wake - nowNs;
   // 保险丝: 等待超过 2 个周期说明计算异常, 放弃本次对齐照常绘制
   if (waitNs > 2 * period) {
     return;

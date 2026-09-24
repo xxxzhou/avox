@@ -8,6 +8,7 @@
 #ifdef __APPLE__
 // CAMetalLayer/CALayer(contentsScale/bounds) 两平台都在 QuartzCore
 #import <QuartzCore/QuartzCore.h>
+#import <Metal/Metal.h>
 #import <TargetConditionals.h>
 #if TARGET_OS_OSX
 #import <AppKit/AppKit.h>
@@ -152,19 +153,40 @@ AvoxSurfaceType getNativeSurface(void* surface_) {
   AvoxSurfaceType surface = nullptr;
 #ifdef __APPLE__
 #if TARGET_OS_OSX
-  // macOS 宿主(Flutter/UE/Unity)常给 NSView 而非 CAMetalLayer; 下游一律按
-  // CAMetalLayer 取 contentsScale/bounds/pixelFormat, 直接吃 NSView 就是
-  // unrecognized selector -> 异常被 RunTask 兜底吞掉 = 渲染线程静默挂掉黑屏
-  // (2026-09-24 panvox 实证)。在此归一成层, 下游无需各自再判
+  // macOS 宿主(Flutter/UE/Unity)常给 NSView 而非 CAMetalLayer: 下游一律按层取
+  // contentsScale/bounds, 直接吃 NSView 就是 unrecognized selector -> 黑屏
   id obj = (__bridge id)surface_;
   if ([obj isKindOfClass:[NSView class]]) {
     NSView* view = (NSView*)obj;
-    if (view.layer) {
-      surface_ = (__bridge void*)view.layer;
+    // 动 NSView 的层是 UI 操作: 不在主线程会触发 AppKit 线程断言抛异常
+    __block CAMetalLayer* grabbed = nil;
+    void (^grabLayer)(void) = ^{
+      view.wantsLayer = YES;
+      // 宿主可能给普通 CALayer 或压根没有层: 换/建 CAMetalLayer, 否则下游照样崩
+      if (![view.layer isKindOfClass:[CAMetalLayer class]]) {
+        CAMetalLayer* created = [CAMetalLayer layer];
+        created.device = MTLCreateSystemDefaultDevice();
+        created.frame = NSRectToCGRect(view.bounds);
+        created.contentsScale = view.window
+                                    ? view.window.backingScaleFactor
+                                    : [NSScreen mainScreen].backingScaleFactor;
+        view.layer = created;
+      }
+      grabbed = (CAMetalLayer*)view.layer;
+    };
+    if ([NSThread isMainThread]) {
+      grabLayer();
+    } else {
+      dispatch_sync(dispatch_get_main_queue(), grabLayer);
     }
+    surface_ = (__bridge void*)grabbed;
   }
 #endif
   surface = (__bridge AvoxSurfaceType)surface_;
+  // 无 device 的层 nextDrawable 抛 NSException -> 渲染任务被吞 = 黑屏(panvox 实证)
+  if (surface && [surface isKindOfClass:[CAMetalLayer class]] && !surface.device) {
+    surface.device = MTLCreateSystemDefaultDevice();
+  }
 #else
   // 传入窗口句柄，由onInitWin生成surface
   surface = (AvoxSurfaceType)surface_;

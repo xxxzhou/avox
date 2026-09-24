@@ -1,5 +1,7 @@
 #include "AndVDecoder.hpp"
 
+#include <cstdio>
+#include <cstdlib>
 #include <dlfcn.h>
 #include <strings.h>
 
@@ -13,6 +15,16 @@ namespace avox {
 #if __ANDROID_API__ >= 21
 
 namespace {
+// 诊断口(AVOX_ANDROID_PTS_LOG=1): 打投递序 in 与 MediaCodec 吐帧序 out 的 pts;
+// 两者逐项相同 = 按解码序吐帧(本类缺重排), out 单调 = 已自行重排。真机一跑即定论
+bool andPtsLog() {
+  static const bool b = [] {
+    const char* e = getenv("AVOX_ANDROID_PTS_LOG");
+    return e && *e == '1';
+  }();
+  return b;
+}
+
 // 平台软实现命名(c2.android.vp9.decoder / OMX.google.*): 命中不算硬解命中,
 // 由选型层回退 ffmpeg 软解; 厂商硬实现是 c2.qti.* / OMX.qcom.* 等
 bool isMediaCodecSwName(const char* name) {
@@ -313,6 +325,9 @@ DecodeResult AndVDecoder::decode(const AvoxPacket& packet) {
     // 入队列 给到解码器
     AMediaCodec_queueInputBuffer(mediaCodec, bufidx, 0, packet.data.size,
                                  packet.pts * 1000, 0);
+    if (andPtsLog()) {
+      fprintf(stderr, "APTS in=%lld\n", (long long)packet.pts);
+    }
   }
   // 2 取输出，拿走数据，归还buffer
   size_t bufsize = 0;
@@ -340,6 +355,9 @@ DecodeResult AndVDecoder::decode(const AvoxPacket& packet) {
     }
     // 微秒转毫秒
     int64_t rawPtsUs = info.presentationTimeUs / 1000;
+    if (andPtsLog()) {
+      fprintf(stderr, "APTS out=%lld\n", (long long)rawPtsUs);
+    }
     // LOGFLF(LogLevel::info, "pts:", rawPtsUs);
     if (bOpenglRender) {
       //  https://blog.csdn.net/weiwei9363/article/details/135908473
