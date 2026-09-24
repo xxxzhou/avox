@@ -218,11 +218,17 @@ void MediaPlayer::onMuxerOpen(MediaMuxer* muxer) {
       muxer->setInVideoDesc(vtracks[0]);
     }
   }
-  // 如果用RAW录制,需要使用解码后的音频信息
+  // 如果用RAW录制,需要使用解码后的音频信息(取当前生效音轨: 单轨挂载后
+  // 只有选中轨有解码输出)
   if (atracks.size() > 0) {
     if (bRaw) {
       ATrackDesc adesc = {};
-      adesc.desc = audioTracks[0]->getDecodeDesc();
+      for (const auto& atrack : audioTracks) {
+        if (atrack && atrack->vaild()) {
+          adesc.desc = atrack->getDecodeDesc();
+          break;
+        }
+      }
       muxer->setInAudioDesc(adesc);
     } else {
       muxer->setInAudioDesc(atracks[0]);
@@ -248,15 +254,22 @@ void MediaPlayer::onReady() {
   const auto& aTracks = ioSource->getAudioTracks();
   ioDuration = ioSource->duration();
   LOGFLF(LogLevel::info, "io duration:", ioDuration);
-  // 挂载音视频轨: 源轨道数可能超过轨位上限(MAX_TRACK=4, 多码率HLS每变体各挂一套), 只挂前MAX_TRACK路防越界
+  // 挂载音视频轨: 音频只挂当前选中轨(selAudioTrack, 默认0), 其余轨不挂不解码
+  // 不出声(全量挂载+start会让多音轨同时出声), 上层经 getSourceInfo 枚举全轨后
+  // setAudioTrack 切换。轨位上限防越界(多码率HLS每变体各挂一套)
   if (aTracks.size() > audioTracks.size() || vTracks.size() > videoTracks.size()) {
     LOGFLF(LogLevel::warn, "source tracks exceed player max track, drop extra: audio ",
            aTracks.size(), " video ", vTracks.size());
   }
-  size_t aCount = aTracks.size() < audioTracks.size() ? aTracks.size() : audioTracks.size();
-  for (size_t i = 0; i < aCount; i++) {
+  int32_t selAudio = selAudioTrack.load();
+  if (selAudio >= (int32_t)aTracks.size()) {
+    selAudio = 0;
+    selAudioTrack.store(0);
+  }
+  if (selAudio >= 0 && selAudio < (int32_t)aTracks.size() &&
+      selAudio < (int32_t)audioTracks.size()) {
     // 基本的初始化信息,对应track开始有效
-    audioTracks[i]->setTrackDesc(aTracks[i]);
+    audioTracks[selAudio]->setTrackDesc(aTracks[selAudio]);
   }
   size_t vCount = vTracks.size() < videoTracks.size() ? vTracks.size() : videoTracks.size();
   for (size_t i = 0; i < vCount; i++) {
@@ -403,6 +416,24 @@ void MediaPlayer::onPacket(const AvoxPacket& packet) {
         break;
       }
       if (packet.packtype == (int32_t)PackType::aconfig) {
+        // 配置包只在扫流时发一次, 按轨缓存: 切轨回切时旧轨已 close 清队,
+        // 靠缓存补投解码器才能初始化
+        std::lock_guard<std::mutex> lock(audioCfgMtx);
+        if (index < 64) {
+          if ((int32_t)audioConfigs.size() <= index) {
+            audioConfigs.resize(index + 1);
+          }
+          audioConfigs[index].assign(packet.data.data,
+                                     packet.data.data + packet.data.size);
+        }
+        if (index != selAudioTrack.load()) {
+          // 未选中轨只缓存不投递(轨未挂载, 防包队列堆旧配置)
+          break;
+        }
+      } else if (index != selAudioTrack.load()) {
+        // 未选中音轨的数据包不上轨: 不解码不出声(多音轨同播修复),
+        // 也不占包队列堵 IO
+        break;
       }
       audioTracks[index]->pushPacket(packet);
       break;
@@ -467,6 +498,17 @@ void MediaPlayer::setSubtitleTrack(int32_t index) {
   PBMediaAction pb = {};
   pb.mediaObject = MediaObject::track;
   pb.trackType = TrackType::subtitle;
+  pb.action = index >= 0 ? MediaAction::open : MediaAction::close;
+  pushPB<MPPBType::MediaAction>(mpPingback.get(), pb);
+}
+
+void MediaPlayer::setAudioTrack(int32_t index) {
+  auto cmd = createCommand<MPCommandType::SetAudioTrack>(index);
+  mpCommands.enqueueWait(cmd);
+  // 记录
+  PBMediaAction pb = {};
+  pb.mediaObject = MediaObject::track;
+  pb.trackType = TrackType::audio;
   pb.action = index >= 0 ? MediaAction::open : MediaAction::close;
   pushPB<MPPBType::MediaAction>(mpPingback.get(), pb);
 }
@@ -574,6 +616,78 @@ void MediaPlayer::replayPendingSubs() {
   pendingSubs.clear();
 }
 
+// 切音轨(播放器线程, SetAudioTrack 命令): 关旧选中轨(唯一在跑的), 挂载+启动新轨。
+// index=-1 关闭音频。同轨重复选择幂等返回
+void MediaPlayer::cmdSetAudioTrack(int32_t index) {
+  const int32_t trackCount = ioSource ? (int32_t)ioSource->getAudioTracks().size() : 0;
+  if (index >= trackCount || index < -1) {
+    LOGFLF(LogLevel::warn, "setAudioTrack: index out of range:", index,
+           " count:", trackCount);
+    return;
+  }
+  if (index == selAudioTrack.load()) {
+    return;
+  }
+  // 关当前轨: 解码/渲染线程停, 包/帧队列清空, aconfig 缓存仍留供回切
+  for (const auto& atrack : audioTracks) {
+    if (atrack && atrack->vaild()) {
+      atrack->close();
+    }
+  }
+  selAudioTrack.store(index);
+  if (index < 0) {
+    LOGFLF(LogLevel::info, "audio track off");
+    return;
+  }
+  mountAudioTrack(index);
+  LOGFLF(LogLevel::info, "audio track switched to:", index);
+}
+
+// 挂载并启动局部轨 index 的音轨: setTrackDesc + aconfig 缓存补投 + start。
+// 配置包只在扫流时发一次, 轨 close 清队后回切必须补投解码器才能初始化
+void MediaPlayer::mountAudioTrack(int32_t index) {
+  if (!ioSource || index < 0 || index >= (int32_t)audioTracks.size() ||
+      !audioTracks[index]) {
+    return;
+  }
+  const auto& aTracks = ioSource->getAudioTracks();
+  if (index >= (int32_t)aTracks.size()) {
+    return;
+  }
+  audioTracks[index]->setTrackDesc(aTracks[index]);
+  // 不支持的编解码 setTrackDesc 提前返回轨保持无效, 与 cmdReady 同判据跳过启动
+  if (!audioTracks[index]->vaild()) {
+    LOGFLF(LogLevel::warn, "mountAudioTrack: track invalid, index:", index);
+    return;
+  }
+  std::vector<char> cfg;
+  {
+    std::lock_guard<std::mutex> lock(audioCfgMtx);
+    if (index < (int32_t)audioConfigs.size()) {
+      cfg = audioConfigs[index];
+    }
+  }
+  if (!cfg.empty()) {
+    AvoxPacket packet = {};
+    packet.packtype = (int32_t)PackType::aconfig;
+    packet.index = index;
+    packet.pts = 0;
+    packet.dts = 0;
+    packet.data = {(uint8_t*)cfg.data(), (int32_t)cfg.size(), false};
+    audioTracks[index]->pushPacket(packet);
+  }
+  // 解码线程先起, 渲染线程等 onAudioDesc(解码输出就绪)再起
+  audioTracks[index]->start();
+  // 切轨可能发生在暂停/变速态, 新轨补齐当前播放状态
+  audioTracks[index]->pauseRender(state == PlayerState::pause);
+  audioTracks[index]->setSpeed(cspeed);
+  PBMediaAction pb = {};
+  pb.mediaObject = MediaObject::track;
+  pb.trackType = TrackType::audio;
+  pb.action = MediaAction::open;
+  pushPB<MPPBType::MediaAction>(mpPingback.get(), pb);
+}
+
 void MediaPlayer::cmdSetSubtitleTrack(int32_t index) {
   const int32_t trackCount = ioSource ? ioSource->subtitleSize() : 0;
   if (index >= trackCount) {
@@ -664,8 +778,9 @@ ISurfaceRender* MediaPlayer::getSurfaceRender() {
 }
 
 IAudioRender* MediaPlayer::getAudioRender() {
-  int32_t index = 0;
-  if (index < 0 || index >= audioTracks.size()) {
+  // 跟随当前选中音轨(-1=音频关): tap/外接音频链自动跟切
+  int32_t index = selAudioTrack.load();
+  if (index < 0 || index >= (int32_t)audioTracks.size()) {
     return nullptr;
   }
   return audioTracks[index]->getAudioRender();
@@ -1054,6 +1169,10 @@ void MediaPlayer::onRunTask() {
           cmdSetSubtitleTrack(getCommand<MPCommandType::SetSubtitleTrack>(cmd)->getData());
           break;
         }
+        case MPCommandType::SetAudioTrack: {
+          cmdSetAudioTrack(getCommand<MPCommandType::SetAudioTrack>(cmd)->getData());
+          break;
+        }
         case MPCommandType::LoadSubtitle: {
           cmdLoadSubtitle(getCommand<MPCommandType::LoadSubtitle>(cmd)->getData());
           break;
@@ -1315,6 +1434,12 @@ void MediaPlayer::cmdOpen(OpenCommandPtr cmd) {
   // 指标起点 (a02-T1): 打开→首帧
   openStartMs = localTimeStampMS();
   openFirstFrameMs = -1;
+  // 选轨状态复位: 每个新文件默认第 0 条音轨, 配置缓存一并清
+  selAudioTrack = 0;
+  {
+    std::lock_guard<std::mutex> lock(audioCfgMtx);
+    audioConfigs.clear();
+  }
   // 如果播放器已经打开,先清空资源
   if (state != PlayerState::none && state != PlayerState::stopped) {
     // 先关闭之前对象

@@ -255,6 +255,10 @@ class IMediaPlayer {
   // 走 avox_ass 插件渲染(计划 ASS字幕渲染计划.md); 未装插件时选轨无效(降级)。
   // 带默认实现: 既有 IMediaPlayer 实现者零影响
   virtual void setSubtitleTrack(int32_t index) {}
+  // 选择内封音轨(ISourceInfo::getAudioDesc 的局部索引, -1=关闭音频)。
+  // 默认播放第 0 条; 其余轨不解码不出声, 随时可切。切轨即时生效(旧轨停,
+  // 新轨从当前播放位置续上)。带默认实现: 既有 IMediaPlayer 实现者零影响
+  virtual void setAudioTrack(int32_t index) {}
   // 外挂字幕文件唯一入口(.ass/.srt, 内部按扩展名分流渲染路径), 激活外挂槽
   // (清内封轨与 ASR — 三槽位后激活者胜); 无插件且非文本文件返回 false
   virtual bool loadSubtitle(const char* path) {

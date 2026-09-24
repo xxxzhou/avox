@@ -61,6 +61,15 @@ class MediaPlayer : public IMediaPlayer,
   std::mutex subMetaMtx;
   std::vector<std::vector<char>> subExtradata;  // 局部轨索引 → ASS 剧本头
   std::atomic<int32_t> subTrackIndex{-1};
+  // 当前生效音轨(局部轨索引, -1=音频关): 默认 0, 只挂载/启动这一条, 其余轨
+  // 不解码不出声(多音轨同播的根因是全量 start)。IO 线程读(onPacket 门控),
+  // 播放器线程写(切轨命令)
+  std::atomic<int32_t> selAudioTrack{0};
+  // 各音轨 aconfig(ASC等解码器初始化数据)缓存: 配置包只在扫流时发一次,
+  // 切轨回切时旧轨已 close 清队, 靠缓存补投解码器才能开。IO 线程写,
+  // 播放器线程读, 锁只护表
+  std::mutex audioCfgMtx;
+  std::vector<std::vector<char>> audioConfigs;
   // 字幕命令(cmdLoadSubtitle/cmdUnloadSubtitle/cmdCloseSubtitle)的同步回执:
   // -1=未执行 0=false 1=true。enqueueWait 只保证入队不保证已执行, 调用线程按
   // 三态等回执(旧 bool 有竞态: 播放器线程尚未跑完命令就读到初值 false)
@@ -250,6 +259,7 @@ class MediaPlayer : public IMediaPlayer,
 
   virtual ISourceInfo* getSourceInfo() override;
   virtual void setSubtitleTrack(int32_t index) override;
+  virtual void setAudioTrack(int32_t index) override;
   virtual bool loadSubtitle(const char* path) override;
   virtual bool unloadSubtitle() override;
   virtual double getRate(TrackType type, bool bAvg) override;
@@ -288,6 +298,10 @@ class MediaPlayer : public IMediaPlayer,
   void cmdIFrameMode(IFrameModeCommandPtr cmd);
   void cmdSetSubtitleTrack(int32_t index);
   void replayPendingSubs();
+  // 切音轨(播放器线程): 关旧选中轨(唯一在跑的), 挂载+启动新轨
+  void cmdSetAudioTrack(int32_t index);
+  // 挂载并启动局部轨 index 的音轨(切轨用): setTrackDesc + aconfig 缓存补投 + start
+  void mountAudioTrack(int32_t index);
   void cmdLoadSubtitle(const std::string& path);
   void cmdUnloadSubtitle();
   // 等字幕命令回执落定(上限 3s); 单次调用前需先把 subOpState 置 -1

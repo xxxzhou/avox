@@ -81,6 +81,9 @@ Command cmdPlay() {
                      "周期截图间隔(毫秒), 0=不周期", "0"});
   cmd.parser.addArg({"-shot-at", "", ArgType::Int, false,
                      "单次截图: 播放位置达到此毫秒截一张, -1=不用", "-1"});
+  // 音轨选择: ready 后切到指定局部音轨, 验证 IMediaPlayer::setAudioTrack
+  cmd.parser.addArg({"-audio-track", "", ArgType::Int, false,
+                     "音轨选择(局部索引, -1=关音频, 0=第0条默认)", "0"});
 
   cmd.run = [](const ParsedArgs& args) -> int {
     std::string input = args.getString("input");
@@ -111,6 +114,7 @@ Command cmdPlay() {
     int64_t shotInterval = args.getInt("shot-interval", 0);
     if (shotInterval > 0 && shotInterval < 100) shotInterval = 100;  // 避免过频
     int64_t shotAt = args.getInt("shot-at", -1);  // 单次截图位置, -1=不用
+    int audioTrack = args.getInt("audio-track", 0);
     // 解析 IoPlan: 显式指定则用之; 否则 auto (本地文件与 http 文件直链->ffmpeg,
     // rtsp/rtmp/srt/hls/flv/ts 等流源->zlmediakit)
     IoPlan ioPlan;
@@ -594,6 +598,7 @@ Command cmdPlay() {
     auto lastShot = start;      // 上次截图时刻 (周期截图用)
     auto lastOsd = start;       // 上次 OSD 刷新时刻
     bool shotOnceDone = false;  // 单次截图是否已完成
+    bool audioTrackApplied = false;  // 音轨切换是否已执行
     // 截一帧到目录, 文件名带播放位置
     auto captureShot = [&](const char* prefix) {
       std::unique_ptr<IImageBuffer> shotBuf(createImageBuffer());
@@ -1005,6 +1010,17 @@ Command cmdPlay() {
         refreshOsd();
       }
 #endif
+      // 音轨切换: ready 后执行一次, 走完整切轨链路(关旧轨/缓存补投/挂新轨)
+      if (audioTrack != 0 && !audioTrackApplied) {
+        auto st = mp->getState();
+        if (st != PlayerState::none && st != PlayerState::opening) {
+          audioTrackApplied = true;
+          ISourceInfo* sinfo = mp->getSourceInfo();
+          int32_t acount = sinfo ? sinfo->audioSize() : 0;
+          printf("  audio tracks: %d, switching to %d\n", acount, audioTrack);
+          mp->setAudioTrack(audioTrack);
+        }
+      }
       auto state = mp->getState();
       if (state == PlayerState::completed || state == PlayerState::stopped) {
         printf("Playback %s\n",
