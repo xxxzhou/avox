@@ -219,6 +219,9 @@ static void applyLayerHdrConfig(CAMetalLayer* layer, bool pass) {
     layer.colorspace = nil;
     layer.pixelFormat = MTLPixelFormatRGBA8Unorm;
   }
+  LOGFLF(LogLevel::info, "applyLayerHdrConfig pass:", pass ? 1 : 0,
+         " pixelFormat:", (int)layer.pixelFormat,
+         " hasColorspace:", layer.colorspace != nil ? 1 : 0);
 }
 
 void MetalRender::onSetSurface() {
@@ -250,6 +253,7 @@ bool MetalRender::vaildAndInitGraph() {
   // 直通态翻转: 层与管线同帧切格式(RGBA8Unorm <-> RGBA16Float+PQ), 重建对齐
   const bool wantF16 = metalHdrPassthrough.load();
   if (wantF16 != bF16Pipeline) {
+    LOGFLF(LogLevel::info, "hdr pipeline flip f16:", wantF16 ? 1 : 0);
     bF16Pipeline = wantF16;
     applyLayerHdrConfig(metalLayer, wantF16);
     releaseGraph();

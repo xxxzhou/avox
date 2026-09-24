@@ -46,7 +46,9 @@ bool MetalWindow::setHdrPassthrough(bool bPassthrough) {
     metalHdrPassthrough = false;
     return true;
   }
-  if (edrHeadroom(hostObject) <= 1.0f) {
+  const float headroom = edrHeadroom(hostObject);
+  LOGFLF(LogLevel::info, "setHdrPassthrough on, edr headroom:", headroom);
+  if (headroom <= 1.0f) {
     return false;  // SDR 屏: 层保持 SDR, 色彩正确性由 tone map 承担
   }
   metalHdrPassthrough = true;
