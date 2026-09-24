@@ -37,7 +37,10 @@ bool PtsFlattener::feed(int64_t pts) {
   }
   // 契约: 调用方每轮都要 pop() 一次, 到这里 ready 必已排空(在此丢包即丢帧)
   if (!cluster.empty()) {
-    if (pts - cluster.back()->pts < clusterMs &&
+    // 负增量是 B 帧重排痕迹, 不得并入簇(会触发钳位改写干净流的时间戳);
+    // 老容器挤簇只会是正小间隔
+    if (pts >= cluster.back()->pts &&
+        pts - cluster.back()->pts < clusterMs &&
         (int32_t)cluster.size() < kMaxCluster) {
       return true;  // 同簇: 继续扣
     }
@@ -101,20 +104,24 @@ void PtsFlattener::flushCluster(int64_t gap) {
       cluster[i]->dts += shift;
       bCounted = true;
     }
+    if (bFlat && lastOut >= 0 && cluster[i]->pts < lastOut) {
+      // 摊平簇遇容器倒跳: 钳回已输出点(RMVB 实测有 -544ms 样本);
+      // 直发包绝不改写, B 帧解码序倒跳靠解码器重排自愈
+      cluster[i]->pts = lastOut;
+      nClamped++;
+      bCounted = true;
+    }
     ready.push_back(std::move(cluster[i]));
   }
   cluster.clear();
 }
 
 void PtsFlattener::record(const PacketBufPtr& pkt) {
-  if (lastOut >= 0 && pkt->pts < lastOut) {
-    // 单调下界: 容器时间戳本身可能倒跳(实测样本里有一处 -544ms), 任何输出
-    // 不允许落到已输出点之下。钳到 lastOut 而非 +1: 同 pts 两帧是合法的
-    pkt->pts = lastOut;
-    nClamped++;
-    bCounted = true;
+  // 只记账不改写: 改写只允许发生在摊平簇(flushCluster 内), 否则会毁掉
+  // B 帧流的干净时间戳(解码序 pts 本来就该倒跳)
+  if (lastOut < 0 || pkt->pts > lastOut) {
+    lastOut = pkt->pts;
   }
-  lastOut = pkt->pts;
 }
 
 void PtsFlattener::logSummary() {

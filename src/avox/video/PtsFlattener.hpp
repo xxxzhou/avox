@@ -40,7 +40,7 @@ class AVOX_EXPORT PtsFlattener {
  private:
   // 放出当前簇: gap 为两簇基之差(即本簇真实宽度), 只进 ready 不外发
   void flushCluster(int64_t gap);
-  // 交付记账: 守跨簇单调下界并记住已输出的最大 pts
+  // 交付记账: 只记已输出最大 pts, 供摊平簇守单调下界; 直发包一律原值
   void record(const PacketBufPtr& pkt);
   void logSummary();
 
