@@ -5,6 +5,16 @@
 #include <iostream>
 
 #import <MetalKit/MetalKit.h>
+#import <objc/runtime.h>
+#import <CoreVideo/CVDisplayLink.h>
+#include <mach/mach_time.h>
+#include <TargetConditionals.h>
+#if TARGET_OS_OSX
+#import <AppKit/AppKit.h>
+#endif
+#include <atomic>
+#include <mutex>
+#include <thread>
 
 namespace avox {
 
@@ -188,11 +198,55 @@ MetalRender::MetalRender() { renderType = RenderType::Metal; updateColorMat(); }
 MetalRender::~MetalRender() { releaseGraph(); }
 
 void MetalRender::onSetSurface() {
-  metalLayer = surface;
-  // CAMetalLayer 默认 framebufferOnly=YES, drawable 纹理不能当 blit 源,
-  // 抓帧(screenShot)必须关掉; 代价是放弃部分合成器优化
+// macOS 宿主(UE/Unity/Flutter)常给 NSView 而非 CAMetalLayer: 直接发 layer 消息
+// 会 unrecognized selector(2026-09-24 panvox 实证)。取视图 layer 并确保为
+// CAMetalLayer; iOS 或宿主直给 layer 的路径行为不变
+#if TARGET_OS_OSX
+  NSView *view = (NSView *)surface;
+  if ([view isKindOfClass:[NSView class]]) {
+    // 本函数跑在 surface render 线程, 而动 NSView 的层是 UI 操作: 不在主线程
+    // 会触发 AppKit 线程断言抛异常 -> 渲染任务整条挂掉(黑屏, 2026-09-24 实证)
+    __block CAMetalLayer *grabbed = nil;
+    void (^grabLayer)(void) = ^{
+      view.wantsLayer = YES;
+      if (![view.layer isKindOfClass:[CAMetalLayer class]]) {
+        CAMetalLayer *created = [CAMetalLayer layer];
+        created.device = device ? device : MTLCreateSystemDefaultDevice();
+        created.frame = NSRectToCGRect(view.bounds);
+        created.contentsScale = view.window
+                                    ? view.window.backingScaleFactor
+                                    : [NSScreen mainScreen].backingScaleFactor;
+        view.layer = created;
+      }
+      grabbed = (CAMetalLayer *)view.layer;
+    };
+    if ([NSThread isMainThread]) {
+      grabLayer();
+    } else {
+      dispatch_sync(dispatch_get_main_queue(), grabLayer);
+    }
+    metalLayer = grabbed;
+  } else {
+    metalLayer = (CAMetalLayer *)surface;
+  }
+#else
+  metalLayer = (CAMetalLayer *)surface;
+#endif
+  // framebufferOnly 保持默认 YES(留住 drawable 直达合成器的快路); 抓帧已走
+  // FFmpeg 直解, 需要旧的可读 framebuffer 时设 AVOX_FB_READABLE=1
   if (metalLayer) {
-    metalLayer.framebufferOnly = NO;
+    static const bool bFbReadable = [] {
+      const char* e = getenv("AVOX_FB_READABLE");
+      return e && strcmp(e, "1") == 0;
+    }();
+    if (bFbReadable) {
+      metalLayer.framebufferOnly = NO;
+    }
+    // 宿主层可能没挂 device(panvox 的 AppKitView 路径实测到过): 无 device 的
+    // 层 nextDrawable 会抛 NSException, 整条渲染任务被 RunTask 兜底吞掉=黑屏
+    if (!metalLayer.device) {
+      metalLayer.device = device ? device : MTLCreateSystemDefaultDevice();
+    }
     // CAMetalLayer 默认 BGRA8Unorm, 而渲染管线(255行)固定 RGBA8Unorm,
     // 不对齐会被 Metal 校验层断言(iOS 实测): framebuffer 与 pipeline 格式必须一致
     metalLayer.pixelFormat = MTLPixelFormatRGBA8Unorm;
@@ -570,6 +624,68 @@ void MetalRender::setHdrMeta(const HdrMeta &meta) {
 
 void MetalRender::setHdrMode(HdrMode mode) { hdrMode = mode; }
 
+// ---- vsync 相位对齐(AVOX_VSYNC_ALIGN=0 关) ----
+// 自由节拍 commit 相位随机: 实测提交间隔落在 ~25/50ms; 对齐后收敛到 33/50ms,
+// 即 25fps@60Hz 的 2-2-3 固有节奏(2026-09-24 vsynctest 间隔直方图实测)。
+static CVDisplayLinkRef gVsyncLink = nullptr;
+static std::atomic<int64_t> gLastVsyncNs{0};
+static std::atomic<int64_t> gVsyncPeriodNs{0};
+static std::once_flag gVsyncOnce;
+
+static int64_t machNowNs() {
+  static mach_timebase_info_data_t tb = [] {
+    mach_timebase_info_data_t t{};
+    mach_timebase_info(&t);
+    return t;
+  }();
+  return (int64_t)(mach_absolute_time() * tb.numer / tb.denom);
+}
+
+static void ensureVsyncLink() {
+  std::call_once(gVsyncOnce, [] {
+    if (CVDisplayLinkCreateWithActiveCGDisplays(&gVsyncLink) != kCVReturnSuccess ||
+        !gVsyncLink) {
+      return;
+    }
+    CVDisplayLinkSetOutputCallback(
+        gVsyncLink,
+        [](CVDisplayLinkRef link, const CVTimeStamp*, const CVTimeStamp*,
+           CVOptionFlags, CVOptionFlags*, void*) -> CVReturn {
+          double sec = CVDisplayLinkGetActualOutputVideoRefreshPeriod(link);
+          if (sec > 0) {
+            gVsyncPeriodNs.store((int64_t)(sec * 1e9), std::memory_order_relaxed);
+          }
+          gLastVsyncNs.store(machNowNs(), std::memory_order_relaxed);
+          return kCVReturnSuccess;
+        },
+        nullptr);
+    CVDisplayLinkStart(gVsyncLink);
+  });
+}
+
+// 唤醒点固定在 vsync 边界后 ~0ms 处, 绘制+commit 落进同一周期 → 下一边界统一上屏
+static void waitVsyncPhase() {
+  const int64_t period = gVsyncPeriodNs.load(std::memory_order_relaxed);
+  const int64_t last = gLastVsyncNs.load(std::memory_order_relaxed);
+  if (period <= 0 || last <= 0) {
+    return;
+  }
+  const int64_t nowNs = machNowNs();
+  int64_t next = last + ((nowNs - last) / period + 1) * period;
+  while (next - nowNs < 3000000) {  // 留 3ms 唤醒+提交余量
+    next += period;
+  }
+  const int64_t waitNs = next - nowNs;
+  // 保险丝: 等待超过 2 个周期说明计算异常, 放弃本次对齐照常绘制
+  if (waitNs > 2 * period) {
+    return;
+  }
+  if (waitNs > 0) {
+    // mach_wait_until 在渲染线程实测会一睡不返, 用 chrono 相对睡代替
+    std::this_thread::sleep_for(std::chrono::nanoseconds(waitNs));
+  }
+}
+
 void MetalRender::renderCVPixelBuffer(CVImageBufferRef imageBuffer) {
   // 异步渲染任务堆积或自动释放池（Autorelease Pool）未及时清理
   // CVMetalTextureCacheCreateTextureFromImage 内部以及 Metal
@@ -578,6 +694,14 @@ void MetalRender::renderCVPixelBuffer(CVImageBufferRef imageBuffer) {
   // CADisplayLink）中执行，且没有手动包裹 @autoreleasepool 这些对象只有在主线程
   // RunLoop 结束时才会释放。
   @autoreleasepool {
+    static const bool bVsyncAlign = [] {
+      const char* e = getenv("AVOX_VSYNC_ALIGN");
+      return !e || strcmp(e, "0") != 0;
+    }();
+    if (metalLayer && bVsyncAlign) {
+      ensureVsyncLink();
+      waitVsyncPhase();
+    }
     id<CAMetalDrawable> drawable = nil;
     id<MTLTexture> targetTexture = nil;
     // 修改：根据metalLayer存在情况选择渲染目标
@@ -659,11 +783,34 @@ void MetalRender::renderCVPixelBuffer(CVImageBufferRef imageBuffer) {
                        vertexStart:0
                        vertexCount:6];
     [commandEncoder endEncoding];
+    // 渲染线程无 RunLoop, 隐式 CA 事务可能不下刷; 显式事务逐帧 flush。
+    // 2026-09-24 实测未观测到差异(present 节奏本就是干净 25fps), 属理论保险
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
     // 仅在metalLayer存在时presentDrawable
     if (metalLayer && drawable) {
       [commandBuffer presentDrawable:drawable];
     }
     [commandBuffer commit];
+    [CATransaction commit];
+    // 实验观测: commit 时刻相对 vsync 边界的相位(对齐后应聚集在 0~几 ms)
+    if (metalLayer) {
+      static const bool bPlog = [] {
+        const char* e = getenv("AVOX_PRESENT_LOG");
+        return e && *e == '1';
+      }();
+      if (bPlog) {
+        const int64_t periodNs =
+            gVsyncPeriodNs.load(std::memory_order_relaxed);
+        const int64_t lastNs = gLastVsyncNs.load(std::memory_order_relaxed);
+        const int64_t now = machNowNs();
+        const int64_t phase =
+            periodNs > 0 && lastNs > 0 ? (now - lastNs) % periodNs : -1;
+        fprintf(stderr, "PRESENT ns=%lld phase=%lld period=%lld drawable=%p\n",
+                (long long)now, (long long)phase, (long long)periodNs,
+                (__bridge void*)drawable);
+      }
+    }
     // 记下这一帧的目标纹理供 checkShot->fetchFrame 抓帧(同队列, 顺序有保证)
     lastTargetTexture = targetTexture;
   }
