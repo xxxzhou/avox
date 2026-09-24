@@ -22,11 +22,14 @@ constexpr GUID kVp9Profile0 = {0x463707f8, 0xa1d0, 0x4585,
                                {0x87, 0x6d, 0x83, 0xaa, 0x6d, 0x60, 0xb8, 0x9e}};
 constexpr GUID kVp9Profile2_10bit = {0xa4c749ef, 0x6ecf, 0x48aa,
                                      {0x84, 0x48, 0x50, 0xa7, 0xa1, 0x16, 0x5f, 0xf7}};
+// AV1 解码 profile GUID(MS-DXVA_AV1 规范常量 DXVA_ModeAV1_VLD_Profile0;
+// 8/10bit 4:2:0 同用 profile 0。GUID 实测自 9070 XT 驱动枚举, 与 dxva.h 一致)
+constexpr GUID kAv1Profile0 = {0xb8be4ccb, 0xcf53, 0x46ba,
+                               {0x8d, 0x59, 0xd6, 0xb8, 0xa6, 0xda, 0x5d, 0x2a}};
 // clang-format on
 
-// VP9 硬解覆盖探测: 枚举 GPU 的 D3D11 解码 profile, 命中 VP9(profile 0/10bit)
-// 才放行硬解; 不支持的老核显由选型层回退软解, 避免运行期 hwaccel 失败黑屏
-bool d3d11HasVp9Profile() {
+// D3D11 解码 profile 探测: 枚举 GPU 支持的解码 profile 与给定 GUID 求交
+bool d3d11HasDecodeProfile(std::initializer_list<const GUID*> guids) {
   MComPtr<ID3D11Device> device;
   MComPtr<ID3D11DeviceContext> context;
   D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_11_0;
@@ -47,12 +50,22 @@ bool d3d11HasVp9Profile() {
     if (FAILED(videoDevice->GetVideoDecoderProfile(i, &guid))) {
       continue;
     }
-    if (IsEqualGUID(guid, kVp9Profile0) ||
-        IsEqualGUID(guid, kVp9Profile2_10bit)) {
-      return true;
+    for (const GUID* want : guids) {
+      if (IsEqualGUID(guid, *want)) {
+        return true;
+      }
     }
   }
   return false;
+}
+
+// VP9/AV1 硬解覆盖探测: 命中对应 profile 才放行硬解; 不支持的老核显由选型
+// 层回退软解, 避免运行期 hwaccel 失败黑屏
+bool d3d11HasVp9Profile() {
+  return d3d11HasDecodeProfile({&kVp9Profile0, &kVp9Profile2_10bit});
+}
+bool d3d11HasAv1Profile() {
+  return d3d11HasDecodeProfile({&kAv1Profile0});
 }
 }  // namespace
 
@@ -88,6 +101,17 @@ void regFFDx11Decoder() {
                            VCodecId::vp9, codecDesc, []() -> VideoDecoder* {
                              return new FFDx11Decoder();
                            });
+                       // AV1: onVaild 探测 profile(RDNA2+/RTX30+/Intel Xe 起),
+                       // 不支持的卡回退软解
+                       codecDesc = {};
+                       codecDesc.name = AVOX_FFDX11_AV1_DECODER;
+                       codecDesc.codecId = AVCodecID::AV_CODEC_ID_AV1;
+                       codecDesc.bHardware = true;
+                       codecDesc.vcodecId = VCodecId::av1;
+                       AvoxManager::Get().vDecoders.regInitFunc(
+                           VCodecId::av1, codecDesc, []() -> VideoDecoder* {
+                             return new FFDx11Decoder();
+                           });
                      }};
   AvoxManager::Get().initFuncs.push_back(regFunc);
 }
@@ -106,6 +130,11 @@ bool FFDx11Decoder::onVaild() {
   if (codecDesc.vcodecId == VCodecId::vp9 && !d3d11HasVp9Profile()) {
     LOGFLF(LogLevel::warn,
            "vp9 d3d11va profile not supported by gpu, fallback to software");
+    return false;
+  }
+  if (codecDesc.vcodecId == VCodecId::av1 && !d3d11HasAv1Profile()) {
+    LOGFLF(LogLevel::warn,
+           "av1 d3d11va profile not supported by gpu, fallback to software");
     return false;
   }
   return true;

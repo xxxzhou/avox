@@ -37,6 +37,7 @@ namespace avox {
 #define AVOX_FFDX11_H264_DECODER "ff_h264_dx11"
 #define AVOX_FFDX11_H265_DECODER "ff_hevc_dx11"
 #define AVOX_FFDX11_VP9_DECODER "ff_vp9_dx11"
+#define AVOX_FFDX11_AV1_DECODER "ff_av1_dx11"
 #define AVOX_FFVAAPI_H264_DECODER "ff_h264_vaapi"
 #define AVOX_FFVAAPI_H265_DECODER "ff_hevc_vaapi"
 // io->packetQueue->decode->frameQueue->render
