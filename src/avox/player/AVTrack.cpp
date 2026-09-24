@@ -8,7 +8,6 @@ namespace avox {
 
 AVTrack::AVTrack() {
   clock = std::make_unique<Clock>();
-  clock->tag = trackType == TrackType::audio ? "audio" : "video";
   packetQueue.setMaxSize(100);
   bVaild = false;
 }
@@ -127,14 +126,6 @@ bool AVTrack::hasVaildVideoTrack() {
 }
 
 void AVTrack::updateClock(int64_t pts) {
-  // [TEMP-PROBE] 换片时钟泄漏定位: 大跳变留痕
-  static thread_local int64_t sLastPts = AVOX_NOVALID_PTS;
-  if (sLastPts != AVOX_NOVALID_PTS && pts != AVOX_NOVALID_PTS &&
-      std::abs(pts - sLastPts) > 3000) {
-    LOGFLF(LogLevel::warn, "[TEMP-PROBE] updateClock jump type:",
-           getTrackTypeStr(trackType), " last:", sLastPts, " now:", pts);
-  }
-  sLastPts = pts;
   // LOGFLF(LogLevel::info, "pts:", pts, " type:", getTrackTypeStr(trackType));
   // 更新自身时钟
   clock->update(pts);

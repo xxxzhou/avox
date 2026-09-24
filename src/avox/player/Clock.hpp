@@ -33,9 +33,6 @@ private:
   bool bPause = false;
 
  public:
-  // [TEMP-PROBE] 时钟身份
-  const char* tag = "unk";
-
   // 当前PTS时间
   int64_t clock() const {
     if (bPause) {
@@ -81,9 +78,6 @@ private:
     if (otherCk != AVOX_NOVALID_PTS &&
         (selfCk == AVOX_NOVALID_PTS ||
          std::fabs(selfCk - otherCk) > AVOX_NOSYNC_THRESHOLD)) {
-      // [TEMP-PROBE] 主时钟改写留痕
-      LOGFLF(LogLevel::warn, "[TEMP-PROBE] ", tag, ".sync adopt self:", selfCk,
-             " other:", otherCk, " from:", other->tag);
       update(otherCk);
     }
   }

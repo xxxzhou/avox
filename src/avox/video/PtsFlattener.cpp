@@ -108,9 +108,6 @@ void PtsFlattener::flushCluster(int64_t gap) {
     if (bFlat && lastOut >= 0 && cluster[i]->pts < lastOut) {
       // 摊平簇遇容器倒跳: 钳回已输出点(RMVB 实测有 -544ms 样本);
       // 直发包绝不改写, B 帧解码序倒跳靠解码器重排自愈
-      // [TEMP-PROBE]
-      LOGFLF(LogLevel::warn, "[TEMP-PROBE] flatten clamp pkt:", cluster[i]->pts,
-             " -> lastOut:", lastOut);
       cluster[i]->pts = lastOut;
       nClamped++;
       bCounted = true;
