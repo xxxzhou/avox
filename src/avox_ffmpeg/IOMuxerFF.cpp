@@ -59,6 +59,8 @@ bool IOMuxerFF::onInit() {
     return false;
   }
   fmtCtx = getUniquePtr(tempOut);
+  // DLNA 边转边拉要求落盘实时可见, 关闭 avio 攒批(默认攒到 close 才见字节)
+  fmtCtx->flush_packets = 1;
   AVCodecID vcodecId = getFFCodecId(vDesc.codecId);
   if (!videoConfigs.empty() && vcodecId != AV_CODEC_ID_NONE) {
     const AVCodec* codec = avcodec_find_decoder(vcodecId);
