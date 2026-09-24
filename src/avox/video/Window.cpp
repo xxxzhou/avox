@@ -8,6 +8,10 @@
 #ifdef __APPLE__
 // CAMetalLayer/CALayer(contentsScale/bounds) 两平台都在 QuartzCore
 #import <QuartzCore/QuartzCore.h>
+#import <TargetConditionals.h>
+#if TARGET_OS_OSX
+#import <AppKit/AppKit.h>
+#endif
 #endif
 #if _WIN32
 #include <windows.h>
@@ -147,6 +151,19 @@ void Window::close() {
 AvoxSurfaceType getNativeSurface(void* surface_) {
   AvoxSurfaceType surface = nullptr;
 #ifdef __APPLE__
+#if TARGET_OS_OSX
+  // macOS 宿主(Flutter/UE/Unity)常给 NSView 而非 CAMetalLayer; 下游一律按
+  // CAMetalLayer 取 contentsScale/bounds/pixelFormat, 直接吃 NSView 就是
+  // unrecognized selector -> 异常被 RunTask 兜底吞掉 = 渲染线程静默挂掉黑屏
+  // (2026-09-24 panvox 实证)。在此归一成层, 下游无需各自再判
+  id obj = (__bridge id)surface_;
+  if ([obj isKindOfClass:[NSView class]]) {
+    NSView* view = (NSView*)obj;
+    if (view.layer) {
+      surface_ = (__bridge void*)view.layer;
+    }
+  }
+#endif
   surface = (__bridge AvoxSurfaceType)surface_;
 #else
   // 传入窗口句柄，由onInitWin生成surface
