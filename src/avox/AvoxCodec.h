@@ -49,7 +49,8 @@ namespace avox {
   XX(vp9, 16, "vp9")        \
   XX(msmpeg4v1, 17, "msmpeg4v1") \
   XX(msmpeg4v2, 18, "msmpeg4v2") \
-  XX(msmpeg4v3, 19, "msmpeg4v3")
+  XX(msmpeg4v3, 19, "msmpeg4v3") \
+  XX(av1, 20, "av1")
 
 enum class ACodecId : int32_t {
   none = -1,

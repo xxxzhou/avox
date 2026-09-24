@@ -5,6 +5,12 @@
 #include <algorithm>
 #include <iostream>
 
+// 老SDK头文件可能没有 kCMVideoCodecType_AV1(FFmpeg HAVE_KCMVIDEOCODECTYPE_AV1
+// 同款兜底); SDK已有时宏值与枚举值同为 'av01', 展开结果一致无冲突
+#ifndef kCMVideoCodecType_AV1
+#define kCMVideoCodecType_AV1 'av01'
+#endif
+
 namespace avox {
 
 void regIOSVDecoder() {
@@ -34,6 +40,16 @@ void regIOSVDecoder() {
         codecDesc.vcodecId = VCodecId::vp9;
         AvoxManager::Get().vDecoders.regInitFunc(
             VCodecId::vp9, codecDesc, []() -> VideoDecoder * {
+              return new IOSVDecoder();
+            });
+        // AV1: 硬解块仅 M3/A17 Pro 起(macOS 14+/iOS 17+), onVaild 运行期
+        // 探测不过由 VDecoderTask 选型回退软解
+        codecDesc = {};
+        codecDesc.name = AVOX_IOS_AV1_DECODER;
+        codecDesc.bHardware = true;
+        codecDesc.vcodecId = VCodecId::av1;
+        AvoxManager::Get().vDecoders.regInitFunc(
+            VCodecId::av1, codecDesc, []() -> VideoDecoder * {
               return new IOSVDecoder();
             });
       }};
@@ -91,7 +107,65 @@ bool IOSVDecoder::onVaild() {
       return false;
     }
   }
+  if (codecDesc.vcodecId == VCodecId::av1) {
+    // AV1: iOS 17+ / macOS 14+, 且需运行期确认硬解块(M3/A17 Pro 起才有);
+    // 探测不过回退软解(FFmpeg 软解 AV1 需构建带 dav1d, 缺时 AV1 不可播)
+    bMustVcc = false;  // 无 avcc/hvcc 语义, OBU 流整包直喂 VT
+#if TARGET_OS_OSX
+    const float kAv1MinVersion = 14.0;
+#else
+    const float kAv1MinVersion = 17.0;
+#endif
+    if (version < kAv1MinVersion) {
+      LOGFLF(LogLevel::warn, "ios version :", version,
+             " not support av1 decoder");
+      return false;
+    }
+    if (!VTIsHardwareDecodeSupported(kCMVideoCodecType_AV1)) {
+      LOGFLF(LogLevel::warn, "av1 hardware decode not supported on this device");
+      return false;
+    }
+  }
   return true;
+}
+
+// 从容器 extradata 提取 av1C record 建 VT extensions 字典(FFmpeg
+// videotoolbox 同配方: SampleDescriptionExtensionAtoms["av1C"]); 返回 +1
+// 引用由调用方释放, 无有效 av1C 返回 nullptr。MP4 经 FFmpeg demux 已剥
+// 盒头, MKV 可能带 8字节 box 头(4字节size+'av1C'), 统一识别剥掉;
+// record 首字节应为 0x81(marker=1, version=1)
+static CFDictionaryRef av1ExtensionsFromConfigs(
+    const std::vector<PacketBuf> &packets) {
+  for (const auto &buf : packets) {
+    const uint8_t *data = buf.buff.data();
+    const int32_t size = buf.size;
+    int32_t offset = 0;
+    if (size >= 8 && memcmp(data + 4, "av1C", 4) == 0) {
+      offset = 8;
+    }
+    if (size - offset < 4 || data[offset] != 0x81) {
+      continue;
+    }
+    CFDataRef av1c =
+        CFDataCreate(kCFAllocatorDefault, data + offset, size - offset);
+    if (!av1c) {
+      return nullptr;
+    }
+    CFMutableDictionaryRef atoms = CFDictionaryCreateMutable(
+        kCFAllocatorDefault, 1, &kCFTypeDictionaryKeyCallBacks,
+        &kCFTypeDictionaryValueCallBacks);
+    CFDictionarySetValue(atoms, CFSTR("av1C"), av1c);
+    CFRelease(av1c);
+    CFMutableDictionaryRef extensions = CFDictionaryCreateMutable(
+        kCFAllocatorDefault, 1, &kCFTypeDictionaryKeyCallBacks,
+        &kCFTypeDictionaryValueCallBacks);
+    CFDictionarySetValue(
+        extensions,
+        kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms, atoms);
+    CFRelease(atoms);
+    return extensions;
+  }
+  return nullptr;
 }
 
 DecodeResult IOSVDecoder::onPreDecoder() {
@@ -205,6 +279,26 @@ DecodeResult IOSVDecoder::onPreDecoder() {
     status = CMVideoFormatDescriptionCreate(
         kCFAllocatorDefault, kCMVideoCodecType_VP9, params.width, params.height,
         nullptr, &videoFormatDescription);
+  } else if (codecDesc.vcodecId == VCodecId::av1) {
+    // AV1: OBU 流宽高/位深采信容器侧 srcDesc(经 parseConfigs 填充);
+    // extradata 为容器 av1C record(MP4/MKV 均有)时走 extensions 喂 VT,
+    // 缺时赌 in-band 序列头, 空 extensions 建描述(失败走 openFailed 回软解)
+    if (!parseConfigs() || params.width <= 0 || params.height <= 0) {
+      LOGFLF(LogLevel::warn, "av1 missing valid dimensions in container");
+      return DecodeResult::noConfig;
+    }
+    // 位深按容器 yuv 类型: 10bit(yuv420P10/p010)请求 x420, 与 h265 10bit 同路
+    streamBitDepth =
+        (params.yuvType == YuvType::yuv420P10 || params.yuvType == YuvType::p010)
+            ? 10
+            : 8;
+    CFDictionaryRef extensions = av1ExtensionsFromConfigs(packets);
+    status = CMVideoFormatDescriptionCreate(
+        kCFAllocatorDefault, kCMVideoCodecType_AV1, params.width, params.height,
+        extensions, &videoFormatDescription);
+    if (extensions) {
+      CFRelease(extensions);
+    }
   }
   if (status != errSecSuccess || !videoFormatDescription) {
     LOGFLF(LogLevel::warn,
@@ -237,7 +331,9 @@ DecodeResult IOSVDecoder::onPreDecoder() {
     LOGFLF(LogLevel::warn, "vt h264 has no 10bit output, give up hw lane");
     return DecodeResult::openFailed;
   }
-  if (codecDesc.vcodecId == VCodecId::h265 && streamBitDepth == 10) {
+  if ((codecDesc.vcodecId == VCodecId::h265 ||
+       codecDesc.vcodecId == VCodecId::av1) &&
+      streamBitDepth == 10) {
     dstFmt = kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange;
   }
   NSDictionary *attr = [NSDictionary
@@ -280,13 +376,17 @@ DecodeResult IOSVDecoder::decode(const AvoxPacket &packet_) {
   AvoxPacket packet = packet_;
 //    AvoxData logData = {packet.data.data,std::min(16,packet.data.size),true};
 //    LOGFLF(LogLevel::info,"data:",logData," size:",packet.data.size);
-  uint8_t ualUnit = getNalUnit(codecDesc.vcodecId, packet);
+  // 非h26x(vp9/av1)无NALU语义: getNalUnit/naluDataFrame 恒0/false, 照h26x
+  // 判定会把整包误杀成 dataError(VP9硬解车道全包被丢的实证), OBU流整包直喂
+  bool bH26x = codecDesc.vcodecId == VCodecId::h264 ||
+               codecDesc.vcodecId == VCodecId::h265;
+  uint8_t ualUnit = bH26x ? getNalUnit(codecDesc.vcodecId, packet) : 0;
   // 是否可解码数据
-  bool bDecode = naluDataFrame(codecDesc.vcodecId, ualUnit);
+  bool bDecode = !bH26x || naluDataFrame(codecDesc.vcodecId, ualUnit);
   // 合并组首NAL可能是PPS/SEI/AUD等非VCL而组内仍含slice, 不能按首NAL整包丢:
   // HDR素材每组带前导SEI(元数据), 首NAL判会全量丢帧(实证硬解零帧)。VT 能自行
   // 解析组内非VCL前缀, 整组喂入; 拆分后无任何帧NAL才丢
-  if (!bDecode) {
+  if (bH26x && !bDecode) {
     std::vector<AvoxPacket> nalus;
     splitAvccNalu(packet, nalus);
     for (const auto &item : nalus) {
@@ -296,7 +396,7 @@ DecodeResult IOSVDecoder::decode(const AvoxPacket &packet_) {
       }
     }
   }
-  bool bKeyFrame = naluKeyFrame(codecDesc.vcodecId, ualUnit);
+  bool bKeyFrame = bH26x && naluKeyFrame(codecDesc.vcodecId, ualUnit);
   // ios里不能解码的包不要输入,可能引起问题
   if (!bDecode) {
     return DecodeResult::dataError;

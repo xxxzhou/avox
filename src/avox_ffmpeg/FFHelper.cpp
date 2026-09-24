@@ -146,6 +146,8 @@ VCodecId ffVCodec(AVCodecID codecId) {
       return VCodecId::rv40;
     case AV_CODEC_ID_VP9:
       return VCodecId::vp9;
+    case AV_CODEC_ID_AV1:
+      return VCodecId::av1;
     default:
       return VCodecId::none;
   }
@@ -252,6 +254,8 @@ AVCodecID getFFCodecId(VCodecId codecId) {
       return AV_CODEC_ID_RV40;
     case VCodecId::vp9:
       return AV_CODEC_ID_VP9;
+    case VCodecId::av1:
+      return AV_CODEC_ID_AV1;
     default:
       return AV_CODEC_ID_NONE;
   }

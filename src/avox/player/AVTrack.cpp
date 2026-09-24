@@ -311,6 +311,16 @@ const char* getDefaultDecoderName(VCodecId codecId, bool bHard) {
     // 注册名来自 regFFCodec 的 codec->name
     return AVOX_FF_VP9_DECODER;
 #endif
+  } else if (codecId == VCodecId::av1) {
+#if defined(__APPLE__)
+    // AV1: Apple 走 VideoToolbox(M3/A17 Pro 起有硬解块, IOSVDecoder::onVaild
+    // 探测 VTIsHardwareDecodeSupported, 不支持时由 VDecoderTask 选型回退软解)
+    return bHard ? AVOX_IOS_AV1_DECODER : AVOX_FF_AV1_DECODER;
+#else
+    // 其他平台暂无 AV1 硬解车道(Windows D3D11VA 后续照 ff_vp9_dx11 抄),
+    // 注册名来自 regFFCodec 的 codec->name(FFmpeg 软解需构建带 dav1d/libaom)
+    return AVOX_FF_AV1_DECODER;
+#endif
   }
   return AVOX_FF_H264_DECODER;
 }
