@@ -121,7 +121,12 @@ NSString *const nv12trgbBody = AVOX_SHADER_STRING(
 
     float3 processColor(float3 rgb, constant FragParams& params) {
       if (params.hdrMode == 2) {
-        return rgb;
+        // EDR 直通(extended linear ITUR-2020, 1.0=SDR 白): 线性化后原样
+        // 上屏, 不 tone map 不压 709; 超白部分由合成器按 EDR 头距出光
+        float3 lin = (params.transfer == 2) ? (pqToLinear(rgb) * 100.0)
+                     : ((params.transfer == 3) ? (hlgToLinear(rgb) * 10.0)
+                     : pow(max(rgb, float3(0.0)), float3(2.2)));
+        return lin;
       }
       if (params.transfer == 2) {
         float3 lin = pqToLinear(rgb);
@@ -206,11 +211,13 @@ static void applyLayerHdrConfig(CAMetalLayer* layer, bool pass) {
   if (pass) {
     layer.wantsExtendedDynamicRangeContent = YES;
     if (@available(macOS 10.15, iOS 13.0, *)) {
-      CGColorSpaceRef pqcs =
-          CGColorSpaceCreateWithName(kCGColorSpaceITUR_2100_PQ);
-      layer.colorspace = pqcs;
-      if (pqcs) {
-        CFRelease(pqcs);
+      // EDR 通道走 extended linear ITUR-2020(1.0=SDR 白, 值可>1), 与
+      // shader forceHDR 分支的输出域对齐; PQ 标签层不触发合成器 EDR
+      CGColorSpaceRef edrcs =
+          CGColorSpaceCreateWithName(kCGColorSpaceExtendedLinearITUR_2020);
+      layer.colorspace = edrcs;
+      if (edrcs) {
+        CFRelease(edrcs);
       }
     }
     layer.pixelFormat = MTLPixelFormatRGBA16Float;
