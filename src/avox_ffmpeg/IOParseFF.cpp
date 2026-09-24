@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstring>
 
 #include "avox/Avox.hpp"
 #include "avox/codec/H26XHelper.hpp"
@@ -45,6 +46,10 @@ static void onFFLog(void* avcl, int ffLevel, const char* fmt, va_list vl) {
   // 格式化 FFmpeg 日志消息, 带上模块名(h264/libx265/mpegts等)便于定位来源
   char buf[1024];
   vsnprintf(buf, sizeof(buf), fmt, vl);
+  // 解码器逐包 "no frame!" (纯参数集包/首个关键帧前等常态) 纯噪音, 屏掉
+  size_t len = strlen(buf);
+  while (len > 0 && (buf[len - 1] == '\n' || buf[len - 1] == '\r' || buf[len - 1] == ' ')) --len;
+  if (len == 9 && memcmp(buf, "no frame!", 9) == 0) return;
   std::string msg;
   const AVClass* avc = avcl ? *(const AVClass* const*)avcl : nullptr;
   if (avc && avc->item_name) {
