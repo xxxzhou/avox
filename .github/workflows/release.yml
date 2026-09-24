@@ -43,7 +43,6 @@ jobs:
         with:
           repository: xxxzhou/avox_library
           path: avox_library
-          token: ${{ secrets.AVOX_LIBRARY_TOKEN }}
           sparse-checkout: |
             3rdparty/library/windows/onnxruntime
           sparse-checkout-cone-mode: false
@@ -62,16 +61,15 @@ jobs:
           mkdir -p avox_library/build/windows/release
           mkdir -p avox_library/3rdparty/library/windows/onnxruntime/onnxruntime-win-x64-1.23.2/lib
 
-          TOKEN="${{ secrets.AVOX_LIBRARY_TOKEN }}"
           BASE="https://github.com/xxxzhou/avox_library/releases/download/v1.0.0"
 
-          curl -sL -H "Authorization: token $TOKEN" "$BASE/webrtc-windows-x64.lib" \
+          curl -sfL "$BASE/webrtc-windows-x64.lib" \
             -o avox_library/build/windows/release/webrtc.lib && echo "webrtc OK"
 
-          curl -sL -H "Authorization: token $TOKEN" "$BASE/onnxruntime.lib" \
+          curl -sfL "$BASE/onnxruntime.lib" \
             -o avox_library/3rdparty/library/windows/onnxruntime/onnxruntime-win-x64-1.23.2/lib/onnxruntime.lib && echo "onnxruntime.lib OK"
 
-          curl -sL -H "Authorization: token $TOKEN" "$BASE/onnxruntime_providers_shared.lib" \
+          curl -sfL "$BASE/onnxruntime_providers_shared.lib" \
             -o avox_library/3rdparty/library/windows/onnxruntime/onnxruntime-win-x64-1.23.2/lib/onnxruntime_providers_shared.lib && echo "onnxruntime_providers_shared.lib OK"
 
       - name: Cache AI Models
@@ -88,49 +86,29 @@ jobs:
           # Create models directory
           mkdir -p assets/models
 
-          TOKEN="${{ secrets.AVOX_LIBRARY_TOKEN }}"
-
           # Download stt-sense-voice
           echo "Downloading stt-sense-voice..."
           mkdir -p assets/models/stt/sense-voice
-          URL=$(curl -sL -H "Authorization: token $TOKEN" \
-            "https://api.github.com/repos/xxxzhou/avox_model/releases/tags/stt-sense-voice" | python3 -c \
-            "import sys,json; assets=json.load(sys.stdin)['assets']; print([a['browser_download_url'] for a in assets if 'stt-sense-voice.zip' in a['name']][0])")
-          if [ -n "$URL" ]; then
-            curl -sL -H "Authorization: token $TOKEN" "$URL" -o assets/models/stt-sense-voice.zip
-            unzip -o -q assets/models/stt-sense-voice.zip -d assets/models/stt/sense-voice/
-            rm -f assets/models/stt-sense-voice.zip
-          else
-            echo "Warning: stt-sense-voice not found"
-          fi
+          curl -sfL "https://github.com/xxxzhou/avox_model/releases/download/stt-sense-voice/stt-sense-voice.zip" \
+            -o assets/models/stt-sense-voice.zip
+          unzip -o -q assets/models/stt-sense-voice.zip -d assets/models/stt/sense-voice/
+          rm -f assets/models/stt-sense-voice.zip
 
           # Download stt-zh-en
           echo "Downloading stt-zh-en..."
           mkdir -p assets/models/stt/zh-en
-          URL=$(curl -sL -H "Authorization: token $TOKEN" \
-            "https://api.github.com/repos/xxxzhou/avox_model/releases/tags/stt-zh-en" | python3 -c \
-            "import sys,json; assets=json.load(sys.stdin)['assets']; print([a['browser_download_url'] for a in assets if 'stt-zh-en.zip' in a['name']][0])")
-          if [ -n "$URL" ]; then
-            curl -sL -H "Authorization: token $TOKEN" "$URL" -o assets/models/stt-zh-en.zip
-            unzip -o -q assets/models/stt-zh-en.zip -d assets/models/stt/zh-en/
-            rm -f assets/models/stt-zh-en.zip
-          else
-            echo "Warning: stt-zh-en not found"
-          fi
+          curl -sfL "https://github.com/xxxzhou/avox_model/releases/download/stt-zh-en/stt-zh-en.zip" \
+            -o assets/models/stt-zh-en.zip
+          unzip -o -q assets/models/stt-zh-en.zip -d assets/models/stt/zh-en/
+          rm -f assets/models/stt-zh-en.zip
 
           # Download translation-opus-mt-ja-zh
           echo "Downloading translation-opus-mt-ja-zh..."
           mkdir -p assets/models/translation/opus-mt-ja-zh
-          URL=$(curl -sL -H "Authorization: token $TOKEN" \
-            "https://api.github.com/repos/xxxzhou/avox_model/releases/tags/translation-opus-mt-ja-zh" | python3 -c \
-            "import sys,json; assets=json.load(sys.stdin)['assets']; urls=[a['browser_download_url'] for a in assets if 'translation' in a['name'] and a['name'].endswith('.zip')]; print(urls[0] if urls else '')")
-          if [ -n "$URL" ]; then
-            curl -sL -H "Authorization: token $TOKEN" "$URL" -o assets/models/translation.zip
-            unzip -o -q assets/models/translation.zip -d assets/models/translation/opus-mt-ja-zh/
-            rm -f assets/models/translation.zip
-          else
-            echo "Warning: translation model not found"
-          fi
+          curl -sfL "https://github.com/xxxzhou/avox_model/releases/download/translation-opus-mt-ja-zh/translation-opus-mt-ja-zh.zip" \
+            -o assets/models/translation.zip
+          unzip -o -q assets/models/translation.zip -d assets/models/translation/opus-mt-ja-zh/
+          rm -f assets/models/translation.zip
 
           echo "Models downloaded and extracted"
 
@@ -351,16 +329,16 @@ jobs:
           mkdir -p avox_library/3rdparty/library/android/onnxruntime/onnxruntime-android-arm64-v8a-static_lib-1.23.2/lib
 
           # Download webrtc-android-arm64.a
-          curl -sL -H "Authorization: token ${{ secrets.AVOX_LIBRARY_TOKEN }}" \
+          curl -sfL \
             "https://api.github.com/repos/xxxzhou/avox_library/releases/tags/v1.0.0" | python3 -c \
             "import sys,json; assets=json.load(sys.stdin)['assets']; print([a['browser_download_url'] for a in assets if 'android-arm64' in a['name'] and 'onnx' not in a['name']][0])" | \
-            xargs -I{} curl -sL -H "Authorization: token ${{ secrets.AVOX_LIBRARY_TOKEN }}" {} -o avox_library/build/android/release/libwebrtc.a
+            xargs -I{} curl -sfL {} -o avox_library/build/android/release/libwebrtc.a
 
           # Download onnxruntime-android-arm64.a
-          curl -sL -H "Authorization: token ${{ secrets.AVOX_LIBRARY_TOKEN }}" \
+          curl -sfL \
             "https://api.github.com/repos/xxxzhou/avox_library/releases/tags/v1.0.0" | python3 -c \
             "import sys,json; assets=json.load(sys.stdin)['assets']; print([a['browser_download_url'] for a in assets if 'onnxruntime-android-arm64' in a['name']][0])" | \
-            xargs -I{} curl -sL -H "Authorization: token ${{ secrets.AVOX_LIBRARY_TOKEN }}" {} -o avox_library/3rdparty/library/android/onnxruntime/onnxruntime-android-arm64-v8a-static_lib-1.23.2/lib/libonnxruntime.a
+            xargs -I{} curl -sfL {} -o avox_library/3rdparty/library/android/onnxruntime/onnxruntime-android-arm64-v8a-static_lib-1.23.2/lib/libonnxruntime.a
 
           echo "Downloaded prebuilt libraries"
 
@@ -375,49 +353,30 @@ jobs:
         if: steps.cache-models.outputs.cache-hit != 'true'
         run: |
           mkdir -p assets/models
-          TOKEN="${{ secrets.AVOX_LIBRARY_TOKEN }}"
 
           # Download stt-sense-voice
           echo "Downloading stt-sense-voice..."
           mkdir -p assets/models/stt/sense-voice
-          URL=$(curl -sL -H "Authorization: token $TOKEN" \
-            "https://api.github.com/repos/xxxzhou/avox_model/releases/tags/stt-sense-voice" | python3 -c \
-            "import sys,json; assets=json.load(sys.stdin)['assets']; print([a['browser_download_url'] for a in assets if 'stt-sense-voice.zip' in a['name']][0])")
-          if [ -n "$URL" ]; then
-            curl -sL -H "Authorization: token $TOKEN" "$URL" -o assets/models/stt-sense-voice.zip
-            unzip -o -q assets/models/stt-sense-voice.zip -d assets/models/stt/sense-voice/
-            rm -f assets/models/stt-sense-voice.zip
-          else
-            echo "Warning: stt-sense-voice not found"
-          fi
+          curl -sfL "https://github.com/xxxzhou/avox_model/releases/download/stt-sense-voice/stt-sense-voice.zip" \
+            -o assets/models/stt-sense-voice.zip
+          unzip -o -q assets/models/stt-sense-voice.zip -d assets/models/stt/sense-voice/
+          rm -f assets/models/stt-sense-voice.zip
 
           # Download stt-zh-en
           echo "Downloading stt-zh-en..."
           mkdir -p assets/models/stt/zh-en
-          URL=$(curl -sL -H "Authorization: token $TOKEN" \
-            "https://api.github.com/repos/xxxzhou/avox_model/releases/tags/stt-zh-en" | python3 -c \
-            "import sys,json; assets=json.load(sys.stdin)['assets']; print([a['browser_download_url'] for a in assets if 'stt-zh-en.zip' in a['name']][0])")
-          if [ -n "$URL" ]; then
-            curl -sL -H "Authorization: token $TOKEN" "$URL" -o assets/models/stt-zh-en.zip
-            unzip -o -q assets/models/stt-zh-en.zip -d assets/models/stt/zh-en/
-            rm -f assets/models/stt-zh-en.zip
-          else
-            echo "Warning: stt-zh-en not found"
-          fi
+          curl -sfL "https://github.com/xxxzhou/avox_model/releases/download/stt-zh-en/stt-zh-en.zip" \
+            -o assets/models/stt-zh-en.zip
+          unzip -o -q assets/models/stt-zh-en.zip -d assets/models/stt/zh-en/
+          rm -f assets/models/stt-zh-en.zip
 
           # Download translation-opus-mt-ja-zh
           echo "Downloading translation-opus-mt-ja-zh..."
           mkdir -p assets/models/translation/opus-mt-ja-zh
-          URL=$(curl -sL -H "Authorization: token $TOKEN" \
-            "https://api.github.com/repos/xxxzhou/avox_model/releases/tags/translation-opus-mt-ja-zh" | python3 -c \
-            "import sys,json; assets=json.load(sys.stdin)['assets']; urls=[a['browser_download_url'] for a in assets if 'translation' in a['name'] and a['name'].endswith('.zip')]; print(urls[0] if urls else '')")
-          if [ -n "$URL" ]; then
-            curl -sL -H "Authorization: token $TOKEN" "$URL" -o assets/models/translation.zip
-            unzip -o -q assets/models/translation.zip -d assets/models/translation/opus-mt-ja-zh/
-            rm -f assets/models/translation.zip
-          else
-            echo "Warning: translation model not found"
-          fi
+          curl -sfL "https://github.com/xxxzhou/avox_model/releases/download/translation-opus-mt-ja-zh/translation-opus-mt-ja-zh.zip" \
+            -o assets/models/translation.zip
+          unzip -o -q assets/models/translation.zip -d assets/models/translation/opus-mt-ja-zh/
+          rm -f assets/models/translation.zip
 
           echo "Models downloaded and extracted"
 
