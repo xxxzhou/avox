@@ -37,10 +37,10 @@ Command cmdPlay() {
   // 解码模式
   cmd.parser.addArg(
       {"-hard", "", ArgType::Boolean, false, "硬解 (默认软解)", ""});
-  // IO 方案: 默认自动 (本地文件->ffmpeg, 网络源->zlmediakit)
+  // IO 方案: 默认自动 (本地/文件直链->ffmpeg, 真流协议->zlmediakit)
   cmd.parser.addArg(
       {"-io", "", ArgType::String, false,
-       "IO方案: auto/ffmpeg/zlmediakit (auto=本地ffmpeg,网络zlmediakit)", ""});
+       "IO方案: auto/ffmpeg/zlmediakit (auto=本地与文件直链走ffmpeg, 仅rtsp/rtmp/srt/hls/flv/ts流源走zlmediakit)", ""});
   // 渲染模式
   cmd.parser.addArg({"-offscreen", "", ArgType::Boolean, false,
                      "离屏渲染 (默认窗口渲染)", ""});
@@ -111,8 +111,8 @@ Command cmdPlay() {
     int64_t shotInterval = args.getInt("shot-interval", 0);
     if (shotInterval > 0 && shotInterval < 100) shotInterval = 100;  // 避免过频
     int64_t shotAt = args.getInt("shot-at", -1);  // 单次截图位置, -1=不用
-    // 解析 IoPlan: 显式指定则用之; 否则按源类型自动 (本地文件->ffmpeg,
-    // 网络源->zlmediakit)
+    // 解析 IoPlan: 显式指定则用之; 否则 auto (本地文件与 http 文件直链->ffmpeg,
+    // rtsp/rtmp/srt/hls/flv/ts 等流源->zlmediakit)
     IoPlan ioPlan;
     if (ioPlanStr == "ffmpeg") {
       ioPlan = IoPlan::ffmpeg;
@@ -126,9 +126,11 @@ Command cmdPlay() {
                 input.compare(input.size() - 8, 8, ".torrent") == 0)) {
       ioPlan = IoPlan::torrent;
     } else {
-      bool isLocal = checkLocalPath(input.c_str());
-      ioPlan = isLocal ? IoPlan::ffmpeg : IoPlan::zlmediakit;
-      ioPlanStr = isLocal ? "ffmpeg" : "zlmediakit";
+      // auto: 本地文件->ffmpeg; 网络源只有 ZL 真支持的流协议给 ZL,
+      // 普通 http 文件直链(NAS 网页盘等)走 ffmpeg (ZL 对其抛 not supported play schema)
+      bool bZl = !checkLocalPath(input.c_str()) && bZlStreamUrl(input.c_str());
+      ioPlan = bZl ? IoPlan::zlmediakit : IoPlan::ffmpeg;
+      ioPlanStr = bZl ? "zlmediakit" : "ffmpeg";
     }
     // 窗口模式未显式指定日志文件 -> 自动写到 <运行目录>/logs/<时间>.log
     // 运行目录取 avox.dll 所在目录 (getAvoxPath), 不带尾部分隔符

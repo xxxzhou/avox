@@ -48,6 +48,11 @@ bool cmdEnableVt();
 // 终端可视列宽 (软换行/进度条用); 取不到回退 80。
 int cmdTerminalWidth();
 
+// IO auto 选路: url 是否为 ZL 真支持的流式源 (rtsp/rtmp/srt/ws 直连;
+// http(s) 仅认 .m3u8/.flv/.ts 流式后缀, 忽略 query)。普通 http 文件直链
+// (NAS 网页盘等) ZL 不支持(not supported play schema), 应回落 ffmpeg。
+bool bZlStreamUrl(const char* url);
+
 // ========== ANSI 着色 (需先 cmdEnableVt 才在 Win conhost 生效) ==========
 // SGR 转义码 (字体色): 30=黑 31=红 32=绿 33=黄 34=蓝 35=紫 36=青 37=白 90-97 亮色; 0=重置
 // 常用色板: 各调用方语义化引用 (avox_agent: user/tool/error; avox_cli: help 着色)

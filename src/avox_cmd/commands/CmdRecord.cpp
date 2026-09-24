@@ -69,7 +69,7 @@ Command cmdRecord() {
   // IO 方案
   cmd.parser.addArg(
       {"-io", "", ArgType::String, false,
-       "IO方案: auto/ffmpeg/zlmediakit (auto=本地ffmpeg,网络zlmediakit)", ""});
+       "IO方案: auto/ffmpeg/zlmediakit (auto=本地与文件直链走ffmpeg, 仅rtsp/rtmp/srt/hls/flv/ts流源走zlmediakit)", ""});
   // 硬编码 (转码模式有效)
   cmd.parser.addArg(
       {"-hard", "", ArgType::Boolean, false, "硬编码 (转码模式有效)", ""});
@@ -107,9 +107,11 @@ Command cmdRecord() {
     } else if (ioPlanStr == "zlmediakit") {
       ioPlan = IoPlan::zlmediakit;
     } else {
-      bool isLocal = checkLocalPath(input.c_str());
-      ioPlan = isLocal ? IoPlan::ffmpeg : IoPlan::zlmediakit;
-      ioPlanStr = isLocal ? "ffmpeg" : "zlmediakit";
+      // auto: 与 play 同口径 — 本地文件与 http 文件直链走 ffmpeg,
+      // 仅 ZL 真支持的流协议(rtsp/rtmp/srt/hls/flv/ts)给 ZL
+      bool bZl = !checkLocalPath(input.c_str()) && bZlStreamUrl(input.c_str());
+      ioPlan = bZl ? IoPlan::zlmediakit : IoPlan::ffmpeg;
+      ioPlanStr = bZl ? "zlmediakit" : "ffmpeg";
     }
     // 日志文件: 未指定则自动写到 <运行目录>/logs/<时间>.log
     if (logFilePath.empty()) {

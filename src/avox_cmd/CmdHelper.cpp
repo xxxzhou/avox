@@ -5,6 +5,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <cctype>
 #include <deque>
 #include <fstream>
 #include <iostream>
@@ -49,6 +50,33 @@ void ensureDir(const std::string& dir) {
 #else
   mkdir(dir.c_str(), 0777);
 #endif
+}
+
+// 大小写不敏感前缀匹配 (strncasecmp/_strnicmp 不跨平台, s 长度不足时止于 NUL)
+static bool bPrefixCI(const char* s, const char* head) {
+  size_t n = strlen(head);
+  for (size_t i = 0; i < n; ++i) {
+    if (tolower((unsigned char)s[i]) != tolower((unsigned char)head[i])) return false;
+  }
+  return true;
+}
+
+bool bZlStreamUrl(const char* url) {
+  if (url == nullptr || url[0] == '\0') return false;
+  static const char* kSchemes[] = {"rtsp://", "rtmp://", "rtmps://",
+                                   "srt://",  "ws://",   "wss://"};
+  for (const char* s : kSchemes) {
+    if (bPrefixCI(url, s)) return true;
+  }
+  // http(s) 只认流式后缀: query 之前的部分做匹配
+  static const char* kExts[] = {".m3u8", ".flv", ".ts"};
+  const char* query = strchr(url, '?');
+  size_t pathLen = query ? (size_t)(query - url) : strlen(url);
+  for (const char* e : kExts) {
+    size_t m = strlen(e);
+    if (pathLen >= m && bPrefixCI(url + pathLen - m, e)) return true;
+  }
+  return false;
 }
 
 FileLogOb::FileLogOb(const std::string& path) {
