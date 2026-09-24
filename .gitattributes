@@ -1,0 +1,42 @@
+# 行尾策略: 文本文件入库统一 LF(仓库里存 LF), 检出时按平台。
+# 起因: 490af82 把 MetalRender.mm 整文件 CRLF->LF, git show 是 1521 行, 加 -w
+# 才看出真改动只有 153 行 —— 改一行变成整文件重写, blame 也被冲掉。
+# 行尾要统一就单独成笔(见 .git-blame-ignore-revs), 不要混在功能改动里。
+* text=auto
+
+# 第三方/子模块邻接代码不动: 有的本来就带 CRLF, 改它只制造噪音
+3rdparty/** -text
+
+# 二进制显式标记, 免得被当文本做行尾转换
+*.a binary
+*.dylib binary
+*.so binary
+*.dll binary
+*.lib binary
+*.exe binary
+*.bin binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.7z binary
+*.mp4 binary
+*.onnx binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+
+# Windows 侧脚本保持 CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# 脚本必须 LF: shebang 行带 \r 会 bad interpreter
+*.sh text eol=lf
+*.py text eol=lf

@@ -5,6 +5,7 @@ build_*.txt
 __pycache__
 src/avox/.vscode/*.*
 src/avox/AvoxVersion.h
+src/avox/AvoxVersion.h.tmp
 .history
 .vs
 .vscode/cache
