@@ -156,13 +156,13 @@ NSString *const nv12trgbBody = AVOX_SHADER_STRING(
         rgb = float3(yy + 1.4746 * vv, yy - 0.164553 * uu - 0.571353 * vv,
                      yy + 1.8814 * uu);
       } else {
-        // 颜色矩阵由 buildYuvToRgb(cs) 逐帧下发, 行优先: row0/1/2=R/G/B 输出系数,
-        // 末列是 range 偏移(limited 已含 Y*(255/219)-16/219 等); 输入 y/uv 为 raw [0,1]
+        // 颜色矩阵与 Vulkan V1/V5 / Dx11 的 vec4(yuv,1)*colorMat 同源: 内存 slot k =
+        // 输出通道 k 的系数, 末位是 range 偏移(limited 已含量程展开); 输入 y/uv 为 raw [0,1]
         float4 yuv = float4(y, uv, 1.0);
         rgb = float3(
-          yuv.x * colorMat[0] + yuv.y * colorMat[4] + yuv.z * colorMat[8] + colorMat[12],
-          yuv.x * colorMat[1] + yuv.y * colorMat[5] + yuv.z * colorMat[9] + colorMat[13],
-          yuv.x * colorMat[2] + yuv.y * colorMat[6] + yuv.z * colorMat[10] + colorMat[14]);
+          dot(yuv, float4(colorMat[0], colorMat[1], colorMat[2], colorMat[3])),
+          dot(yuv, float4(colorMat[4], colorMat[5], colorMat[6], colorMat[7])),
+          dot(yuv, float4(colorMat[8], colorMat[9], colorMat[10], colorMat[11])));
       }
       rgb = processColor(rgb, params);
       return float4(clamp(rgb, 0.0, 1.0), 1.0);
