@@ -196,6 +196,31 @@ MetalRender::MetalRender() { renderType = RenderType::Metal; updateColorMat(); }
 
 MetalRender::~MetalRender() { releaseGraph(); }
 
+// 直通层配置: forceHDR 且过 EDR 探测时 16Float + BT.2100 PQ(PQ 值原样落帧),
+// 否则恢复 SDR 默认。管线色附格式随 bF16Pipeline 对齐, 两者必须同帧一致,
+// 否则 Metal 校验层断言(framebuffer 与 pipeline 格式必须一致, iOS 实测)
+static void applyLayerHdrConfig(CAMetalLayer* layer, bool pass) {
+  if (!layer) {
+    return;
+  }
+  if (pass) {
+    layer.wantsExtendedDynamicRangeContent = YES;
+    if (@available(macOS 10.15, iOS 13.0, *)) {
+      CGColorSpaceRef pqcs =
+          CGColorSpaceCreateWithName(kCGColorSpaceITUR_2100_PQ);
+      layer.colorspace = pqcs;
+      if (pqcs) {
+        CFRelease(pqcs);
+      }
+    }
+    layer.pixelFormat = MTLPixelFormatRGBA16Float;
+  } else {
+    layer.wantsExtendedDynamicRangeContent = NO;
+    layer.colorspace = nil;
+    layer.pixelFormat = MTLPixelFormatRGBA8Unorm;
+  }
+}
+
 void MetalRender::onSetSurface() {
   // NSView -> CAMetalLayer 的归一已上提到 getNativeSurface(见 Window.cpp), 到这里
   // surface 必是层(device 也兜底过), 下游各后端无需各自再判
@@ -210,9 +235,7 @@ void MetalRender::onSetSurface() {
     return e && strcmp(e, "1") == 0;
   }();
   metalLayer.framebufferOnly = bFbOnly ? YES : NO;
-  // CAMetalLayer 默认 BGRA8Unorm, 而渲染管线(255行)固定 RGBA8Unorm,
-  // 不对齐会被 Metal 校验层断言(iOS 实测): framebuffer 与 pipeline 格式必须一致
-  metalLayer.pixelFormat = MTLPixelFormatRGBA8Unorm;
+  applyLayerHdrConfig(metalLayer, metalHdrPassthrough.load());
 }
 
 bool MetalRender::vaildAndInitGraph() {
@@ -224,6 +247,13 @@ bool MetalRender::vaildAndInitGraph() {
     releaseGraph();
   }
   // 建不建由 pipelineState/cacheTexture 是否为空驱动, 不依赖本标志
+  // 直通态翻转: 层与管线同帧切格式(RGBA8Unorm <-> RGBA16Float+PQ), 重建对齐
+  const bool wantF16 = metalHdrPassthrough.load();
+  if (wantF16 != bF16Pipeline) {
+    bF16Pipeline = wantF16;
+    applyLayerHdrConfig(metalLayer, wantF16);
+    releaseGraph();
+  }
   if (pipelineState != nil && cacheTexture != nil) {
     return true;
   }
@@ -488,7 +518,8 @@ void MetalRender::createPipelineState() {
 
   pipelineDescriptor.vertexFunction = vertexFunction;
   pipelineDescriptor.fragmentFunction = fragmentFunction;
-  pipelineDescriptor.colorAttachments[0].pixelFormat = MTLPixelFormatRGBA8Unorm;
+  pipelineDescriptor.colorAttachments[0].pixelFormat =
+      bF16Pipeline ? MTLPixelFormatRGBA16Float : MTLPixelFormatRGBA8Unorm;
 
   NSError *pipelineError = nil;
   pipelineState =
