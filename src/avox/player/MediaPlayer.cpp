@@ -50,6 +50,7 @@ MediaPlayer::MediaPlayer() {
     }
   });
   clock = std::make_unique<Clock>();
+  clock->tag = "ext";
   // 埋点单独线程
   mpPingback = std::make_unique<MPPingQueue>();
   // 默认打开低延迟
@@ -1571,6 +1572,10 @@ void MediaPlayer::cmdReady() {
   }
   for (const auto& vtrack : videoTracks) {
     if (vtrack && vtrack->vaild()) {
+      // [TEMP-PROBE] 起播时帧队列快照
+      LOGFLF(LogLevel::warn, "[TEMP-PROBE] cmdReady vtrack frames:",
+             vtrack->getFrameQueue().size(), " clock:",
+             vtrack->getClock()->clock());
       vtrack->start();
       vidoeSize++;
       pb.mediaObject = MediaObject::track;

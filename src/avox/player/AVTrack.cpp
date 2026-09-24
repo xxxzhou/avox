@@ -8,6 +8,7 @@ namespace avox {
 
 AVTrack::AVTrack() {
   clock = std::make_unique<Clock>();
+  clock->tag = trackType == TrackType::audio ? "audio" : "video";
   packetQueue.setMaxSize(100);
   bVaild = false;
 }
@@ -126,6 +127,14 @@ bool AVTrack::hasVaildVideoTrack() {
 }
 
 void AVTrack::updateClock(int64_t pts) {
+  // [TEMP-PROBE] 换片时钟泄漏定位: 大跳变留痕
+  static thread_local int64_t sLastPts = AVOX_NOVALID_PTS;
+  if (sLastPts != AVOX_NOVALID_PTS && pts != AVOX_NOVALID_PTS &&
+      std::abs(pts - sLastPts) > 3000) {
+    LOGFLF(LogLevel::warn, "[TEMP-PROBE] updateClock jump type:",
+           getTrackTypeStr(trackType), " last:", sLastPts, " now:", pts);
+  }
+  sLastPts = pts;
   // LOGFLF(LogLevel::info, "pts:", pts, " type:", getTrackTypeStr(trackType));
   // 更新自身时钟
   clock->update(pts);
@@ -316,9 +325,15 @@ const char* getDefaultDecoderName(VCodecId codecId, bool bHard) {
     // AV1: Apple 走 VideoToolbox(M3/A17 Pro 起有硬解块, IOSVDecoder::onVaild
     // 探测 VTIsHardwareDecodeSupported, 不支持时由 VDecoderTask 选型回退软解)
     return bHard ? AVOX_IOS_AV1_DECODER : AVOX_FF_AV1_DECODER;
+#elif defined(_WIN32)
+    // AV1: Windows 走 D3D11VA(FFDx11Decoder::onVaild 探测 GPU 解码 profile,
+    // 不支持时由 VDecoderTask 选型回退软解)。注意 FFmpeg 的 av1 解码器是
+    // hwaccel-only 包装, 无 dav1d 构建下"软解"名实际解不出帧, 无硬解块的
+    // 机器 AV1 暂不可播
+    return bHard ? AVOX_FFDX11_AV1_DECODER : AVOX_FF_AV1_DECODER;
 #else
-    // 其他平台暂无 AV1 硬解车道(Windows D3D11VA 后续照 ff_vp9_dx11 抄),
-    // 注册名来自 regFFCodec 的 codec->name(FFmpeg 软解需构建带 dav1d/libaom)
+    // 其他平台暂无 AV1 硬解车道, 注册名来自 regFFCodec 的 codec->name
+    //(FFmpeg 软解 AV1 需构建带 dav1d/libaom)
     return AVOX_FF_AV1_DECODER;
 #endif
   }

@@ -67,7 +67,9 @@ static std::string textSampleToAssChunk(const char* data, int32_t size) {
   return out;
 }
 
-SubtitleView::SubtitleView() = default;
+SubtitleView::SubtitleView() {
+  clock.tag = "sub";  // [TEMP-PROBE]
+}
 
 SubtitleView::~SubtitleView() {
   closeSubtitle();
