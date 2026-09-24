@@ -426,6 +426,9 @@ void VDecoderTask::onRunTask() {
 
 void VDecoderTask::close() {
   stopTask();
+  // 摊平器随任务销毁复位: lastOut是上一轮输出的单调下界, 残留会把下一轮
+  // 的组合多包簇(配置帧+I帧)整簇钳到上一轮停片位
+  flattener.reset();
   if (decode) {
     // 队列里数据清空
     decode->removeObserver(trackContext);

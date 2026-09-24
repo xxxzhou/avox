@@ -449,6 +449,11 @@ void VideoTrack::close() {
   // 清空队列
   packetQueue.clear();
   frameQueue.clear();
+  // 呈现游标随轨销毁复位: 轨对象跨open复用, 残留游标会把下一轮开头的帧
+  // 前向重戳到上一轮停片位, 换片进度从旧停片位起跳/同URL重开钉死在片尾
+  lastInPts = AVOX_NOVALID_PTS;
+  seekDiscardPts = AVOX_NOVALID_PTS;
+  bHdrMetaSent = false;
   onUninitDesc();
 }
 

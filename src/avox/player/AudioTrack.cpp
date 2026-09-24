@@ -296,6 +296,13 @@ void AudioTrack::close() {
   // 清空队列
   packetQueue.clear();
   frameQueue.clear();
+  // 采样时间轴游标随轨销毁复位: 轨对象跨open复用, 残留nextPts会把下一轮
+  // 首帧锚在上一轮停片位(首个有效pts偏差大才重锚, 无效pts帧会沿用残留值)
+  nextPts = AVOX_NOVALID_PTS;
+  startCheck = false;
+  checkPts = AVOX_NOVALID_PTS;
+  checkDataSize = 0;
+  bCheckfail = false;
   onUninitDesc();
 }
 

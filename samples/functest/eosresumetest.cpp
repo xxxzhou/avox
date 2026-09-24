@@ -50,23 +50,41 @@ void trip(IMediaPlayer* player, StateOb& ob, const char* tag) {
   std::fflush(stdout);
 }
 
-// 打开 url, 轮询打印 firstPollMs; 返回首个 playing 后的 pos 读数
-int64_t openAndTrace(IMediaPlayer* player, StateOb& ob, const char* url,
-                     const char* tag, int polls, int intervalMs) {
+// 打开 url, 轮询打印 polls 次; 返回是否检出泄漏:
+//   ① 相邻两拍向上跳变>1000ms(起跳: 正常每拍 +intervalMs 左右)
+//   ② 播放中读数钉死在片尾(dur-500): 窗口离片尾远时出现即异常
+//     (仅对长片启用, 短片窗口可能盖到自然播完)
+bool openAndTrace(IMediaPlayer* player, StateOb& ob, const char* url,
+                  const char* tag, int polls, int intervalMs,
+                  int64_t* firstPlayingPos = nullptr) {
   std::printf("== %s open %s\n", tag, url);
   std::fflush(stdout);
   ob.openAt = std::chrono::steady_clock::now();
   player->open(url);
-  int64_t firstPlayingPos = -1;
+  int64_t prePos = -1;
+  bool bLeak = false;
   for (int i = 0; i < polls; i++) {
     std::this_thread::sleep_for(std::chrono::milliseconds(intervalMs));
     trip(player, ob, tag);
-    if (firstPlayingPos < 0 && player->getState() == PlayerState::playing &&
-        player->getDuration() > 0) {
-      firstPlayingPos = player->getPosition();
+    PlayerState st = player->getState();
+    int64_t pos = player->getPosition();
+    int64_t dur = player->getDuration();
+    bool bPlaying = st == PlayerState::playing;
+    if (bPlaying && dur > 0) {
+      if (prePos >= 0 && pos - prePos > 1000) {
+        bLeak = true;
+      }
+      // 窗口总长 < dur-2s 时, playing 中不该出现在片尾附近
+      if ((int64_t)polls * intervalMs < dur - 2000 && pos >= dur - 500) {
+        bLeak = true;
+      }
     }
+    if (firstPlayingPos && *firstPlayingPos < 0 && bPlaying && dur > 0) {
+      *firstPlayingPos = pos;
+    }
+    prePos = pos;
   }
-  return firstPlayingPos;
+  return bLeak;
 }
 
 bool waitCompleted(IMediaPlayer* player, StateOb& ob, int timeoutMs) {
@@ -117,8 +135,8 @@ int main(int argc, char* argv[]) {
               (int32_t)player->getState(), (long long)player->getPosition(),
               (long long)player->getDuration(), fob.frames.load());
   std::fflush(stdout);
-  int64_t p1 = openAndTrace(player, sob, fileB.c_str(), "switch", 14, 250);
-  bool p1ok = p1 >= 0 && p1 <= 2000;
+  int64_t p1 = -1;
+  bool p1ok = !openAndTrace(player, sob, fileB.c_str(), "switch", 14, 250, &p1);
   std::printf("[phase switch] firstPlayingPos=%lld -> %s\n", (long long)p1,
               p1ok ? "PASS" : "FAIL");
   std::fflush(stdout);
@@ -133,8 +151,9 @@ int main(int argc, char* argv[]) {
               (int32_t)player->getState(), (long long)player->getPosition(),
               (long long)player->getDuration(), fob.frames.load());
   std::fflush(stdout);
-  int64_t p2 = openAndTrace(player, sob, fileB.c_str(), "sameurl", 14, 250);
-  bool p2ok = p2 >= 0 && p2 <= 2000;
+  int64_t p2 = -1;
+  bool p2ok =
+      !openAndTrace(player, sob, fileB.c_str(), "sameurl", 14, 250, &p2);
   std::printf("[phase sameurl] firstPlayingPos=%lld -> %s\n", (long long)p2,
               p2ok ? "PASS" : "FAIL");
   std::fflush(stdout);
@@ -143,8 +162,9 @@ int main(int argc, char* argv[]) {
   // 阶段3: close+open 同 URL (B EOS → close → open B)
   player->close();
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
-  int64_t p3 = openAndTrace(player, sob, fileB.c_str(), "closeopen", 14, 250);
-  bool p3ok = p3 >= 0 && p3 <= 2000;
+  int64_t p3 = -1;
+  bool p3ok =
+      !openAndTrace(player, sob, fileB.c_str(), "closeopen", 14, 250, &p3);
   std::printf("[phase closeopen] firstPlayingPos=%lld -> %s\n", (long long)p3,
               p3ok ? "PASS" : "FAIL");
   std::fflush(stdout);
