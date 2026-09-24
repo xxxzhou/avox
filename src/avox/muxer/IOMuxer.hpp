@@ -47,6 +47,14 @@ class IOMuxer : public IMuxerContext, public RunTask {
   int64_t lastMuxVideoDts = AVOX_NOVALID_PTS;
   int64_t lastMuxAudioDts = AVOX_NOVALID_PTS;
   uint64_t dtsBackwardCount = 0;
+  // 音频NOPTS合成(录制链): 源层音频垃圾pts归一NOPTS透传后, 录制没有解码采样
+  // 轴可推进, NOPTS直进会把basePts毒化成INT64_MIN或写出巨大负dts被封装端拒绝。
+  // 以首个有效pts锚定, NOPTS包按 包duration>已学习步进>40ms保底 推进; 有效锚点
+  // 靠前则重锚回吸漂移, 靠后只学习步进(保dts单调)
+  int64_t audioSynthPts = AVOX_NOVALID_PTS;
+  int64_t audioSynthStepMs = 0;  // 0=未学习
+  int64_t audioAnchorPts = AVOX_NOVALID_PTS;
+  int32_t audioAnchorPackets = 0;
   // 跨包同帧合并: 多slice编码时, 同dts的多个视频包用append合并
   // 大部分时候为nullptr(不分片), 只有同dts多包时才分配
   PacketBufPtr preBuffer;

@@ -46,6 +46,7 @@ void PacketBuf::form(const AvoxPacket& packet) {
   packtype = packet.packtype;
   pts = packet.pts;
   dts = packet.dts;
+  duration = packet.duration;
   const uint8_t* pdata = packet.data.data;
   prefixSize = packet.prefixSize;
   // annexb 3转成成annexb 4,方便后续统一处理
@@ -78,6 +79,7 @@ void PacketBuf::form(const PacketBuf& packet) {
   prefixSize = packet.prefixSize;
   pts = packet.pts;
   dts = packet.dts;
+  duration = packet.duration;
   size = packet.size;
   // 只有在本身少于packet.data.size才可能去调整
   if (buff.size() < packet.size) {
@@ -175,6 +177,7 @@ AvoxPacket getPacket(PacketBuf& packet) {
   aPacket.data = {packet.buff.data(), packet.size, true};
   aPacket.pts = packet.pts;
   aPacket.dts = packet.dts;
+  aPacket.duration = packet.duration;
   aPacket.prefixSize = packet.prefixSize;
   aPacket.frameType = packet.frameType;
   aPacket.packtype = packet.packtype;

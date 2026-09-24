@@ -56,6 +56,8 @@ class AVOX_EXPORT PacketBuf {
   int64_t pts = 0;
   // 解码时间
   int64_t dts = 0;
+  // 包时长(ms): 音频NOPTS合成推进用(录制链)
+  int32_t duration = 0;
   // 这个size是buff有效长度,这个长度一定少于buff.size()
   int32_t size = 0;
   // 尽量减少分配次数

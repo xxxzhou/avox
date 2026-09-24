@@ -67,6 +67,10 @@ void IOMuxer::open(const char* url_) {
   bInitStreams = false;
   bInitFailed = false;
   basePts = AVOX_NOVALID_PTS;
+  audioSynthPts = AVOX_NOVALID_PTS;
+  audioSynthStepMs = 0;
+  audioAnchorPts = AVOX_NOVALID_PTS;
+  audioAnchorPackets = 0;
   packetQueue.setMaxSize(100);
   //
   LOGFLF(LogLevel::info, "url:", url);
@@ -106,6 +110,42 @@ void IOMuxer::pushPacket(PacketBufPtr packet) {
   // 队列残留包(离线快速转封装时尾部几十帧全在此), 丢弃会截短成片;
   // 关闭后写的安全性由onPushPacket的fmtCtx空保护兜底
   PackType packType = (PackType)packet->packtype;
+  // 音频NOPTS合成(b6fb8af 后源层音频垃圾pts归一NOPTS透传): 播放侧靠解码采样
+  // 轴推进, 录制链没有解码轴, NOPTS 直进会把 basePts 毒化成 INT64_MIN 或写出
+  // 巨大负dts被封装端整包拒绝(RMVB/cook 录制必踩)。锚定+推进: 有效pts做锚,
+  // NOPTS包按 包duration > 已学习步进 > 40ms保底 推进; 有效锚点在合成轴之前
+  // (步进偏大跑冒)重锚回吸, 在之后只学习步进不回退(保dts单调)
+  if (packType == PackType::audio) {
+    if (packet->pts != AVOX_NOVALID_PTS) {
+      if (packet->dts == AVOX_NOVALID_PTS) {
+        packet->dts = packet->pts;
+      }
+      if (audioAnchorPts != AVOX_NOVALID_PTS && audioAnchorPackets > 0 &&
+          packet->pts > audioAnchorPts) {
+        const int64_t learned =
+            (packet->pts - audioAnchorPts) / audioAnchorPackets;
+        if (learned > 0 && learned <= 500) {
+          audioSynthStepMs = learned;
+        }
+      }
+      if (audioSynthPts == AVOX_NOVALID_PTS || packet->pts >= audioSynthPts) {
+        audioSynthPts = packet->pts;
+      }
+      audioAnchorPts = packet->pts;
+      audioAnchorPackets = 0;
+    } else {
+      if (audioSynthPts == AVOX_NOVALID_PTS) {
+        // 尚无有效锚: 借视频基准起量(源时间域同轴), 首包则从0
+        audioSynthPts = (basePts != AVOX_NOVALID_PTS) ? basePts : 0;
+      }
+      const int64_t advance = packet->duration > 0 ? packet->duration
+                              : (audioSynthStepMs > 0 ? audioSynthStepMs : 40);
+      packet->pts = audioSynthPts;
+      packet->dts = audioSynthPts;
+      audioSynthPts += advance;
+      ++audioAnchorPackets;
+    }
+  }
   // 第一个包的时间做为基准时间
   if (basePts == AVOX_NOVALID_PTS) {
     // 用首帧 dts 做基准(非 pts): B帧流首帧 dts 可能为负(dts<=pts),
