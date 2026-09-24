@@ -174,6 +174,11 @@ void VDecoderTask::flush() {
   }
   // seek 会连同包队列一起清掉, 扣着的簇属于旧位置, 一起作废
   flattener.reset();
+  // 解码器状态必须整体重建: hw车道(实测d3d11va) avcodec_flush_buffers 清不掉
+  // h264 POC/frame_num, open-GOP 恢复点落点(non-IDR I帧带KEY标志)解码会
+  // Frame num gap 螺旋到持续 0 帧(霍小玉.mkv seek冻结实证); 由解码线程在
+  // 下一轮循环消费本标志, 避免与在解的包并发操作 codecCtx
+  bResetCtx = true;
 }
 
 void VDecoderTask::onRunTask() {
@@ -246,6 +251,17 @@ void VDecoderTask::onRunTask() {
       continue;
     }
     double speed = trackContext->getSpeed();
+    // seek重置(见flush注释): 不等包、不等参数集, 立即在解码线程重建codecCtx,
+    // 从落点包起以全新状态解码
+    if (bResetCtx) {
+      bResetCtx = false;
+      DecodeResult result = decode->onPreDecoder();
+      if (result == DecodeResult::success) {
+        LOGFLF(LogLevel::info, "seek reset decoder ok");
+      } else {
+        LOGFLF(LogLevel::warn, "seek reset decoder skip: ", (int32_t)result);
+      }
+    }
     // 是否要求重置解码器
     if (bResetFlag || bDecodeUpdate) {
       PacketBufPtr topItem = nullptr;

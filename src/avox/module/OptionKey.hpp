@@ -23,6 +23,9 @@ namespace avox {
 #define AVOX_MP_SPEED_TYPE_INT "mp.speed.type"
 // 严格大于4倍速时是否只处理I帧(快速预览,进包时丢P/B与音频,恰好4倍仍全量),默认true
 #define AVOX_MP_IFRAME_ONLY_GT4_BOOL "mp.iframe.gt4"
+// seek精确落点: 开=从落点I帧静默解码丢弃到目标位才显示(慢但准,长GOP软解有
+// 解码burst代价); 关=落到I帧点即播(默认,快,画面从I帧起)
+#define AVOX_MP_SEEK_PRECISE_BOOL "mp.seek.precise"
 // 视频解码器名覆盖(测试/排障强制车道): 空=默认选型链, 覆盖首选名且回软解兜底
 #define AVOX_MP_VIDEO_DECODER_NAME_STR "mp.video.decoder.name"
 // 解码器故障注入(调试/测试): 值=解码器注册名, 该解码器open阶段强制失败

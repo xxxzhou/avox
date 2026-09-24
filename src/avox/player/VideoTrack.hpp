@@ -50,6 +50,8 @@ class VideoTrack : public TAVTrack<VideoFramePtr>,
   int64_t dropDuration = 100;
   // 帧入口钳位游标: B帧重排输出/容器爆发戳会让帧pts倒跳或过密
   int64_t lastInPts = AVOX_NOVALID_PTS;
+  // 精确seek丢弃目标位(AVOX_NOVALID_PTS=未武装): 播放器线程写, 解码线程读
+  std::atomic<int64_t> seekDiscardPts{AVOX_NOVALID_PTS};
   // 钳位标称帧距, onVideoDesc按流fps计算(解码器配置优先, IO元数据兜底)
   int64_t nominalFrameMs = 40;
   // 帧入口单调网格钳位, 倒跳/过密时按标称帧距续格
@@ -98,6 +100,8 @@ class VideoTrack : public TAVTrack<VideoFramePtr>,
   void pauseDecoder(bool pause);
   // 当队列数据无效时，需要清除队列中的数据
   void flush();
+  // 精确seek: 武装帧丢弃到目标位, 首个>=目标位的帧恢复入队并自解除
+  void beginSeekDiscard(int64_t pts) { seekDiscardPts = pts; }
   // 硬解重置丢旧GPU帧: 只清帧队列, 包队列必须保留(IO已EOF时清包无法补充)
   void flushFrames();
   void updateSeekTime(int64_t seekTime);

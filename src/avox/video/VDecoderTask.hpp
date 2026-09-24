@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <functional>
 #include <utility>
 
@@ -39,6 +40,9 @@ protected:
   // 配置帧变化
   bool bDecodeUpdate = false;
   std::mutex configMutex;
+  // seek重置: flush后解码器须整体重建(hw车道avcodec_flush_buffers清不掉
+  // POC/frame_num, open-GOP恢复点落点会Frame num gap螺旋到0帧), 解码线程消费
+  std::atomic<bool> bResetCtx{false};
   // 老容器簇状畸形时间戳摊平(只影响送解码器的 pts, 不动容器与导出)
   PtsFlattener flattener;
 

@@ -110,6 +110,10 @@ DecodeResult FFVDecoder::onPreDecoder() {
     LOGFLF(LogLevel::warn, "failinject decoder open fail:", codecDesc.name);
     return DecodeResult::openFailed;
   }
+  // 超长GOP源seek落进GOP中间: 解码器缺参考默认抑制坏帧(Frame num gap螺旋
+  // 持续0帧), 帧队列空画面冻结。开输出坏帧走"容忍花屏到下一IDR自愈"行为
+  // (2026-09-24 seek冻结拍板方案A, VLC同款)
+  codecCtx->flags |= AV_CODEC_FLAG_OUTPUT_CORRUPT;
   int32_t ret = avcodec_open2(codecCtx.get(), codec, nullptr);
   AVOX_FFMEPG_LOG(ret, "avcodec_open2 failed");
   if (ret == 0 && codecCtx->hw_device_ctx) {

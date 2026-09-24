@@ -84,6 +84,9 @@ Command cmdPlay() {
   // 音轨选择: ready 后切到指定局部音轨, 验证 IMediaPlayer::setAudioTrack
   cmd.parser.addArg({"-audio-track", "", ArgType::Int, false,
                      "音轨选择(局部索引, -1=关音频, 0=第0条默认)", "0"});
+  // 精确seek: 落I帧后静默解码丢弃到目标位才显示 (默认落I帧点即播)
+  cmd.parser.addArg({"-precise", "", ArgType::Boolean, false,
+                     "精确seek (解码丢弃到seek目标位, 慢但准)", ""});
 
   cmd.run = [](const ParsedArgs& args) -> int {
     std::string input = args.getString("input");
@@ -115,6 +118,7 @@ Command cmdPlay() {
     if (shotInterval > 0 && shotInterval < 100) shotInterval = 100;  // 避免过频
     int64_t shotAt = args.getInt("shot-at", -1);  // 单次截图位置, -1=不用
     int audioTrack = args.getInt("audio-track", 0);
+    bool preciseSeek = args.getBool("precise");
     // 解析 IoPlan: 显式指定则用之; 否则 auto (本地文件与 http 文件直链->ffmpeg,
     // rtsp/rtmp/srt/hls/flv/ts 等流源->zlmediakit)
     IoPlan ioPlan;
@@ -170,6 +174,9 @@ Command cmdPlay() {
     opt->setInt(AVOX_MP_IO_TIMEOUT_MS_INT, timeout);
     if (!transport.empty()) {
       opt->setString(AVOX_MP_IO_RTSP_TRANSPORT_STR, transport.c_str());
+    }
+    if (preciseSeek) {
+      opt->setBool(AVOX_MP_SEEK_PRECISE_BOOL, true);
     }
     // 日志: IO包日志默认开 (比较进来的包/PTS是否就绪)
     if (logPacket) opt->setBool(AVOX_LOG_SOURCE_INPACKET_BOOL, true);

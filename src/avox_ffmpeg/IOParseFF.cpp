@@ -552,8 +552,6 @@ void IOParseFF::onRunTask() {
     LOGFLF(LogLevel::info, "speed:", speed, " set nonblock read on start");
   }
   LOGFLF(LogLevel::info, "io duration:", fmtCtx->duration);
-  // 检查是否有音频流
-  bool bHavaAudio = audioTracks.size() > 0;
   // 保存解码配置信息
   for (int32_t i = 0; i < fmtCtx->nb_streams; i++) {
     auto& st = fmtCtx->streams[i];
@@ -798,6 +796,7 @@ bool IOParseFF::seekTo(int64_t pos) {
   }
   // seek保护期: 第一个video I帧到达前不做重复GOP检测, 避免seek后I帧被误判为重复
   bSeeking = true;
+  seekIdrDrops = 0;
   bool bSeek = false;
   // 无条件打断 IO 线程阻塞中的 av_read_frame 再暂停: interrupt_callback 让
   // av_read_frame 返回 AVERROR_EXIT, 读循环 continue 回循环顶 if(pauseing()) 持
@@ -955,7 +954,12 @@ bool IOParseFF::seekTo(int64_t pos) {
     bEofReset.store(true);
     // 门闸: 落点校验已在 stash 尾备好关键视频包则解除; 未校验/未见关键包
     // 照旧武装, 由读循环丢到首个 KEY 包(见 bWaitKeyframe 成员注释)
-    bWaitKeyframe.store(!sawKey);
+    // h264/h265 不武装: KEY 标志不可信且 AVSource nal 级 IDR 闸已覆盖,
+    // 双重门闸重复扣帧(2026-09-24 seek 冻结复盘); RM 等其余编码保留
+    bool bH26xStream = videoStreamId >= 0 && fmtCtx->streams[videoStreamId] &&
+        (fmtCtx->streams[videoStreamId]->codecpar->codec_id == AV_CODEC_ID_H264 ||
+         fmtCtx->streams[videoStreamId]->codecpar->codec_id == AV_CODEC_ID_HEVC);
+    bWaitKeyframe.store(!sawKey && !bH26xStream);
     waitKeyframeDrops = 0;
   }
   // 恢复IO线程

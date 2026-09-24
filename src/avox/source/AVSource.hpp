@@ -126,6 +126,15 @@ class AVOX_EXPORT AVSource : public BaseSource,
   // seek保护期: 子类seekTo置true, 第一个video I帧到达时重置重复检测状态并置false
   // 保护期内不做重复检测, 避免seek后I帧(PTS可能与历史重复, 如回跳到已播位置)被误判
   bool bSeeking = false;
+  // seek落点IDR闸的丢包计数(与bSeeking同生命周期): 落点组既无IDR也非容器
+  // 关键帧时丢到下一个入口, 仅留kSeekIdrDropMax防呆
+  int32_t seekIdrDrops = 0;
+  // IDR闸防呆上限: 500放行会软解一堆缺参考垃圾包(黑屏数秒+错误刷屏,
+  // panvox 62min处seek实测), 提到5000; 丢弃本身是IO速度, 等IDR代价比解垃圾小
+  static constexpr int32_t kSeekIdrDropMax = 5000;
+  // 精确seek音频丢弃目标位(AVOX_NOVALID_PTS=未武装): cmdSeek武装, IO线程
+  // processPacket丢目标位前音频包, 首个>=目标位的包自解除
+  std::atomic<int64_t> preciseSeekPts{AVOX_NOVALID_PTS};
   // I帧(PTS, SIZE)历史, 用于检测HLS分片重叠的重复GOP
   IFramesHistory iFrameHistory;
   // 基准时间,单位毫秒
@@ -197,6 +206,8 @@ class AVOX_EXPORT AVSource : public BaseSource,
   void setSpeed(double speed);
   // 启用快速读取模式(录制场景)，speed>1时IO层非阻塞读取尽快消费数据
   void setFastRead(bool fast) { bFastRead = fast; }
+  // 精确seek: 武装音频包丢弃到目标位(首个>=目标位的包恢复通行并自解除)
+  void setPreciseSeekPts(int64_t pts) { preciseSeekPts = pts; }
   // 获取丢包率 (仅 RTSP/RTP 等 UDP 协议有效, 默认返回 0)
   virtual float getLossRate(TrackType type) { return 0.0f; }
 

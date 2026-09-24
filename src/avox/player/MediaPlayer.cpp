@@ -126,6 +126,9 @@ void MediaPlayer::onOptionChange(const char* key, ArgType option) {
     bIFrameOnlyGt4 = getBool(key);
     updateIFrameOnly();
     LOGFLF(LogLevel::info, "option:", key, " change:", bIFrameOnlyGt4);
+  } else if (equalsIgnoreCase(key, AVOX_MP_SEEK_PRECISE_BOOL)) {
+    bSeekPrecise = getBool(key);
+    LOGFLF(LogLevel::info, "option:", key, " change:", bSeekPrecise);
   } else if (equalsIgnoreCase(key, AVOX_MP_VIDEO_DECODER_NAME_STR)) {
     videoDecoderName = getString(key);
     LOGFLF(LogLevel::info, "option:", key, " change:", videoDecoderName);
@@ -1725,6 +1728,16 @@ void MediaPlayer::cmdSeek(SeekCommandPtr cmd) {
     bSeekingStartMs = bSeek ? timeStampMS() : 0;
     if (!bSeek) {
       LOGFLF(LogLevel::warn, "failed to seek");
+    }
+    // 精确seek: 武装各轨丢弃到目标位(成功才武装; 上方flush已清队列,
+    // 丢弃自落点I帧起生效, 首个>=目标位的帧恢复入队)
+    if (bSeek && bSeekPrecise) {
+      for (const auto& vt : videoTracks) {
+        if (vt && vt->vaild()) {
+          vt->beginSeekDiscard(spts);
+        }
+      }
+      ioSource->setPreciseSeekPts(spts);
     }
     // 时钟定位到seek
     updateSeekTime(spts);

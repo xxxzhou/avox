@@ -164,6 +164,23 @@ void AVSource::processPacket(AvoxPacket& packet) {
     // 视频包可能需要拆包
     processVideo(packet);
   } else if (type == PackType::audio || type == PackType::aconfig) {
+    // 精确seek: 丢目标位前的音频包, 首个>=目标位的包恢复通行并自解除
+    // (优先于保护期持有; NOPTS透传由音频轨nextPts自推进, 不判不卡闸)
+    if (type == PackType::audio &&
+        preciseSeekPts.load() != AVOX_NOVALID_PTS) {
+      if (packet.pts != AVOX_NOVALID_PTS) {
+        if (packet.pts < preciseSeekPts.load()) {
+          return;
+        }
+        preciseSeekPts = AVOX_NOVALID_PTS;
+      }
+    } else if (type == PackType::audio && bSeeking && !videoTracks.empty()) {
+      // seek保护期(等首个视频I帧)内音频数据包一并丢弃: 避免"音频先跑、画面
+      // 冻结"的错轴体感(2026-09-24 拍板: 人首先关注画面); IDR到达 bSeeking
+      // 清除后音视频一起恢复。
+      // 无视频轨的源不持有(bSeeking没有视频I帧来清除, 会永久静音)
+      return;
+    }
     packet.index = aIndexMaps[packet.index];
     alignPacketPts(packet);
     if (bLogPacket) {
@@ -258,6 +275,47 @@ void AVSource::processVideo(AvoxPacket& packet) {
   }
 }
 
+// 整组扫描随机访问NAL(h264:IDR / h265:IRAP), 返回其长度前缀在组内的字节
+// 偏移(可直接作截断起点), 无则-1. 分组启发式(h264NaluNewFrame的first_mb
+// 高位检查)会把IDR切片误判成"未起新帧"并进前帧组(霍小玉.mkv实证), 组首
+// NAL判不出关键帧, seek落点闸需要全组扫描
+static int32_t groupRandomAccessOffset(const AvoxPacket& packet, VCodecId vc,
+                                       bool bvcc) {
+  const uint8_t* p = packet.data.data;
+  const int32_t size = packet.data.size;
+  const int32_t prefix = packet.prefixSize;
+  int32_t i = prefix;
+  int32_t guard = 0;
+  while (i > 0 && i < size && guard++ < 1024) {
+    bool bIdr = false;
+    if (vc == VCodecId::h264) {
+      bIdr = naluKeyFrame(VCodecId::h264, p[i] & 0x1F);
+    } else {
+      bIdr = naluKeyFrame(VCodecId::h265, (p[i] >> 1) & 0x3F);
+    }
+    if (bIdr) {
+      return i - prefix;
+    }
+    if (bvcc) {
+      int32_t len = 0;
+      for (int32_t k = 0; k < prefix; ++k) {
+        len = (len << 8) | p[i - prefix + k];
+      }
+      if (len <= 0 || i + len > size) {
+        break;
+      }
+      i = i + len + prefix;
+    } else {
+      // annexb: 找下一个起始码
+      while (i + 2 < size && !(p[i] == 0 && p[i + 1] == 0 && p[i + 2] == 1)) {
+        ++i;
+      }
+      i += 3;
+    }
+  }
+  return -1;
+}
+
 void AVSource::singleVideo(AvoxPacket& packet) {
   VCodecId vcodecId = videoTracks[packet.index].codecId;
   uint8_t nalu = getNalUnit(vcodecId, packet);
@@ -299,9 +357,73 @@ void AVSource::singleVideo(AvoxPacket& packet) {
   // nalu语义(非h26x恒false) — mpegts类容器可能全包标KEY, 直接采用会误入
   // I帧模式且无法退出(P/B帧也是"key")
   bool bKeyFrame = false;
+  // 容器KEY标记(ffAvoxPacket带入)先留存: h26x随即被nalu语义覆盖。mkv索引的
+  // 关键帧=封装器认定的可seek点, 含open-GOP恢复点(修复版重封装可能全流无
+  // 真IDR, 玉蒲团实测扫3.7min无nal:5), 闸靠它识别恢复点入口
+  int32_t containerKey = packet.frameType;
   if (vcodecId == VCodecId::h264 || vcodecId == VCodecId::h265) {
     bKeyFrame = naluKeyFrame(vcodecId, nalu);
     packet.frameType = bKeyFrame ? 1 : 0;
+  }
+  // seek落点IDR闸(仅h264/h265): 容器KEY标志不可信(全包标KEY的容器误入I帧
+  // 模式), 但mkv索引关键帧可信(见containerKey注释). 保护期内找入口: 真IDR
+  // 截断起步 > 容器关键帧组恢复点起步 > 都没有则丢弃直到出现(解码器从P/B
+  // 中间起步POC/frame_num断裂, 实测霍小玉.mkv Frame num gap螺旋到0帧).
+  // bSeeking由checkDupGop在首个video I帧(frameType==1)解除, 丢的包不经
+  // alignPacketPts, 不会被提前解除
+  //
+  // 注意组首NAL不可信: h264NaluNewFrame的first_mb_in_slice高位启发式会把
+  // IDR切片误判成"未起新帧"而并进前帧组(实证: 霍小玉.mkv的IDR包组首是
+  // B帧切片), 所以这里全组扫描随机访问NAL, 找到就把组截断到它起步——
+  // 截掉的前导B/P切片本就缺参考, 喂给解码器只会产出灰帧
+  int32_t idrOff = -1;
+  if (bSeeking && !bKeyFrame && !bConfig &&
+      (vcodecId == VCodecId::h264 || vcodecId == VCodecId::h265)) {
+    idrOff = groupRandomAccessOffset(packet, vcodecId, bvcc);
+    // 入口选择(优先级从上到下):
+    // ① 组内真IDR(nal:5): 截断到IDR起解, 最干净入口
+    // ② 容器关键帧组(open-GOP恢复点): 直接作入口按I帧放行——解码器seek时
+    //    已整体重建(干净POC)+OUTPUT_CORRUPT, 恢复期短花屏可容忍(VLC同款);
+    //    全流无真IDR的修复版重封装若硬等IDR, 只能防呆放行解缺参考垃圾
+    //    (panvox 62min处seek实测: 黑屏数秒+Missing reference刷屏)
+    // ③ 都不是(索引坏落GOP中间的P/B): 一直丢到下一个IDR/关键帧组, 丢弃是
+    //    IO速度远快于解垃圾; 仅kSeekIdrDropMax防呆防真无关键帧流永久黑屏
+    if (idrOff < 0 && containerKey != 1) {
+      ++seekIdrDrops;
+      if (seekIdrDrops <= kSeekIdrDropMax) {
+        // 首几包+每500包留痕, 长丢弃期不逐包刷屏
+        if (seekIdrDrops <= 5 || seekIdrDrops % 500 == 0) {
+          LOGFLF(LogLevel::info, "seek idr gate drop ", seekIdrDrops,
+                 " nal:", (int32_t)nalu, " pts:", packet.pts,
+                 " size:", packet.data.size);
+        }
+        return;
+      }
+      if (seekIdrDrops == kSeekIdrDropMax + 1) {
+        LOGFLF(LogLevel::warn, "seek idr gate: no idr/keyframe in ",
+               seekIdrDrops - 1, " packets, passing through");
+      }
+      // 超防呆: 垃圾放行走正常处理, 不再逐包留痕
+    } else if (idrOff < 0) {
+      LOGFLF(LogLevel::info, "seek idr gate: recovery keyframe as entry after ",
+             seekIdrDrops, " drops, pts:", packet.pts);
+      bKeyFrame = true;
+      packet.frameType = 1;
+    } else {
+      LOGFLF(LogLevel::info, "seek idr gate: idr at ", idrOff, " after ",
+             seekIdrDrops, " drops, pts:", packet.pts);
+      // 截断到随机访问NAL的长度前缀起头, 组内前导切片丢弃
+      packet.data.data += idrOff;
+      packet.data.size -= idrOff;
+      packet.prefixSize = bvcc ? 4 : 3;
+      bKeyFrame = true;
+      packet.frameType = 1;
+      nalu = getNalUnit(vcodecId, packet);
+    }
+  }
+  if (bSeeking && bKeyFrame && seekIdrDrops > 0) {
+    LOGFLF(LogLevel::info, "seek idr gate passed after ", seekIdrDrops,
+           " drops, nal:", (int32_t)nalu, " pts:", packet.pts);
   }
   // I帧模式检测：连续不同PTS的I帧数据包，说明只有I帧没有P/B帧
   if (!bConfig) {

@@ -112,10 +112,12 @@ bool FFDx11Decoder::onVaild() {
 }
 
 void FFDx11Decoder::onAttachContext() {
-  // 重新生成,释放老的,可能分辨率变化后重置解码器了
+  // 设备复用: 已有hwBuffer(典型为seek重置onPreDecoder重入)直接挂到新ctx,
+  // 不重建设备 —— 重建会让渲染侧setDevice持有的旧device与解码新device分家,
+  // 共享纹理互拷失效
   if (hwBuffer) {
-    av_buffer_unref(&hwBuffer);
-    hwBuffer = nullptr;
+    codecCtx->hw_device_ctx = av_buffer_ref(hwBuffer);
+    return;
   }
   // 如果是Debug模式，添加Debug信息
   AVDictionary* opts = NULL;

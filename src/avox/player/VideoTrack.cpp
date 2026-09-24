@@ -120,6 +120,14 @@ void VideoTrack::onDecode(const YUVFrame& frame) {
   // 直播应该是覆盖，而本地播放应该是等待？
   // 因为直播过来IO与播放应该是相同的，而本地IO会很快
   YUVFrame out = frame;
+  // 精确seek: 目标位前的帧静默丢弃不入队(restamp前判, flush已复位lastInPts);
+  // B帧重排乱序安全——目标前全丢, 首个>=目标位的帧恢复入队
+  if (seekDiscardPts.load() != AVOX_NOVALID_PTS) {
+    if (out.pts < seekDiscardPts.load()) {
+      return;
+    }
+    seekDiscardPts = AVOX_NOVALID_PTS;
+  }
   restampFramePts(out.pts);
   frameQueue.enqueueWait<YUVFrame>(out, copyBufHost);
   // frameQueue.enqueue<YUVFrame>(frame, copyBufHost, true);
@@ -128,9 +136,16 @@ void VideoTrack::onDecode(const YUVFrame& frame) {
 
 void VideoTrack::onDecodeGpu(const GpuFrame& frame) {
   GpuFrame out = frame;
+  // 精确seek: 同onDecode, 软硬解两条入口同一丢弃判据
+  if (seekDiscardPts.load() != AVOX_NOVALID_PTS) {
+    if (out.pts < seekDiscardPts.load()) {
+      return;
+    }
+    seekDiscardPts = AVOX_NOVALID_PTS;
+  }
   restampFramePts(out.pts);
   frameQueue.enqueueWait<GpuFrame>(out, copyBufGpu);
-  // frameQueue.enqueue<GpuFrame>(frame, copyBufGpu, true);
+  // frameQueue.enqueue<YUVFrame>(frame, copyBufGpu, true);
   logDecode(out.pts, out.keyFrame);
 }
 
@@ -364,6 +379,8 @@ void VideoTrack::flush() {
   bResetBase = true;
   // 钳位游标随队列复位, seek回跳的第一帧不能被续格前推
   lastInPts = AVOX_NOVALID_PTS;
+  // 精确seek丢弃标记随队列复位, 防跨流/失败seek残留
+  seekDiscardPts = AVOX_NOVALID_PTS;
   // 记录flush
   PBMediaAction pb = {};
   pb.mediaObject = MediaObject::track;
