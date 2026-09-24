@@ -115,6 +115,19 @@ TEST_CASE("PtsFlattener: 正常恒定帧率流逐包 pts 原值不动") {
   }
 }
 
+TEST_CASE("PtsFlattener: 同 pts 包对(同帧 NAL 分片)不成簇, 原值直发") {
+  // 帧前置 SEI 拆包后与图像包同 pts/dts(11a263f SEI 放行), 旧判据 pts >=
+  // 误判成簇摊平, 解码输出帧序两两互换、画面来回跳(换脸片源实证)
+  std::vector<int64_t> in;
+  for (int32_t i = 0; i < 60; ++i) {
+    in.push_back(i * 33);
+    in.push_back(i * 33);  // 同帧的 SEI 包
+  }
+  auto out = replay(in, 33);
+  REQUIRE(out.size() == in.size());
+  CHECK(out == in);
+}
+
 TEST_CASE("PtsFlattener: VFR 抖动流不算挤簇, pts 原值不动") {
   std::vector<int64_t> in;
   int64_t t = 0;

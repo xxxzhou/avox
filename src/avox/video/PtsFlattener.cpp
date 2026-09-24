@@ -38,8 +38,9 @@ bool PtsFlattener::feed(int64_t pts) {
   // 契约: 调用方每轮都要 pop() 一次, 到这里 ready 必已排空(在此丢包即丢帧)
   if (!cluster.empty()) {
     // 负增量是 B 帧重排痕迹, 不得并入簇(会触发钳位改写干净流的时间戳);
-    // 老容器挤簇只会是正小间隔
-    if (pts >= cluster.back()->pts &&
+    // 严格大于: 同 pts 是同帧 NAL 分片(SEI 拆包), 不是挤簇; 老容器挤簇
+    // 只会是正小间隔(rv40 实测 1~3ms)
+    if (pts > cluster.back()->pts &&
         pts - cluster.back()->pts < clusterMs &&
         (int32_t)cluster.size() < kMaxCluster) {
       return true;  // 同簇: 继续扣
