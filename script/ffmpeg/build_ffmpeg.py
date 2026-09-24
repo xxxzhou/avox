@@ -89,13 +89,16 @@ COMMON_OPTIONS = [
 
 # ---- 白名单 (minsize): 对齐 avox 源码实际映射面 ----
 # 后半段(mpeg1video 起)为 2026-09 NAS 实测扩展的老媒体解码器, 见文件头说明
+# 注意: 各段字符串末尾必须带逗号再拼接 —— 曾因 "…pcm_s16be" + "vp8,…" 段间无
+# 逗号熔成 "pcm_s16bevp8", configure 静默忽略未知组件, vp8/pcm_s16be 双双丢失
 MINIMUM_DECODERS = ("h264,hevc,aac,mp3,opus,ac3,pcm_alaw,pcm_mulaw,pcm_s16le,pcm_s24le,"
                     "mpeg1video,mpeg2video,mpeg4,h263,flv1,"      # 老AVI/3GP/FLV/MPG
                     "wmv1,wmv2,wmv3,vc1,"                          # ASF/WMV
                     "rv10,rv20,rv30,rv40,"                         # RealVideo
                     "cook,sipr,atrac3,"                            # RealAudio
                     "wmav1,wmav2,wmapro,"                          # WMA
-                    "pcm_s16be")                                   # MOV LPCM
+                    "pcm_s16be,"                                   # MOV LPCM
+                    )
 # 2026-09 常用扩展(与 android/apple/linux 脚本同步维护), 见文件头说明; 组件名已对照
 # FFmpeg 9.0.1 源码逐一核实(amrnb/amrwb 非 amr_nb/amr_wb, g726 走 adpcm_g726)
 MINIMUM_DECODERS += ("vp8,vp9,av1,theora,mjpeg,mjpegb,dvvideo,prores,"
@@ -119,8 +122,13 @@ MINIMUM_HWACCELS = ("h264_d3d11va,h264_d3d11va2,hevc_d3d11va,hevc_d3d11va2,"
                     # vulkan 硬解备选(FFVkDecoder): 驱动侧要求 VK_KHR_video_decode_*
                     "h264_vulkan,hevc_vulkan,vp9_vulkan,av1_vulkan")
 MINIMUM_ENCODERS = "h264_mf,hevc_mf,aac"   # 商业渠道; h264_mf/hevc_mf 为系统自带 MFT
-MINIMUM_PARSERS = ("h264,hevc,aac,mp3,opus,ac3,mpegaudio,mpeg4video,vc1"  # 后两项为老媒体扩展(wmv3/vc1/mpeg4 帧内解析需要)
-                   ",vp8,vp9,av1,vorbis,flac,dca,aac_latm,amr,mjpeg")     # 常用扩展(eac3 无独立 parser, 勿加)
+MINIMUM_PARSERS = ("h264,hevc,aac,mp3,opus,ac3,mpegaudio,mpegvideo,mpeg4video,vc1"
+                   ",vp8,vp9,av1,vorbis,flac,dca,aac_latm,amr,mjpeg")
+# mpegvideo parser 必须与 mpegps/mpegvideo demuxer 同步启用(2026-09-24 风月宝鉴.mpg
+# 全片花屏根因): MPEG-PS/裸ES 视频流 need_parsing, 无 parser 时 PES 块不重组整帧
+# 直进解码器 → mpeg1/2 全片 ac-tex damaged 花屏, 且中间块 pts 缺失(NOPTS)连锁污染
+# 上层时间戳; 官方全量构建均含此 parser, 白名单老媒体扩展曾只补 mpeg4video/vc1。
+# eac3 无独立 parser, 勿加; mpeg4video/vc1 为 wmv3/vc1/mpeg4 帧内解析需要。
 MINIMUM_BSF = "h264_mp4toannexb,hevc_mp4toannexb,aac_adtstoasc,extract_extradata"
 # 直播/点播/文件: rtmp 系 + rtsp 系 + http(s) 系 + hls(crypto=AES 解密) + file
 # 后续需要 SRT: 装 libsrt + --enable-libsrt --enable-protocol=srt
