@@ -2,6 +2,7 @@
 
 #include <deque>
 #include <memory>
+#include <mutex>
 #include <set>
 
 #include "FFHelper.hpp"
@@ -54,10 +55,14 @@ protected:
   // PGS 解码器(首个 PGS 流在轨扫描期即建): 以流索引喂包门控
   std::unique_ptr<PgsDecoder> pgsDec = nullptr;
   int32_t pgsStreamId = -1;  // PGS 解码器对应的 ffmpeg 流索引(非局部轨号)
+  // pgsDec/pgsStreamId 互斥: IO 线程(扫描期建/循环喂) vs 选轨线程重定向
+  std::mutex pgsMtx;
 
 private:
   // 解析IO流媒体格式
   bool parseStream(int32_t streamId, AVCodecParameters *codecpar);
+  // 选轨重定向 PGS 解码器(AVSource 钩子覆写): 多 PGS 轨选轨不再钉死首条流
+  void onSelectedSubtitle(int32_t localIndex) override;
   // avformat_open_input(重)打开, fmtCtx 接管; FFmpeg9 保底补查须重开, 不能同上下文二次探测
   int reopenInput();
   // PGS 位图字幕解码(§3.6): 选中该轨时 IO 循环喂包, 出 RGBA 画布

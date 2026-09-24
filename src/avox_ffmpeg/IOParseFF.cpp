@@ -126,15 +126,19 @@ bool IOParseFF::parseStream(int32_t streamId, AVCodecParameters* codecpar) {
   // sconfig 包旁路下发, MediaPlayer 侧留存, 选轨时喂 libass(计划 §3.2)。
   // index 与 subtitles 包一致走局部轨索引(与选轨号同域)
   if (codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE) {
-    if (codecpar->codec_id == AV_CODEC_ID_HDMV_PGS_SUBTITLE && !pgsDec) {
-      // 首个 PGS 轨: 建解码器(与 sIndexMaps 填充时序解耦 —— 该映射在播放器
-      // 首查源信息时才填, parseStream 时点等值比较恒假, 曾致 PGS 全链不通)
-      pgsDec = std::make_unique<PgsDecoder>();
-      if (!pgsDec->open(codecpar)) {
-        pgsDec.reset();
-        LOGFLF(LogLevel::warn, "pgs decoder open failed");
-      } else {
-        LOGFLF(LogLevel::info, "pgs decoder ready, stream:", streamId);
+    if (codecpar->codec_id == AV_CODEC_ID_HDMV_PGS_SUBTITLE) {
+      std::lock_guard<std::mutex> pgsLock(pgsMtx);
+      if (!pgsDec) {
+        // 首个 PGS 轨: 建解码器(与 sIndexMaps 填充时序解耦 —— 该映射在播放器
+        // 首查源信息时才填, parseStream 时点等值比较恒假, 曾致 PGS 全链不通)
+        pgsDec = std::make_unique<PgsDecoder>();
+        if (!pgsDec->open(codecpar)) {
+          pgsDec.reset();
+          LOGFLF(LogLevel::warn, "pgs decoder open failed");
+        } else {
+          pgsStreamId = streamId;
+          LOGFLF(LogLevel::info, "pgs decoder ready, stream:", streamId);
+        }
       }
     }
     if (ffSCodec(codecpar->codec_id) == SCodecId::ass &&
@@ -263,8 +267,36 @@ bool IOParseFF::parsePgsFrame(int32_t streamId, const AVPacket* pkt,
   }
   // 画布内存归解码器所有, 观察者同步拷贝(onPgsFrame 约定)
   dispatch(&IAVSourceOb::onPgsFrame, pgsDec->canvas());
-  fprintf(stderr, "[pgs-parse] dispatched result=%d\n", (int)result);
   return true;
+}
+
+// 选轨重定向(AVSource 钩子覆写, 命令线程): 选中另一条 PGS 流时按其 codecpar
+// 换解码器 —— 此前解码器钉死首个 PGS 流, 多 PGS 轨的蓝光原盘选第 2 条会错出
+// 第 1 条的字幕。非 PGS 轨/未映射不动(视图侧仲裁显示)
+void IOParseFF::onSelectedSubtitle(int32_t localIndex) {
+  std::lock_guard<std::mutex> pgsLock(pgsMtx);
+  if (localIndex < 0 || !fmtCtx ||
+      localIndex >= (int32_t)subtitleTracks.size()) {
+    return;
+  }
+  const int32_t streamId = subtitleTracks[localIndex].trackId();
+  if (streamId < 0 || streamId == pgsStreamId ||
+      streamId >= fmtCtx->nb_streams) {
+    return;
+  }
+  auto* st = fmtCtx->streams[streamId];
+  if (st->codecpar->codec_type != AVMEDIA_TYPE_SUBTITLE ||
+      st->codecpar->codec_id != AV_CODEC_ID_HDMV_PGS_SUBTITLE) {
+    return;
+  }
+  auto dec = std::make_unique<PgsDecoder>();
+  if (!dec->open(st->codecpar)) {
+    LOGFLF(LogLevel::warn, "pgs decoder switch open failed, stream:", streamId);
+    return;
+  }
+  pgsDec = std::move(dec);
+  pgsStreamId = streamId;
+  LOGFLF(LogLevel::info, "pgs decoder switched to stream:", streamId);
 }
 
 // 重建探测字典并 avformat_open_input(fmtCtx 接管), 返回 ffmpeg 错误码(0=成功)。
@@ -618,12 +650,15 @@ void IOParseFF::onRunTask() {
       }
     } else if (st->codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE) {
       // PGS: 选中轨的包进解码器出画布, 不再作为原始包旁路下发
-      if (pgsDec && streamId == pgsStreamId &&
-          pkt->pts != AV_NOPTS_VALUE) {
-        const int64_t pgsPts =
-            av_rescale_q(pkt->pts, st->time_base, {1, 1000});
-        parsePgsFrame(streamId, pkt.get(), pgsPts);
-        continue;
+      if (pkt->pts != AV_NOPTS_VALUE) {
+        // 锁内判定+喂包: pgsDec/pgsStreamId 可被选轨线程并发重定向
+        std::lock_guard<std::mutex> pgsLock(pgsMtx);
+        if (pgsDec && streamId == pgsStreamId) {
+          const int64_t pgsPts =
+              av_rescale_q(pkt->pts, st->time_base, {1, 1000});
+          parsePgsFrame(streamId, pkt.get(), pgsPts);
+          continue;
+        }
       }
       packType = PackType::subtitles;
       // 旁路数据量极小(每条对白几十字节), 不按 a/v 的禁用开关丢弃;

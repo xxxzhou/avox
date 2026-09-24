@@ -189,7 +189,10 @@ class AVOX_EXPORT AVSource : public BaseSource,
   // 源类型
   AVSourceMode getSourceMode() const { return sourceMode; }
   // 选中字幕轨(局部索引, -1=未选): PGS 解码与字幕包路由的开关, IO 线程读
-  void setSelectedSubtitle(int32_t localIndex) { selSubTrack = localIndex; }
+  void setSelectedSubtitle(int32_t localIndex) {
+    selSubTrack = localIndex;
+    onSelectedSubtitle(localIndex);
+  }
   // 如果是服务器变速，可能要在open之前通知服务器
   void setSpeed(double speed);
   // 启用快速读取模式(录制场景)，speed>1时IO层非阻塞读取尽快消费数据
@@ -253,6 +256,9 @@ class AVOX_EXPORT AVSource : public BaseSource,
   // seek 前预通知: MediaPlayer 撤背压(pauseIOPacket)的同时调用, 让 IO 线程提前打断
   // av_read_frame. 若等到 seekTo 才打断, 快源读线程已失背压狂奔到 EOF → 假 EOF 卡死
   virtual void preSeek() {};
+  // 选轨后置钩子(尾部追加保跨DLL vtable只增; 命令线程调, 晚于 selSubTrack 写入):
+  // IO 实现按需重定向 PGS 解码器(多 PGS 轨选轨), 默认空实现
+  virtual void onSelectedSubtitle(int32_t localIndex) {};
 };
 
 }
