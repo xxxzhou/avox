@@ -1,7 +1,7 @@
-prefix=/Volumes/pssd/work/github/FFmpeg-9.0.1/out-ios-0914
+prefix=/Volumes/PSSD/work/github/ffmpeg/out-ios
 exec_prefix=${prefix}
-libdir=/Volumes/pssd/work/github/FFmpeg-9.0.1/out-ios-0914/lib
-includedir=/Volumes/pssd/work/github/FFmpeg-9.0.1/out-ios-0914/include
+libdir=/Volumes/PSSD/work/github/ffmpeg/out-ios/lib
+includedir=/Volumes/PSSD/work/github/ffmpeg/out-ios/include
 
 Name: libswresample
 Description: FFmpeg audio resampling library
