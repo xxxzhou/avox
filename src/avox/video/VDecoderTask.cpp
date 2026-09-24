@@ -186,6 +186,9 @@ void VDecoderTask::onRunTask() {
   // 输入连续排空的轮数阈值: 到它才认定 EOF 并放出尾簇
   const int32_t kTailIdleRounds = 300;
   int32_t idleRounds = 0;
+  // 输入排空轮数阈值(重排尾部放空用): 比尾簇阈值短, 避免尾帧被拖后数秒
+  const int32_t kEndIdleRounds = 20;
+  int32_t endRounds = 0;
   // 摊平的标称帧长取容器声明值; 无 fps 信息(0)时摊平器整体旁路
   flattener.setup(srcDesc.fps > 1.0 ? (int64_t)(1000.0 / srcDesc.fps) : 0);
   // 如果有配置数据，可能是切换解码器保留的
@@ -303,9 +306,12 @@ void VDecoderTask::onRunTask() {
           [&](const PacketBufPtr& packetPtr) { tempPtr->form(*packetPtr); });
     }
     // 尾簇: 输入排空(本地文件常已读完全部包)后必须放出来, 否则最后一簇扣死.
-    // 用排空轮数而不是队列 close 来判, 直播长静默也会走到这里, 但一次只错一簇
+    // 用排空轮数而不是队列 close 来判, 直播长静默也会走到这里, 但一次只错一簇。
+    // IO 已确认读完(ioExhausted)时用短阈值: 此时不可能是直播静默, 再等 300 轮
+    // 只会把流尾拖后数秒, 连带把重排缓冲的尾帧也顶到后面
     if (!bGet && flattener.pending() && packetQueue.empty() &&
-        ++idleRounds > kTailIdleRounds) {
+        ++idleRounds > (mediaPlayer->ioExhausted() ? kEndIdleRounds
+                                                   : kTailIdleRounds)) {
       flattener.finish();
       idleRounds = 0;
     }
@@ -313,6 +319,17 @@ void VDecoderTask::onRunTask() {
       bGet = flattener.pop([&](const PacketBufPtr& pkt) {
         tempPtr->form(*pkt);
       });
+    }
+    // 重排尾部: 尾簇放完且连续若干轮无包可解, 认定输入结束, 让解码器放空内部
+    // 扣住的重排帧——不放空则流尾 reorderFrames 帧永不显示
+    if (!bGet && packetQueue.empty() && !flattener.pending() &&
+        mediaPlayer->ioExhausted()) {
+      if (++endRounds > kEndIdleRounds) {
+        endRounds = 0;
+        decode->onInputEnd();
+      }
+    } else {
+      endRounds = 0;
     }
     DecodeResult result = DecodeResult::dataNoReady;
     if (bGet) {

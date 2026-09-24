@@ -94,6 +94,9 @@ class AVOX_EXPORT AVDecoder : public OptionLink {
     return DecodeResult::noConfig;
   }
   virtual void flush() {}
+  // 输入侧已排空(EOF): 解码器放空内部扣住的帧(如重排缓冲的尾部),
+  // 与 flush 区分——flush 是 seek 语义, 扣住的帧属于旧位置, 应丢弃
+  virtual void onInputEnd() {}
   virtual void onClose() {};
 };
 

@@ -2,6 +2,7 @@
 #include "IOSHelper.h"
 #include "avox/codec/H26XHelper.hpp"
 #include <TargetConditionals.h>
+#include <algorithm>
 #include <iostream>
 
 namespace avox {
@@ -97,6 +98,11 @@ DecodeResult IOSVDecoder::onPreDecoder() {
   const auto &packets = configPackets;
   // 每次会话重建重置, 防解码器复用时上次流的位深残留
   streamBitDepth = 8;
+  // 重排状态随会话重建复位: 新流要重新学重排深度
+  releaseReorder();
+  maxPtsMinusDts = 0;
+  reorderFrames = 0;
+  frameDurMs = 0;
   // 不包含start code信息
   std::vector<uint8_t> vpsData;
   std::vector<uint8_t> spsData;
@@ -316,12 +322,30 @@ DecodeResult IOSVDecoder::decode(const AvoxPacket &packet_) {
   const size_t sampleSizeArray[] = {(size_t)packet.data.size};
   CMSampleTimingInfo timingInfo = {};
   int32_t timeScale = 90000;
+  // 重排深度: 包级 max(pts-dts) 就是"解码最多提前显示多少毫秒", 除以帧长即帧数。
+  // 只在首个包前定帧长, 之后按 running max 更新(越靠后越准)
+  if (frameDurMs <= 0) {
+    frameDurMs = srcDesc.fps > 1.0 ? (int64_t)(1000.0 / srcDesc.fps + 0.5) : 40;
+    if (frameDurMs <= 0) {
+      frameDurMs = 40;
+    }
+  }
+  if (packet.dts >= 0 && packet.pts >= 0) {
+    // 回调线程会读 reorderFrames, 写入需互斥
+    std::lock_guard<std::mutex> lk(reorderMutex);
+    maxPtsMinusDts = std::max(maxPtsMinusDts, packet.pts - packet.dts);
+    reorderFrames = std::min<int64_t>(16, maxPtsMinusDts / frameDurMs);
+  }
   timingInfo.presentationTimeStamp =
       CMTimeMakeWithSeconds(packet.pts, timeScale);
   // 喂真实 DTS: kCMTimeInvalid 时 VT 按投递顺序直接输出, B 帧流输出次序乱
   // (pts 回跳), 同步层逐帧判 jump 丢帧 → 卡顿。dts 无效才回退 kCMTimeInvalid
+  // 单位必须与 pts 同源: packet.pts/dts 都是毫秒, 两者都用「秒」构造。
+  // 混用 CMTimeMake 会把 dts 当 90000 分之一秒, 压缩成 0~0.0015s 的假解码轴,
+  // VT 据它算不出重排深度 → 即使开了 EnableTemporalProcessing 也照投递序吐帧
+  // (2026-09-24 实证: 投递序与回调序 pts 序列逐项相同)
   if (packet.dts >= 0) {
-    timingInfo.decodeTimeStamp = CMTimeMake(packet.dts, timeScale);
+    timingInfo.decodeTimeStamp = CMTimeMakeWithSeconds(packet.dts, timeScale);
   } else {
     timingInfo.decodeTimeStamp = kCMTimeInvalid;
   }
@@ -333,7 +357,10 @@ DecodeResult IOSVDecoder::decode(const AvoxPacket &packet_) {
     LOGFLF(LogLevel::warn, "buffer create error:", status);
     return DecodeResult::dataError;
   }
-  VTDecodeFrameFlags flags = kVTDecodeFrame_EnableAsynchronousDecompression;
+  // 只开异步解码时 VT 按投递顺序(解码序)吐帧, B 帧流会 I P B B B 依次上屏
+  // = 画面往复; 开时间处理让解码器缓存到够数后按显示序输出(2026-09-24 实证)
+  VTDecodeFrameFlags flags = kVTDecodeFrame_EnableAsynchronousDecompression |
+                             kVTDecodeFrame_EnableTemporalProcessing;
   VTDecodeInfoFlags flagOut = 0;
   status = VTDecompressionSessionDecodeFrame(decompressionSession, sampleBuffer,
                                              flags, nullptr, &flagOut);
@@ -346,24 +373,106 @@ DecodeResult IOSVDecoder::decode(const AvoxPacket &packet_) {
 }
 
 void IOSVDecoder::flush() {
+  // seek 语义: 扣住的重排帧属于旧位置, 丢弃而不是放出
+  releaseReorder();
   if (decompressionSession) {
     // VTDecompressionSessionFlush(decompressionSession);
   }
 }
 
+void IOSVDecoder::onInputEnd() {
+  // 输入排空: 放空重排缓冲尾部, 否则最后 reorderFrames 帧永不显示
+  flushReorder();
+}
+
 void IOSVDecoder::onClose() {
   if (decompressionSession) {
-    VTDecompressionSessionInvalidate(decompressionSession);
-    CFRelease(decompressionSession);
-    decompressionSession = nullptr;
-  }
-  if (decompressionSession) {
+    // 先等异步回调收完: 否则回调线程可能正往重排缓冲里 push, 与下面的释放相撞
     if (getIosDeviceSystemVersion() >= 11) {
       VTDecompressionSessionWaitForAsynchronousFrames(decompressionSession);
     }
     VTDecompressionSessionInvalidate(decompressionSession);
     CFRelease(decompressionSession);
     decompressionSession = nullptr;
+  }
+  releaseReorder();
+}
+
+void IOSVDecoder::dispatchDecodedFrame(int64_t pts, CVImageBufferRef imageBuffer) {
+  if (bMetalRender) {
+    // 引用转交下游释放(videobuffer.cpp releaseGpuFrame)
+    GpuFrame frame = {};
+    frame.pts = pts;
+    frame.dts = pts;
+    frame.format = yuvFormat;
+    frame.buffer = imageBuffer;
+    dispatch(&IVideoDecoderOb::onDecodeGpu, frame);
+    return;
+  }
+  YUVFrame frame = {};
+  frame.pts = pts;
+  frame.dts = pts;
+  frame.format = yuvFormat;
+  // 锁定图像缓冲区的基地址以便访问数据
+  CVPixelBufferLockBaseAddress(imageBuffer, 0);
+  size_t planeCount = CVPixelBufferGetPlaneCount(imageBuffer);
+  for (size_t i = 0; i < planeCount; ++i) {
+    frame.data[i] = static_cast<uint8_t *>(
+        CVPixelBufferGetBaseAddressOfPlane(imageBuffer, i));
+    frame.stride[i] = CVPixelBufferGetBytesPerRowOfPlane(imageBuffer, i);
+  }
+  // 解锁图像缓冲区的基地址
+  CVPixelBufferUnlockBaseAddress(imageBuffer, 0);
+  dispatch(&IVideoDecoderOb::onDecode, frame);
+  CFRelease(imageBuffer);
+}
+
+void IOSVDecoder::drainReorder() {
+  std::vector<ReorderFrame> ready;
+  {
+    // 只在本锁内挑帧; 投递在锁外做——下游 enqueueWait 可能阻塞, 持锁会与
+    // 解码线程的 flush/onInputEnd 互等
+    std::lock_guard<std::mutex> lk(reorderMutex);
+    while ((int64_t)reorderBuf.size() > reorderFrames) {
+      auto it = std::min_element(reorderBuf.begin(), reorderBuf.end(),
+                                 [](const ReorderFrame &a, const ReorderFrame &b) {
+                                   return a.pts < b.pts;
+                                 });
+      ready.push_back(*it);
+      reorderBuf.erase(it);
+    }
+  }
+  for (const ReorderFrame &f : ready) {
+    dispatchDecodedFrame(f.pts, f.buffer);
+  }
+}
+
+void IOSVDecoder::flushReorder() {
+  std::vector<ReorderFrame> out;
+  {
+    std::lock_guard<std::mutex> lk(reorderMutex);
+    if (reorderBuf.empty()) {
+      return;
+    }
+    std::stable_sort(reorderBuf.begin(), reorderBuf.end(),
+                     [](const ReorderFrame &a, const ReorderFrame &b) {
+                       return a.pts < b.pts;
+                     });
+    out.swap(reorderBuf);
+  }
+  for (const ReorderFrame &f : out) {
+    dispatchDecodedFrame(f.pts, f.buffer);
+  }
+}
+
+void IOSVDecoder::releaseReorder() {
+  std::vector<ReorderFrame> drop;
+  {
+    std::lock_guard<std::mutex> lk(reorderMutex);
+    drop.swap(reorderBuf);
+  }
+  for (const ReorderFrame &f : drop) {
+    CFRelease(f.buffer);
   }
 }
 
@@ -380,39 +489,16 @@ void IOSVDecoder::decompressionOutputCallback(
     return;
   }
   IOSVDecoder *decoder = static_cast<IOSVDecoder *>(decompressionOutputRefCon);
-  if (decoder) {
-    // 处理解码后的图像数据
-    if (decoder->bMetalRender) {
-      // 增加引用,放入队列,等待出队列后释放
-      // videobuffer.cpp releaseGpuFrame
-      CFRetain(imageBuffer);
-      // log(LogLevel::info,"---now pts:",pts);
-      // 使用 Metal 渲染
-      GpuFrame frame = {};
-      frame.pts = pts;
-      frame.dts = frame.pts;
-      frame.format = decoder->yuvFormat;
-      frame.buffer = imageBuffer;
-      decoder->dispatch(&IVideoDecoderOb::onDecodeGpu, frame);
-    } else {
-      YUVFrame frame = {};
-      frame.pts = pts;
-      frame.dts = frame.pts;
-      frame.format = decoder->yuvFormat;
-      // 锁定图像缓冲区的基地址以便访问数据
-      CVPixelBufferLockBaseAddress(imageBuffer, 0);
-      size_t planeCount = CVPixelBufferGetPlaneCount(imageBuffer);
-      for (size_t i = 0; i < planeCount; ++i) {
-        uint8_t *planeData = static_cast<uint8_t *>(
-            CVPixelBufferGetBaseAddressOfPlane(imageBuffer, i));
-        frame.data[i] = planeData;
-        frame.stride[i] = CVPixelBufferGetBytesPerRowOfPlane(imageBuffer, i);
-      }
-      // 解锁图像缓冲区的基地址
-      CVPixelBufferUnlockBaseAddress(imageBuffer, 0);
-      decoder->dispatch(&IVideoDecoderOb::onDecode, frame);
-    }
+  if (!decoder) {
+    return;
   }
+  // 回调按解码序到达, 先扣住引用, 由 drainReorder 按 pts 序放行
+  CFRetain(imageBuffer);
+  {
+    std::lock_guard<std::mutex> lk(decoder->reorderMutex);
+    decoder->reorderBuf.push_back({pts, imageBuffer});
+  }
+  decoder->drainReorder();
 }
 
 }

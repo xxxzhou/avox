@@ -6,6 +6,8 @@
 #include "avox/player/MediaPlayer.hpp"
 #include <CoreVideo/CoreVideo.h>
 #include <VideoToolbox/VideoToolbox.h>
+#include <mutex>
+#include <vector>
 
 namespace avox {
 
@@ -29,6 +31,30 @@ private:
   H264NalUnit h264Unit = {};
   H265NalUnit h265Unit = {};
 
+  // VT 回调不保证显示序(头文件原文 not necessarily called in display order), 实测
+  // 按投递序(解码序)吐帧, B 帧流的解码序 pts 倒跳, 直接上屏即画面往复。攒够
+  // 重排深度后按 pts 放行最小者, 输出即显示序
+  struct ReorderFrame {
+    int64_t pts = 0;
+    CVImageBufferRef buffer = nullptr;
+  };
+  std::vector<ReorderFrame> reorderBuf;
+  // 回调在 VT 内部线程, flush/onClose/onInputEnd 在解码线程: 缓冲与深度都要互斥
+  std::mutex reorderMutex;
+  // 重排深度(帧) = 包级 max(pts-dts)/帧长; 0 表示无 B 帧, 纯直通不加延迟
+  int64_t reorderFrames = 0;
+  int64_t maxPtsMinusDts = 0;
+  int64_t frameDurMs = 0;
+
+  // 按渲染方式把解码帧交给观察者; 消费掉传入的 buffer 引用
+  void dispatchDecodedFrame(int64_t pts, CVImageBufferRef imageBuffer);
+  // 攒够 reorderFrames 帧就放行当前最小 pts 者
+  void drainReorder();
+  // 输入排空: 按 pts 序放空剩余帧
+  void flushReorder();
+  // seek/关闭: 丢弃并释放扣住的帧
+  void releaseReorder();
+
 public:
   void updateYuvFormat();
 
@@ -42,6 +68,8 @@ public:
   virtual DecodeResult decode(const AvoxPacket & packet) override;
   // flush
   virtual void flush() override;
+  // 输入排空
+  virtual void onInputEnd() override;
 
   // VideoDecoder
 public:
