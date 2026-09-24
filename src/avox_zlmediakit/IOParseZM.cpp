@@ -8,6 +8,7 @@
 #include "avox/module/TaskTrack.hpp"
 
 #ifdef __APPLE__
+#include <cstdlib>
 #include <memory>
 
 #include "Util/logger.h"
@@ -60,6 +61,15 @@ void initZmEnv() {
     static auto* leakedZlLogger =
         new std::shared_ptr<toolkit::Logger>(toolkit::Logger::Instance().shared_from_this());
     (void)leakedZlLogger;
+    // 泄漏只挡 ~Logger 自身: ZLM 日志线程活到进程死, 退出期最后几条日志仍会经
+    // on_mk_log 回调进已析构的 avox 静态对象(TrackMgr::mtx) -> system_error
+    // 无人接 -> abort(2026-09-24 panvox 实证)。atexit 按注册逆序执行, 排在
+    // 加载期静态析构之前, 在此摘回调并 mk_env_release(停 server + join 日志
+    // 线程), 正是 mk_env_release 文档要求的时机; s_env_inited 守卫下重复调无害。
+    atexit([]() {
+      mk_events_listen(nullptr);
+      mk_env_release();
+    });
 #endif
     // log_mask: 只用 LOG_CALLBACK，不用 LOG_CONSOLE/LOG_FILE
     // log_level: 2 = LInfo，过滤掉 0Trace/1Debug

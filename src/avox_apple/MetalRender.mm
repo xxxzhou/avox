@@ -712,6 +712,17 @@ void MetalRender::renderCVPixelBuffer(CVImageBufferRef imageBuffer) {
       return;
     }
     id<MTLCommandBuffer> commandBuffer = [getCommandQueue() commandBuffer];
+    // 自适应长宽: 非全屏时按视频比例居中 letterbox(与 Dx11Window::onTickWin
+    // 同用 getViewRect), 黑边来自整附件 Clear; 离屏 outputTexture 是原帧
+    // 尺寸的输出/抓帧目标, 不裁剪
+    MTLViewport viewport = {0, 0, (double)targetTexture.width,
+                            (double)targetTexture.height, 0.0, 1.0};
+    if (metalLayer && !bFullScreen && aspect > 0.0f) {
+      const vec4i viewRect = getViewRect((int)targetTexture.width,
+                                         (int)targetTexture.height, aspect);
+      viewport = {(double)viewRect.x, (double)viewRect.y,
+                  (double)viewRect.z, (double)viewRect.w, 0.0, 1.0};
+    }
     MTLRenderPassDescriptor *renderPassDescriptor =
         [MTLRenderPassDescriptor renderPassDescriptor];
     renderPassDescriptor.colorAttachments[0].texture = targetTexture;
@@ -723,6 +734,7 @@ void MetalRender::renderCVPixelBuffer(CVImageBufferRef imageBuffer) {
     id<MTLRenderCommandEncoder> commandEncoder =
         [commandBuffer renderCommandEncoderWithDescriptor:renderPassDescriptor];
     [commandEncoder setRenderPipelineState:pipelineState];
+    [commandEncoder setViewport:viewport];
     // 绑定采样器状态到索引 0 的采样器位置
     [commandEncoder setFragmentSamplerState:samplerState atIndex:0];
     // 设置顶点缓冲区
