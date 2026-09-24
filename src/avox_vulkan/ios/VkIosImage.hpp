@@ -1,6 +1,10 @@
 #pragma once
 
+#if __has_include(<IOSurface/IOSurface.h>)  // macOS SDK 仍带旧文本头
 #include <IOSurface/IOSurface.h>
+#else
+#include <IOSurface/IOSurfaceRef.h>  // Xcode 27 iOS SDK: 文本头并入 IOSurfaceRef.h
+#endif
 
 #include "../VkContext.hpp"
 // #include "avox_apple/MetalContext.hpp"

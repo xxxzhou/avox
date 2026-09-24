@@ -24,6 +24,9 @@ script/verify
 3rdparty/library/android/onnxruntime
 3rdparty/library/linux/onnxruntime
 3rdparty/library/ios/onnxruntime
+3rdparty/library/ios/MoltenVK-ios-*.tar
+3rdparty/library/ios/MoltenVK/
+3rdparty/library/ios/vulkansdk/
 3rdparty/library/windows/opencv
 3rdparty/library/android/opencv
 3rdparty/library/linux/opencv

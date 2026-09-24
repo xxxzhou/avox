@@ -6,7 +6,9 @@
 
 #import <MetalKit/MetalKit.h>
 #import <objc/runtime.h>
+#if !TARGET_OS_IPHONE  // CVDisplayLink 是 macOS 专属
 #import <CoreVideo/CVDisplayLink.h>
+#endif
 #include <mach/mach_time.h>
 #include <TargetConditionals.h>
 #include <atomic>
@@ -587,7 +589,9 @@ void MetalRender::setHdrMode(HdrMode mode) { hdrMode = mode; }
 // ---- vsync 相位对齐(AVOX_VSYNC_ALIGN=0 关) ----
 // 自由节拍 commit 相位随机: 实测提交间隔落在 ~25/50ms; 对齐后收敛到 33/50ms,
 // 即 25fps@60Hz 的 2-2-3 固有节奏(2026-09-24 vsynctest 间隔直方图实测)。
+#if !TARGET_OS_IPHONE
 static CVDisplayLinkRef gVsyncLink = nullptr;
+#endif
 static std::atomic<int64_t> gLastVsyncNs{0};
 static std::atomic<int64_t> gVsyncPeriodNs{0};
 static std::once_flag gVsyncOnce;
@@ -602,6 +606,10 @@ static int64_t machNowNs() {
 }
 
 static void ensureVsyncLink() {
+#if TARGET_OS_IPHONE
+  // iOS 无 CVDisplayLink: vsync 相位对齐为可选优化, 先退化自由节拍,
+  // CADisplayLink 接入另案
+#else
   std::call_once(gVsyncOnce, [] {
     if (CVDisplayLinkCreateWithActiveCGDisplays(&gVsyncLink) != kCVReturnSuccess ||
         !gVsyncLink) {
@@ -621,6 +629,7 @@ static void ensureVsyncLink() {
         nullptr);
     CVDisplayLinkStart(gVsyncLink);
   });
+#endif
 }
 
 // 唤醒点取在 vsync 边界前 3ms: 睡到边界本身会被 sleep_for 过冲推过界, commit 归到

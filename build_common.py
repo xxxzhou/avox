@@ -74,6 +74,10 @@ def get_build_path(target_name):
     # 获取当前脚本文件的上两级目录作为项目根目录
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__)))
     # 创建一个用于存放构建文件的目录，格式为build/生成平台，例如 "build/windows"
+    # AVOX_BUILD_TAG: 同平台变体隔离构建树 (iOS 模拟器 sim 与真机分目录)
+    tag = os.environ.get("AVOX_BUILD_TAG", "")
+    if tag:
+        target_name = f"{target_name}-{tag}"
     build_dir = os.path.join(project_root, "build", target_name)
     if not os.path.exists(build_dir):
         os.makedirs(build_dir)    
@@ -358,13 +362,15 @@ def build_ios(cmake_args):
         "-DCMAKE_CXX_COMPILER=/usr/bin/clang++",
         "-DCMAKE_C_COMPILER=/usr/bin/clang",        
         "-DCMAKE_SYSTEM_NAME=iOS",
-        "-DCMAKE_OSX_SYSROOT=iphoneos",                           
+        "-DCMAKE_OSX_SYSROOT=iphonesimulator" if os.environ.get("AVOX_IOS_SIM") == "1" else "-DCMAKE_OSX_SYSROOT=iphoneos",
         f"-DCMAKE_OSX_ARCHITECTURES={AVOX_TARGET_ARCH}",
-        f"-DCMAKE_OSX_DEPLOYMENT_TARGET={AVOX_IOS_DEPLOYMENT_TARGET}", 
+        f"-DCMAKE_OSX_DEPLOYMENT_TARGET={AVOX_IOS_DEPLOYMENT_TARGET}",
+        # 工具链读自己的 DEPLOYMENT_TARGET 变量; 不传则默认 13.0, Xcode 27 SDK 只收 15.0+
+        f"-DDEPLOYMENT_TARGET={AVOX_IOS_DEPLOYMENT_TARGET}", 
         "-DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO",  
         # 非发布版本可关闭签名
         # "-DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY=",
-        "-DPLATFORM=OS",
+        "-DPLATFORM=SIMULATORARM64" if os.environ.get("AVOX_IOS_SIM") == "1" else "-DPLATFORM=OS",
         "-G", "Xcode"       
     ]
     print(f"ios cmake_args: {cmake_args}")

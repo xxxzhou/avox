@@ -476,11 +476,14 @@ if(ONLY_LINUX)
 endif()
 
 if(IOS)
-  # 动态获取 iOS SDK 路径
-  execute_process(
-    COMMAND xcrun --sdk iphoneos --show-sdk-path
-    OUTPUT_VARIABLE CMAKE_OSX_SYSROOT
-    OUTPUT_STRIP_TRAILING_WHITESPACE)
+  # 动态获取 iOS SDK 路径; 模拟器构建 (AVOX_IOS_SIM=1) 保留调用方传入的
+  # iphonesimulator sysroot, 不被真机路径覆盖
+  if(NOT "$ENV{AVOX_IOS_SIM}" STREQUAL "1")
+    execute_process(
+      COMMAND xcrun --sdk iphoneos --show-sdk-path
+      OUTPUT_VARIABLE CMAKE_OSX_SYSROOT
+      OUTPUT_STRIP_TRAILING_WHITESPACE)
+  endif()
 
   # 为 iOS 真机设置库路径
   set(SYSTEM_LIBRARY_SEARCH_PATHS

@@ -46,10 +46,14 @@ if __name__ == "__main__":
         build_common.build_module("fdk-aac",onlyMake,FDK_AAC_CMAKE_ARGS)
     if not build_common.check_module("freetype","freetype"):
         build_common.build_module("freetype",onlyMake,FREETYPE_CMAKE_ARGS)
-    if not build_common.check_module_sherpa():
-        build_common.build_module("sherpa-onnx", onlyMake, SHERPA_CMAKE_ARGS)
-    if not build_common.check_module_sentencepiece():
-        build_common.build_module("sentencepiece", onlyMake, SPM_CMAKE_ARGS)
+    # AVOX_SKIP_AI=1: 跳过 AI 模块 (sherpa/SPM 为 find_package 可选, 缺席自动 OFF)
+    if os.environ.get("AVOX_SKIP_AI") == "1":
+        print("AVOX_SKIP_AI=1: 跳过 sherpa-onnx / sentencepiece")
+    else:
+        if not build_common.check_module_sherpa():
+            build_common.build_module("sherpa-onnx", onlyMake, SHERPA_CMAKE_ARGS)
+        if not build_common.check_module_sentencepiece():
+            build_common.build_module("sentencepiece", onlyMake, SPM_CMAKE_ARGS)
     # Agent/Tool 仅 Windows, 其他平台关闭
     extra_args = "-DAVOX_ENABLE_AGENT=OFF -DAVOX_ENABLE_CLI=OFF -DAVOX_ENABLE_SWIG=OFF"
     extra_args = f"{extra_args} -DAVOX_DIST_FLAVOR={DIST_FLAVOR}"
