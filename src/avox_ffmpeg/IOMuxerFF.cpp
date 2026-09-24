@@ -32,15 +32,12 @@ bool IOMuxerFF::onInit() {
       av_guess_format(nullptr, url.c_str(), nullptr);
   AVFormatContext* tempOut = nullptr;
   int32_t ret = 0;
-  const char* formatName = nullptr;
   AVCodecID acodecId = getFFCodecId(aDesc.codecId);
   // mp4只支持AAC,如果非AAC音频,自动换成mov格式
   if (avFormat && strcmp(avFormat->name, "mp4") == 0) {
     if (acodecId != AV_CODEC_ID_AAC) {
       avFormat = av_guess_format("mov", nullptr, nullptr);
     }
-    ret = avformat_alloc_output_context2(&tempOut, avFormat, nullptr,
-                                         url.c_str());
   } else if (!avFormat) {
     // 无扩展名的协议 URL，按协议映射到对应的 muxer 名称
     std::string protocol = url.substr(0, url.find("://"));
@@ -53,9 +50,10 @@ bool IOMuxerFF::onInit() {
       muxerName = "rtsp";
     }
     avFormat = av_guess_format(muxerName.c_str(), nullptr, nullptr);
-    ret = avformat_alloc_output_context2(&tempOut, avFormat, nullptr,
-                                         url.c_str());
   }
+  // 有扩展名且非mp4(.ts/.mkv等)同样要走alloc,否则空上下文进new_stream必崩
+  ret = avformat_alloc_output_context2(&tempOut, avFormat, nullptr,
+                                       url.c_str());
   if (ret < 0) {
     AVOX_FFMEPG_LOG(ret, "avformat_alloc_output_context2 failed");
     return false;
