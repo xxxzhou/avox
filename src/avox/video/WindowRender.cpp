@@ -327,9 +327,13 @@ void WindowRender::onRunTask() {
       nextFrameTime = now;
       sleepTick = 0;
     }
+    // 兜底短睡: >5ms 长睡; 慢速追帧或余量 <5ms 时至少睡 1ms, 不设下限会
+    // 全速自旋钉满一个大核(9/25 真机发热定案: 播放期单核 90%+)
     if (sleepTick > 50000 && syncResult != SyncResult::slow) {
       // tick -> ms
       std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
+    } else {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
   }
   if (pVideoRender) {
