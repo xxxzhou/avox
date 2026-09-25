@@ -249,15 +249,15 @@ cmake_dependent_option(AVOX_ENABLE_SAMPLES
 # 模块在 src <-> plugins 迁移时 include 零改动
 include_directories(${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/plugins)
 
-# 检查选项及对应库，配置相应库头文件，链接，以及宏定义
-include(AVOXOptions)
-
-# include(FFmpegBuild)
+# DLL_TYPE 须先于 Options 定值: 其 agent/BoringSSL 分叉按 WIN32+SHARED 判定,
+# 未定义时 Windows 误入静态分支, webrtc_nosym 无 SSL 符号致链接断(fae2bce 回归)
 set(AVOX_DLL_TYPE "SHARED")
-
 if(APPLE)
     set(AVOX_DLL_TYPE "STATIC")
 endif()
+
+# 检查选项及对应库，配置相应库头文件，链接，以及宏定义
+include(AVOXOptions)
 
 # 静态构建(iOS): plugin 源码编进 avox, 无 dll 边界。
 # 定义 AVOX_ENABLE_STATIC -> AVOX_REGISTER_MODULE 走构造期注册(StaticLinkModule), 不导出 NewModule。
