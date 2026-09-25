@@ -31,9 +31,12 @@ if(APPLE)
   list(REMOVE_ITEM PLUGINS_DYNAMIC avox_webrtc)
 endif()
 if(IOS)
-  # avox_remote 依赖 OpenSSL 动态库: iOS 无预编译(avox_library/ios 仅 ass/libsmb2),
-  # homebrew 的 macOS dylib 链 iOS 直接报平台不符(build_ios3 实证); iOS 宿主暂不启用
+  # iOS 无 OpenSSL 预编译(avox_library/ios 仅 ass/libsmb2), homebrew macOS dylib 链 iOS
+  # 直接报平台不符(build_ios3~5 实证): avox_remote/avox_fbx(经 ZLM 链 openssl)/avox_ass
+  # 三家一并排除, 待 iOS openssl 预编译入库后解锁
   list(REMOVE_ITEM PLUGINS_DYNAMIC avox_remote)
+  list(REMOVE_ITEM PLUGINS_DYNAMIC avox_fbx)
+  list(REMOVE_ITEM PLUGINS_DYNAMIC avox_ass)
 endif()
 
 # 动态插件: 各自子目录调用 register_plugin(<name> DYNAMIC ...)

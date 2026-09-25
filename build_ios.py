@@ -61,6 +61,8 @@ if __name__ == "__main__":
     # vulkan 保持开: volk 动态加载只需头文件, VULKAN_SDK 未设时自动用本机 SDK 的 macOS 目录,
     # MoltenVK 不随 INTERFACE 链接(iOS 由宿主 App 自带, LinkVulkan 对 iOS 缺库已降级为警告)
     extra_args += " -DAVOX_ENABLE_ONNX=OFF -DAVOX_ENABLE_SHERPA=OFF"
+    # iOS 不出单测/试跑目标(含 avox_agent_tests, 与 SDK 无关)
+    extra_args += " -DAVOX_BUILD_TESTS=OFF"
     if not os.environ.get("VULKAN_SDK"):
         candidates = sorted(glob.glob(os.path.expanduser("~/VulkanSDK/*/macOS")), reverse=True)
         if candidates:
