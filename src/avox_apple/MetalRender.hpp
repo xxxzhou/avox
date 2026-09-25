@@ -42,6 +42,9 @@ public:
   virtual bool vaildAndInitGraph() override;
   virtual void releaseGraph() override;
   virtual void renderGpuFrame(const GpuFrame &frame) override;
+  // 软解CPU帧(mpeg1/2/4、wmv等无硬解车道格式): planar 420P 收进 NV12
+  // CVPixelBuffer 走既有绘制管线, 不补则这些格式在 mac 恒黑屏
+  virtual void renderCpuFrame(const YUVFrame &frame) override;
   virtual bool fetchFrame(ImageBuffer *imageBuffer) override;
   // 交付本帧已发布的CPU NV12,渲染线程内调用
   virtual bool getCpuFrameBuffer(IImageBuffer **buffer, YuvType &yuvType,

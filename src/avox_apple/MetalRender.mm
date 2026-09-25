@@ -308,6 +308,73 @@ void MetalRender::renderGpuFrame(const GpuFrame &frame) {
   // CFRelease(imageBuffer);
 }
 
+// 软解CPU帧: Metal 管线只认 CVPixelBuffer 纹理, planar YUV420P 逐行收进
+// IOSurface-backed NV12 pb(Y 按 stride 收紧, U/V 交织)后走硬解同款绘制。
+// 每帧新建 pb 对齐 VT 出帧节奏, 复用同 pb 会与未完帧的 GPU 读并发写
+void MetalRender::renderCpuFrame(const YUVFrame &frame) {
+  if (frame.format.type != YuvType::yuv420P || !frame.data[0]) {
+    static std::once_flag once;
+    std::call_once(once, [&frame] {
+      LOGFLF(LogLevel::warn, "metal cpu frame yuv type not support:",
+             (int32_t)frame.format.type);
+    });
+    return;
+  }
+  const int32_t width = frame.format.width;
+  const int32_t height = frame.format.height;
+  if (width <= 0 || height <= 0 || (height % 2) != 0) {
+    return;
+  }
+  CFMutableDictionaryRef pbAttrs = CFDictionaryCreateMutable(
+      kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks,
+      &kCFTypeDictionaryValueCallBacks);
+  // Metal 纹理缓存要求 IOSurface-backed; 空字典必须带 kCFType callbacks,
+  // NULL callbacks 版实测 macOS 26 在 IOSurfaceCreate 内 objc_retain 崩
+  CFDictionaryRef ioProps = CFDictionaryCreate(
+      kCFAllocatorDefault, nullptr, nullptr, 0, &kCFTypeDictionaryKeyCallBacks,
+      &kCFTypeDictionaryValueCallBacks);
+  CFDictionarySetValue(pbAttrs, kCVPixelBufferIOSurfacePropertiesKey, ioProps);
+  CFRelease(ioProps);
+  CVPixelBufferRef pb = nullptr;
+  CVReturn status = CVPixelBufferCreate(
+      kCFAllocatorDefault, width, height,
+      kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, pbAttrs, &pb);
+  CFRelease(pbAttrs);
+  if (status != kCVReturnSuccess || !pb) {
+    LOGFLF(LogLevel::warn, "cpu frame pixelbuffer create failed:",
+           (int32_t)status);
+    return;
+  }
+  if (CVPixelBufferLockBaseAddress(pb, 0) != kCVReturnSuccess) {
+    LOGFLF(LogLevel::warn, "cpu frame pixelbuffer lock failed");
+    CFRelease(pb);
+    return;
+  }
+  uint8_t *dstY = (uint8_t *)CVPixelBufferGetBaseAddressOfPlane(pb, 0);
+  uint8_t *dstUV = (uint8_t *)CVPixelBufferGetBaseAddressOfPlane(pb, 1);
+  const size_t dstYPitch = CVPixelBufferGetBytesPerRowOfPlane(pb, 0);
+  const size_t dstUVPitch = CVPixelBufferGetBytesPerRowOfPlane(pb, 1);
+  for (int32_t r = 0; r < height; ++r) {
+    memcpy(dstY + (size_t)r * dstYPitch,
+           frame.data[0] + (size_t)r * frame.stride[0], width);
+  }
+  const int32_t cw = width / 2;
+  const int32_t ch = height / 2;
+  for (int32_t r = 0; r < ch; ++r) {
+    const uint8_t *u = frame.data[1] + (size_t)r * frame.stride[1];
+    const uint8_t *v = frame.data[2] + (size_t)r * frame.stride[2];
+    uint8_t *d = dstUV + (size_t)r * dstUVPitch;
+    for (int32_t c = 0; c < cw; ++c) {
+      d[2 * c] = u[c];
+      d[2 * c + 1] = v[c];
+    }
+  }
+  CVPixelBufferUnlockBaseAddress(pb, 0);
+  renderCVPixelBuffer(pb);
+  // 绘制命令已持有纹理引用, 释放本帧的 pb 引用(与 VT 出帧后解码器释放同款)
+  CFRelease(pb);
+}
+
 void MetalRender::publishCpuFrame(CVImageBufferRef imageBuffer) {
   if (!imageBuffer || publishedTick == renderTick) {
     return;
