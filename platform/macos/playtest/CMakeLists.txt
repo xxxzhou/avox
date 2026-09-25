@@ -29,3 +29,4 @@ target_link_libraries(playtest "$<LINK_LIBRARY:WHOLE_ARCHIVE,avox>")
 set_target_properties(playtest PROPERTIES XCODE_ATTRIBUTE_DEAD_CODE_STRIPPING "NO")
 
 avox_output(playtest)
+avox_check_no_openssl(playtest)

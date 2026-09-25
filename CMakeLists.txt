@@ -169,6 +169,8 @@ endif()
 
 # 封装一些常用的方法AVOX_update_cached/AVOX_update_cached_list
 include(AVOXHelper)
+# 产物级护栏: 静态链 webrtc(BoringSSL) 的宿主二进制禁止 OpenSSL 混链
+include(AVOXNoOpensslCheck)
 
 # 链接库
 avox_update_cached_list(AVOX_LINK_LIBRARIES "")

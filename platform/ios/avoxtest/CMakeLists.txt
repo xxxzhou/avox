@@ -157,3 +157,5 @@ if(AVOX_FFMPEG_INCLUDE)
   target_compile_definitions(avoxtest PRIVATE AVOXTEST_HAS_FFMPEG=1)
   target_include_directories(avoxtest PRIVATE "${AVOX_FFMPEG_INCLUDE}")
 endif()
+
+avox_check_no_openssl(avoxtest)
