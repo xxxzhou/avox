@@ -18,7 +18,7 @@
 #   cmake --build build && ./build/avoxtest
 #
 # 运行模式 (avoxtest.mm 内 AVOX_MATRIX/AVOX_IO_PLAN 环境变量):
-#   默认: LAN 矩阵 — 依次拉 Windows ZLM (192.168.68.245) 的
+#   默认: LAN 矩阵 — 依次拉 Windows ZLM (192.168.3.31) 的
 #         rtsp-h264/rtsp-h265/rtmp-h264/hls-h265/ts-h264/webrtc-h264
 #   AVOX_MATRIX=loop: 进程内回环 (起 ZLM 服务端 + mk_media 节流推流 + 回拉),
 #         需 ffmpeg 头 (-DAVOX_FFMPEG_INCLUDE=...) 和测试源 wall_long/wall_265.mp4
@@ -144,6 +144,15 @@ else()
   target_link_libraries(avoxtest PRIVATE "${AVOX_MOLTENVK_LIB}")
   set_target_properties(avoxtest PROPERTIES
     BUILD_RPATH "${AVOX_LIB_DIR}")
+  # libmk_api 的 install name 是 @rpath/..., 而 BUILD_RPATH 在部分环境(CMake 3.28+
+  # Makefile 实测)不被产出 → dyld 解析失败; 随包携带 + 加载路径改写 @loader_path, 自包含最稳
+  add_custom_command(TARGET avoxtest POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${AVOX_LIB_DIR}/libmk_api.dylib" "$<TARGET_FILE_DIR:avoxtest>"
+    COMMAND install_name_tool -change "@rpath/libmk_api.dylib"
+            "@loader_path/libmk_api.dylib" "$<TARGET_FILE:avoxtest>"
+    COMMAND codesign -f -s - "$<TARGET_FILE:avoxtest>"
+    VERBATIM)
 endif()
 
 # AAC 解码器可选项: SDK 安装树未必都有 (faad 缺失时 fdk-aac 兜底)

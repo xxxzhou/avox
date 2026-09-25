@@ -417,10 +417,10 @@ static void finishSummary(void) {
 
 // ── 局域网播放回归矩阵: 用例表来自 tests/playmatrix (与 Windows/Linux 宿主同一份) ──
 // 端点可用 AVOX_HOST / AVOX_RTSP_PORT / AVOX_RTMP_PORT / AVOX_HTTP_PORT 覆盖,
-// 默认指向 Windows 上那台 ZLM (script/testenv/push_streams.py --lan-ip 供流)
+// 默认指向 pc 那台 ZLM (script/testenv/push_streams.py --lan-ip 供流)
 static Endpoints lanEndpoints(void) {
   Endpoints ep;
-  ep.host = "192.168.68.245";
+  ep.host = "192.168.3.31";
   if (const char* v = getenv("AVOX_HOST")) ep.host = v;
   if (const char* v = getenv("AVOX_RTSP_PORT")) ep.rtspPort = atoi(v);
   if (const char* v = getenv("AVOX_RTMP_PORT")) ep.rtmpPort = atoi(v);

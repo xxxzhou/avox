@@ -5,8 +5,8 @@
 #   PlayMatrix.hpp  用例表 + 判定逻辑
 #   HostMain.cpp    命令行宿主 (参数解析 + 资源定位)
 # 跑法 (拉局域网 ZLM):
-#   ./playtest --host=192.168.68.245            # 无头, 产物目录落 PNG/pm_log.txt
-#   ./playtest --host=192.168.68.245 --win      # 出窗口看画面, 横幅滚动判定行
+#   ./playtest --host=192.168.3.31            # 无头, 产物目录落 PNG/pm_log.txt
+#   ./playtest --host=192.168.3.31 --win      # 出窗口看画面, 横幅滚动判定行
 # 日志: 产物目录 pm_log.txt (stdout 全量镜像, 事后可复判)
 
 add_executable(playtest

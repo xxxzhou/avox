@@ -15,7 +15,7 @@
 硬解·软解、WebRTC (h264/h265)、帧契约、截图、直通·转码录制。
 用例清单与判定口径见 [tests/playmatrix/README.md](../../../tests/playmatrix/README.md)。
 
-端点默认指向 Windows 上的 ZLM (`192.168.68.245`, 由
+端点默认指向 Windows 上的 ZLM (`192.168.3.31`, 由
 `script/testenv/push_streams.py --lan-ip` 供流), 可用环境变量
 `AVOX_HOST` / `AVOX_RTSP_PORT` / `AVOX_RTMP_PORT` / `AVOX_HTTP_PORT` 覆盖。
 
@@ -29,7 +29,7 @@ webrtc 为 `connected && firstFrame && fps>0`。
 
 | 触发方式 | 模式 |
 |----------|------|
-| 无参数 | LAN 播放回归矩阵 (共享用例表, 默认 192.168.68.245) |
+| 无参数 | LAN 播放回归矩阵 (共享用例表, 默认 192.168.3.31) |
 | `AVOX_MATRIX=loop` | 进程内回环: 本进程起 ZLM 服务端(rtsp/rtmp/hls) + ffmpeg 解封装节流推流(mk_media) + 回拉, 不依赖局域网。需 `-DAVOX_FFMPEG_INCLUDE=<ffmpeg头>` 参与编译, 且同目录放 `wall_long.mp4`(300s h264) / `wall_265.mp4`(h265), 生成命令见下 |
 | 启动参数含 `://` | 单 URL 拉流模式 (如 `./avoxtest rtsp://...`) |
 
