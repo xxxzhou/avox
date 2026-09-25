@@ -60,6 +60,9 @@ if(SherpaOnnx_FOUND)
         # 不再 avox_run_module_copy 到顶层 —— sherpa-onnx-c-api.dll 只随插件进 plugins/
         message(STATUS "SHERPA DLL DIR: ${SHERPA_DLL_DIR}")
         file(GLOB SHERPA_DLLS "${SHERPA_DLL_DIR}/*.dll")
+        # onnxruntime.dll 统一由 avox_onnx 的 DML drop 提供(FindONNX), 此处排除
+        # 避免 CPU 版把 DML 版覆盖回去; 同为 1.23.2, C API 对 sherpa 向后兼容。
+        list(FILTER SHERPA_DLLS EXCLUDE REGEX "onnxruntime[^/]*\\.dll$")
         message(STATUS "SHERPA_DLLS found: ${SHERPA_DLLS}")
     endif()
 endif()
