@@ -1,3 +1,4 @@
+import glob
 import os
 import subprocess
 import sys
@@ -47,8 +48,8 @@ if __name__ == "__main__":
     if not build_common.check_module("freetype","freetype"):
         build_common.build_module("freetype",onlyMake,FREETYPE_CMAKE_ARGS)
     # AVOX_SKIP_AI=1: 跳过 AI 模块 (sherpa/SPM 为 find_package 可选, 缺席自动 OFF)
-    if os.environ.get("AVOX_SKIP_AI") == "1":
-        print("AVOX_SKIP_AI=1: 跳过 sherpa-onnx / sentencepiece")
+    if os.environ.get("AVOX_SKIP_AI", "1") == "1":
+        print("AVOX_SKIP_AI=1: 跳过 sherpa-onnx / sentencepiece (iOS 无 onnxruntime 预编译, 默认跳)")
     else:
         if not build_common.check_module_sherpa():
             build_common.build_module("sherpa-onnx", onlyMake, SHERPA_CMAKE_ARGS)
@@ -56,10 +57,14 @@ if __name__ == "__main__":
             build_common.build_module("sentencepiece", onlyMake, SPM_CMAKE_ARGS)
     # Agent/Tool 仅 Windows, 其他平台关闭
     extra_args = "-DAVOX_ENABLE_AGENT=OFF -DAVOX_ENABLE_CLI=OFF -DAVOX_ENABLE_SWIG=OFF"
-    # onnxruntime.cmake 无 iOS 预编译(仅 Linux/macOS/Windows), iOS 关 AI 插件(CV/OCR/AVATAR 随之);
-    # vulkan 需 VulkanSDK/iOS(MoltenVK), 缺省关闭, 装好后 AVOX_IOS_VULKAN=1 打开
-    extra_args += " -DAVOX_ENABLE_ONNX=OFF"
-    if os.environ.get("AVOX_IOS_VULKAN", "0") != "1":
-        extra_args += " -DAVOX_ENABLE_VULKAN=OFF"
+    # onnxruntime.cmake 无 iOS 预编译(仅 Linux/macOS/Windows): 关 ONNX+SHERPA(CV/OCR/AVATAR 随之);
+    # vulkan 保持开: volk 动态加载只需头文件, VULKAN_SDK 未设时自动用本机 SDK 的 macOS 目录,
+    # MoltenVK 不随 INTERFACE 链接(iOS 由宿主 App 自带, LinkVulkan 对 iOS 缺库已降级为警告)
+    extra_args += " -DAVOX_ENABLE_ONNX=OFF -DAVOX_ENABLE_SHERPA=OFF"
+    if not os.environ.get("VULKAN_SDK"):
+        candidates = sorted(glob.glob(os.path.expanduser("~/VulkanSDK/*/macOS")), reverse=True)
+        if candidates:
+            os.environ["VULKAN_SDK"] = candidates[0]
+            print(f"VULKAN_SDK 未设置, 自动选用: {candidates[0]}")
     extra_args = f"{extra_args} -DAVOX_DIST_FLAVOR={DIST_FLAVOR}"
     build_common.build_self(extra_args)
