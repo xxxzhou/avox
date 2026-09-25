@@ -10,6 +10,7 @@
 
 #include "avox/Avox.hpp"
 #include "avox/module/AssetLoader.hpp"
+#include "avox/module/IModule.hpp"
 #include "avox/module/LogHelper.hpp"
 
 namespace avox {
@@ -56,6 +57,22 @@ static bool appendGpuExecutionProvider(Ort::SessionOptions& options,
   appendCuda(options, deviceId);
   LOGFLF(LogLevel::info, "onnx EP=CUDA device=", deviceId);
   return true;
+}
+
+// 供 shim pvx_enhance_ep_query 免引 ORT 头探测: 运行时是否带 DML EP(1=有)。
+extern "C" AVOX_PLUGIN_API int32_t avox_onnx_ep_query() {
+#if defined(AVOX_ONNX_DML)
+  const void* dmlApi = nullptr;
+  OrtStatus* st = Ort::GetApi().GetExecutionProviderApi(
+      "DML", ORT_API_VERSION, &dmlApi);
+  if (st != nullptr) {
+    Ort::GetApi().ReleaseStatus(st);
+    return 0;
+  }
+  return dmlApi ? 1 : 0;
+#else
+  return 0;
+#endif
 }
 
 ONNXSession::ONNXSession() = default;
