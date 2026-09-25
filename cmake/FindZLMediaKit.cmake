@@ -63,29 +63,25 @@ include(FindPackageHandleStandardArgs)
 # 需要注意ZLMediaKit和文件FindZLMediaKit.cmake要一致，大小写一致
 find_package_handle_standard_args(ZLMediaKit DEFAULT_MSG ZLMEDIAKIT_LIBRARIES ZLMEDIAKIT_INCLUDE_DIRS)
 
-# ZLMediaKit 的 ZLToolKit 依赖 OpenSSL
-# OpenSSL 已由 AVOXOptions.cmake 统一查找（在 ZLMediaKit 之前），
-# 确保所有模块（ZLMediaKit、Agent/cpp-httplib）使用同一个 OpenSSL 版本。
-# 若 AVOXOptions 未启用查找（理论上不会发生），则在此回退查找。
-if(ZLMEDIAKIT_FOUND)
-    if(NOT AVOX_OPENSSL_FOUND)
-        find_package(OpenSSL QUIET)
-    endif()
-    if(OpenSSL_FOUND)
-        # mk_api.dll 自带 OpenSSL 运行时依赖（其内部已链 OpenSSL）。
-        # 仅当 avox.dll 本身需要 OpenSSL（Agent 未用 BoringSSL）时，才把 OpenSSL
-        # 链进 avox.dll 并加全局 include。Agent 用 BoringSSL 时 avox.dll 不应链 OpenSSL，
-        # 否则会与 webrtc 静态链入的 BoringSSL 发生 SSL_* 符号撞车。
-        if(NOT AVOX_AGENT_USE_BORINGSSL)
-            message(STATUS "OpenSSL linked for ZLMediaKit: ${OPENSSL_LIBRARIES}")
-            list(APPEND ZLMEDIAKIT_LIBRARIES ${OPENSSL_LIBRARIES})
-            list(APPEND ZLMEDIAKIT_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIRS})
-        else()
-            message(STATUS "Agent 用 BoringSSL，OpenSSL 仅 mk_api.dll 运行时需要，不链入 avox.dll")
+# mk_api 的 SSL 归 mk_api 自己: ENABLE_OPENSSL 构建时已把 libssl/libcrypto 刻进 mk_api
+# 自己的依赖表, 运行时由部署解决(WIN32 的 OPENSSL_DLLS 拷贝 / android 随包 / linux 系统包)。
+# 此处禁止把 OpenSSL 追加进主二进制链接行: 主二进制静态链着 webrtc 的 BoringSSL, 混链会让
+# webrtc 的 SSL_*/EVP_* 调用被绑到 libssl/libcrypto, 两套 ABI 互不兼容, 运行期野指针崩溃
+# (2026-09-25 mac rtc 打开即崩即此因)。httplib 的 OpenSSL 分支由 AVOXOptions.cmake 按宿主二进制决定。
+if(ZLMEDIAKIT_FOUND AND APPLE)
+    # APPLE 静态链入(尤其 iOS force_load 全并入 libavox.a)时, 静态 mk_api 的依赖=主 SDK 的依赖:
+    # 归档出现 SSL_*/EVP_* 未定义引用即视为带 SSL 构建, configure 期直接拦截
+    foreach(_mklib ${ZLMEDIAKIT_LIBRARIES})
+        if(_mklib MATCHES "\\.a$" AND EXISTS "${_mklib}")
+            execute_process(COMMAND nm -u "${_mklib}"
+                COMMAND grep -cE "^_(SSL_|EVP_|OPENSSL_)"
+                OUTPUT_VARIABLE _mk_ssl_refs OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+            if(_mk_ssl_refs AND NOT _mk_ssl_refs EQUAL 0)
+                message(FATAL_ERROR "${_mklib} 含 ${_mk_ssl_refs} 个 OpenSSL 未定义引用。"
+                    "静态链入的 mk_api 不得带 SSL: 用 ENABLE_OPENSSL=OFF 重编 ZLM, 或改走 ZLToolKit×BoringSSL 路线")
+            endif()
         endif()
-    else()
-        message(WARNING "OpenSSL not found, ZLMediaKit SSL features disabled")
-    endif()
+    endforeach()
 endif()
 
 # mk_api.dll是导出C接口的动态库，需要C接口吗？

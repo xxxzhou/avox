@@ -163,19 +163,23 @@ endif()
 set(AVOX_OPENSSL_MIN_VERSION "3.0.0" CACHE STRING "Minimum OpenSSL version required by Agent/cpp-httplib")
 
 # 决定 Agent 是否复用 WebRTC 的 BoringSSL
-# 静态链接(AVOX_DLL_TYPE=STATIC): webrtc 仍在同一二进制, BoringSSL 可用 → 复用
-# 动态链接(SHARED): webrtc.lib 移入 avox_webrtc.dll, BoringSSL 不在 avox.dll → 用 OpenSSL 3.0+
+# 默认(BORINGSSL): webrtc 静态链入 SDK 是全部平台的默认形态(mac/ios/android/linux 及
+#   Windows-STATIC), BoringSSL 与 agent 同二进制 → httplib 编 BoringSSL 兼容头, 主二进制零 OpenSSL
+# 仅 Windows-SHARED: webrtc 移入 avox_webrtc.dll 插件, BoringSSL 不可引用 → httplib 用 OpenSSL 3.0+
 set(AVOX_AGENT_USE_BORINGSSL OFF)
 if(AVOX_ENABLE_AGENT AND AVOX_ENABLE_WEBRTC AND WebRTC_FOUND)
-  if(AVOX_DLL_TYPE STREQUAL "STATIC")
-    # 静态链接: webrtc 和 avox 同一二进制, BoringSSL 仍可用
+  if(NOT (WIN32 AND AVOX_DLL_TYPE STREQUAL "SHARED"))
+    # webrtc 和 agent 同一二进制, BoringSSL 可用
     if(WEBRTC_BORINGSSL_INCLUDE_DIR AND EXISTS "${WEBRTC_BORINGSSL_INCLUDE_DIR}/openssl/ssl.h")
       set(AVOX_AGENT_USE_BORINGSSL ON)
-      message(STATUS "Agent: 静态链接, 复用 WebRTC BoringSSL")
+      message(STATUS "Agent: webrtc 静态同体, 复用 WebRTC BoringSSL")
+    else()
+      message(WARNING "Agent: webrtc 静态同体但 BoringSSL 兼容头缺失, 回退 OpenSSL——"
+        "此时主二进制若静态链了 webrtc 将发生 SSL_* 符号撞车, 须核查链接行")
     endif()
   else()
     # 动态链接: BoringSSL 在 avox_webrtc.dll, avox.dll 不可引用 → 必须用 OpenSSL
-    message(STATUS "Agent: 动态链接, webrtc 在插件, BoringSSL 不可用, 需要 OpenSSL")
+    message(STATUS "Agent: Windows-SHARED, webrtc 在插件, 使用 OpenSSL")
   endif()
 endif()
 
