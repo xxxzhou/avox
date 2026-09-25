@@ -77,6 +77,9 @@ VkInstanceArgs VkInstanceArgs::defArgs(bool bDebug) {
       {VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME},
 #elif defined(__APPLE__)
       {VK_EXT_METAL_SURFACE_EXTENSION_NAME},
+      // portability 驱动枚举声明: 交由 crateInstace 统一过滤, 旧 MoltenVK
+      // 不支持会在此被剪掉(硬追加会 EXTENSION_NOT_PRESENT, 9/26 vkprobe 实证)
+      {VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME},
 #elif defined(__ONLY_LINUX__)
       {VK_KHR_XLIB_SURFACE_EXTENSION_NAME},
 #ifdef AVOX_ENABLE_WAYLAND
@@ -136,10 +139,14 @@ VkInstance VkInstanceArgs::crateInstace() {
   instance_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
   instance_info.pApplicationInfo = &app_info;
 #if defined(__APPLE__)
-  // MoltenVK 是 portability 驱动: 不置枚举位并显式启用该扩展, vkCreateInstance 按
-  // spec 返回 ERROR_INCOMPATIBLE_DRIVER (Apple 上 Vulkan 一直因此起不来回退 Metal)
-  instance_info.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
-  extensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+  // MoltenVK 是 portability 驱动: 枚举位按 spec 须搭配 portability_enumeration
+  // 扩展启用; 扩展被过滤剪掉时(实现不支持)不置位, 否则创建必败
+  for (const auto* ex : extensions) {
+    if (strcmp(ex, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME) == 0) {
+      instance_info.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+      break;
+    }
+  }
 #endif
   instance_info.enabledLayerCount = (uint32_t)layers.size();
   instance_info.ppEnabledLayerNames = layers.data();
