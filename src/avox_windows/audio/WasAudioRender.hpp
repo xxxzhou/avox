@@ -4,6 +4,8 @@
 #include <mmdeviceapi.h>
 #include <windows.h>
 
+#include <atomic>
+#include <memory>
 #include <mutex>
 
 #include "../WinCommon.hpp"
@@ -23,6 +25,11 @@ class WasAudioRender : public AudioOutput {
   MComPtr<IMMDevice> device;
   MComPtr<IAudioClient> audioClient;
   MComPtr<IAudioRenderClient> renderClient;
+  // 默认设备切换监听:回调只置共享标志,重建在渲染线程做
+  MComPtr<IMMNotificationClient> deviceNotifier;
+  std::shared_ptr<std::atomic<bool>> deviceSwitchPending;
+  uint64_t retryAtMs = 0;  // 重建失败退避(设备全拔等暂不可用)
+  bool pausedState = false;
   uint32_t sampleCount = 0;
   std::mutex mtx;
   AudioDesc renderDesc = {};
@@ -35,6 +42,13 @@ class WasAudioRender : public AudioOutput {
   virtual void onInit() override;
   virtual void onRender(const AvoxData& frame) override;
   virtual void onClose() override;
+
+ private:
+  // mtx 已持锁版本:onRender 内做设备重建/失效检测时复用
+  bool initLocked();
+  void closeLocked();
+  void scheduleDeviceReinitLocked();
+  void reinitIfPendingLocked();
 
  public:
   virtual bool empty() override;

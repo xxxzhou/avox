@@ -8,6 +8,68 @@
 
 namespace avox {
 
+namespace {
+
+// 默认设备变更通知器:回调来自系统线程,这里只置共享标志,绝不碰渲染对象/COM 链
+class WasDeviceNotifier : public IMMNotificationClient {
+ public:
+  explicit WasDeviceNotifier(std::shared_ptr<std::atomic<bool>> pending)
+      : pendingFlag(std::move(pending)) {}
+
+  ULONG STDMETHODCALLTYPE AddRef() override {
+    return InterlockedIncrement(&refCount);
+  }
+  ULONG STDMETHODCALLTYPE Release() override {
+    ULONG remaining = InterlockedDecrement(&refCount);
+    if (remaining == 0) delete this;
+    return remaining;
+  }
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
+                                           void** ppvObject) override {
+    if (!ppvObject) return E_POINTER;
+    if (riid == __uuidof(IMMNotificationClient) ||
+        riid == __uuidof(IUnknown)) {
+      *ppvObject = static_cast<IMMNotificationClient*>(this);
+      AddRef();
+      return S_OK;
+    }
+    *ppvObject = nullptr;
+    return E_NOINTERFACE;
+  }
+
+  HRESULT STDMETHODCALLTYPE OnDeviceStateChanged(LPCWSTR,
+                                                 DWORD) override {
+    return S_OK;
+  }
+  HRESULT STDMETHODCALLTYPE OnDeviceAdded(LPCWSTR) override { return S_OK; }
+  HRESULT STDMETHODCALLTYPE OnDeviceRemoved(LPCWSTR) override { return S_OK; }
+  HRESULT STDMETHODCALLTYPE OnPropertyValueChanged(
+      LPCWSTR, const PROPERTYKEY) override {
+    return S_OK;
+  }
+  // 流按 eConsole 角色开,只跟这个角色的默认切换(系统每次会发 eConsole+eMultimedia 两枪)
+  HRESULT STDMETHODCALLTYPE OnDefaultDeviceChanged(EDataFlow flow, ERole role,
+                                                   LPCWSTR deviceId) override {
+    char narrow[128] = {};
+    if (deviceId) {
+      WideCharToMultiByte(CP_UTF8, 0, deviceId, -1, narrow, sizeof(narrow),
+                          nullptr, nullptr);
+    }
+    LOGFLF(LogLevel::info, "device notify flow=", (int)flow, " role=", (int)role,
+           " id=", (const char*)narrow);
+    if (flow == eRender && role == eConsole && pendingFlag) {
+      pendingFlag->store(true);
+    }
+    return S_OK;
+  }
+
+ private:
+  LONG refCount = 1;
+  std::shared_ptr<std::atomic<bool>> pendingFlag;
+};
+
+}  // namespace
+
 // 软件音量缩放:按样本格式逐点乘 vol 后写入 dst,整数格式做饱和钳位
 // 用于替代 WASAPI ISimpleAudioVolume:那个接口改的是音频会话音量,
 // 会联动 Windows 音量混合器(系统级),软件缩放只改本进程输出波形
@@ -66,6 +128,7 @@ void regWasAudioRender() {
 
 WasAudioRender::WasAudioRender() {
   CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+  deviceSwitchPending = std::make_shared<std::atomic<bool>>(false);
 #ifdef AVOX_ENABLE_FFMPEG
   // 重采样
   resample = std::make_unique<FFResample>();
@@ -79,35 +142,48 @@ WasAudioRender::~WasAudioRender() {
 
 void WasAudioRender::onInit() {
   std::unique_lock<std::mutex> lock(mtx);
+  initLocked();
+}
+
+bool WasAudioRender::initLocked() {
   if (!desc.bValid()) {
     LOGFLF(LogLevel::warn, "desc is not valid");
-    return;
+    return false;
   }
   HRESULT hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr,
                                 CLSCTX_ALL, __uuidof(IMMDeviceEnumerator),
                                 (void**)&deviceEnumerator);
   if (FAILED(hr)) {
     LOGFLF(LogLevel::warn, "Failed to create device enumerator:", hr);
-    return;
+    return false;
+  }
+  // 注册默认设备切换监听;注册失败只降级为「不跟切」,不挡播放
+  if (!deviceNotifier) {
+    deviceNotifier = new WasDeviceNotifier(deviceSwitchPending);
+  }
+  hr = deviceEnumerator->RegisterEndpointNotificationCallback(
+      deviceNotifier.Get());
+  if (FAILED(hr)) {
+    LOGFLF(LogLevel::warn, "Failed to register device notification:", hr);
   }
   hr = deviceEnumerator->GetDefaultAudioEndpoint(eRender, eConsole,
                                                  device.GetAddressOf());
   if (FAILED(hr)) {
     LOGFLF(LogLevel::warn, "Failed to get default audio endpoint:", hr);
-    return;
+    return false;
   }
   hr = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
                         (void**)&audioClient);
   if (FAILED(hr)) {
     LOGFLF(LogLevel::warn, "Failed to activate audio client:", hr);
-    return;
+    return false;
   }
   // 获取系统默认的音频格式
   WAVEFORMATEX* format = nullptr;
   hr = audioClient->GetMixFormat(&format);
   if (FAILED(hr)) {
     LOGFLF(LogLevel::warn, "Failed to get default audio format:", hr);
-    return;
+    return false;
   }
 
   DWORD flags = 0;
@@ -122,7 +198,7 @@ void WasAudioRender::onInit() {
   // 根据format->wFormatTag和wBitsPerSample决定renderDesc.format
   renderDesc.format = waveFormatToAudioFormat(format);
 #ifdef AVOX_ENABLE_FFMPEG
-  // 重采样
+  // 重采样(新设备混音格式可能不同,重建时必须重跑)
   if (!resample->init(desc, renderDesc)) {
     LOGFLF(LogLevel::warn, "resample init failed");
   }
@@ -131,13 +207,13 @@ void WasAudioRender::onInit() {
   CoTaskMemFree(format);
   if (FAILED(hr)) {
     AVOX_WIN_LOG(hr, "failed to initialize audio client");
-    return;
+    return false;
   }
   hr = audioClient->GetService(__uuidof(IAudioRenderClient),
                                (void**)&renderClient);
   if (FAILED(hr)) {
     LOGFLF(LogLevel::warn, "Failed to get render client:", hr);
-    return;
+    return false;
   }
   // 音量走软件缩放(见 onRender),不获取 ISimpleAudioVolume:
   // 后者改的是 WASAPI 会话音量,会联动 Windows 音量混合器,影响系统级音量
@@ -147,22 +223,25 @@ void WasAudioRender::onInit() {
   int32_t bufferMs = sampleCount * 1000 / renderDesc.sampleRate;
   if (FAILED(hr)) {
     LOGFLF(LogLevel::warn, "Failed to get buffer size:", hr);
-    return;
+    return false;
   }
   hr = audioClient->Start();
   if (FAILED(hr)) {
     LOGFLF(LogLevel::warn, "Failed to start audio client:", hr);
-    return;
+    return false;
   }
   // 初始化平滑值为缓冲区大小的一半，避免从0追赶导致时钟偏差
   lastQueueMs = bufferMs / 2;
   log(LogLevel::info, "WASAPI audio render init success, desc: ", desc,
       " renderDesc: ", renderDesc, " bufferSize:", sampleCount,
       " bufferMs:", bufferMs);
+  return true;
 }
 
 void WasAudioRender::onRender(const AvoxData& frame) {
   std::unique_lock<std::mutex> lock(mtx);
+  // 默认设备已切换/失效:整链重抓(新混音格式重跑重采样),音量/desc 成员天然保留
+  reinitIfPendingLocked();
   if (!renderClient || frame.size == 0) {
     return;
   }
@@ -177,6 +256,8 @@ void WasAudioRender::onRender(const AvoxData& frame) {
   // 已经填充但是没有播放的采样数
   UINT32 padding = 0;
   if (FAILED(audioClient->GetCurrentPadding(&padding))) {
+    // 客户端已坏(设备拔出等):标记重建,当前帧丢弃
+    scheduleDeviceReinitLocked();
     return;
   }
   // 缓冲区能填充的最大采样数
@@ -191,6 +272,10 @@ void WasAudioRender::onRender(const AvoxData& frame) {
   }
   BYTE* data = nullptr;
   HRESULT hr = renderClient->GetBuffer(inSamples, &data);
+  if (hr == AUDCLNT_E_DEVICE_INVALIDATED ||
+      hr == AUDCLNT_E_RESOURCES_INVALIDATED) {
+    scheduleDeviceReinitLocked();
+  }
   if (SUCCEEDED(hr) && data) {
     // 软件音量:volume==1 直接拷贝(零开销),否则按格式缩放样本
     if (volume == 1.0f) {
@@ -202,14 +287,39 @@ void WasAudioRender::onRender(const AvoxData& frame) {
   }
 }
 
+void WasAudioRender::scheduleDeviceReinitLocked() {
+  deviceSwitchPending->store(true);
+  retryAtMs = GetTickCount64();
+}
+
+void WasAudioRender::reinitIfPendingLocked() {
+  if (!deviceSwitchPending->load() || GetTickCount64() < retryAtMs) {
+    return;
+  }
+  LOGFLF(LogLevel::info, "audio device switch: rebuilding WASAPI render");
+  deviceSwitchPending->store(false);
+  closeLocked();
+  if (!initLocked()) {
+    // 设备暂不可用(全拔等):退避后由后续 onRender 重试
+    deviceSwitchPending->store(true);
+    retryAtMs = GetTickCount64() + 500;
+    return;
+  }
+  if (pausedState && audioClient) {
+    // 重建发生在暂停期:保持暂停态,别提前出声
+    audioClient->Stop();
+  }
+}
+
 bool WasAudioRender::empty() {
   std::unique_lock<std::mutex> lock(mtx);
   if (!audioClient) {
     return true;
   }
   UINT32 padding = 0;
-  // padding 是指当前音频缓冲区中已经填充但尚未播放的音频帧数
   if (FAILED(audioClient->GetCurrentPadding(&padding))) {
+    // 时钟线程也会进到这里:客户端失效先标记,重建交给 onRender
+    scheduleDeviceReinitLocked();
     return true;
   }
   int32_t paddingMs = padding * 1000 / renderDesc.sampleRate;
@@ -224,6 +334,7 @@ int32_t WasAudioRender::getQueueMS() {
   }
   UINT32 padding = 0;
   if (FAILED(audioClient->GetCurrentPadding(&padding))) {
+    scheduleDeviceReinitLocked();
     return lastQueueMs;
   }
   int32_t paddingMs = padding * 1000 / renderDesc.sampleRate;
@@ -237,6 +348,7 @@ bool WasAudioRender::full() {
   }
   UINT32 padding = 0;
   if (FAILED(audioClient->GetCurrentPadding(&padding))) {
+    scheduleDeviceReinitLocked();
     return lastQueueMs;
   }
   int32_t paddingMs = padding * 1000 / renderDesc.sampleRate;
@@ -254,6 +366,7 @@ bool WasAudioRender::full() {
 
 void WasAudioRender::pause(bool pause) {
   std::unique_lock<std::mutex> lock(mtx);
+  pausedState = pause;
   if (!audioClient) {
     return;
   }
@@ -276,14 +389,24 @@ void WasAudioRender::flush() {
 
 void WasAudioRender::onClose() {
   std::unique_lock<std::mutex> lock(mtx);
+  closeLocked();
+}
+
+void WasAudioRender::closeLocked() {
+  // 先注销监听再放 COM 引用;注销返回后系统保证不再回调,通知器可安全释放
+  if (deviceEnumerator && deviceNotifier) {
+    deviceEnumerator->UnregisterEndpointNotificationCallback(
+        deviceNotifier.Get());
+  }
   if (audioClient) {
     audioClient->Stop();
   }
   renderClient.Reset();
   audioClient.Reset();
   device.Reset();
+  deviceNotifier.Reset();
   deviceEnumerator.Reset();
-  // log(LogLevel::info, "WASAPI render close");
+  sampleCount = 0;
 }
 
 void WasAudioRender::speed(double speed) {
