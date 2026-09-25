@@ -333,28 +333,28 @@
       "note": "已量化 INT8, 无需 optimum 导出/WSL 量化。C++ 仅加载这 4 个文件。release 的 translation-opus-mt-ja-zh.zip 是 HuggingFace cache 脏结构故不用, 改逐文件 LFS 取。 spm 与 HF shun89/opus-mt-ja-zh 逐字节一致; onnx 为本地 optimum 量化, 无公开同字节镜像, 备用 media 直连。"
     },
     {
-      "id": "quality_realesrgan_x4v3",
-      "name": "Real-ESRGAN general-x4v3 画质增强模型",
+      "id": "quality_span_x4",
+      "name": "SPAN 4x-NomosUni-span-multijpg 画质增强模型",
       "plugin": "avox_vulkan",
       "type": "model",
       "method": "download",
       "dest": "assets/models/quality",
-      "source": "avox_model (普通 git 文件, 4.6MB 无需 LFS)",
+      "source": "avox_model (普通 git 文件, 1.7MB 无需 LFS)",
       "files": [
         {
-          "url": "https://github.com/xxxzhou/avox_model/raw/main/assets/models/quality/realesrgan-general-x4v3.onnx",
-          "name": "realesrgan-general-x4v3.onnx",
-          "size_mb": 4.6,
-          "sha256": "3a26ad82f4a6e9f24dd4d8b46bb655cc81b12e4687d100fa50ca97ac13c0f930",
+          "url": "https://github.com/xxxzhou/avox_model/raw/main/assets/models/quality/span-x4.onnx",
+          "name": "span-x4.onnx",
+          "size_mb": 1.7,
+          "sha256": "73ef21bb0559aaf1dc5611e831e7baa497477bd5678c1b41f3a01797240f7c1b",
           "mirrors": [
-            "https://media.githubusercontent.com/media/xxxzhou/avox_model/main/assets/models/quality/realesrgan-general-x4v3.onnx"
+            "https://media.githubusercontent.com/media/xxxzhou/avox_model/main/assets/models/quality/span-x4.onnx"
           ]
         }
       ],
       "verify_files": [
-        "realesrgan-general-x4v3.onnx"
+        "span-x4.onnx"
       ],
-      "note": "Real-ESRGAN 轻量通用盲退化 SR (1.21M 参数, float ONNX)。已导出好直接加载, 客户侧无需转换 (export_onnx.py 仅开发期从 .pth 导出)。VkQEnhanceLayer 经 OpenVINO GPU FP16 推理 (Intel iGPU Upscale2x ~540ms / Restore ~131ms); avox_openvino plugin 未装时自动降级 ORT CPU。文件小走普通 git, 不走 LFS。 备用 media 直连; HF 上 Real-ESRGAN 仓均为 .pth/异构导出无同字节 onnx。"
+      "note": "SPAN 4x 盲退化 SR (CC-BY-4.0, 权重 helaman/NomosUni-span-multijpg, spandrel 转 ONNX fp32)。720p 9070XT DML 实测 111.4ms/帧, 旧 x4v3 152.5ms 的 1.37 倍; 全标准算子 CUDA EP 天然兼容。fp16 图在自建 ORT 1.23.2 DML 逐帧 infer failed (pip 1.24.4 可跑), 升 ORT 再试 fp16 (可到 70.5ms)。已导出好直接加载, 客户侧无需转换。文件小走普通 git, 不走 LFS。备用 media 直连。"
     },
     {
       "id": "avatar_wav2arkit",

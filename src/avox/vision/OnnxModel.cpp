@@ -28,10 +28,8 @@ std::string onnxModelPath(OnnxModel m) {
       return getModelFilePath("translation/opus-mt-ja-zh") + "/decoder_model_int8.onnx";
     case OnnxModel::TransDec:
       return getModelFilePath("translation/opus-mt-ja-zh") + "/decoder_model.onnx";
-    case OnnxModel::RealESRGanX4V3:
-      return getModelFilePath("quality/realesrgan-general-x4v3.onnx");
-    case OnnxModel::RealESRGanX4V3Int8:
-      return getModelFilePath("quality/realesrgan-general-x4v3_int8.onnx");
+    case OnnxModel::QualitySpanX4:
+      return getModelFilePath("quality/span-x4.onnx");
     case OnnxModel::Wav2ArkitCpu:
       // 权重在 wav2arkit_cpu.onnx.data (external-data, ORT 同目录自动加载); 两文件需一起部署
       return getModelFilePath("avatar/wav2arkit_cpu.onnx");

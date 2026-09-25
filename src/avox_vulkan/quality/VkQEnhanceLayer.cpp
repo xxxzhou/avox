@@ -97,7 +97,7 @@ void VkQEnhanceLayer::onInitLayer() {
 
 bool VkQEnhanceLayer::loadModel() {
   if (modelLoaded) return true;
-  std::string modelPath = getModelFilePath("quality/realesrgan-general-x4v3.onnx");
+  std::string modelPath = getModelFilePath("quality/span-x4.onnx");
   // ① OpenVINO (avox_openvino plugin 装了 + GPU/CPU 可用)
   //    plugin 没装时 openvinoEngineHub.create 返回 nullptr, 自然降级 ORT
   ovEngine.reset(AvoxManager::Get().openvinoEngineHub.create("openvino"));
@@ -111,7 +111,7 @@ bool VkQEnhanceLayer::loadModel() {
   ovEngine.reset();
   // ② ORT CPU 兜底 (现状路径; 8线程: SRVGGNetCompact 串行网络调度开销小)
   OnnxModelUser user;
-  onnxSession = user.session(OnnxModel::RealESRGanX4V3, false, 0, 8);
+  onnxSession = user.session(OnnxModel::QualitySpanX4, false, 0, 8);
   if (!onnxSession) {
     log(LogLevel::error, "VkQEnhanceLayer: load model failed (OpenVINO + ORT)");
     return false;

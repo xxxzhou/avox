@@ -251,7 +251,7 @@ struct Anime4KParamet {
 
 // 画质增强模型选择
 enum class QualityModel : int32_t {
-  RealESRGanX4V3 = 0,  // general-x4v3, 1.21M 参数, 盲退化恢复
+  SpanX4 = 0,  // SPAN 4x (NomosUni-span-multijpg), 盲退化恢复, 比旧 x4v3 轻 2 倍级
 };
 // 画质增强输出模式
 enum class QualityOutputMode : int32_t {
@@ -263,7 +263,7 @@ enum class QualityOutputMode : int32_t {
   Auto = 3,       // ≥1080P → Upscale2x, <1080P → Upscale4x
 };
 struct QualityEnhanceParamet {
-  QualityModel model = QualityModel::RealESRGanX4V3;
+  QualityModel model = QualityModel::SpanX4;
   QualityOutputMode outputMode = QualityOutputMode::Upscale2x;
   int32_t skipFrames = 5;  // 抽帧间隔 (0=每帧都处理, N=每N帧处理一次, 默认5)
   bool operator==(const QualityEnhanceParamet& r) const {

@@ -23,8 +23,7 @@ enum class OnnxModel {
   TransEnc,      // translation encoder fp32 (非 Android)
   TransDecInt8,  // translation decoder int8 (非 Android)
   TransDec,      // translation decoder fp32 (非 Android)
-  RealESRGanX4V3,      // Real-ESRGAN general-x4v3 画质增强 FP32
-  RealESRGanX4V3Int8,  // 同上 INT8 (conv-only QDQ 量化, PReLU 保 FP32; Intel CPU VNNI 加速)
+  QualitySpanX4,       // SPAN 4x-NomosUni-span-multijpg 画质增强 (CC-BY-4.0; fp16 图 fp32 IO)
   Wav2ArkitCpu,        // wav2arkit 音频->ARKit52 blendshape (虚拟人口型; 16kHz PCM->[1,frames,52])
   MediaPipeFaceDetector,    // MediaPipe 视频驱动 BlazeFace 检测: 任意帧 -> 896 候选 (takoyakisoft 导出; input[1,128,128,3] NHWC RGB norm[-1,1] -> regressors[1,896,16](box4+6kp×2 线性/128)+classificators[1,896,1]; reverseOutputOrder box=[xc,yc,w,h])
   MediaPipeFaceLandmarker,  // MediaPipe 视频驱动: 256x256 人脸裁剪 -> 478 landmarks (Google 官方 .task 经 takoyakisoft VisionOnnxExporter 导出; input_12[B,256,256,3] NHWC -> Identity[B,1,1,1434]=478x3 landmark-major + presence + scalar)

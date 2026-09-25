@@ -96,7 +96,7 @@ bool CpuQEnhancer::init(const QualityEnhanceParamet& p, int32_t sw,
 }
 
 bool CpuQEnhancer::loadModel() {
-  std::string modelPath = getModelFilePath("quality/realesrgan-general-x4v3.onnx");
+  std::string modelPath = getModelFilePath("quality/span-x4.onnx");
   ovEngine.reset(AvoxManager::Get().openvinoEngineHub.create("openvino"));
   if (ovEngine && ovEngine->loadModel(modelPath, inferH, inferW, scale)) {
     useOpenVino = true;
@@ -114,7 +114,7 @@ bool CpuQEnhancer::loadModel() {
 #else
       false;
 #endif
-  onnxSession = user.session(OnnxModel::RealESRGanX4V3, bGpuInfer, 0, 8);
+  onnxSession = user.session(OnnxModel::QualitySpanX4, bGpuInfer, 0, 8);
   if (!onnxSession) {
     return false;
   }

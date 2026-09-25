@@ -331,7 +331,7 @@ int main(int argc, char* argv[]) {
   // 输出尺寸由增强器按档位在 onReady 自动声明(setVideoDesc 不用)
   recorder->getOption()->setBool("rec.hard.encode", hardEnc);
   QualityEnhanceParamet qparamet = {};
-  qparamet.model = QualityModel::RealESRGanX4V3;
+  qparamet.model = QualityModel::SpanX4;
   qparamet.outputMode = outputModeOf(mode);
   qparamet.skipFrames = 0;
   recorder->enableQualityEnhance(qparamet);
