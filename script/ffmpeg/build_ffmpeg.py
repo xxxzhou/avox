@@ -13,7 +13,7 @@ import sys
 #   minsize-gpl AGPL 渠道白名单版 (minsize + libx264/libx265)
 #
 # 2026-09 NAS 实测扩展: minsize 白名单补老媒体编解码(RMVB/WMV/MPG/老AVI/3GP 等),
-#   demuxer +rm/mpegps/mpegvideo, decoder +mpeg1/2/4,h263,wmv1/2/3,vc1,flv1,rv10-40,
+#   demuxer +rm/mpegps/mpegvideo, decoder +mpeg1/2/4,h263,wmv1/2/3,vc1,flv,rv10-40,
 #   cook,sipr,atrac3,wmav1/2,wmapro,pcm_s16be, parser +mpeg4video,vc1; 全部 LGPL, 许可不变。
 #
 # 2026-09 常用扩展(四平台脚本同步): 补齐 webm/无损音乐/相机与监控素材的常见 LGPL
@@ -37,6 +37,11 @@ import sys
 #   构建依赖: MSYS2 mingw64 需 vulkan-headers/vulkan-loader 包(linux 需 libvulkan-dev);
 #   运行时 vulkan-1.dll/libvulkan.so.1 由 GPU 驱动自带, 不随包分发。
 #   包体增量实测口径: avcodec/avutil 合计约 +0.5~1MB (hwaccel 对象+hwcontext_vulkan)。
+#
+# 2026-09-25 flv1 事故修复(四平台脚本同步): 解码器组件名是 flv, 不是 flv1(那是 codec id);
+#   写 flv1 被 configure 静默忽略 → 五平台部署库都没有 FLV/Sorenson 解码器, flv1 全平台播不了。
+#   同批清理 2 个无效名: parser mp3(正确名 mpegaudio, 已在列表)、protocol rtsp(9.0 无此协议,
+#   rtsp 是 demuxer)。改脚本不影响已部署库, 必须重编; 步骤与白名单缺口见 doc/build/FFmpeg构建.md
 #
 # 环境变量:
 #   MSYS2_INSTALL_DIR  MSYS2 根目录 (默认 C:\msys64)
@@ -91,8 +96,10 @@ COMMON_OPTIONS = [
 # 后半段(mpeg1video 起)为 2026-09 NAS 实测扩展的老媒体解码器, 见文件头说明
 # 注意: 各段字符串末尾必须带逗号再拼接 —— 曾因 "…pcm_s16be" + "vp8,…" 段间无
 # 逗号熔成 "pcm_s16bevp8", configure 静默忽略未知组件, vp8/pcm_s16be 双双丢失
+# 组件名取自 ffmpeg 源码, 不是 codec id: flv1 只是 codec id, 解码器组件名是 flv
+#   (libavcodec/flvdec.c: .p.name = "flv"); 写 flv1 被静默忽略, FLV/Sorenson 视频解不出
 MINIMUM_DECODERS = ("h264,hevc,aac,mp3,opus,ac3,pcm_alaw,pcm_mulaw,pcm_s16le,pcm_s24le,"
-                    "mpeg1video,mpeg2video,mpeg4,h263,flv1,"      # 老AVI/3GP/FLV/MPG
+                    "mpeg1video,mpeg2video,mpeg4,h263,flv,"       # 老AVI/3GP/FLV/MPG
                     "wmv1,wmv2,wmv3,vc1,"                          # ASF/WMV
                     "rv10,rv20,rv30,rv40,"                         # RealVideo
                     "cook,sipr,atrac3,"                            # RealAudio
@@ -122,7 +129,8 @@ MINIMUM_HWACCELS = ("h264_d3d11va,h264_d3d11va2,hevc_d3d11va,hevc_d3d11va2,"
                     # vulkan 硬解备选(FFVkDecoder): 驱动侧要求 VK_KHR_video_decode_*
                     "h264_vulkan,hevc_vulkan,vp9_vulkan,av1_vulkan")
 MINIMUM_ENCODERS = "h264_mf,hevc_mf,aac"   # 商业渠道; h264_mf/hevc_mf 为系统自带 MFT
-MINIMUM_PARSERS = ("h264,hevc,aac,mp3,opus,ac3,mpegaudio,mpegvideo,mpeg4video,vc1"
+# 注: 没有 mp3 parser —— mp3 音频帧解析走 mpegaudio(已在列表); 写 mp3 会被静默忽略
+MINIMUM_PARSERS = ("h264,hevc,aac,opus,ac3,mpegaudio,mpegvideo,mpeg4video,vc1"
                    ",vp8,vp9,av1,vorbis,flac,dca,aac_latm,amr,mjpeg")
 # mpegvideo parser 必须与 mpegps/mpegvideo demuxer 同步启用(2026-09-24 风月宝鉴.mpg
 # 全片花屏根因): MPEG-PS/裸ES 视频流 need_parsing, 无 parser 时 PES 块不重组整帧
@@ -131,8 +139,10 @@ MINIMUM_PARSERS = ("h264,hevc,aac,mp3,opus,ac3,mpegaudio,mpegvideo,mpeg4video,vc
 # eac3 无独立 parser, 勿加; mpeg4video/vc1 为 wmv3/vc1/mpeg4 帧内解析需要。
 MINIMUM_BSF = "h264_mp4toannexb,hevc_mp4toannexb,aac_adtstoasc,extract_extradata"
 # 直播/点播/文件: rtmp 系 + rtsp 系 + http(s) 系 + hls(crypto=AES 解密) + file
-# 后续需要 SRT: 装 libsrt + --enable-libsrt --enable-protocol=srt
-MINIMUM_PROTOCOLS = "file,http,https,tcp,udp,rtp,rtmp,rtmps,rtsp,tls,srtp,crypto,data,pipe"
+# 后续需要 SRT: 装 libsrt + --enable-libsrt --enable-protocol=libsrt(协议名是 libsrt, 不是 srt)
+# 注: FFmpeg 9.0 没有 rtsp 协议 —— rtsp 是 demuxer(已在 MINIMUM_DEMUXERS), 传输走
+#   tcp/udp/http + rtp; 写 rtsp 会被 configure 静默忽略
+MINIMUM_PROTOCOLS = "file,http,https,tcp,udp,rtp,rtmp,rtmps,tls,srtp,crypto,data,pipe"
 # 后三项(rm,mpegps,mpegvideo)为老媒体扩展。注意: FFmpeg 新版 MPEG-PS demuxer 的
 # configure 名是 mpegps(旧名 mpeg 已废弃, 传 mpeg 会被 configure 静默忽略不报错);
 # mpegvideo 是裸 MPEG-1/2 ES 流(.mpg 探测失败时靠它兜底)
