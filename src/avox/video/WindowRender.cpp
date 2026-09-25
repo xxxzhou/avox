@@ -18,6 +18,7 @@
 #include "avox_egl/EglWindow.hpp"
 #endif
 #ifdef __APPLE__
+#include <TargetConditionals.h>
 #include "avox_apple/MetalWindow.hpp"
 #endif
 
@@ -330,10 +331,10 @@ void WindowRender::onRunTask() {
     if (sleepTick > 50000 && syncResult != SyncResult::slow) {
       // tick -> ms
       std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || (defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
     } else {
-      // 兜底短睡仅移动端: 追帧/余量<5ms 全速自旋会在手机钉满一个大核发热
-      // (9/25 真机定案); PC 保原全速行为不设下限(快速转码/高倍速吃吞吐)。
+      // 兜底短睡仅移动端(Android/iOS): 追帧/余量<5ms 全速自旋会在手机钉满
+      // 一个大核发热(9/25 真机定案); PC 保原全速行为(快速转码吃吞吐)。
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
 #endif
     }
