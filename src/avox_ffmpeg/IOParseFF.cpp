@@ -16,6 +16,13 @@
 
 namespace avox {
 
+// http 段缓存参数: 段 256KB 整段抓取(顺序前进每段才一次重连); 普通段预算
+// 8MB LRU; 驱逐后 10s 内又被要的段视为交错锚点(音轨扎堆区)升级进 4MB 钉住区
+static constexpr int64_t kHttpSegSize = 256 * 1024;
+static constexpr int64_t kHttpSegLruBytes = 8 * 1024 * 1024;
+static constexpr int64_t kHttpSegPinBytes = 4 * 1024 * 1024;
+static constexpr int64_t kHttpSegAnchorWinMs = 10 * 1000;
+
 // FFmpeg av_log 级别 -> avox LogLevel
 static LogLevel ffToAvoxLevel(int ffLevel) {
   switch (ffLevel) {
@@ -364,15 +371,16 @@ int IOParseFF::reopenInput() {
   }
   // 强制重复发送 SPS/PPS
   // av_dict_set(&dict, "repeat_headers", "1", 0);
-  // 多 mdat mp4(http 直链)特治: mov demuxer 打开时扫顶层 box 并对每个 leaf
-  // box avio_skip——本地是 lseek 无感, http 下超过缓冲的大 skip 就是一次断连
-  // 重连(~150ms/次)。迅雷/Twitch 逐段落盘的 mp4 每 GOP 一个 mdat(实测一片
-  // 9117 个), open 需逐个跳完整个文件, 卡 11 分钟+(表现为一直 opening)。
-  // 解法(仅 http): avio_open2 自开通道并预扫头部拿第一 mdat 末尾, 套自定义
-  // wrapper 后, open_input 窗口内对 AVSEEK_SIZE 谎报文件大小=该末尾, mov 扫
-  // 描在第一个 mdat 处即命中 "box 末尾==avio_size" 早退(FFmpeg9 mov.c:9967)。
-  // 该分支不设 next_root_atom(毒只在非 seekable/ignidx 分支), 样本索引照建;
-  // open 一返回即停止谎报, 读/seek 全走原生路径
+  // http 直链 wrapper+段缓存: 迅雷/Twitch 等逐段拼装的 mp4 两类病灶——①多
+  // mdat 结构 mov 打开时逐 leaf box avio_skip, 每 box 一次断连重连(~150ms/次,
+  // 实测一片 9117 个 mdat 卡 11 分钟+); ②音频轨锚在文件头/尾与视频读位相距
+  // 数十 MB, 按 DTS 交错吐包每包一次跨 MB range 重连(实测每秒内容 ~70 包,
+  // 播 60s 只走 42s, playing/buffering 永动, 用户表现为时间来回跳+一直缓冲)。
+  // 解法: 全量 http 走 avio_open2 自开通道 + 自定义 wrapper; 预扫命中多 mdat
+  // 时在 open_input 窗口内对 AVSEEK_SIZE 谎报文件大小=第一 mdat 末尾, mov 扫
+  // 描在第一个 mdat 处早退(FFmpeg9 mov.c:9967, 该分支不设 next_root_atom 毒,
+  // 样本索引照建); 读路径经 256KB 段缓存, 回跳落缓存零重连, 顺序前进每段才
+  // 一次重连。open 返回即停谎报, seek 只记账, 底层位置归段抓取管
   const AVInputFormat* probeFmt = nullptr;
   const bool bHttpUrl =
       url.rfind("http://", 0) == 0 || url.rfind("https://", 0) == 0;
@@ -380,20 +388,18 @@ int IOParseFF::reopenInput() {
     // 协议级选项(timeout/reconnect/UA/headers 等)由 avio_open2 消费, 其余
     // 留在 dict 给 avformat_open_input(demuxer 级), 与原生路径各取所需一致
     if (avio_open2(&httpPb, url.c_str(), AVIO_FLAG_READ,
-                   &temp->interrupt_callback, &dict) >= 0 &&
-        prescanHttpBoxes()) {
-      // 4MB wrapper 缓冲: seek 后 FFmpeg 的 V/A 交替挑选在相邻 chunk(高码率
-      // 片源可达 MB 级)间来回, 小缓冲下每跳都是一次 http range 重连(实测
-      // 300 包 109 连), 大缓冲则全部落入缓冲内/读丢弃路径
+                   &temp->interrupt_callback, &dict) >= 0) {
+      const bool bMultiMdat = prescanHttpBoxes();
+      // 4MB wrapper 缓冲: 吸收探测期反复回卷与段间小跳; seekable 继承底层
+      // 真实能力(不可寻址的直播 http 不能谎报, 否则 demuxer 决策全歪)
       constexpr int32_t kWrapBufSize = 4 * 1024 * 1024;
       wrapPb = getUniquePtr(avio_alloc_context(
           (uint8_t*)av_malloc(kWrapBufSize), kWrapBufSize, 0, this, wrapReadCb,
           nullptr, wrapSeekCb));
       if (wrapPb) {
-        wrapPb->seekable = AVIO_SEEKABLE_NORMAL;
+        wrapPb->seekable = httpPb->seekable;
         temp->pb = wrapPb.get();
-        // 预扫已把底层通道读到头部窗口/mdat 头: wrapper 从文件 0 起映射,
-        // 回卷底层供首读(仅命中文件多一次重连)
+        // 预扫直接读了底层通道: wrapper 从文件 0 起映射, 回卷供首读
         avio_seek(httpPb, 0, SEEK_SET);
         // 探测在谎报窗口外(wrapper 可 seek 正常回卷); 失败置空让 open_input
         // 自行再探, 与原生路径同语义
@@ -401,11 +407,11 @@ int IOParseFF::reopenInput() {
                                    0, 0) < 0) {
           probeFmt = nullptr;
         }
-        bLieSize = true;
+        bLieSize = bMultiMdat;
+      } else {
+        // wrapper 建不起来: 拆自开通道, 原生 avformat_open_input 自开兜底
+        closeCustomAvio();
       }
-    } else if (httpPb) {
-      // 常规文件/预扫未命中: 关掉自开通道, 原生 avformat_open_input 自开
-      closeCustomAvio();
     }
   }
   int ret = avformat_open_input(&temp, url.c_str(), probeFmt, &dict);
@@ -509,12 +515,21 @@ void IOParseFF::closeCustomAvio() {
   fmtCtx.reset();
   // 连带 av_free 当前缓冲(libavformat 可能已 realloc 替换过)
   wrapPb.reset();
+  // 段缓存连带清空(底层通道随闭失效, 缓存无存在意义)
+  segIdxLru.clear();
+  segIdxPin.clear();
+  segEvictMs.clear();
+  segLru.clear();
+  segPin.clear();
+  segLruBytes = 0;
+  segPinBytes = 0;
   if (httpPb) {
     // avio_open2 打开的必须 avio_close(连 URLContext 一起释放)
     avio_closep(&httpPb);
   }
   bLieSize = false;
   mdat1End = 0;
+  wrapPos = 0;
 }
 
 int IOParseFF::wrapReadCb(void* opaque, uint8_t* buf, int size) {
@@ -522,7 +537,11 @@ int IOParseFF::wrapReadCb(void* opaque, uint8_t* buf, int size) {
   if (!self || !self->httpPb) {
     return AVERROR(EIO);
   }
-  return avio_read(self->httpPb, buf, size);
+  const int n = self->wrapReadAt(buf, size, self->wrapPos);
+  if (n > 0) {
+    self->wrapPos += n;
+  }
+  return n;
 }
 
 int64_t IOParseFF::wrapSeekCb(void* opaque, int64_t offset, int whence) {
@@ -531,11 +550,128 @@ int64_t IOParseFF::wrapSeekCb(void* opaque, int64_t offset, int whence) {
     return AVERROR(EIO);
   }
   // 谎报窗口(avformat_open_input 期间): AVSEEK_SIZE 报第一 mdat 末尾, mov
-  // 顶层扫描即刻命中早退; 其余 seek/AVSEEK_SIZE 原样转发底层
+  // 顶层扫描即刻命中早退
   if (self->bLieSize && (whence & AVSEEK_SIZE)) {
     return self->mdat1End;
   }
-  return avio_seek(self->httpPb, offset, whence);
+  // 其余 AVSEEK_SIZE 问底层真实大小; SEEK_END 也须先有大小才能折算
+  if ((whence & AVSEEK_SIZE) || (whence & ~AVSEEK_FORCE) == SEEK_END) {
+    const int64_t sz = avio_seek(self->httpPb, 0, AVSEEK_SIZE);
+    if (sz < 0) {
+      return sz;
+    }
+    if (whence & AVSEEK_SIZE) {
+      return sz;
+    }
+    offset += sz;
+  } else if ((whence & ~AVSEEK_FORCE) == SEEK_CUR) {
+    offset += self->wrapPos;
+  } else if ((whence & ~AVSEEK_FORCE) != SEEK_SET) {
+    return AVERROR(EINVAL);
+  }
+  // seek 只记账(数据面全在段缓存, 命中零底层调用; 未命中由抓取搬底层)
+  if (offset < 0) {
+    return AVERROR(EINVAL);
+  }
+  self->wrapPos = offset;
+  return offset;
+}
+
+int IOParseFF::wrapReadAt(uint8_t* buf, int size, int64_t pos) {
+  const int64_t segStart = pos / kHttpSegSize * kHttpSegSize;
+  HttpSeg* seg = touchHttpSeg(segStart);
+  if (!seg) {
+    return AVERROR(EIO);
+  }
+  const int64_t inSeg = pos - seg->off;
+  const int64_t avail = (int64_t)seg->data.size() - inSeg;
+  if (avail <= 0) {
+    // 短段=文件尾, 段尾之后无数据
+    return AVERROR_EOF;
+  }
+  const int n = (int)std::min<int64_t>(size, avail);
+  memcpy(buf, seg->data.data() + inSeg, n);
+  return n;
+}
+
+IOParseFF::HttpSeg* IOParseFF::touchHttpSeg(int64_t segStart) {
+  auto hit = segIdxPin.find(segStart);
+  if (hit != segIdxPin.end()) {
+    return &*hit->second;
+  }
+  hit = segIdxLru.find(segStart);
+  if (hit != segIdxLru.end()) {
+    segLru.splice(segLru.begin(), segLru, hit->second);
+    segIdxLru[segStart] = segLru.begin();
+    return &segLru.front();
+  }
+  // 驱逐后短期又被要: 该段是交错锚点(音轨扎堆区), 钉住不再驱逐
+  const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now().time_since_epoch())
+                            .count();
+  auto evict = segEvictMs.find(segStart);
+  const bool bAnchor =
+      evict != segEvictMs.end() && nowMs - evict->second < kHttpSegAnchorWinMs;
+  return fetchHttpSeg(segStart, bAnchor);
+}
+
+IOParseFF::HttpSeg* IOParseFF::fetchHttpSeg(int64_t segStart, bool bAnchor) {
+  if (avio_seek(httpPb, segStart, SEEK_SET) < 0) {
+    return nullptr;
+  }
+  HttpSeg seg;
+  seg.off = segStart;
+  seg.data.resize(kHttpSegSize);
+  // avio_read 短读常见(socket 边界), 循环凑满; 仅 EOF 允许入库短段(文件尾),
+  // 错误/打断的半截段不入缓存(否则段耗尽误判文件尾提前 EOF)
+  int64_t total = 0;
+  while (total < kHttpSegSize) {
+    const int n =
+        avio_read(httpPb, seg.data.data() + total, (int)(kHttpSegSize - total));
+    if (n == AVERROR_EOF) {
+      break;
+    }
+    if (n <= 0) {
+      return nullptr;
+    }
+    total += n;
+  }
+  if (total <= 0) {
+    return nullptr;
+  }
+  seg.data.resize((size_t)total);
+  auto& lst = bAnchor ? segPin : segLru;
+  auto& idx = bAnchor ? segIdxPin : segIdxLru;
+  auto& bytes = bAnchor ? segPinBytes : segLruBytes;
+  lst.push_front(std::move(seg));
+  idx[segStart] = lst.begin();
+  bytes += total;
+  // 超预算从链表尾驱逐(钉住区至少保留刚入库的这段)
+  while (bytes > (bAnchor ? kHttpSegPinBytes : kHttpSegLruBytes) &&
+         lst.size() > (size_t)(bAnchor ? 1 : 0)) {
+    evictHttpSeg(bAnchor);
+  }
+  // 防呆: 驱逐台账只增不清长流场景占内存, 超限整表重置(锚点记忆自愈)
+  if (segEvictMs.size() > 4096) {
+    segEvictMs.clear();
+  }
+  return &lst.front();
+}
+
+void IOParseFF::evictHttpSeg(bool bPin) {
+  auto& lst = bPin ? segPin : segLru;
+  auto& idx = bPin ? segIdxPin : segIdxLru;
+  auto& bytes = bPin ? segPinBytes : segLruBytes;
+  if (lst.empty()) {
+    return;
+  }
+  const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now().time_since_epoch())
+                            .count();
+  segEvictMs[lst.back().off] = nowMs;
+  bytes -= (int64_t)lst.back().data.size();
+  idx.erase(lst.back().off);
+  lst.pop_back();
 }
 
 void IOParseFF::onRunTask() {

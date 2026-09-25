@@ -1,9 +1,11 @@
 #pragma once
 
 #include <deque>
+#include <list>
 #include <memory>
 #include <mutex>
 #include <set>
+#include <unordered_map>
 
 #include "FFHelper.hpp"
 #include "avox/module/Json.hpp"
@@ -22,14 +24,29 @@ public:
 
 protected:
   AVFormatContextPtr fmtCtx = nullptr;
-  // 多 mdat mp4(http 直链)特治的 wrapper avio(细节见 reopenInput 注释):
-  // httpPb=avio_open2 自开的底层 http 通道; wrapPb=fmtCtx->pb 指向的自定义
-  // wrapper(缓冲 4MB); bLieSize=avformat_open_input 窗口内 AVSEEK_SIZE 谎报
-  // 开关(仅 IO 线程读写); mdat1End=预扫所得第一个 mdat 末尾(0=未启用)
+  // http wrapper avio+段缓存(细节见 reopenInput 注释): httpPb=avio_open2 自开
+  // 的底层 http 通道; wrapPb=fmtCtx->pb 指向的自定义 wrapper(缓冲 4MB);
+  // bLieSize=avformat_open_input 窗口内 AVSEEK_SIZE 谎报开关(仅 IO 线程读写);
+  // mdat1End=预扫所得第一个 mdat 末尾(0=未启用)
   AVIOContext* httpPb = nullptr;
   AVIOContextPtr wrapPb = nullptr;
   bool bLieSize = false;
   int64_t mdat1End = 0;
+  // http 段缓存(仅 IO 线程碰): 病态交错封装(逐段拼装的 mp4, 音轨锚在头部/
+  // 尾部, 与视频读位相距数十 MB)在 http 下按 DTS 交错吐包, 每包一次跨 MB
+  // range 重连喂不动; 段缓存把 V/A 交替吸收进内存
+  struct HttpSeg {
+    int64_t off = 0;
+    std::vector<uint8_t> data;
+  };
+  std::list<HttpSeg> segLru;  // 普通段, 超预算从链表尾驱逐
+  std::list<HttpSeg> segPin;  // 锚点段(驱逐后短期重抓), 不参与普通驱逐
+  std::unordered_map<int64_t, std::list<HttpSeg>::iterator> segIdxLru;
+  std::unordered_map<int64_t, std::list<HttpSeg>::iterator> segIdxPin;
+  std::unordered_map<int64_t, int64_t> segEvictMs;  // 段驱逐时刻, 重抓判锚点
+  int64_t segLruBytes = 0;
+  int64_t segPinBytes = 0;
+  int64_t wrapPos = 0;  // wrapper 逻辑读位(seek 只记账, 底层位置归段抓取管)
   AVBSFContextPtr bsf = nullptr;
   std::vector<uint8_t> aacData;
   AudioDesc audioDesc = {};
@@ -80,9 +97,19 @@ private:
   // 释放 wrapper+底层 avio: 先放 fmtCtx(CUSTOM_IO 下 close_input 不动 pb),
   // 再放 wrapper(缓冲随上下文一起), 最后 avio_closep 底层 http 通道
   void closeCustomAvio();
-  // wrapper 回调: 读原样转发底层; seek 转发, 但谎报窗口内 AVSEEK_SIZE 返回 mdat1End
+  // wrapper 回调: 读经段缓存服务, seek 只记账不触底层; 谎报窗口内 AVSEEK_SIZE
+  // 返回 mdat1End, 其余 AVSEEK_SIZE 问底层真实大小
   static int wrapReadCb(void* opaque, uint8_t* buf, int size);
   static int64_t wrapSeekCb(void* opaque, int64_t offset, int whence);
+  // 段缓存读: pos 所在段命中直拷, 未命中底层抓整段; 只服务段内区间, 跨段由
+  // avio 下轮 fill_buffer 接力
+  int wrapReadAt(uint8_t* buf, int size, int64_t pos);
+  // 段命中(普通段提升 LRU 头), 未命中转抓取; 返回可服务段
+  HttpSeg* touchHttpSeg(int64_t segStart);
+  // 底层 seek+循环读抓整段(短读循环凑满, EOF 取实际量); bAnchor=true 入钉住区
+  HttpSeg* fetchHttpSeg(int64_t segStart, bool bAnchor);
+  // 驱逐对应区链表尾段: 记驱逐时刻(锚点判定)并摘表
+  void evictHttpSeg(bool bPin);
   // PGS 位图字幕解码(§3.6): 选中该轨时 IO 循环喂包, 出 RGBA 画布
   bool parsePgsFrame(int32_t streamId, const AVPacket* pkt, int64_t ptsMs);
   // seek 落点校验: 直读 fmtCtx 到首个视频包记落点(ms), 到首个关键视频包停
