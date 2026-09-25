@@ -56,5 +56,10 @@ if __name__ == "__main__":
             build_common.build_module("sentencepiece", onlyMake, SPM_CMAKE_ARGS)
     # Agent/Tool 仅 Windows, 其他平台关闭
     extra_args = "-DAVOX_ENABLE_AGENT=OFF -DAVOX_ENABLE_CLI=OFF -DAVOX_ENABLE_SWIG=OFF"
+    # onnxruntime.cmake 无 iOS 预编译(仅 Linux/macOS/Windows), iOS 关 AI 插件(CV/OCR/AVATAR 随之);
+    # vulkan 需 VulkanSDK/iOS(MoltenVK), 缺省关闭, 装好后 AVOX_IOS_VULKAN=1 打开
+    extra_args += " -DAVOX_ENABLE_ONNX=OFF"
+    if os.environ.get("AVOX_IOS_VULKAN", "0") != "1":
+        extra_args += " -DAVOX_ENABLE_VULKAN=OFF"
     extra_args = f"{extra_args} -DAVOX_DIST_FLAVOR={DIST_FLAVOR}"
     build_common.build_self(extra_args)
