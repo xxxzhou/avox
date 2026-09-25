@@ -94,6 +94,8 @@ IOParseFF::~IOParseFF() {
   // 析构不经 close(): 本级先打断再 join, 拖到 ~RunTask 时 fmtCtx 已析构(线程还在 av_read_frame 会 UAF)
   bStopIo = true;
   stopTask();
+  // 线程已 join: 先放 fmtCtx 再关 wrapper/底层 http(CUSTOM_IO 下 pb 归本级管)
+  closeCustomAvio();
 }
 
 bool IOParseFF::parseStream(int32_t streamId, AVCodecParameters* codecpar) {
@@ -362,15 +364,178 @@ int IOParseFF::reopenInput() {
   }
   // 强制重复发送 SPS/PPS
   // av_dict_set(&dict, "repeat_headers", "1", 0);
-  int ret = avformat_open_input(&temp, url.c_str(), nullptr, &dict);
+  // 多 mdat mp4(http 直链)特治: mov demuxer 打开时扫顶层 box 并对每个 leaf
+  // box avio_skip——本地是 lseek 无感, http 下超过缓冲的大 skip 就是一次断连
+  // 重连(~150ms/次)。迅雷/Twitch 逐段落盘的 mp4 每 GOP 一个 mdat(实测一片
+  // 9117 个), open 需逐个跳完整个文件, 卡 11 分钟+(表现为一直 opening)。
+  // 解法(仅 http): avio_open2 自开通道并预扫头部拿第一 mdat 末尾, 套自定义
+  // wrapper 后, open_input 窗口内对 AVSEEK_SIZE 谎报文件大小=该末尾, mov 扫
+  // 描在第一个 mdat 处即命中 "box 末尾==avio_size" 早退(FFmpeg9 mov.c:9967)。
+  // 该分支不设 next_root_atom(毒只在非 seekable/ignidx 分支), 样本索引照建;
+  // open 一返回即停止谎报, 读/seek 全走原生路径
+  const AVInputFormat* probeFmt = nullptr;
+  const bool bHttpUrl =
+      url.rfind("http://", 0) == 0 || url.rfind("https://", 0) == 0;
+  if (bHttpUrl) {
+    // 协议级选项(timeout/reconnect/UA/headers 等)由 avio_open2 消费, 其余
+    // 留在 dict 给 avformat_open_input(demuxer 级), 与原生路径各取所需一致
+    if (avio_open2(&httpPb, url.c_str(), AVIO_FLAG_READ,
+                   &temp->interrupt_callback, &dict) >= 0 &&
+        prescanHttpBoxes()) {
+      // 4MB wrapper 缓冲: seek 后 FFmpeg 的 V/A 交替挑选在相邻 chunk(高码率
+      // 片源可达 MB 级)间来回, 小缓冲下每跳都是一次 http range 重连(实测
+      // 300 包 109 连), 大缓冲则全部落入缓冲内/读丢弃路径
+      constexpr int32_t kWrapBufSize = 4 * 1024 * 1024;
+      wrapPb = getUniquePtr(avio_alloc_context(
+          (uint8_t*)av_malloc(kWrapBufSize), kWrapBufSize, 0, this, wrapReadCb,
+          nullptr, wrapSeekCb));
+      if (wrapPb) {
+        wrapPb->seekable = AVIO_SEEKABLE_NORMAL;
+        temp->pb = wrapPb.get();
+        // 预扫已把底层通道读到头部窗口/mdat 头: wrapper 从文件 0 起映射,
+        // 回卷底层供首读(仅命中文件多一次重连)
+        avio_seek(httpPb, 0, SEEK_SET);
+        // 探测在谎报窗口外(wrapper 可 seek 正常回卷); 失败置空让 open_input
+        // 自行再探, 与原生路径同语义
+        if (av_probe_input_buffer2(wrapPb.get(), &probeFmt, url.c_str(), temp,
+                                   0, 0) < 0) {
+          probeFmt = nullptr;
+        }
+        bLieSize = true;
+      }
+    } else if (httpPb) {
+      // 常规文件/预扫未命中: 关掉自开通道, 原生 avformat_open_input 自开
+      closeCustomAvio();
+    }
+  }
+  int ret = avformat_open_input(&temp, url.c_str(), probeFmt, &dict);
+  bLieSize = false;
   av_dict_free(&dict);
   if (ret < 0) {
     AVOX_FFMEPG_LOG(ret, "avformat_open_input failed")
     avformat_free_context(temp);
+    closeCustomAvio();
     return ret;
   }
   fmtCtx = getUniquePtr(temp);
   return 0;
+}
+
+// http 头部预扫: 顺序读一个 64KB 窗口解析顶层 box(faststart 的 ftyp/moov 头
+// 乃至小 moov 后的 mdat 头都在窗口内, 常规文件零 seek 零额外连接); moov 过大
+// 时 mdat 头落窗口外, 用一次 seek+16B 读补齐。命中「moov 后跟 mdat 且该 mdat
+// 不延伸到文件尾」的多 box 结构(逐段落盘特征)返回 true 并记 mdat1End; 常规
+// 单 mdat(含 moov 在尾/无 moov)返回 false 走原生路径
+bool IOParseFF::prescanHttpBoxes() {
+  mdat1End = 0;
+  if (!httpPb) {
+    return false;
+  }
+  constexpr int32_t kWinSize = 64 * 1024;
+  std::vector<uint8_t> win(kWinSize);
+  const int32_t n = avio_read(httpPb, win.data(), kWinSize);
+  if (n < 8) {
+    return false;
+  }
+  int64_t fileSize = -1;
+  bool sawMoov = false;
+  int64_t off = 0;
+  for (int32_t i = 0; i < 16; i++) {
+    int64_t size = 0;
+    uint32_t type = 0;
+    if (off + 8 <= n) {
+      size = AV_RB32(win.data() + off);
+      type = AV_RL32(win.data() + off + 4);
+      if (size == 1) {
+        // largesize 跨窗: 罕见, 放弃
+        if (off + 16 > n) {
+          return false;
+        }
+        size = (int64_t)AV_RB64(win.data() + off + 8);
+      } else if (size == 0) {
+        // box 到文件尾
+        if (fileSize < 0) {
+          fileSize = avio_size(httpPb);
+        }
+        size = fileSize - off;
+      }
+    } else {
+      // 窗口尽: 仅在已见 moov 时补读下一个 box 头(命中文件多一次重连)
+      if (!sawMoov) {
+        return false;
+      }
+      uint8_t hdr[16] = {};
+      if (avio_seek(httpPb, off, SEEK_SET) < 0) {
+        return false;
+      }
+      const int32_t m = avio_read(httpPb, hdr, 16);
+      if (m < 8) {
+        return false;
+      }
+      size = AV_RB32(hdr);
+      type = AV_RL32(hdr + 4);
+      if (size == 1) {
+        if (m < 16) {
+          return false;
+        }
+        size = (int64_t)AV_RB64(hdr + 8);
+      }
+    }
+    if (size < 8) {
+      return false;  // 坏 box
+    }
+    const int64_t nextOff = off + size;
+    if (type == AV_RL32("moov")) {
+      sawMoov = true;
+    } else if (type == AV_RL32("mdat") && sawMoov) {
+      if (fileSize < 0) {
+        fileSize = avio_size(httpPb);
+      }
+      if (fileSize > 0 && nextOff < fileSize) {
+        // mdat 后还有 box: 多 mdat 结构, 命中
+        mdat1End = nextOff;
+        return true;
+      }
+      // 单 mdat 到文件尾: 常规文件
+      return false;
+    }
+    off = nextOff;
+  }
+  return false;
+}
+
+void IOParseFF::closeCustomAvio() {
+  // 先放 fmtCtx: CUSTOM_IO 下 avformat_close_input 不管 pb, 生命周期归本级
+  fmtCtx.reset();
+  // 连带 av_free 当前缓冲(libavformat 可能已 realloc 替换过)
+  wrapPb.reset();
+  if (httpPb) {
+    // avio_open2 打开的必须 avio_close(连 URLContext 一起释放)
+    avio_closep(&httpPb);
+  }
+  bLieSize = false;
+  mdat1End = 0;
+}
+
+int IOParseFF::wrapReadCb(void* opaque, uint8_t* buf, int size) {
+  auto* self = static_cast<IOParseFF*>(opaque);
+  if (!self || !self->httpPb) {
+    return AVERROR(EIO);
+  }
+  return avio_read(self->httpPb, buf, size);
+}
+
+int64_t IOParseFF::wrapSeekCb(void* opaque, int64_t offset, int whence) {
+  auto* self = static_cast<IOParseFF*>(opaque);
+  if (!self || !self->httpPb) {
+    return AVERROR(EIO);
+  }
+  // 谎报窗口(avformat_open_input 期间): AVSEEK_SIZE 报第一 mdat 末尾, mov
+  // 顶层扫描即刻命中早退; 其余 seek/AVSEEK_SIZE 原样转发底层
+  if (self->bLieSize && (whence & AVSEEK_SIZE)) {
+    return self->mdat1End;
+  }
+  return avio_seek(self->httpPb, offset, whence);
 }
 
 void IOParseFF::onRunTask() {

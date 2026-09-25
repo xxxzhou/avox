@@ -22,6 +22,14 @@ public:
 
 protected:
   AVFormatContextPtr fmtCtx = nullptr;
+  // 多 mdat mp4(http 直链)特治的 wrapper avio(细节见 reopenInput 注释):
+  // httpPb=avio_open2 自开的底层 http 通道; wrapPb=fmtCtx->pb 指向的自定义
+  // wrapper(缓冲 4MB); bLieSize=avformat_open_input 窗口内 AVSEEK_SIZE 谎报
+  // 开关(仅 IO 线程读写); mdat1End=预扫所得第一个 mdat 末尾(0=未启用)
+  AVIOContext* httpPb = nullptr;
+  AVIOContextPtr wrapPb = nullptr;
+  bool bLieSize = false;
+  int64_t mdat1End = 0;
   AVBSFContextPtr bsf = nullptr;
   std::vector<uint8_t> aacData;
   AudioDesc audioDesc = {};
@@ -65,6 +73,16 @@ private:
   void onSelectedSubtitle(int32_t localIndex) override;
   // avformat_open_input(重)打开, fmtCtx 接管; FFmpeg9 保底补查须重开, 不能同上下文二次探测
   int reopenInput();
+  // http 头部预扫(顺序读 64KB 窗口, 常规文件零额外连接): 识别「moov 之后跟
+  // mdat 且该 mdat 不延伸到文件尾」的多 box 结构(迅雷/Twitch 逐段落盘产物),
+  // 命中则记第一 mdat 末尾到 mdat1End
+  bool prescanHttpBoxes();
+  // 释放 wrapper+底层 avio: 先放 fmtCtx(CUSTOM_IO 下 close_input 不动 pb),
+  // 再放 wrapper(缓冲随上下文一起), 最后 avio_closep 底层 http 通道
+  void closeCustomAvio();
+  // wrapper 回调: 读原样转发底层; seek 转发, 但谎报窗口内 AVSEEK_SIZE 返回 mdat1End
+  static int wrapReadCb(void* opaque, uint8_t* buf, int size);
+  static int64_t wrapSeekCb(void* opaque, int64_t offset, int whence);
   // PGS 位图字幕解码(§3.6): 选中该轨时 IO 循环喂包, 出 RGBA 画布
   bool parsePgsFrame(int32_t streamId, const AVPacket* pkt, int64_t ptsMs);
   // seek 落点校验: 直读 fmtCtx 到首个视频包记落点(ms), 到首个关键视频包停
