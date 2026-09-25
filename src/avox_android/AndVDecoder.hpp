@@ -2,6 +2,7 @@
 #include <android/surface_texture.h>
 #include <android/surface_texture_jni.h>
 #include <media/NdkMediaCodec.h>
+#include <deque>
 #include <queue>
 
 #include "AndCommon.hpp"
@@ -43,6 +44,10 @@ private:
 
   // 按 codecDesc 建 codec+format(onVaild 与 seek复位重建共用)
   bool createCodec();
+
+  // input buffer 耗尽时的待喂包深拷贝队列: 直接丢包=缺slice宏块花屏(9/25 真机)
+  std::deque<std::vector<uint8_t>> pendingPackets;
+  std::deque<int64_t> pendingPts;
 
 public:
   void updateYuvFormat();

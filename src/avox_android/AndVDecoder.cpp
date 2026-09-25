@@ -315,36 +315,46 @@ DecodeResult AndVDecoder::decode(const AvoxPacket& packet) {
   if (!bOpen) {
     return onPreDecoder();
   }
-  // 1.0 取buffer，填充数据，入队
-  ssize_t bufidx = AMediaCodec_dequeueInputBuffer(
-      mediaCodec, AVOX_ANDROID_MEDIACODEC_TIMEOUT_US);
-  if (bufidx >= 0) {
-    // 当取不到空buffer的时候，有可能是解码慢跟不上输入速度，导致buffer不够用
-    // 所以还需要在后面继续取解码后的数据。
+  // 1.0 当前包先入待喂队列再统一入队: input buffer 全占时直接丢包=缺slice
+  // 宏块花屏(9/25 真机硬解定案), 未入队的包跨调用补喂, seek复位清空
+  pendingPackets.emplace_back(packet.data.data,
+                              packet.data.data + packet.data.size);
+  pendingPts.push_back(packet.pts);
+  while (!pendingPackets.empty()) {
+    ssize_t bufidx = AMediaCodec_dequeueInputBuffer(
+        mediaCodec, AVOX_ANDROID_MEDIACODEC_TIMEOUT_US);
+    if (bufidx < 0) {
+      // 输入buffer都占着: 有可能是解码慢跟不上输入速度, 留到下轮补喂,
+      // 先走后面的输出排空腾位
+      break;
+    }
     size_t bufsize = 0;
     uint8_t* buf = AMediaCodec_getInputBuffer(mediaCodec, bufidx, &bufsize);
+    auto& data = pendingPackets.front();
     // 新增缓冲区大小检查
-    if (packet.data.size > bufsize) {
+    if (data.size() > bufsize) {
       log(LogLevel::warn,
           "android video decoder input buffer overflow bufsize:", bufsize,
-          " packetSize:", packet.data.size);
+          " packetSize:", data.size());
       AMediaCodec_queueInputBuffer(mediaCodec, bufidx, 0, 0, 0,
                                    AMEDIACODEC_BUFFER_FLAG_PARTIAL_FRAME);
-      return DecodeResult::dataNoReady;
+    } else {
+      memcpy(buf, data.data(), data.size());
+      // 入队列 给到解码器
+      AMediaCodec_queueInputBuffer(mediaCodec, bufidx, 0, data.size(),
+                                   pendingPts.front() * 1000, 0);
+      if (andPtsLog()) {
+        fprintf(stderr, "APTS in=%lld\n", (long long)pendingPts.front());
+      }
     }
-    memcpy(buf, packet.data.data, packet.data.size);
-    // 入队列 给到解码器
-    AMediaCodec_queueInputBuffer(mediaCodec, bufidx, 0, packet.data.size,
-                                 packet.pts * 1000, 0);
-    if (andPtsLog()) {
-      fprintf(stderr, "APTS in=%lld\n", (long long)packet.pts);
-    }
+    pendingPackets.pop_front();
+    pendingPts.pop_front();
   }
   // 2 取输出，拿走数据，归还buffer
   size_t bufsize = 0;
   while (mediaCodec) {
     AMediaCodecBufferInfo info = {};
-    bufidx = AMediaCodec_dequeueOutputBuffer(mediaCodec, &info, 0);
+    ssize_t bufidx = AMediaCodec_dequeueOutputBuffer(mediaCodec, &info, 0);
     if (yuvFormat.width == 0 || yuvFormat.height == 0) {
       updateYuvFormat();
     }
@@ -434,6 +444,8 @@ void AndVDecoder::flush() {
 
 void AndVDecoder::onClose() {
   bOpen = false;
+  pendingPackets.clear();
+  pendingPts.clear();
   if (mediaCodec) {
     // AMediaCodec_flush(mediaCodec);
     AMediaCodec_stop(mediaCodec);
