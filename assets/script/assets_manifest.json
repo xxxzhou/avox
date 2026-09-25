@@ -330,7 +330,7 @@
         "source.spm",
         "target.spm"
       ],
-      "note": "已量化 INT8, 无需 optimum 导出/WSL 量化。C++ 仅加载这 4 个文件。release 的 translation-opus-mt-ja-zh.zip 是 HuggingFace cache 脏结构故不用, 改逐文件 LFS 取。 spm 与 HF shun89/opus-mt-ja-zh 逐字节一致; onnx 为本地 optimum 量化, 无公开同字节镜像, 备用 media 直连。"
+      "note": "已量化 INT8, 无需 optimum 导出/WSL 量化。C++ 仅加载这 4 个文件。release 的 translation-opus-mt-ja-zh.zip 是 HuggingFace cache 脏结构故不用, 改逐文件 LFS 取。 spm 与 HF shun89/opus-mt-ja-zh 逐字节一致; onnx 为本地 optimum 量化, 无公开同字节镜像, 备用路: jsDelivr(按 commit 钉死, 国内可达; 仓库已豁免该文件 LFS 否则 CDN 只吐指针)→media 直连。"
     },
     {
       "id": "quality_span_x4",
@@ -347,6 +347,8 @@
           "size_mb": 0.9,
           "sha256": "3835361fa8f4e96844097fb68870641fc1ab0c134d6eb033697461616d568f06",
           "mirrors": [
+            "https://cdn.jsdelivr.net/gh/xxxzhou/avox_model@be9a8f8bb7a0de194daf6d57f21804f4acbc6b2f/assets/models/quality/span-x4.onnx",
+            "https://fastly.jsdelivr.net/gh/xxxzhou/avox_model@be9a8f8bb7a0de194daf6d57f21804f4acbc6b2f/assets/models/quality/span-x4.onnx",
             "https://media.githubusercontent.com/media/xxxzhou/avox_model/main/assets/models/quality/span-x4.onnx"
           ]
         }
@@ -354,7 +356,7 @@
       "verify_files": [
         "span-x4.onnx"
       ],
-      "note": "SPAN 4x 盲退化 SR (CC-BY-4.0, 权重 helaman/NomosUni-span-multijpg, spandrel 转 ONNX fp16 图 fp32 IO)。**必须用 DepthToSpace 图重写版**(DML 对 D2S 动态尺寸/fp16 有版本性崩溃, 重写=Shape/Gather/Concat 驱动 Reshape+Transpose, 位精确; 工具 panvox_enh_repro/span/rewrite_d2s.py)。720p 9070XT DML 实测 53.3ms/帧 (旧 x4v3 152.5ms 的 2.9 倍); 引擎长片 soak 2500 帧零失败。全标准算子 CUDA EP 天然兼容。文件小走普通 git, 不走 LFS。备用 media 直连。"
+      "note": "SPAN 4x 盲退化 SR (CC-BY-4.0, 权重 helaman/NomosUni-span-multijpg, spandrel 转 ONNX fp16 图 fp32 IO)。**必须用 DepthToSpace 图重写版**(DML 对 D2S 动态尺寸/fp16 有版本性崩溃, 重写=Shape/Gather/Concat 驱动 Reshape+Transpose, 位精确; 工具 panvox_enh_repro/span/rewrite_d2s.py)。720p 9070XT DML 实测 53.3ms/帧 (旧 x4v3 152.5ms 的 2.9 倍); 引擎长片 soak 2500 帧零失败。全标准算子 CUDA EP 天然兼容。文件小走普通 git, 不走 LFS。备用路: jsDelivr(按 commit 钉死, 国内可达; 仓库已豁免该文件 LFS 否则 CDN 只吐指针)→media 直连。"
     },
     {
       "id": "avatar_wav2arkit",
@@ -548,7 +550,7 @@
           "note": "iOS 强制静态链接 (onnxruntime.framework/.a), 无运行时独立库; 且 iOS 不允许动态加载第三方库。"
         }
       },
-      "note": "v1.23.2 运行时库, avox_onnx/inpaint/ocr/translation 共用。注意: 必须使用静态链 VC 运行时的版本 (14.4MB, 无 MSVCP140 依赖); 微软官方 CPU release (动态链 MSVCP140, 13.5MB) 在 plugins/ 目录下 DllMain 初始化失败 (err=1114)。windows CPU 模式只需 onnxruntime.dll; CUDA(GPU) 模式另需 onnxruntime_providers_shared.dll + CUDA 运行时库, 不在此自动获取。 avox_library 目录已改名 onnxruntime-win-x64-MT-Release-1.23.2 (commit 25182111), 旧路径 URL 404 已修; 备用 media 直连。"
+      "note": "v1.23.2 运行时库, avox_onnx/inpaint/ocr/translation 共用。注意: 必须使用静态链 VC 运行时的版本 (14.4MB, 无 MSVCP140 依赖); 微软官方 CPU release (动态链 MSVCP140, 13.5MB) 在 plugins/ 目录下 DllMain 初始化失败 (err=1114)。windows CPU 模式只需 onnxruntime.dll; CUDA(GPU) 模式另需 onnxruntime_providers_shared.dll + CUDA 运行时库, 不在此自动获取。 avox_library 目录已改名 onnxruntime-win-x64-MT-Release-1.23.2 (commit 25182111), 旧路径 URL 404 已修; 备用路: jsDelivr(按 commit 钉死, 国内可达; 仓库已豁免该文件 LFS 否则 CDN 只吐指针)→media 直连。"
     },
     {
       "id": "openvino_dll",
