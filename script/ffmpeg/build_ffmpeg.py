@@ -115,7 +115,26 @@ MINIMUM_DECODERS += ("vp8,vp9,av1,theora,mjpeg,mjpegb,dvvideo,prores,"
                      "adpcm_ms,adpcm_ima_wav,adpcm_g726,adpcm_g726le,"
                      "alac,ape,aac_latm,"                           # 无损音乐/TS LATM
                      "pcm_dvd,pcm_bluray,dsd_lsbf,dsd_msbf,"        # 原盘LPCM/DSD
-                     "pgssub")                                      # PGS 位图字幕(a01-T4; PgsDecoder 走 pgssubdec)
+                     "pgssub,")                                     # PGS 位图字幕(a01-T4; PgsDecoder 走 pgssubdec)
+# 2026-09-25 补充(四平台同步): P0 字幕 + P1 常用老格式/摄像机/监控/国标/缩图,
+#   全部为原生 LGPL 组件; 组件名已逐个 configure 实测 CONFIG_*_DECODER=1
+#   (口径与完整缺口清单见 doc/build/FFmpeg构建.md §4; P2 的 adpcm_*/pcm_* 全家暂不收)
+MINIMUM_DECODERS += ("movtext,ass,ssa,subrip,srt,webvtt,dvbsub,dvdsub,text,"   # P0 字幕(源码已映射, 库里缺)
+                     "h261,h263i,h263p,vp6,vp6a,vp6f,svq1,svq3,"              # 老网络视频/QuickTime
+                     "cinepak,indeo3,indeo4,indeo5,qtrle,rpza,smc,"            # 老 AVI/MOV
+                     "cscd,tscc,tscc2,truemotion1,truemotion2,"                # 录屏/老编解码
+                     "fraps,utvideo,lagarith,hap,magicyuv,ffv1,huffyuv,ffvhuff,"  # 无损中间格式
+                     "msrle,msvideo1,mszh,zmbv,flashsv,flashsv2,"              # 老 AVI/Flash
+                     "dnxhd,cfhd,cllc,hq_hqa,hqx,"                             # 摄像机/后期素材
+                     "cavs,avs,vvc,"                                           # 国标 AVS / H.266
+                     "rawvideo,bitpacked,v210,v210x,yuv4,"                     # 裸流/专业
+                     "png,apng,gif,webp,bmp,"                                  # 缩图管线与封面
+                     "mp1,gsm,gsm_ms,nellymoser,speex,ilbc,"                    # 老音频/语音
+                     "wavpack,tta,shorten,tak,als,mpc7,mpc8,"                   # 无损音频
+                     "qdm2,qdmc,on2avc,imc,mace3,mace6,twinvq,truespeech,"      # QuickTime/老音频
+                     "atrac1,atrac3p,atrac9,dss_sp,wmavoice,wmalossless,xma1,xma2,"  # 游戏/语音
+                     "evrc,qcelp,g728,g729,mp3on4,siren,comfortnoise,"          # 语音/监控
+                     "aptx,aptx_hd,sbc,s302m,dolby_e,")                         # 蓝牙/专业音频
 # hwaccel 是 avcodec 独立组件, --disable-everything 会连它一起裁掉;
 # 不显式加回则 ff_get_format 拿不到 D3D11 配置, 硬解逐帧静默回退软解 (09-10 排查结论)。
 # 注意 FFmpeg9 拆了新旧两个组件: d3d11va(legacy, D3D11VA_VLD, 不支持 hw_device_ctx)
@@ -148,7 +167,12 @@ MINIMUM_PROTOCOLS = "file,http,https,tcp,udp,rtp,rtmp,rtmps,tls,srtp,crypto,data
 # mpegvideo 是裸 MPEG-1/2 ES 流(.mpg 探测失败时靠它兜底)
 MINIMUM_DEMUXERS = ("mov,matroska,flv,live_flv,mpegts,hls,avi,asf,aac,mp3,ogg,wav,rtsp,sdp,ac3,"
                     "rm,mpegps,mpegvideo,"
-                    "flac,ape,amr,dsf")   # 常用扩展: 无损音乐/录音/DSD 裸文件
+                    "flac,ape,amr,dsf,")  # 常用扩展: 无损音乐/录音/DSD 裸文件
+# 2026-09-25 补充(四平台同步): 外挂字幕容器 + 常见音频容器/裸流, 配合上面新增的解码器
+MINIMUM_DEMUXERS += ("srt,ass,webvtt,microdvd,sami,subviewer,subviewer1,realtext,pjs,mpl2,"
+                     "jacosub,vplayer,stl,vobsub,"
+                     "aiff,caf,w64,au,tta,wv,shorten,tak,mpc,mpc8,dts,eac3,xwma,"
+                     "ivf,swf,image2,image2pipe,rawvideo,concat,")
 MINIMUM_MUXERS = "mp4,mov,flv,mpegts,matroska,adts"
 
 FLAVORS = ("gpl", "lgpl", "minsize", "minsize-gpl")
