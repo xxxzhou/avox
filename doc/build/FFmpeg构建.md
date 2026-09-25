@@ -32,7 +32,7 @@ configure 遇到不认识的组件名**静默忽略、不报错不警告**，于
 ## 1. 四平台重编步骤
 
 产物落位统一在 `3rdparty/library/<平台>/ffmpeg/{include,lib}`(Windows 另有 `bin/` 放运行时 dll)。
-重编前先确认源码是 **FFmpeg 9.0.x**(现有部署库 avcodec 版本 62.1.101，五平台一致)。
+重编前先确认源码是 **FFmpeg 9.0.x**(现有部署库 avcodec 版本 63.1.101，五平台一致)。
 
 ### Windows (MSYS2 / mingw64)
 
@@ -112,8 +112,8 @@ grep CONFIG_FLV_DECODER build-*/config_components.h
 
 | 类别 | 数量 | 备注 |
 |---|---|---|
-| decoder | 62 | 含本次修好的 `flv` |
-| demuxer | 22 | |
+| decoder | 164 | 含 `flv` 修复 + 2026-09-25 P0 字幕与 P1 老格式扩充(§4) |
+| demuxer | 55 | 含外挂字幕容器与音频容器(2026-09-25 扩充) |
 | muxer | 6 | |
 | parser | 18 | 含 2026-09-24 补的 `mpegvideo`(MPEG-PS 花屏根因) |
 | bsf | 4 | |
