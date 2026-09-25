@@ -21,6 +21,31 @@ AndAudioRender::AndAudioRender() {}
 
 AndAudioRender::~AndAudioRender() { close(); }
 
+jobject AndAudioRender::createTrack(JNIEnv *env, int32_t sampleRate,
+                                    int32_t channels, int32_t bits) {
+  jobject jAudioTrack =
+      env->NewObject(jmAudioTrack.audioTrackClass, jmAudioTrack.init);
+  if (!jAudioTrack) {
+    return nullptr;
+  }
+  int32_t status = env->CallIntMethod(jAudioTrack, jmAudioTrack.create,
+                                      sampleRate, channels, bits);
+  if (env->ExceptionCheck()) {
+    env->ExceptionDescribe();
+    env->ExceptionClear();
+  }
+  if (status != 0) {
+    // create失败(如声道数/位深不支持)时Java侧已Destroy, buffer为空, 不能再持有
+    LOGFLF(LogLevel::warn, "audio track create fail, status:", status,
+           " ch:", channels);
+    env->DeleteLocalRef(jAudioTrack);
+    return nullptr;
+  }
+  jobject global = env->NewGlobalRef(jAudioTrack);
+  env->DeleteLocalRef(jAudioTrack);
+  return global;
+}
+
 void AndAudioRender::onInit() {
   if (!desc.bValid()) {
     LOGFLF(LogLevel::warn, "desc is not valid");
@@ -35,28 +60,26 @@ void AndAudioRender::onInit() {
     LOGFLF(LogLevel::warn, "not find audio track class");
     return;
   }
-  jobject jAudioTrack =
-      env->NewObject(jmAudioTrack.audioTrackClass, jmAudioTrack.init);
-  if (!jAudioTrack) {
-    LOGFLF(LogLevel::warn, "not create audio track");
-    return;
-  }
   int32_t bits = audioFormatSize(desc.format) * 8;
-  int32_t status = env->CallIntMethod(jAudioTrack, jmAudioTrack.create,
-                                      desc.sampleRate, desc.channels, bits);
-  if (env->ExceptionCheck()) {
-    env->ExceptionDescribe();
-    env->ExceptionClear();
+  jobject track = createTrack(env, desc.sampleRate, desc.channels, bits);
+#ifdef AVOX_ENABLE_FFMPEG
+  if (!track && desc.channels > 2) {
+    // 多声道轨建不出来时不降级会无人消费,帧队列涨满堵死整条播放管线
+    AudioDesc devDesc = desc;
+    devDesc.channels = 2;
+    if (devResample.init(desc, devDesc)) {
+      track = createTrack(env, devDesc.sampleRate, 2, bits);
+      devConvert = (track != nullptr);
+      if (devConvert) {
+        LOGFLF(LogLevel::info, "audio track downmix to stereo");
+      }
+    }
   }
-  if (status != 0) {
-    // create失败(如声道数/位深不支持)时Java侧已Destroy, buffer为空, 不能再持有
-    LOGFLF(LogLevel::warn, "audio track create fail, status:", status);
-    env->DeleteLocalRef(jAudioTrack);
+#endif
+  if (!track) {
     return;
   }
-  // 保持一个全局引用
-  audioTrack = env->NewGlobalRef(jAudioTrack);
-  env->DeleteLocalRef(jAudioTrack);
+  audioTrack = track;
   // 开始播放
   env->CallVoidMethod(audioTrack, jmAudioTrack.start);
   //
@@ -75,6 +98,15 @@ void AndAudioRender::onRender(const AvoxData& frame) {
     return;
   }
   JNIEnv* env = AvoxManager::Get().getEnv();
+  AvoxData out = frame;
+#ifdef AVOX_ENABLE_FFMPEG
+  if (devConvert) {
+    int32_t converted = devResample.resample(out);
+    if (converted <= 0) {
+      return;
+    }
+  }
+#endif
   // 获取要写入的音频数据区域
   jbyteArray jaudioBuffer =
       (jbyteArray)env->CallObjectMethod(audioTrack, jmAudioTrack.getDataBuffer);
@@ -84,12 +116,12 @@ void AndAudioRender::onRender(const AvoxData& frame) {
   }
   uint8_t* pAudioOutBuff = (uint8_t*)env->GetByteArrayElements(jaudioBuffer, 0);
   // 拷贝数据到缓冲区
-  memcpy(pAudioOutBuff, frame.data, frame.size);
+  memcpy(pAudioOutBuff, out.data, out.size);
   // 将缓冲区内容复制回 Java 数组
   env->ReleaseByteArrayElements(jaudioBuffer, (jbyte*)pAudioOutBuff, 0);
   // 写入音频数据, AudioTrack.write是阻塞的
   int32_t lWriteLen =
-      env->CallIntMethod(audioTrack, jmAudioTrack.write, frame.size);
+      env->CallIntMethod(audioTrack, jmAudioTrack.write, out.size);
   env->DeleteLocalRef(jaudioBuffer);
   int32_t msPre = desc.sampleRate / 1000;
   // getPosition返回是秒,去掉msPre,表示毫秒
