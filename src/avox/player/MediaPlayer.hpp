@@ -39,8 +39,10 @@ class MediaPlayer : public IMediaPlayer,
  protected:
   // 埋点
   std::unique_ptr<MPPingQueue> mpPingback;
-  // 解网络协议
-  std::unique_ptr<AVSource> ioSource;
+  // 解网络协议。shared_ptr: getSourceInfoSafe 跨线程托付引用计数, 换片/close
+  // 拆源时外部仍持引用不悬垂; ioMtx 只护指针本身(叶子锁, 持锁不调外部)
+  std::shared_ptr<AVSource> ioSource;
+  std::mutex ioMtx;
   std::unique_ptr<AVSource> ioTest;
   // 视频解码(缓存数据都在这里面)
   std::vector<VideoTrackPtr> videoTracks;
@@ -261,6 +263,7 @@ class MediaPlayer : public IMediaPlayer,
   virtual int64_t getStartTime() override;
 
   virtual ISourceInfo* getSourceInfo() override;
+  virtual std::shared_ptr<ISourceInfo> getSourceInfoSafe() override;
   virtual void setSubtitleTrack(int32_t index) override;
   virtual void setAudioTrack(int32_t index) override;
   virtual bool loadSubtitle(const char* path) override;

@@ -823,6 +823,12 @@ ISourceInfo* MediaPlayer::getSourceInfo() {
   return nullptr;
 }
 
+std::shared_ptr<ISourceInfo> MediaPlayer::getSourceInfoSafe() {
+  // 引用计数托付: 调用方持有期间即使并发close/换片拆源, 对象也不会释放
+  std::lock_guard<std::mutex> lock(ioMtx);
+  return ioSource;
+}
+
 double MediaPlayer::getRate(TrackType type, bool bAvg) {
   int32_t index = 0;
   if (type == TrackType::video) {
@@ -1509,7 +1515,11 @@ void MediaPlayer::cmdOpen(OpenCommandPtr cmd) {
   ioBaseTime = 0;
   // 查找注册并调用初始化方法生成IoParse
   const auto& ioclass = AvoxManager::Get().ioSources.initFunc(useIO);
-  ioSource = std::unique_ptr<AVSource>(ioclass.initFunc());
+  {
+    // 与 getSourceInfoSafe 的托付互斥: 拆旧赋新对外原子(持锁不调外部, 叶子锁)
+    std::lock_guard<std::mutex> lock(ioMtx);
+    ioSource = std::unique_ptr<AVSource>(ioclass.initFunc());
+  }
   // 测试
   // const auto &ioclass1 =
   // AvoxManager::Get().ioSources.initFunc(IoPlan::ffmpeg); ioTest =
@@ -1609,7 +1619,11 @@ void MediaPlayer::cmdClose() {
     mediaMuxer->close();
     rawMuxer->close();
     ioSource->close();
-    ioSource.reset();
+    {
+      // 与 getSourceInfoSafe 的托付互斥: 已托付出去的引用持有者不受reset影响
+      std::lock_guard<std::mutex> lock(ioMtx);
+      ioSource.reset();
+    }
     // 记录
     PBMediaAction pb = {};
     pb.mediaObject = MediaObject::io;

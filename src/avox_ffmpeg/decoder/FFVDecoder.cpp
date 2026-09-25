@@ -43,11 +43,10 @@ DecodeResult FFVDecoder::onPreDecoder() {
       (codecId == AV_CODEC_ID_H265 && configPackets.size() < 3)) {
     return DecodeResult::noConfig;
   }
-  // 如果codecCtx已经存在,说明在重置
-  if (codecCtx) {
-    avcodec_flush_buffers(codecCtx.get());
-    codecCtx.reset();
-  }
+  // 如果codecCtx已经存在,说明在重置: 直接整体销毁。旧ctx随reset立即释放,
+  // 对它flush无意义, 且会打在上次open2失败残留的未open ctx上(internal空必崩)
+  bCtxOpened = false;
+  codecCtx.reset();
   // d3d11va/vulkan这些，非独立解码器，需要借助通用解码器，然后硬件加速
   // 在这借onAttachContext生成对应的d3d11/vulkan硬件环境
   const AVCodec* codec = nullptr;
@@ -123,6 +122,7 @@ DecodeResult FFVDecoder::onPreDecoder() {
   if (ret < 0) {
     return DecodeResult::openFailed;
   }
+  bCtxOpened = true;
   return DecodeResult::success;
 }
 
@@ -184,6 +184,7 @@ DecodeResult FFVDecoder::decode(const AvoxPacket& packet) {
 void FFVDecoder::flush() { flushContext(); }
 
 void FFVDecoder::onClose() {
+  bCtxOpened = false;
   if (codecCtx) {
     codecCtx.reset();
   }

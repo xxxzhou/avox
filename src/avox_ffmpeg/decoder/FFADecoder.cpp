@@ -38,6 +38,7 @@ DecodeResult FFADecoder::onPreDecoder() {
   }
   auto codec = avcodec_find_decoder(codecId);
   // av_parser_init(codecId);
+  bCtxOpened = false;
   codecCtx = getUniquePtr(avcodec_alloc_context3(codec));
   // 填充音频解码信息
   AVChannelLayout in_ch_layout = {};
@@ -78,6 +79,7 @@ DecodeResult FFADecoder::onPreDecoder() {
   if (ret < 0) {
     return DecodeResult::openFailed;
   }
+  bCtxOpened = true;
   // 如果输入是平面格式，输出转成非平面格式
   if (bAPlaneFormat(outDesc.format)) {
     outDesc.format = nPlaneFormat(outDesc.format);
@@ -115,6 +117,7 @@ DecodeResult FFADecoder::decode(const AvoxPacket& packet) {
 void FFADecoder::flush() { flushContext(); }
 
 void FFADecoder::onClose() {
+  bCtxOpened = false;
   if (codecCtx) {
     codecCtx.reset();
   }

@@ -106,7 +106,15 @@ bool CpuQEnhancer::loadModel() {
   }
   ovEngine.reset();
   OnnxModelUser user;
-  onnxSession = user.session(OnnxModel::RealESRGanX4V3, false, 0, 8);
+  // 桌面走 GPU EP(Windows=DirectML / Apple=CoreML, 插件内失败自动回 CPU);
+  // 移动端维持 CPU(画质增强入口已收口)。
+  const bool bGpuInfer =
+#if defined(_WIN32) || defined(__APPLE__)
+      true;
+#else
+      false;
+#endif
+  onnxSession = user.session(OnnxModel::RealESRGanX4V3, bGpuInfer, 0, 8);
   if (!onnxSession) {
     return false;
   }

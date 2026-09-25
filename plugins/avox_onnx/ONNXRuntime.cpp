@@ -1,6 +1,10 @@
 #include "ONNXRuntime.hpp"
 
 #include <onnxruntime_cxx_api.h>
+#if defined(_WIN32) && __has_include(<dml_provider_factory.h>)
+#include <dml_provider_factory.h>
+#define AVOX_ONNX_DML 1
+#endif
 #include <iostream>
 #include <algorithm>
 
@@ -9,6 +13,50 @@
 #include "avox/module/LogHelper.hpp"
 
 namespace avox {
+
+// Windows DirectML 先行(DX12, A/N/I 显卡通吃): 运行时为 DML 构建才有此 API
+// (CPU-only drop 的 OrtApi 表里函数指针为空), 不可用返回 false 落 CUDA/CPU。
+static bool appendDmlIfAvailable(Ort::SessionOptions& options, int deviceId) {
+#if defined(AVOX_ONNX_DML)
+  const OrtDmlApi* dmlApi = nullptr;
+  OrtStatus* st = Ort::GetApi().GetExecutionProviderApi(
+      "DML", ORT_API_VERSION, reinterpret_cast<const void**>(&dmlApi));
+  if (st != nullptr) {
+    Ort::GetApi().ReleaseStatus(st);
+    return false;
+  }
+  if (!dmlApi) return false;
+  return dmlApi->SessionOptionsAppendExecutionProvider_DML(options, deviceId) ==
+         nullptr;
+#else
+  (void)options;
+  (void)deviceId;
+  return false;
+#endif
+}
+
+static void appendCuda(Ort::SessionOptions& options, int deviceId) {
+  OrtCUDAProviderOptions cudaOptions;
+  cudaOptions.device_id = deviceId;
+  cudaOptions.arena_extend_strategy = 0;
+  cudaOptions.gpu_mem_limit = 2ULL * 1024 * 1024 * 1024;
+  cudaOptions.cudnn_conv_algo_search =
+      OrtCudnnConvAlgoSearch::OrtCudnnConvAlgoSearchExhaustive;
+  cudaOptions.do_copy_in_default_stream = true;
+  options.AppendExecutionProvider_CUDA(cudaOptions);
+}
+
+// 追加 GPU EP; 返回 true = IO 驻显存(仅 CUDA, DML/CPU 的 IO 仍在 CPU 内存)。
+static bool appendGpuExecutionProvider(Ort::SessionOptions& options,
+                                       int deviceId) {
+  if (appendDmlIfAvailable(options, deviceId)) {
+    LOGFLF(LogLevel::info, "onnx EP=DML device=", deviceId);
+    return false;
+  }
+  appendCuda(options, deviceId);
+  LOGFLF(LogLevel::info, "onnx EP=CUDA device=", deviceId);
+  return true;
+}
 
 ONNXSession::ONNXSession() = default;
 ONNXSession::~ONNXSession() { unloadModel(); }
@@ -44,20 +92,13 @@ static bool loadModelFromMemoryInternal(std::unique_ptr<Ort::Env>& env,
     sessionOptions.SetGraphOptimizationLevel(
         GraphOptimizationLevel::ORT_ENABLE_ALL);
 
-    if (useGPU) {
-      OrtCUDAProviderOptions cudaOptions;
-      cudaOptions.device_id = deviceId;
-      cudaOptions.arena_extend_strategy = 0;
-      cudaOptions.gpu_mem_limit = 2ULL * 1024 * 1024 * 1024;
-      cudaOptions.cudnn_conv_algo_search =
-          OrtCudnnConvAlgoSearch::OrtCudnnConvAlgoSearchExhaustive;
-      cudaOptions.do_copy_in_default_stream = true;
-      sessionOptions.AppendExecutionProvider_CUDA(cudaOptions);
-    }
+    // EP 追加: Windows 优先 DirectML(DX12, A/N/I 显卡通吃, 失败/缺失落 CUDA),
+    // DML/CPU 的输入输出仍在 CPU 内存(EP 内部搬运), 仅 CUDA 需 device memoryInfo。
+    const bool bGpuIo = useGPU && appendGpuExecutionProvider(sessionOptions, deviceId);
 
     session = std::make_unique<Ort::Session>(*env, modelData, modelSize, sessionOptions);
 
-    if (useGPU) {
+    if (bGpuIo) {
       memoryInfo = std::make_unique<Ort::MemoryInfo>(
           "Cuda", OrtDeviceAllocator, deviceId, OrtMemTypeDefault);
     } else {
@@ -117,16 +158,7 @@ static bool loadModelFromPathInternal(std::unique_ptr<Ort::Env>& env,
     sessionOptions.SetGraphOptimizationLevel(
         GraphOptimizationLevel::ORT_ENABLE_ALL);
 
-    if (useGPU) {
-      OrtCUDAProviderOptions cudaOptions;
-      cudaOptions.device_id = deviceId;
-      cudaOptions.arena_extend_strategy = 0;
-      cudaOptions.gpu_mem_limit = 2ULL * 1024 * 1024 * 1024;
-      cudaOptions.cudnn_conv_algo_search =
-          OrtCudnnConvAlgoSearch::OrtCudnnConvAlgoSearchExhaustive;
-      cudaOptions.do_copy_in_default_stream = true;
-      sessionOptions.AppendExecutionProvider_CUDA(cudaOptions);
-    }
+    const bool bGpuIo = useGPU && appendGpuExecutionProvider(sessionOptions, deviceId);
 
 #ifdef _WIN32
     std::wstring wModelPath = utf8TWstring(modelPath);
@@ -135,7 +167,7 @@ static bool loadModelFromPathInternal(std::unique_ptr<Ort::Env>& env,
     session = std::make_unique<Ort::Session>(*env, modelPath.c_str(), sessionOptions);
 #endif
 
-    if (useGPU) {
+    if (bGpuIo) {
       memoryInfo = std::make_unique<Ort::MemoryInfo>(
           "Cuda", OrtDeviceAllocator, deviceId, OrtMemTypeDefault);
     } else {

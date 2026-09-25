@@ -83,6 +83,7 @@ DecodeResult FFVEncoder::onPreEncoder() {
   if (desc.desc.fps > 0) {
     framerate.build(desc.desc.fps);
   }
+  bCtxOpened = false;
   codecCtx = getUniquePtr(avcodec_alloc_context3(codec));
   codecCtx->codec_type = AVMEDIA_TYPE_VIDEO;
   // desc.desc.type
@@ -140,6 +141,7 @@ DecodeResult FFVEncoder::onPreEncoder() {
     AVOX_FFMEPG_LOG(ret, "avcodec_open2 failed");
     return DecodeResult::openFailed;
   }
+  bCtxOpened = true;
   frame = getUniquePtr(av_frame_alloc());
   frameCount = 0;
   return DecodeResult::success;
@@ -259,7 +261,8 @@ DecodeResult FFVEncoder::encode(const YUVFrame& yframe) {
 }
 
 void FFVEncoder::flush() {
-  if (codecCtx) {
+  // 未open的ctx(alloc到open2之间/open2失败残留)internal为空, flush必崩
+  if (codecCtx && bCtxOpened) {
     avcodec_flush_buffers(codecCtx.get());
   }
 }

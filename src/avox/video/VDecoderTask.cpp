@@ -169,20 +169,19 @@ void VDecoderTask::addConfigRecord(ConfigAddType type) {
 }
 
 void VDecoderTask::flush() {
-  if (decode) {
-    decode->flush();
-  }
+  // 不直接decode->flush(): 本函数在命令线程跑, 同步flush会打进解码线程
+  // onPreDecoder的alloc→open2窗口(internal空, FFmpeg8 flush无守卫必崩,
+  // 9/25 16:15真机crash), 也可能与在解的包并发操作codecCtx
   // seek 会连同包队列一起清掉, 扣着的簇属于旧位置, 一起作废
   flattener.reset();
   // 解码器状态必须整体重建: hw车道(实测d3d11va) avcodec_flush_buffers 清不掉
   // h264 POC/frame_num, open-GOP 恢复点落点(non-IDR I帧带KEY标志)解码会
   // Frame num gap 螺旋到持续 0 帧(霍小玉.mkv seek冻结实证); 由解码线程在
-  // 下一轮循环消费本标志, 避免与在解的包并发操作 codecCtx
+  // 下一轮循环消费本标志(重建时在owner线程flush旧ctx), 避免并发操作codecCtx
   bResetCtx = true;
 }
 
 void VDecoderTask::onRunTask() {
-  TickChecker check(delayMs);
   // 输入连续排空的轮数阈值: 到它才认定 EOF 并放出尾簇
   const int32_t kTailIdleRounds = 300;
   int32_t idleRounds = 0;
@@ -204,8 +203,15 @@ void VDecoderTask::onRunTask() {
   bool bOpenDecode = false;
   // 视频轨是否真收到过帧: success会被重复参数集包空转返回污染, 看门狗只认实际产出
   bool bGotFrame = false;
+  // 首帧看门狗基准: 只累计"解码器持续吃得到输入"的时长(连续供给满delayMs仍
+  // 无帧才降级)。网络源打开阶段IO线程被参数探测占住不吐包(极空间直链实测
+  // TrueHD探测~5s)属饿等, 清零重记——不然硬解车道总在数据洪流到达前一刻被误杀
+  int64_t supplyMarkMs = 0;
   // 降级下一候选: 重建解码器并重放配置帧, 建不出/不支持跳下一个; open失败与首帧超时共用
   auto tryNextFallback = [&]() -> bool {
+    // 换道前记录旧车道是否交付过帧: 首帧前换道(起播阶段)才吸IDR换落点,
+    // 播放中换道画面已在出, 动落点会造成跳帧
+    bool bHadFrame = bGotFrame;
     while (!openFallbacks.empty()) {
       auto next = std::move(openFallbacks.front());
       openFallbacks.erase(openFallbacks.begin());
@@ -232,7 +238,24 @@ void VDecoderTask::onRunTask() {
       // 新解码器需要重新证明自己交付帧, 看门狗重新计时
       bGotFrame = false;
       bOpenDecode = false;
-      check.reset();
+      supplyMarkMs = 0;
+      // 起播阶段换道: 视频队列吸到下一个关键帧起解。换道时IO已灌了数秒包,
+      // 新车道若从GOP中段起解只会产出缺参考坏帧(实测POC 0/6/12连环报错);
+      // 摊平器扣着的半簇同属旧落点, 随队列一起作废。队列无IDR(直播尾簇)
+      // 则保持原位不动
+      if (!bHadFrame) {
+        int32_t dropped = trackContext->getPacketQueue().dropUntil(
+            [](const PacketBufPtr& pkt) {
+              return !pkt->configType() && pkt->frameType == 1;
+            });
+        if (dropped >= 0) {
+          flattener.reset();
+          LOGFLF(LogLevel::info, "fallback landing snap to idr, dropped:",
+                 dropped);
+        } else {
+          LOGFLF(LogLevel::info, "fallback landing keep position, no idr");
+        }
+      }
       LOGFLF(LogLevel::warn, "video decoder fallback to:", next.first.name);
       // 埋点透出换道事实(判定/分诊面): 首选名没交付, 实际交付的是候选名
       PBMediaAction fb = {};
@@ -388,17 +411,28 @@ void VDecoderTask::onRunTask() {
     if (!bGotFrame && trackContext->getFrameQueue().size() > 0) {
       bGotFrame = true;
     }
-    if (!bGotFrame && check.timeout()) {
-      // 首帧看门狗超时(选中但不交付帧, 如vulkan会话建出后驱动不产帧): 降级下一候选
-      if (tryNextFallback()) {
-        // 死车道已把本地流吞到EOF: 回0重读让新车道从关键帧起解, 否则永远等不到数据
-        if (mediaPlayer->ioExhausted() && mediaPlayer->seekable()) {
-          mediaPlayer->seek(0);
+    // 首帧看门狗: 只在持续吃得到输入时计时(本轮喂进包/队列有货/摊平器有簇),
+    // 饿等清零重记; 连续供给满delayMs仍无帧才认定车道死(如vulkan会话建出后
+    // 驱动不产帧)
+    {
+      int64_t nowMs = timeStampMS();
+      if (!bGotFrame &&
+          (bGet || !packetQueue.empty() || flattener.pending())) {
+        if (supplyMarkMs == 0) {
+          supplyMarkMs = nowMs;
+        } else if (nowMs - supplyMarkMs > delayMs && tryNextFallback()) {
+          // 死车道已把本地流吞到EOF: 回0重读让新车道从关键帧起解, 否则永远等不到数据
+          if (mediaPlayer->ioExhausted() && mediaPlayer->seekable()) {
+            mediaPlayer->seek(0);
+          }
+          continue;
+        } else if (nowMs - supplyMarkMs > delayMs) {
+          trackContext->onDecodeError(DecodeResult::timeout);
+          return;
         }
-        continue;
+      } else if (!bGotFrame) {
+        supplyMarkMs = 0;
       }
-      trackContext->onDecodeError(DecodeResult::timeout);
-      return;
     }
     // 超过4倍后只解码I帧,相反可以慢下来了
     if (speed > 2 && speed <= 4) {

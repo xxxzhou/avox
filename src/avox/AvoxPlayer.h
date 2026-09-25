@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include "AvoxMuxer.h"
 #include "AvoxSource.h"
 
@@ -285,6 +287,11 @@ class IMediaPlayer {
   virtual float getLossRate(TrackType type) = 0;
   // 获取实时帧率
   virtual double getFps() = 0;
+
+  // 生命周期安全版getSourceInfo: shared_ptr引用计数托管, 播放器并发close/
+  // 换片拆源时对象不会中途释放。getSourceInfo裸指针在异步close下存在UAF
+  // 窗口(9/25真机crash), 跨线程枚举轨道一律用本接口
+  virtual std::shared_ptr<ISourceInfo> getSourceInfoSafe() { return nullptr; }
 };
 
 // 针对外挂IRawSource的简单播放器,没有音视频相关队列与同步

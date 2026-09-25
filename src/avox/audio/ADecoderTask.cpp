@@ -103,6 +103,12 @@ void ADecoderTask::onRunTask() {
       sleepTask(false, 10);
       continue;
     }
+    // seek冲刷由音频线程自己执行: 命令线程直接flush会与在解的包/换道重建
+    // 窗口并发操作codecCtx(internal空必崩, 9/25 16:15视频道同根crash)
+    if (bFlushCtx) {
+      bFlushCtx = false;
+      decode->flush();
+    }
     bool bGet = trackContext->getPacketQueue().dequeueAction(
         [&](const PacketBufPtr& packetPtr) { tempPtr->form(*packetPtr); });
     if (bGet) {
@@ -189,7 +195,7 @@ void ADecoderTask::addConfigRecord(ConfigAddType type) {
 
 void ADecoderTask::flush() {
   if (decode) {
-    decode->flush();
+    bFlushCtx = true;
   }
 }
 

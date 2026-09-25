@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <functional>
 #include <mutex>
 #include <vector>
@@ -34,6 +35,8 @@ class ADecoderTask : public IPlayerContext, public RunTask {
   std::vector<PacketBufPtr> configPkts;
   // 回退后重置打开判定, 让超时检查重新起算
   bool bFallbackTried = false;
+  // flush请求: 命令线程只置位, 音频线程在onRunTask消费执行(防跨线程操作codecCtx)
+  std::atomic<bool> bFlushCtx{false};
 
  public:
   bool start(class AudioTrack* trackContext);

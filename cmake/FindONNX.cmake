@@ -152,7 +152,10 @@ elseif(WIN32)
     # 搜索路径
     # 注: x64 CPU 优先用 MT (静态 CRT) 版 (onnxruntime-win-x64-MT-Release-*),
     # 微软官方 MD 版 (动态 CRT) 在 plugins/ 下 DllMain 初始化失败 (err=1114)。
+    # MT-DML 为自编 DirectML 版(--use_dml --enable_msvc_static_runtime),
+    # 同为静态 CRT, DML EP 编译在内, 优先于纯 CPU 版。
     set(ONNXRUNTIME_DIR_NAMES
+        "windows/onnxruntime/onnxruntime-win-${ONNXRUNTIME_ARCH}-MT-DML-Release-${ONNXRUNTIME_VERSION}"
         "windows/onnxruntime/onnxruntime-win-${ONNXRUNTIME_ARCH}-MT-Release-${ONNXRUNTIME_VERSION}"
         "windows/onnxruntime/onnxruntime-win-${ONNXRUNTIME_ARCH}-${ONNXRUNTIME_VERSION}"
         "windows/onnxruntime/onnxruntime-win-${ONNXRUNTIME_ARCH}-gpu-${ONNXRUNTIME_VERSION}"
@@ -189,6 +192,10 @@ elseif(WIN32)
         # DLL 文件
         if(EXISTS "${ONNXRUNTIME_LIB_DIR}/onnxruntime.dll")
             list(APPEND ONNXRUNTIME_DLLS "${ONNXRUNTIME_LIB_DIR}/onnxruntime.dll")
+        endif()
+        # DML 构建附带: DirectML.dll(系统亦自带, 带新版保 DP4a/线程优化)
+        if(EXISTS "${ONNXRUNTIME_LIB_DIR}/DirectML.dll")
+            list(APPEND ONNXRUNTIME_DLLS "${ONNXRUNTIME_LIB_DIR}/DirectML.dll")
         endif()
     endif()
 

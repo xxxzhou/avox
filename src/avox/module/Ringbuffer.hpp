@@ -178,6 +178,24 @@ public:
     return true;
   }
 
+  // 锁内扫描队头连续不满足 predicate 的元素, 找到则前进 rindex 越过它们
+  // (留在队列里的队头即第一个满足者), 返回越过的条数; 整队无满足者则不动
+  // 队列并返回 -1。单消费者换落点用(如解码器降级后吸到关键帧)。
+  int32_t dropUntil(std::function<bool(const T &item)> predicate) {
+    std::unique_lock<std::mutex> lock(buMtx);
+    int32_t scanned = 0;
+    while (scanned < wcount) {
+      if (predicate(buffer[(rindex + scanned) % maxSize])) {
+        rindex = (rindex + scanned) % maxSize;
+        wcount -= scanned;
+        cvNotFull.notify_one();
+        return scanned;
+      }
+      scanned++;
+    }
+    return -1;
+  }
+
   // 忽略 bClose 排干整队列: 锁内取一帧、解锁后调 action, 直到空。
   // 供消费者线程 stop 后排干 in-flight 残留 —— 此时 dequeue/dequeueAction 会因
   // bClose=true 返回 false, 无法取出; drain 专用于"已决定丢弃队列、但想先逐项处理"
