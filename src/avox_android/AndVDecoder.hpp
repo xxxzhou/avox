@@ -41,6 +41,9 @@ private:
   //     sortQueue;
   // size_t FRAME_QUEUE_THRESHOLD = 5;
 
+  // 按 codecDesc 建 codec+format(onVaild 与 seek复位重建共用)
+  bool createCodec();
+
 public:
   void updateYuvFormat();
 

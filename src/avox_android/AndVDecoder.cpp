@@ -77,7 +77,7 @@ AndVDecoder::AndVDecoder() {
 
 AndVDecoder::~AndVDecoder() { onClose(); }
 
-bool AndVDecoder::onVaild() {
+bool AndVDecoder::createCodec() {
   VCodecId codecId = codecDesc.vcodecId;
   const char* mime = nullptr;
   switch (codecId) {
@@ -129,7 +129,18 @@ bool AndVDecoder::onVaild() {
   return true;
 }
 
+bool AndVDecoder::onVaild() { return createCodec(); }
+
 DecodeResult AndVDecoder::onPreDecoder() {
+  // seek复位/bDecodeUpdate 会在 codec 仍处 Executing 态时重入本函数:
+  // MediaCodec 不允许运行中重配, 直接 configure 必吃 -10000(Java 层
+  // IllegalStateException 被 NDK 包装吞掉)——先完整拆旧再重建
+  if (mediaCodec) {
+    onClose();
+    if (!createCodec()) {
+      return DecodeResult::openFailed;
+    }
+  }
   auto& packets = configPackets;
   // csd 必须是AnnexB: mp4/rtmp 的 config 是avcc/hvcc长度前缀, 不转MediaCodec解析不了csd, 静默无输出
   // (已是AnnexB的包长度对不上, avcc2AnnexbPacket 自动跳过)
