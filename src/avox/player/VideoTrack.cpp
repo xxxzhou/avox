@@ -338,9 +338,11 @@ SyncResult VideoTrack::syncVideo() {
     renderTime = now;
     return SyncResult::slow;
   }
-  // 视频慢了，让窗口快速刷新，不要sleep了
+  // 视频慢了(delay==0, computeDelay 已把落后钳成 0), 通知窗口快速刷新跳过
+  // sleep: 若不通知, 唤醒节拍被窗口线程的帧率标签钳住, 落后永远追不回
+  // (doc/player/core/播放器时间.md 同步渲染-2: duration 改 0 让窗口快速刷新)
   if (delay == 0) {
-    // return SyncResult::slow;
+    return SyncResult::slow;
   }
   return SyncResult::none;
 }

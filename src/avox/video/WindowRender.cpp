@@ -329,8 +329,12 @@ void WindowRender::onRunTask() {
       sleepTick = 0;
     }
     if (sleepTick > 50000 && syncResult != SyncResult::slow) {
-      // tick -> ms
-      std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
+      // tick -> ms, 提前 2ms 唤醒: 睡眠目标来自帧率标签, 标签可能偏大于真实
+      // PTS 步进(23.98 标签实为 24000/1001, 43.5ms vs 41.7ms), 唤醒节拍一旦
+      // 低于 PTS 步进, 视频钟线性落后音频钟(0101.mkv 实测 +41ms/s); 提前量
+      // 由 syncVideo 的 quick 门吸收, 节拍永不低于内容速率
+      std::this_thread::sleep_for(std::chrono::milliseconds(
+          sleepMs > 3 ? sleepMs - 2 : 1));
 #if defined(__ANDROID__) || (defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
     } else {
       // 兜底短睡仅移动端(Android/iOS): 追帧/余量<5ms 全速自旋会在手机钉满
