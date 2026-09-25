@@ -4,6 +4,9 @@
 # 把这类事故从运行期提前到链接期拦截。
 # 用法: include(AVOXNoOpensslCheck) 后, 对宿主可执行目标调用 avox_check_no_openssl(<target>)
 
+# 脚本绝对路径须在定义期捕获: CMAKE_CURRENT_LIST_DIR 在函数体内按调用方目录展开
+set(AVOX_NOSSL_SCRIPT "${CMAKE_CURRENT_LIST_DIR}/AVOXNoOpensslCheck.cmake")
+
 function(avox_check_no_openssl target)
     if(NOT APPLE OR NOT TARGET ${target})
         return()
@@ -13,7 +16,7 @@ function(avox_check_no_openssl target)
             -DAVOX_NOSSL_BIN=$<TARGET_FILE:${target}>
             -DAVOX_NOSSL_NM=${CMAKE_NM}
             -DAVOX_NOSSL_OTOOL=${CMAKE_OTOOL}
-            -P ${CMAKE_CURRENT_LIST_DIR}/AVOXNoOpensslCheck.cmake
+            -P ${AVOX_NOSSL_SCRIPT}
         VERBATIM
         COMMENT "avox: check ${target} for OpenSSL leakage")
 endfunction()

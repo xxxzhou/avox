@@ -35,6 +35,8 @@ set(TEAM_ID "Y96Y9F6CFS" CACHE STRING "Apple 开发者团队 ID")
 # ZLM 头路径默认取本仓库 3rdparty (mk_mediakit.h + Common/config.h 事件名自检)
 get_filename_component(AVOX_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
 set(ZLM_DIR "${AVOX_REPO_ROOT}/3rdparty/ZLMediaKit")
+# 本工程是独立 cmake 项目, 不经顶层 CMakeLists; 护栏从 avox 仓取
+include("${AVOX_REPO_ROOT}/cmake/AVOXNoOpensslCheck.cmake")
 # 播放矩阵用例表在 avox-test 仓 (本仓不再留副本); 缺省同级 ../avox-test
 set(AVOX_TEST_ROOT "$ENV{AVOX_TEST_ROOT}" CACHE PATH "avox-test 仓根 (播放矩阵用例表)")
 if(NOT AVOX_TEST_ROOT)
@@ -158,4 +160,6 @@ if(AVOX_FFMPEG_INCLUDE)
   target_include_directories(avoxtest PRIVATE "${AVOX_FFMPEG_INCLUDE}")
 endif()
 
+# 播放矩阵头(avox-test) avsync 起用 std::filesystem, 独立工程须显式 C++17
+set_target_properties(avoxtest PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 avox_check_no_openssl(avoxtest)
