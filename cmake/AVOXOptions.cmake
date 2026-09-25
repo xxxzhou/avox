@@ -206,6 +206,12 @@ if(AVOX_ENABLE_ZLMEDIAKIT OR (AVOX_ENABLE_AGENT AND NOT AVOX_AGENT_USE_BORINGSSL
     if(AVOX_ENABLE_AGENT AND NOT AVOX_AGENT_USE_BORINGSSL)
       include_directories(${OPENSSL_INCLUDE_DIRS})
       avox_update_cached_list(AVOX_LINK_LIBRARIES ${OPENSSL_LIBRARIES})
+    elseif(ANDROID)
+      # 安卓例外: webrtc 以 libwebrtc_nosym.a 编入(SSL 符号已剥), agent/ZLToolKit
+      # 的 SSL_*/BIO_* 须由真 OpenSSL 解析(fae2bce 撤线后安卓链接断, 9/26 复);
+      # rtc 运行期在安卓不启用, 无 mac 式混链危害
+      include_directories(${OPENSSL_INCLUDE_DIRS})
+      avox_update_cached_list(AVOX_LINK_LIBRARIES ${OPENSSL_LIBRARIES})
     endif()
   elseif(AVOX_ENABLE_AGENT AND NOT AVOX_AGENT_USE_BORINGSSL)
     # Agent 需要 OpenSSL 3.0.0+ 但未找到

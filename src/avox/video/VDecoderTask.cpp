@@ -281,6 +281,11 @@ void VDecoderTask::onRunTask() {
     // 从落点包起以全新状态解码
     if (bResetCtx) {
       bResetCtx = false;
+      // 硬解码体重建后旧帧的GPU句柄(MediaCodec buffer idx/OES纹理)即悬空,
+      // 不清会让渲染消费旧帧时把新codec输出循环搞死(seek后画面冻住只有声)
+      if (bHardDecode) {
+        trackContext->flushFrames();
+      }
       DecodeResult result = decode->onPreDecoder();
       if (result == DecodeResult::success) {
         LOGFLF(LogLevel::info, "seek reset decoder ok");
