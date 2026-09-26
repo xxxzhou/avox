@@ -278,6 +278,7 @@ int main(int argc, char* argv[]) {
     // FFmpeg 日志放到 INFO: 看 mov demuxer 的 seek 落点 ("seeking to ...")。
     // 必须在 createMediaPlayer 之后调 —— 引擎初始化(regFFIO)会把级别设回
     // WARNING; avox 把 avutil 私有链接, 只能从同目录 dll 动态取函数
+#ifdef _WIN32
     HMODULE avutil = LoadLibraryA("avutil-61.dll");
     if (avutil) {
       auto setLevel = (void (*)(int))GetProcAddress(avutil, "av_log_set_level");
@@ -286,6 +287,9 @@ int main(int argc, char* argv[]) {
         std::printf("ffmpeg log level -> DEBUG\n");
       }
     }
+#else
+    std::printf("fflog: only supported on Windows (avutil dll)\n");
+#endif
   }
   ISurfaceRender* sr = player->getSurfaceRender();
   // 离屏 yuv420P: 抓解码真值, 不经 vulkan 合成 (app 侧坏图若只出在合成层,
