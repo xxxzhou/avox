@@ -773,6 +773,20 @@ bool IOParseFF::rebuildHttpPb() {
     return false;
   }
   rebuildFailMs = 0;
+  // 换连接即清段缓存: 抽风期(misland/断连前后)抓的段可能整体错位——avio_seek
+  // 落位只对返回值校验, 拦不住「响应 Range 未生效但返回成功」的错位数据; 毒段
+  // 留在缓存会让连接恢复健康后 mov 仍持续 partial 风暴(同错段重试 N 次都死,
+  // Mac 0926 深夜实测)。全清代价=重抓一遍, 换数据可信
+  while (!segPin.empty()) {
+    evictHttpSeg(true);
+  }
+  while (!segLru.empty()) {
+    evictHttpSeg(false);
+  }
+  segIdxLru.clear();
+  segIdxPin.clear();
+  segLruBytes = 0;
+  segPinBytes = 0;
   LOGFLF(LogLevel::info, "httpPb rebuilt after channel eof latch");
   return true;
 }
