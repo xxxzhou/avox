@@ -71,6 +71,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 **播放中**
 - `[FF][mlp] Stream parameters not seen` 刷屏(数十条/s) ± 位置 18 倍慢放、无 buffering 状态 = TrueHD 轨车道错配 → 已修 96e205b(MLP 独立 ACodecId)+f58bc94(同文日志折叠); **先用 media_info.json 时间线定刷屏是哪片开的**(常是几分钟前另开的 TrueHD 片); TrueHD 碎片轨(数千包/内容秒)数据完好可解≠损坏。
 - 全片**每秒周期跳帧**(快进-冻结循环)、无 buffering、声音正常, 碎片音轨片(TrueHD 40采样/包=0.83ms, 实测1201包/s) = 音频采样游标 ms 整数截断: `getAudioFrameMs(40采样)=0`→游标冻结→解码 pts 漂 ~1s 重锚→音频钟锯齿→视频钟被拖成快进/冻结循环 → 已修 c3f92b0(getAudioFrameUs 微秒游标+WindowRender 升 fps 上限越界伴修); A/B 判据: 修复前视频 zeroDelay 56-78 次/5s 持续(对冻结钟追赶), 修复后 0; 全片解码扫(vptsscan: 视频输出零缺口+音频包 0.83ms/1201包s)定性「片源干净→渲染侧」。
+- 全片**每几秒周期跳一下**(丢帧追赶)、无 buffering、无 crash, **Windows 正常仅 Mac(VT)跳** = 丢 ctts 的 B 帧流 POC 显示格 ms 截断: PocRestamper(eb106f0)激活后 pts 按 33ms 平坦格推进, 对 30000/1001(33.367ms) 每帧欠 0.367ms→视频钟持续落后音频→每~4.5s 攒满丢帧门限静默丢一帧(drop 日志被注释); **FFmpeg 车道输出走 dts 链不吃包 pts 故 Windows 无感, VT 车道透传包 pts 吃满漂移**(IOSVDecoder 用 packet.pts 喂 CMTime) → 已修 79abb44(显示格 µs 化, 与 c3f92b0 同 ms 截断族); 判据: cli -log-packet 看包 pts 显示序增量恒 33(旧病)/33 与 34 交替(修复); 片源特征: moov 里 0 个 ctts 有 stss, 迅雷拼装 mp4 高发。
 - 播放时间来回跳+无限 buffering = 拼装 mp4 音轨锚文件头(前 60s 假音频 stco 锚在偏移 48, 每个音频包把读位拉回文件头跨几十 MB 重连) → 已修 a0107be(http 段缓存+锚点钉住)。
 - 直链反复 buffering 无时间跳 = 吞吐临界非 bug → 垫子默认已 2s(2a200e9, 首帧/秒开不吃它); 直播延迟敏感经 `mp.delay.ms` 调回。
 - 花屏伴 rtp 丢包/packet dropped=网络; 从 P 起解不自愈(持续到 GOP 边)=落点缺参考; 1~2s 自愈=渲染突发/竞态另有因。
