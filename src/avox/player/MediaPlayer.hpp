@@ -92,7 +92,7 @@ class MediaPlayer : public IMediaPlayer,
   // 值低，应对网络波动卡顿会频繁，但是延迟低，并且每次buffing时间短
   // 值高，应对网络波动卡顿会少，但是延迟高，并且每次buffing时间也长
   // 要不要加个自动调整功能？
-  int64_t delayMs = 1000;
+  int64_t delayMs = 2000;
   // cspeed只记录用户设置的速度，不记录自动调整的速度
   double cspeed = 1.0;
   IoPlan selectIO = IoPlan::ffmpeg;
