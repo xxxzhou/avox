@@ -775,18 +775,27 @@ IOParseFF::HttpSeg* IOParseFF::fetchHttpSegOnce(int64_t segStart,
     const int n =
         avio_read(httpPb, seg.data.data() + total, (int)(kHttpSegSize - total));
     if (n == AVERROR_EOF) {
+      // 段起点即 EOF 且离文件尾还远: 服务端掐了这条新连接(Accept+Range 后秒断,
+      // 同区间 curl 直拉正常, 极空间 0926 实证) —— 通道已废, 重建后由外层重试
+      // 轮换新连接; 静默失败(不 rebuild 不 log)会让整份重试预算在废通道上空转
+      if (total == 0 && segStart + kHttpSegSize < avio_size(httpPb)) {
+        rebuildHttpPb();
+      }
       break;
     }
     if (n <= 0) {
       // 已读若干字节后吃错: 仅当正好读满文件尾(段起+已读==底层文件大小)才
       // 入库短段——尾部数据是完整事实, 打断/连接收尾杂音不构成丢弃理由(mkv
       // seek 解析尾部 Cues 必经此路, 丢段=seek 判死掉进分钟级内部扫描);
-      // 中途吃错照旧丢弃(半截段入库会让后续读到假 EOF)
+      // 中途吃错照旧丢弃(半截段入库会让后续读到假 EOF); 废通道顺手重建
       if (total > 0) {
         const int64_t sz = avio_size(httpPb);
         if (sz > 0 && segStart + total >= sz) {
           break;
         }
+      }
+      if (n != AVERROR_EXIT) {
+        rebuildHttpPb();
       }
       return nullptr;
     }
