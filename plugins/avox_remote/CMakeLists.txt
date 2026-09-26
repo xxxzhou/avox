@@ -10,6 +10,8 @@ if(NOT OPENSSL_FOUND)
   return()
 endif()
 include_directories(${AVOX_TRDPARTY}/cpp-httplib)
+# DavSource 硬定义 CPPHTTPLIB_OPENSSL_SUPPORT, 头路径不能只仰赖 Agent 全局分支
+include_directories(${OPENSSL_INCLUDE_DIRS})
 
 set(_REMOTE_LIBS ${OPENSSL_LIBRARIES})
 if(WIN32)
