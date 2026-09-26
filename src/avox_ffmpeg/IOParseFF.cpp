@@ -16,10 +16,13 @@
 
 namespace avox {
 
-// http 段缓存参数: 段 256KB 整段抓取(顺序前进每段才一次重连); 普通段预算
-// 8MB LRU; 驱逐后 10s 内又被要的段视为交错锚点(音轨扎堆区)升级进 4MB 钉住区
+// http 段缓存参数: 段 256KB 整段抓取, 每次抓取顺流预读 kHttpSegPrefetchSegs
+// 段(seek 后音视频读区常相距数十 MB, 逐段一请求会被每连接建连成本拖死);
+// 普通段预算 16MB LRU; 驱逐后 10s 内又被要的段视为交错锚点(音轨扎堆区)
+// 升级进 4MB 钉住区
 static constexpr int64_t kHttpSegSize = 256 * 1024;
-static constexpr int64_t kHttpSegLruBytes = 8 * 1024 * 1024;
+static constexpr int32_t kHttpSegPrefetchSegs = 8;
+static constexpr int64_t kHttpSegLruBytes = 16 * 1024 * 1024;
 static constexpr int64_t kHttpSegPinBytes = 4 * 1024 * 1024;
 static constexpr int64_t kHttpSegAnchorWinMs = 10 * 1000;
 
@@ -380,7 +383,9 @@ int IOParseFF::reopenInput() {
   // 时在 open_input 窗口内对 AVSEEK_SIZE 谎报文件大小=第一 mdat 末尾, mov 扫
   // 描在第一个 mdat 处早退(FFmpeg9 mov.c:9967, 该分支不设 next_root_atom 毒,
   // 样本索引照建); 读路径经 256KB 段缓存, 回跳落缓存零重连, 顺序前进每段才
-  // 一次重连。open 返回即停谎报, seek 只记账, 底层位置归段抓取管
+  // 一次请求, 且每抓取顺流预读 kHttpSegPrefetchSegs 段(音视频 seek 落点相距
+  // 数十 MB 的双区读, 逐段一请求会被建连成本拖死)。open 返回即停谎报, seek
+  // 只记账, 底层位置归段抓取管
   const AVInputFormat* probeFmt = nullptr;
   const bool bHttpUrl =
       url.rfind("http://", 0) == 0 || url.rfind("https://", 0) == 0;
@@ -673,11 +678,52 @@ IOParseFF::HttpSeg* IOParseFF::fetchHttpSeg(int64_t segStart, bool bAnchor) {
          lst.size() > (size_t)(bAnchor ? 1 : 0)) {
     evictHttpSeg(bAnchor);
   }
+  // 顺流预读: 基段抓满才继续(短段=文件尾); 预读段恒进 LRU, 只在 EOF 短段
+  // (真文件尾)入库短段, 中途吃错的半截段一律丢弃即停——半截段入库会让后续
+  // 读到假 EOF(基段同规则)
+  for (int32_t k = 1; k < kHttpSegPrefetchSegs && total >= kHttpSegSize; ++k) {
+    const int64_t next = segStart + (int64_t)k * kHttpSegSize;
+    HttpSeg pre;
+    pre.off = next;
+    pre.data.resize(kHttpSegSize);
+    int64_t got = 0;
+    bool bEof = false;
+    bool bErr = false;
+    while (got < kHttpSegSize) {
+      const int n =
+          avio_read(httpPb, pre.data.data() + got, (int)(kHttpSegSize - got));
+      if (n == AVERROR_EOF) {
+        bEof = true;
+        break;
+      }
+      if (n <= 0) {
+        bErr = true;
+        break;
+      }
+      got += n;
+    }
+    if (got <= 0 || (bErr && got < kHttpSegSize)) {
+      break;
+    }
+    pre.data.resize((size_t)got);
+    segLru.push_front(std::move(pre));
+    segIdxLru[next] = segLru.begin();
+    segLruBytes += got;
+    while (segLruBytes > kHttpSegLruBytes && segLru.size() > 0) {
+      evictHttpSeg(false);
+    }
+    if (bEof) {
+      break;
+    }
+  }
   // 防呆: 驱逐台账只增不清长流场景占内存, 超限整表重置(锚点记忆自愈)
   if (segEvictMs.size() > 4096) {
     segEvictMs.clear();
   }
-  return &lst.front();
+  // 预读驱逐可能挤掉基段(预算临界时), 按 offset 收尾查找, 挤掉即视为失败
+  const auto hit = (bAnchor ? segIdxPin : segIdxLru).find(segStart);
+  return hit != (bAnchor ? segIdxPin : segIdxLru).end() ? &*hit->second
+                                                        : nullptr;
 }
 
 void IOParseFF::evictHttpSeg(bool bPin) {
