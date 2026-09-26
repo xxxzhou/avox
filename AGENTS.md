@@ -97,6 +97,14 @@ SWIG 绑定: `swig/csharp/`, `swig/nodejs/`, `swig/python/` (Java 绑定构建�
 - 索引文件(INDEX.md / plan/README 等)只放链接不放事实。
 - **门禁**: pre-push 跑 `script/doc_check.py --strict`, 拦截**本次改动** `doc/**/*.md` 的缺状态头/失效链接/多版本命名; 存量文档仅体检不阻塞。手动全量体检: `python script/doc_check.py`。
 
+## 播放问题自动排查(2026-09-26)
+
+用户报 panvox 播放问题(「有问题/打不开/卡顿/花屏/无声/崩溃」等)时**自动加载
+`assets/agent/skills/panvox-play`** 按其流程排查, 不空手反问: 平台缺省=当前
+机器, 片源从 panvox 数据缓存(history/sources.json)定位, -Log 复现, 日志定
+归属; 引擎日志行细判引用 `assets/agent/skills/analyze-log`。skill 是活文档:
+-Log 机制/数据缓存结构/部署配方变动后回写同步。
+
 ## 重要说明
 
 - **提交消息:** 首行 ≤50 字、硬上限 100 字，说清「哪个模块 + 做了什么」；细节写 commit body 或文档，不塞首行。历史提交多有超长，不作参照
