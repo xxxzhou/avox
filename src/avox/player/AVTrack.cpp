@@ -25,14 +25,9 @@ void AVTrack::onInitDesc() {
   packetQueue.setClose(false);
   // 接受mediaplay选项变化
   if (mediaPlayer) {
-  // 点播/直播统一200(≈8秒@40ms): 队列深度只决定demux领先量与断流容忍,
-  // 下载完成时刻≈播放时长-领先量, 加深不加速下载只费内存; 容忍A/V PTS相差约2秒
-  packetQueue.setMaxSize(200);
-  // 包率自适应状态随开流复位(跨open复用轨对象, 残留EMA会把新流误扩)
-  lastPullPts = AVOX_NOVALID_PTS;
-  pktGapEma = -1;
-  pktGapCount = 0;
-  pktQueueCap = 200;
+    // 点播/直播统一200(≈8秒@40ms): 队列深度只决定demux领先量与断流容忍,
+    // 下载完成时刻≈播放时长-领先量, 加深不加速下载只费内存; 容忍A/V PTS相差约2秒
+    packetQueue.setMaxSize(200);
   }
   // 记录Track有效
   PBMediaAction pb = {};
@@ -83,27 +78,6 @@ double AVTrack::getRate(bool bAvg) {
 
 void AVTrack::pushPacket(const AvoxPacket& data) {
   onPrePushPacket();
-  // 包率自适应深度(只增不减): 用包距EMA估包率, 高包率轨按 kQueueTargetMs
-  // 扩容。开流初期包距未稳前先按默认200跑, 领先量随扩容逐步抬升
-  if (data.pts != AVOX_NOVALID_PTS) {
-    if (lastPullPts != AVOX_NOVALID_PTS) {
-      const int64_t gap = data.pts - lastPullPts;
-      // 负距/大距(seek跳变、簇间隙)不入统计
-      if (gap > 0 && gap < 500) {
-        pktGapEma = pktGapEma < 0 ? (double)gap : pktGapEma * 0.875 + gap * 0.125;
-        if (++pktGapCount >= 64 && pktGapEma > 0 && pktQueueCap < kQueueCapMax) {
-          const int32_t need = (int32_t)((double)kQueueTargetMs / pktGapEma) + 16;
-          if (need > pktQueueCap) {
-            pktQueueCap = need < kQueueCapMax ? need : kQueueCapMax;
-            packetQueue.setMaxSize(pktQueueCap);
-            LOGFLF(LogLevel::info, "packet queue depth ->", pktQueueCap,
-                   " pktGapEma:", pktGapEma);
-          }
-        }
-      }
-    }
-    lastPullPts = data.pts;
-  }
   // 如果满了,阻塞等待,vaildFunc是当前线程如果停了，就不要堵塞了
   packetQueue.enqueueWait<AvoxPacket>(data, copyBuf);
   // 显示小bit
@@ -152,6 +126,7 @@ bool AVTrack::hasVaildVideoTrack() {
 }
 
 void AVTrack::updateClock(int64_t pts) {
+  // LOGFLF(LogLevel::info, "pts:", pts, " type:", getTrackTypeStr(trackType));
   // 更新自身时钟
   clock->update(pts);
   SyncType syncType = mediaPlayer->getSyncType();

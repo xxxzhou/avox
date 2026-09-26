@@ -78,15 +78,6 @@ class AVTrack : public IPlayerContext, public PtsUpdater {
   PBQueueStatus queueStatus = {};
   // 当前PTS基准是否需要改变，比如flush,close后需要改变
   bool bResetBase = false;
-  // 包率自适应队列深度: 包数上限对高包率轨(碎片化音轨~1200包/秒)只折~166ms
-  // 缓冲, demux被背压钉在播放位附近, 供给一抖队列打空进buffering, 门闸阈值
-  // 贴稳态深度临界抖动=周期性卡顿。按实测包距把队列深度扩到≥4s
-  int64_t lastPullPts = AVOX_NOVALID_PTS;
-  double pktGapEma = -1;
-  int32_t pktGapCount = 0;
-  int32_t pktQueueCap = 200;
-  static constexpr int32_t kQueueTargetMs = 4000;
-  static constexpr int32_t kQueueCapMax = 8192;
   // 渲染时间，以PTS对应的系统时间为准
   // 控制PTS与系统计时一致
   int64_t renderTime = 0;
