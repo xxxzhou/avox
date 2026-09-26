@@ -47,6 +47,16 @@ static LogLevel ffToAvoxLevel(int ffLevel) {
   }
 }
 
+// 同文消息折叠状态: 解码器逐包刷同一警告时(如 mlp "Stream parameters not
+// seen")按窗口限频, 防洪泛拖垮生产线程——LogTask 队列满会在调用线程同步
+// 排空, 洪泛把解码线程钉在控制台打印速度上
+static std::mutex ffLogFloodMtx;
+static std::string ffLogFloodMsg;
+static LogLevel ffLogFloodLevel = LogLevel::info;
+static int64_t ffLogFloodLastMs = 0;
+static int64_t ffLogFloodCount = 0;
+static constexpr int64_t kFFLogFloodWindowMs = 3000;
+
 // FFmpeg av_log 回调 -> avox logMsg, 跟 ZLMediaKit onZmLog 同模式
 static void onFFLog(void* avcl, int ffLevel, const char* fmt, va_list vl) {
   if (ffLevel <= AV_LOG_QUIET) return;
@@ -67,7 +77,25 @@ static void onFFLog(void* avcl, int ffLevel, const char* fmt, va_list vl) {
   } else {
     string_format(msg, "[FF] ", buf);
   }
-  logMsg(avoxLevel, msg.c_str());
+  // 同文折叠: 窗口内重复消息只计次, 换文/超窗补一条累计再放行当前条
+  {
+    std::lock_guard<std::mutex> lk(ffLogFloodMtx);
+    const int64_t nowMs = timeStampMS();
+    if (msg == ffLogFloodMsg && nowMs - ffLogFloodLastMs < kFFLogFloodWindowMs) {
+      ++ffLogFloodCount;
+      return;
+    }
+    if (ffLogFloodCount > 0) {
+      string_format(msg, ffLogFloodMsg, " (+", ffLogFloodCount, " suppressed)");
+      logMsg(ffLogFloodLevel, msg.c_str());
+    }
+    ffLogFloodLevel = avoxLevel;
+    ffLogFloodLastMs = nowMs;
+    ffLogFloodCount = 0;
+    ffLogFloodMsg = std::move(msg);
+    logMsg(ffLogFloodLevel, ffLogFloodMsg.c_str());
+    return;
+  }
 }
 
 void regFFIO() {
@@ -840,6 +868,7 @@ void IOParseFF::onRunTask() {
                !bDisableAudio) {
       ATrackDesc adesc = {};
       adesc.codecId = ffACodec(st->codecpar->codec_id);
+      adesc.ffCodecId = st->codecpar->codec_id;
       // 不支持的音频格式只跳过该流并 discard 字节, 其余音轨照常(a08):
       // 原行为 bDisableAudio=true 会因一条未知轨株连关闭全部音频
       if (adesc.codecId == ACodecId::none) {
