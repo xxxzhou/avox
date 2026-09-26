@@ -12,6 +12,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 - **数据目录**: Windows `%APPDATA%\panvox\`; Mac `~/Library/Application Support/com.panvox.panvox/`。关键文件: `sources.json`(源配置: id/kind/origin/user/pass/root/token —— **明文凭据**)、`history.json`(键=源id+路径, 值=title/position/duration/updated)、`local_library.json`(文件清单)、`unplayable.json`(打不开下墙记录)、`freeze/`(冻结名片)。
 
 ## 1. 流程(五步)
+0. **先对表版本**(防"改了没编/没部署, 查的全是已修掉的问题"): 运行日志首行 banner(`avox version:... commit_hash:X build_time:Y`)对比 `git -C <avox仓> log -1`; banner 落后 HEAD、或启动闸打「install 落后 HEAD」WARNING → 先重编引擎+部署(部署文档 §2/§3)再排查。Windows 启动闸每次启动哈希同步 dll; 其余平台闸门见部署文档 §4, 见闸照做别绕。
 1. **三要素**: 平台**不指明=当前机器**(本机直查, 不走 SSH/adb; 用户点名别的平台才切通道)。片源(哪个源哪部片, 文件名)与现象(打不开/卡顿/花屏/无声/音画不同步/字幕/崩溃 + 大概时刻)缺了先问; 片源模糊可先拿 `history.json` 最近条目猜并跟用户确认, 别空手反问。
 2. **定片源**: 读目标机 `history.json` 最近条目 + `sources.json` 映射出 kind/origin/路径。可播 URL 推导: webdav/http = `origin+root+path`(路径段 URL 编码); smb = UNC `\\origin\共享\路径`; 本地 = 直接路径; **jellyfin/emby/云盘/IPTV 不手拼 URL**(需 token/接口), 驱动 app 内复现或向用户要直链。
 3. **带日志复现**(§2, 按平台)。复现前**单实例检查**: Windows `tasklist | grep -i panvox`、Mac `pgrep -x panvox` —— 多实例共用数据目录互覆快照, 会出假象; 有实例先让用户关或 kill。
