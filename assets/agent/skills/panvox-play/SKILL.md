@@ -42,7 +42,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 - panvox 层特征行: `[panvox-boot]`(启动顺序), `[panvox-shim]`/`[panvox-runner]`(shim/GPU 适配器), `[dart]`(-Log 进程内档的 Dart 行), `[avox][级别]`(引擎桥行), `watchdog armed`(冻结名片机制), unplayable 记录(打不开自动下墙: 引擎败+文件头非容器才标, **网络类错误永不标**, 见 unplayable.json)。
 - 归属判定顺序: ①io open 失败/超时/403/404/503 → 源或网络(签名限时源失效**严禁同参自动重播**); ②流信息缺/decode create fail → 编码不支持或硬解问题; ③opening 长停 → IO 慢/假成功; ④buffering 频繁 → 查队列与丢包行; ⑤Dart exception/zone-error → app 层逻辑; ⑥无日志直接退 → 走 dmp 流程。
 - 需脱离 app 隔离引擎时: `tools/engine_play_test.exe`(须与 avox.dll 同目录, tools/build_engine_play_test.bat 出; `engine_play_test <url> [sec=8] [hard=1] [vulk=1]`, 免窗可过 ssh); 或 avox_cli play(加载 avox-cli, -io ffmpeg / -transport tcp / -log-packet / -log-decode)。
-- 细化旋钮: `PANVOX_THUMB_TRACE=1`(抽帧链); FFmpeg 桥默认压在 WARNING, info 级流信息默认没有, 引擎侧需另开。
+- 细化旋钮: 引擎级复现按症状加 `-log-packet`(包时间/PTS)/`-log-decode`/`-log-render`(app 内无此开关); `PANVOX_THUMB_TRACE=1`(抽帧链); FFmpeg 桥默认压在 WARNING, info 级需引擎侧另开。
 
 ## 红线
 - **凭据脱敏**: sources.json 的 user/pass/token、URL 里的 session/sign 不进结论、不复述、不回显。
