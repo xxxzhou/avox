@@ -32,6 +32,8 @@ protected:
   AVIOContextPtr wrapPb = nullptr;
   bool bLieSize = false;
   int64_t mdat1End = 0;
+  // 通道重建上次失败时刻(0=无失败): 冷却期内不再尝试, 防拒绝期连接风暴
+  int64_t rebuildFailMs = 0;
   // http 段缓存(仅 IO 线程碰): 病态交错封装(逐段拼装的 mp4, 音轨锚在头部/
   // 尾部, 与视频读位相距数十 MB)在 http 下按 DTS 交错吐包, 每包一次跨 MB
   // range 重连喂不动; 段缓存把 V/A 交替吸收进内存

@@ -1507,6 +1507,14 @@ void MediaPlayer::cmdOpen(OpenCommandPtr cmd) {
   if (useIO == IoPlan::torrent && !bufferingTimeoutUserSet) {
     bufferChecker.setDelay(30000);
   }
+  // http/https 直链: 服务端对连发请求有秒级~十几秒的惩罚窗(连接被掐后
+  // 重试骑窗+通道重建要 10s+), 10s 看门狗在窗中途就 close player——表现
+  // 即 seek 后黑屏几秒播放被整个关闭(0926 夜极空间实测); 业务未显式
+  // 设置时同样放宽
+  if ((url.rfind("http://", 0) == 0 || url.rfind("https://", 0) == 0) &&
+      useIO == IoPlan::ffmpeg && !bufferingTimeoutUserSet) {
+    bufferChecker.setDelay(20000);
+  }
   bool bFind = AvoxManager::Get().ioSources.hasObjectId(useIO);
   if (!bFind) {
     pb.action = MediaAction::create;
