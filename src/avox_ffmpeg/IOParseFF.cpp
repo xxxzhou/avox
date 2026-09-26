@@ -26,6 +26,8 @@ static constexpr int32_t kHttpSegPrefetchSegs = 8;
 static constexpr int64_t kHttpSegLruBytes = 16 * 1024 * 1024;
 static constexpr int64_t kHttpSegPinBytes = 4 * 1024 * 1024;
 static constexpr int64_t kHttpSegAnchorWinMs = 10 * 1000;
+// 读路径有界补给窗: 服务端连发惩罚窗为秒级, 窗内重试骑过去而非把 EOF 闩给 demuxer
+static constexpr int64_t kHttpResupplyWinMs = 10 * 1000;
 
 // FFmpeg av_log 级别 -> avox LogLevel
 static LogLevel ffToAvoxLevel(int ffLevel) {
@@ -620,52 +622,62 @@ int64_t IOParseFF::wrapSeekCb(void* opaque, int64_t offset, int whence) {
 
 int IOParseFF::wrapReadAt(uint8_t* buf, int size, int64_t pos) {
   const int64_t segStart = pos / kHttpSegSize * kHttpSegSize;
-  HttpSeg* seg = touchHttpSeg(segStart);
-  if (!seg) {
-    return AVERROR(EIO);
-  }
-  int64_t inSeg = pos - seg->off;
-  int64_t avail = (int64_t)seg->data.size() - inSeg;
-  if (avail <= 0) {
-    // 短段只在真文件尾是合法事实。中文件的短段(预读期连接被服务端提前收尾
-    // 等原因入库)是毒段: mov 在 avio_seek 的前向 fill 循环吃到这个 EOF 会
-    // should_retry 撤样本重试, 同段永远 EOF, 刷 partial file 风暴把音频丢光。
-    // 按底层文件大小判别, 毒段驱逐重抓一次; 刚治过的段短时间内再毒直接认尾,
-    // 防服务端持续截断时的无限重抓
-    const int64_t sz = avio_size(httpPb);
-    if (sz > 0 && seg->off + (int64_t)seg->data.size() >= sz) {
-      return AVERROR_EOF;
-    }
-    const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                              std::chrono::steady_clock::now().time_since_epoch())
-                              .count();
-    auto evict = segEvictMs.find(segStart);
-    if (evict != segEvictMs.end() && nowMs - evict->second < 3000) {
-      return AVERROR_EOF;
-    }
-    auto& lst = segIdxLru.count(segStart) ? segLru : segPin;
-    auto& idx = segIdxLru.count(segStart) ? segIdxLru : segIdxPin;
-    auto& bytes = segIdxLru.count(segStart) ? segLruBytes : segPinBytes;
-    auto it = idx.find(segStart);
-    if (it != idx.end()) {
-      bytes -= (int64_t)it->second->data.size();
-      lst.erase(it->second);
-      idx.erase(it);
-    }
-    segEvictMs[segStart] = nowMs;
-    seg = touchHttpSeg(segStart);
+  // 有界补给窗: 服务端对开片/seek 后的连发请求有秒级惩罚窗, 单轮抓取失败即返
+  // EOF/EIO 会把 mov 的 eof 闩死——buffering 到死且不 seek 无法自愈(实测 seek
+  // 后 10s buffering 停摆)。250ms 步进重试骑过惩罚窗, interruptIo(seek/close)
+  // 即刻放行, 窗口(10s)耗尽才认败
+  const auto nowTick = [] {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+  };
+  const int64_t deadlineMs = nowTick() + kHttpResupplyWinMs;
+  while (true) {
+    HttpSeg* seg = touchHttpSeg(segStart);
     if (!seg) {
-      return AVERROR(EIO);
+      if (interruptIo() || nowTick() > deadlineMs) {
+        return AVERROR(EIO);
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(250));
+      continue;
     }
-    inSeg = pos - seg->off;
-    avail = (int64_t)seg->data.size() - inSeg;
+    int64_t inSeg = pos - seg->off;
+    int64_t avail = (int64_t)seg->data.size() - inSeg;
     if (avail <= 0) {
-      return AVERROR_EOF;
+      // 短段只在真文件尾是合法事实。中文件的短段(预读期连接被服务端提前收尾
+      // 等原因入库)是毒段: mov 在 avio_seek 的前向 fill 循环吃到这个 EOF 会
+      // should_retry 撤样本重试, 同段永远 EOF, 刷 partial file 风暴把音频丢光。
+      // 按底层文件大小判别, 毒段驱逐重抓; 刚治过的段短时间内再毒先等冷却,
+      // 补给窗内冷却过了会再驱逐
+      const int64_t sz = avio_size(httpPb);
+      if (sz > 0 && seg->off + (int64_t)seg->data.size() >= sz) {
+        return AVERROR_EOF;
+      }
+      const int64_t nowMs = nowTick();
+      auto evict = segEvictMs.find(segStart);
+      if (evict != segEvictMs.end() && nowMs - evict->second < 3000) {
+        if (interruptIo() || nowMs > deadlineMs) {
+          return AVERROR_EOF;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(250));
+        continue;
+      }
+      auto& lst = segIdxLru.count(segStart) ? segLru : segPin;
+      auto& idx = segIdxLru.count(segStart) ? segIdxLru : segIdxPin;
+      auto& bytes = segIdxLru.count(segStart) ? segLruBytes : segPinBytes;
+      auto it = idx.find(segStart);
+      if (it != idx.end()) {
+        bytes -= (int64_t)it->second->data.size();
+        lst.erase(it->second);
+        idx.erase(it);
+      }
+      segEvictMs[segStart] = nowMs;
+      continue;
     }
+    const int n = (int)std::min<int64_t>(size, avail);
+    memcpy(buf, seg->data.data() + inSeg, n);
+    return n;
   }
-  const int n = (int)std::min<int64_t>(size, avail);
-  memcpy(buf, seg->data.data() + inSeg, n);
-  return n;
 }
 
 IOParseFF::HttpSeg* IOParseFF::touchHttpSeg(int64_t segStart) {
