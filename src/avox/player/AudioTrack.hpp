@@ -30,8 +30,6 @@ class AudioTrack : public TAVTrack<AudioFramePtr>, public IAudioDecoderOb {
   AudioDesc decodeDesc = {};
   // 解码参数
   ACodecId codecId = ACodecId::none;
-  // FFmpeg原生codec id(同族codec共用avox枚举, 解码器注册表按它选车道)
-  int32_t ffCodecId = 0;
   // 音频解码多少毫秒，默认40MS
   int32_t frameMs = 40;
   // bufferMs需要多少buffer
@@ -61,7 +59,6 @@ class AudioTrack : public TAVTrack<AudioFramePtr>, public IAudioDecoderOb {
   int32_t getFrameMS() { return frameMs; }
   int32_t getFrameSize() { return frameSize; }
   ACodecId getCodecId() { return codecId; }
-  int32_t getFFCodecId() { return ffCodecId; }
   // 检查音频长度与PTS间隔是否匹配
   bool matchPtsData() const { return !bCheckfail; }
 

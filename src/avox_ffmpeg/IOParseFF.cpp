@@ -868,7 +868,6 @@ void IOParseFF::onRunTask() {
                !bDisableAudio) {
       ATrackDesc adesc = {};
       adesc.codecId = ffACodec(st->codecpar->codec_id);
-      adesc.ffCodecId = st->codecpar->codec_id;
       // 不支持的音频格式只跳过该流并 discard 字节, 其余音轨照常(a08):
       // 原行为 bDisableAudio=true 会因一条未知轨株连关闭全部音频
       if (adesc.codecId == ACodecId::none) {

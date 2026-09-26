@@ -27,7 +27,8 @@ namespace avox {
   XX(vorbis, 16, "vorbis")     \
   XX(dts, 17, "dts")           \
   XX(eac3, 18, "eac3")         \
-  XX(truehd, 19, "truehd")
+  XX(truehd, 19, "truehd")     \
+  XX(mlp, 20, "mlp")
 
 // 视频编解码器类型(值导出给引擎插件, 只增不改不删)
 #define AVOX_MAP_VCODEC(XX)  \
@@ -119,9 +120,6 @@ struct ATrackDesc {
   // 对应流Id,音频与视频可能同用一个
   int32_t trackId = 0;
   ACodecId codecId = ACodecId::none;
-  // FFmpeg原生codec id: 同族codec共用avox枚举(MLP/TRUEHD都折进truehd),
-  // 解码器注册表按它选车道, 选错车道全程0输出(TrueHD走MLP车道实证)
-  int32_t ffCodecId = 0;
   // 音频信息
   AudioDesc desc = {};
 };

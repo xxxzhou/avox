@@ -17,7 +17,6 @@ void AudioTrack::setTrackDesc(const ATrackDesc& trackDesc) {
   setTrackId(trackDesc.trackId);
   srcDesc = trackDesc.desc;
   codecId = trackDesc.codecId;
-  ffCodecId = trackDesc.ffCodecId;
   decodeDesc = trackDesc.desc;
   if (codecId == ACodecId::none) {
     LOGFLF(LogLevel::warn, "unsupported codec ", (int32_t)codecId);

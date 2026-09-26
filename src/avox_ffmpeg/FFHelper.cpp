@@ -192,9 +192,11 @@ ACodecId ffACodec(AVCodecID codecId) {
     case AV_CODEC_ID_EAC3:
       return ACodecId::eac3;
     case AV_CODEC_ID_TRUEHD:
-    case AV_CODEC_ID_MLP:
-      // MLP 核心与 TrueHD 增强同族, 枚举合一(MKV 蓝光抽取多为 TRUEHD 标记)
       return ACodecId::truehd;
+    case AV_CODEC_ID_MLP:
+      // MLP/TrueHD是两个真实编码(sync词不同, 解码车道不同), 枚举分开各表;
+      // 折成同枚举会让解码器注册表一键双车道, 选错即全程0输出(TrueHD实证)
+      return ACodecId::mlp;
     default:
       return ACodecId::none;
   }
@@ -300,6 +302,8 @@ AVCodecID getFFCodecId(ACodecId codecId) {
       return AV_CODEC_ID_EAC3;
     case ACodecId::truehd:
       return AV_CODEC_ID_TRUEHD;
+    case ACodecId::mlp:
+      return AV_CODEC_ID_MLP;
     default:
       return AV_CODEC_ID_NONE;
   }

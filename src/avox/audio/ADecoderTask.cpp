@@ -49,17 +49,6 @@ bool ADecoderTask::start(AudioTrack* context) {
         break;
       }
     }
-  } else {
-    // 同族codec共用avox枚举(MLP/TRUEHD都注册在truehd下)时按流的FFmpeg原生
-    // codec id选车道: TrueHD流走MLP车道会全程0输出并逐包刷
-    // "Stream parameters not seen"(实测本地TrueHD素材14400包全跳)
-    const int32_t nativeId = trackContext->getFFCodecId();
-    for (size_t i = 0; i < decodes.size(); ++i) {
-      if (decodes[i].desc.codecId == nativeId) {
-        sIndex = i;
-        break;
-      }
-    }
   }
   auto& aDecode = decodes[sIndex];
   // 回退链: 首选之后的注册解码器(如 fdk-aac失败后 ffmpeg_aac)
