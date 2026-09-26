@@ -50,8 +50,9 @@ class AudioTrack : public TAVTrack<AudioFramePtr>, public IAudioDecoderOb {
   int64_t checkPts = AVOX_NOVALID_PTS;
   // 非正常数据,默认false是正常数据
   bool bCheckfail = false;
-  // 音频时间轴游标: 首个有效pts只做锚点, 之后按实际解码采样数推进
-  int64_t nextPts = AVOX_NOVALID_PTS;
+  // 音频时间轴游标(微秒): 首个有效pts只做锚点, 之后按实际解码采样数推进;
+  // ms整数游标在亚毫秒碎片(TrueHD)上截断冻结, 是全局跳帧根因
+  int64_t nextPtsUs = AVOX_NOVALID_PTS;
 
  public:
   const AudioDesc& getInDesc() { return srcDesc; }

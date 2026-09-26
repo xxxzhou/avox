@@ -15,12 +15,21 @@ int32_t getAudioFrameSize(const AudioDesc& audioDesc, int32_t frameMs) {
   return msSize;
 }
 
+// 注意: 亚毫秒数据(TrueHD碎片40采样=0.83ms)会被截断成0, 做时间轴游标推进
+// 用 getAudioFrameUs; 本接口只适合ms粒度场景
 int32_t getAudioFrameMs(const AudioDesc& audioDesc, int32_t size) {
   int64_t samples = audioDesc.sampleRate;
   samples = samples * audioFormatSize(audioDesc.format);
   samples = samples * audioDesc.channels;
   int32_t msSize = size * 1000 / samples;
   return msSize;
+}
+
+int64_t getAudioFrameUs(const AudioDesc& audioDesc, int32_t size) {
+  int64_t samples = audioDesc.sampleRate;
+  samples = samples * audioFormatSize(audioDesc.format);
+  samples = samples * audioDesc.channels;
+  return (int64_t)size * 1000000 / samples;
 }
 
 int32_t audioFormatSize(AudioFormat format) {

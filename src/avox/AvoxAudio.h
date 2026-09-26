@@ -231,6 +231,9 @@ extern "C" {
 AVOX_EXPORT int32_t audioFormatSize(AudioFormat format);
 AVOX_EXPORT int32_t getSamples(int32_t size, const AudioDesc& desc);
 AVOX_EXPORT int32_t getAudioFrameMs(const AudioDesc& audioDesc, int32_t size);
+// 微秒精度帧时长: ms整数在亚毫秒碎片(TrueHD 40采样/包=0.83ms)上截断为0,
+// 做采样游标推进必须用本接口
+AVOX_EXPORT int64_t getAudioFrameUs(const AudioDesc& audioDesc, int32_t size);
 AVOX_EXPORT const char* getAudioFormatStr(AudioFormat format);
 AVOX_EXPORT int32_t getAudioFrameSize(const AudioDesc& audioDesc,
                                      int32_t frameMs);

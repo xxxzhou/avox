@@ -53,7 +53,7 @@ void AudioTrack::onAudioDesc() {
   assert(frameSize > 0);
   curFrame.setSize(frameSize);
   curFrame.setPts(AVOX_NOVALID_PTS);
-  nextPts = AVOX_NOVALID_PTS;
+  nextPtsUs = AVOX_NOVALID_PTS;
   // 渲染器
   renderTask->start(this);
 }
@@ -67,20 +67,29 @@ void AudioTrack::onDecode(const AvoxAFrame& frame) {
   uint8_t* data = frame.buffer.data;
   int32_t size = frame.buffer.size;
   // frame的开始pts
-  int64_t spts = frame.pts;  
+  int64_t spts = frame.pts;
   // RMVB/cook 在无AVOX_NOVALID_PTS时
-  // 重新锚定采样数才是唯一准确的时间度量。  
-  if (nextPts != AVOX_NOVALID_PTS) {
+  // 重新锚定采样数才是唯一准确的时间度量。
+  // 游标微秒精度: 碎片音轨(TrueHD 40采样/包=0.83ms)按ms推进截断为0, 游标
+  // 冻结→音频钟锯齿→视频快进/冻结循环(全片跳帧)
+  if (nextPtsUs != AVOX_NOVALID_PTS) {
     if (spts != AVOX_NOVALID_PTS &&
-        std::abs(spts - nextPts) > AVOX_NOSYNC_THRESHOLD) {
+        std::abs(spts * 1000 - nextPtsUs) >
+            (int64_t)AVOX_NOSYNC_THRESHOLD * 1000) {
       // 真实pts且偏差大才重锚, 无效pts沿用采样推进的时间轴
-      nextPts = spts;
+      nextPtsUs = spts * 1000;
     } else {
-      spts = nextPts;
+      spts = nextPtsUs / 1000;
     }
   }
+  int64_t sptsUs = nextPtsUs;
   if (spts != AVOX_NOVALID_PTS) {
-    nextPts = spts + getAudioFrameMs(decodeDesc, size);
+    if (nextPtsUs == AVOX_NOVALID_PTS) {
+      nextPtsUs = spts * 1000;
+    }
+    nextPtsUs += getAudioFrameUs(decodeDesc, size);
+    // 本片段时间起点(µs): 重锚帧起点=其自身pts, 连续帧起点=游标推进前值
+    sptsUs = (sptsUs == AVOX_NOVALID_PTS) ? spts * 1000 : sptsUs;
   }
   // 检查音频数据量与PTS间隔时长
   if (!startCheck || spts < checkPts ||
@@ -122,6 +131,7 @@ void AudioTrack::onDecode(const AvoxAFrame& frame) {
   // 第一次进来，初始化当前包的时间戳
   if (curFrame.getPts() == AVOX_NOVALID_PTS) {
     curFrame.setPts(spts);
+    sptsUs = spts * 1000;
   }
   // 写入数据,数据每次组成固定bufferMs的长度bufferSize
   while (size > 0) {
@@ -134,9 +144,9 @@ void AudioTrack::onDecode(const AvoxAFrame& frame) {
       frameQueue.enqueueWait<AudioFrame>(curFrame, copyAudioFrame);
       // 开始新的curFrame
       curFrame.clear();
-      // 下一帧的开始时间
-      spts += getAudioFrameMs(decodeDesc, spaceleft);
-      curFrame.setPts(spts);
+      // 下一帧的开始时间(µs推进, 亚毫秒碎片不截断)
+      sptsUs += getAudioFrameUs(decodeDesc, spaceleft);
+      curFrame.setPts(sptsUs / 1000);
       // 剩余数据继续
       data += spaceleft;
       size -= spaceleft;
@@ -253,7 +263,7 @@ void AudioTrack::flush() {
   //
   curFrame.clear();
   curFrame.setPts(AVOX_NOVALID_PTS);
-  nextPts = AVOX_NOVALID_PTS;
+  nextPtsUs = AVOX_NOVALID_PTS;
   startCheck = false;
   checkDataSize = 0;
   // 记录flush
@@ -266,7 +276,7 @@ void AudioTrack::flush() {
 
 void AudioTrack::updateSeekTime(int64_t seekTime) {
   curFrame.setPts(seekTime);
-  nextPts = seekTime;
+  nextPtsUs = (int64_t)seekTime * 1000;
   clock->update(seekTime);
 }
 
@@ -296,9 +306,9 @@ void AudioTrack::close() {
   // 清空队列
   packetQueue.clear();
   frameQueue.clear();
-  // 采样时间轴游标随轨销毁复位: 轨对象跨open复用, 残留nextPts会把下一轮
+  // 采样时间轴游标随轨销毁复位: 轨对象跨open复用, 残留游标会把下一轮
   // 首帧锚在上一轮停片位(首个有效pts偏差大才重锚, 无效pts帧会沿用残留值)
-  nextPts = AVOX_NOVALID_PTS;
+  nextPtsUs = AVOX_NOVALID_PTS;
   startCheck = false;
   checkPts = AVOX_NOVALID_PTS;
   checkDataSize = 0;

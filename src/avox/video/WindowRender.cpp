@@ -1,5 +1,7 @@
 #include "WindowRender.hpp"
 
+#include <algorithm>
+
 #ifdef AVOX_ENABLE_FREETYPE
 #include "avox_freetype/FontRender.hpp"
 #endif
@@ -312,9 +314,11 @@ void WindowRender::onRunTask() {
       // 统计时间内大于5次
       if (dropCounter.bTrigger() && dropCounter.value() > 3) {
         if (fps < srcFps * 2.0) {
+          // 上限钳在乘法后: 判据在前会越界(45*1.5=67.5 > srcFps*2)
+          double upFps = std::min(srcFps * 2.0, fps * 1.5);
           LOGFLF(LogLevel::info, "video render slow,up fps:", fps, "-",
-                 fps * 1.5);
-          fps = fps * 1.5;
+                 upFps);
+          fps = upFps;
         }
       }
     }
