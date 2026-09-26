@@ -13,6 +13,10 @@
 
 namespace avox {
 
+// 回调 BadData 连击阈值(帧): 达到即判定会话已 wedge, 扣帧等下个 IDR 重建。
+// 30 帧 ≈ 1s, 单个偶发坏包远够不着
+static constexpr int32_t kVtBadDataResync = 30;
+
 void regIOSVDecoder() {
   RegFunc regFunc = {"ios video decoder init", []() {
                        // H264
@@ -170,6 +174,20 @@ static CFDictionaryRef av1ExtensionsFromConfigs(
 
 DecodeResult IOSVDecoder::onPreDecoder() {
   const auto &packets = configPackets;
+  // 会话重建前旧会话先退场: 原实现直接覆盖成员, 旧 session 既不 Invalidate
+  // 也不 Release(异步回调悬空+泄漏), 旧格式描述同泄 (0926 seek 排查实证)
+  if (decompressionSession) {
+    if (getIosDeviceSystemVersion() >= 11) {
+      VTDecompressionSessionWaitForAsynchronousFrames(decompressionSession);
+    }
+    VTDecompressionSessionInvalidate(decompressionSession);
+    CFRelease(decompressionSession);
+    decompressionSession = nullptr;
+  }
+  if (videoFormatDescription) {
+    CFRelease(videoFormatDescription);
+    videoFormatDescription = nullptr;
+  }
   // 每次会话重建重置, 防解码器复用时上次流的位深残留
   streamBitDepth = 8;
   // 重排状态随会话重建复位: 新流要重新学重排深度
@@ -397,6 +415,23 @@ DecodeResult IOSVDecoder::decode(const AvoxPacket &packet_) {
     }
   }
   bool bKeyFrame = bH26x && naluKeyFrame(codecDesc.vcodecId, ualUnit);
+  // 韧性: VT 吃到坏 NAL 后会话永久 wedge(回调连环 BadData, 0926 seek 落点簇
+  // 拆坏包实证), 扣帧到下个 IDR 重建会话自愈, 不让一次坏包打死硬解车道
+  if (bWaitResyncIdr) {
+    if (!bKeyFrame) {
+      resyncDropped++;
+      return DecodeResult::dataError;
+    }
+    log(LogLevel::warn, "vt resync: rebuild session at idr, dropped:", resyncDropped);
+    bWaitResyncIdr = false;
+    badDataStreak = 0;
+    resyncDropped = 0;
+    releaseReorder();
+    DecodeResult resyncResult = onPreDecoder();
+    if (resyncResult != DecodeResult::success) {
+      return resyncResult;
+    }
+  }
   // ios里不能解码的包不要输入,可能引起问题
   if (!bDecode) {
     return DecodeResult::dataError;
@@ -581,14 +616,22 @@ void IOSVDecoder::decompressionOutputCallback(
     VTDecodeInfoFlags infoFlags, CVImageBufferRef imageBuffer,
     CMTime presentationTimeStamp, CMTime presentationDuration) {
   int64_t pts = presentationTimeStamp.value / presentationTimeStamp.timescale;
+  IOSVDecoder *decoder = static_cast<IOSVDecoder *>(decompressionOutputRefCon);
   if (status != noErr || !imageBuffer) {
     LOGFLF(LogLevel::warn, "ios hard decoder decode failed,status:", status);
-    // 12909,常见的错误,是否需要计数等特殊处理
-    if (status == kVTVideoDecoderBadDataErr) {
+    // 12909 = kVTVideoDecoderBadDataErr: VT 吃到坏 NAL 后会话永久 wedge, 后续
+    // 每包连环 BadData。连击达阈值判定 wedge, 扣帧等下个 IDR 重建会话自愈。
+    // 仅 h264/h265: vp9/av1 无 IDR 语义, 扣帧等不到 IDR 会全部饿死
+    if (decoder && (decoder->codecDesc.vcodecId == VCodecId::h264 ||
+                    decoder->codecDesc.vcodecId == VCodecId::h265)) {
+      if (decoder->badDataStreak.fetch_add(1) + 1 >= kVtBadDataResync) {
+        if (!decoder->bWaitResyncIdr.exchange(true)) {
+          log(LogLevel::warn, "vt baddata streak, hold frames until next idr");
+        }
+      }
     }
     return;
   }
-  IOSVDecoder *decoder = static_cast<IOSVDecoder *>(decompressionOutputRefCon);
   if (!decoder) {
     return;
   }
@@ -598,6 +641,8 @@ void IOSVDecoder::decompressionOutputCallback(
     std::lock_guard<std::mutex> lk(decoder->reorderMutex);
     decoder->reorderBuf.push_back({pts, imageBuffer});
   }
+  // 好帧到: BadData 连击清零
+  decoder->badDataStreak = 0;
   decoder->drainReorder();
 }
 

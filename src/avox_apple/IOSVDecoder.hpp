@@ -6,6 +6,7 @@
 #include "avox/player/MediaPlayer.hpp"
 #include <CoreVideo/CoreVideo.h>
 #include <VideoToolbox/VideoToolbox.h>
+#include <atomic>
 #include <mutex>
 #include <vector>
 
@@ -45,6 +46,12 @@ private:
   int64_t reorderFrames = 0;
   int64_t maxPtsMinusDts = 0;
   int64_t frameDurMs = 0;
+
+  // VT 吃到坏 NAL 后会话永久 wedge(回调连环 BadData): 连击达阈值即扣帧等
+  // 下个 IDR 重建会话自愈, 不让一次坏包打死整个硬解车道 (0926 seek 实证)
+  std::atomic<int32_t> badDataStreak{0};
+  std::atomic<bool> bWaitResyncIdr{false};
+  int32_t resyncDropped = 0;
 
   // 按渲染方式把解码帧交给观察者; 消费掉传入的 buffer 引用
   void dispatchDecodedFrame(int64_t pts, CVImageBufferRef imageBuffer);
