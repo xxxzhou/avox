@@ -115,9 +115,18 @@ private:
   // PGS 位图字幕解码(§3.6): 选中该轨时 IO 循环喂包, 出 RGBA 画布
   bool parsePgsFrame(int32_t streamId, const AVPacket* pkt, int64_t ptsMs);
   // seek 落点校验: 直读 fmtCtx 到首个视频包记落点(ms), 到首个关键视频包停
-  // (包数/时长兜底); 读出的包进 seekStash 回灌. 返回是否拿到视频落点
+  // (包数/时长兜底); 读出的包进 seekStash 回灌. 返回是否拿到视频落点.
+  // budgetMs: 网络流找关键帧要过 GOP 顺序拉流, 本地 1s 预算不够, 由调用方调
   bool verifySeekLanding(int32_t videoStreamId, int64_t& landedMs,
-                         bool& sawKey);
+                         bool& sawKey, int32_t budgetMs = 1000);
+  // flv 网络流 seek: 索引直跳(flvdec 自建索引不自用, 这里取目标前最近条目
+  // Range 落位) → 无覆盖时平均码率估算字节位直跳+tag 重同步+落点修正。原
+  // avformat_seek_file 退化为从当前位向前顺序整扫, 实测 987s 直链要 25s+
+  bool flvEstimateSeek(int64_t posMs, int32_t videoStreamId, int64_t& landedMs,
+                       bool& sawKey);
+  // 从 from 起窗口扫 FLV tag 同步点(prevTagSize 自洽+type+零流号), 命中挪读位
+  // 到 tag 头起始; 裸挪读位大概率落在 tag 数据中段, demuxer 需对齐边界
+  bool flvResyncTag(int64_t from);
   // 清空 seekStash(av_packet_free)
   void clearSeekStash();
   bool parseH26xConfig(int32_t streamId, const uint8_t *extradata, int32_t size,

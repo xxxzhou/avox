@@ -1300,11 +1300,17 @@ bool IOParseFF::seekTo(int64_t pos) {
   // EXIT(非 EOF), 读线程到不了 EOF 分支, 安全.
   bInterruptRead.store(true);
   pauseTask();
-  // 等 IO 线程确认已退出 av_read_frame (最多约200ms), 之后再独占 fmtCtx 做
-  // seek, 避免 avformat_seek_file 与 av_read_frame 并发操作同一 fmtCtx 崩溃
+  // 等 IO 线程确认已退出 av_read_frame (最多约1.2s), 之后再独占 fmtCtx 做
+  // seek, 避免 avformat_seek_file 与 av_read_frame 并发操作同一 fmtCtx 崩溃。
+  // 上限不能缩回 200ms: 打断中的 http 协议层会走重连退避(av_usleep 1s 不可
+  // 打断), 拖动进度条的 seek 风暴下 200ms 等不到 ack 是常态 → 快速 seek 门
+  // (要求 bIoAcked)全关, 每条 seek 退回顺序整扫 25~50s(用户体感冻死), 且
+  // 超时放行的并发 fmtCtx 操作实测撕 demuxer(Unexpected offset/Packet
+  // mismatch 风暴)。1.2s 覆盖重连退避; IO 线程阻塞在下游 enqueueWait 的
+  // 老桩场景仍会超时放行, 只多等 1s 不损功能
   bIoPausedAck.store(false);
   int32_t ackWait = 0;
-  for (; ackWait < 10 && !bIoPausedAck.load(); ++ackWait) {
+  for (; ackWait < 60 && !bIoPausedAck.load(); ++ackWait) {
     sleepTask(false, 20);
   }
   const bool bIoAcked = bIoPausedAck.load();
@@ -1339,6 +1345,29 @@ bool IOParseFF::seekTo(int64_t pos) {
     }
     bVerifyLanding = videoStreamId >= 0;
   }
+  // flv 网络流快速 seek 门(与本地落点校验互斥): demuxer=flv + 网络源。flv 的
+  // read_seek 只会 avio_seek_time, 而 pb->read_seek 恒空(自建 wrapper 与原生
+  // avio 都不设), 恒 ENOSYS → avformat_seek_file 退化为从当前位向前顺序整扫
+  // (987s 直链实测 25~46s)。flvdec 播放期虽按关键帧/音频包自建流索引但从不
+  // 自用, 这里绕过它直用索引/字节估算跳转
+  bool bFlvFastSeek = false;
+  if (bIoAcked && !bVerifyLanding && st == SeekType::normal &&
+      sourceMode != AVSourceMode::local && fmtCtx->iformat &&
+      fmtCtx->iformat->name && strcmp(fmtCtx->iformat->name, "flv") == 0) {
+    for (int32_t i = 0; i < fmtCtx->nb_streams; i++) {
+      auto* vs = fmtCtx->streams[i];
+      if (vs->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
+          (vs->disposition & AV_DISPOSITION_ATTACHED_PIC) == 0 &&
+          vs->discard != AVDISCARD_ALL) {
+        videoStreamId = i;
+        break;
+      }
+    }
+    bFlvFastSeek = videoStreamId >= 0;
+  }
+  // 落点(ms)与关键帧标志: 本地变体纠偏与 flv 估算跳转两条路共用
+  int64_t landedMs = AV_NOPTS_VALUE;
+  bool sawKey = false;
   // 变体重定位: 0=-1 BACKWARD(现行) 1=-1 min=target(向后落惯用法, 落点在
   // 目标后一关键帧) 2=视频流 BACKWARD; 纯 ffmpeg 实测视频流 FORWARD 惯用法
   // 恒落文件尾, 不纳入
@@ -1367,10 +1396,38 @@ bool IOParseFF::seekTo(int64_t pos) {
     return true;
   };
   if (st == SeekType::normal) {
-    bSeek = rawSeek(0);
-    // 被打断/interrupt 竞态误杀的一次性失败(同上下文重试即准)给一次重试
-    if (!bSeek && bVerifyLanding) {
+    if (bFlvFastSeek) {
+      bSeek = flvEstimateSeek(pos, videoStreamId, landedMs, sawKey);
+      if (bSeek) {
+        LOGFLF(LogLevel::info, "flv fastseek landed:", landedMs, " target:",
+               pos, " key:", sawKey ? 1 : 0, " stash:",
+               (int32_t)seekStash.size());
+      } else {
+        // 估算路径失手(重同步不出/落点修不进容差): 退整扫前把读位挪到目标
+        // 前约 30s 的估算字节处——整扫的兜底实现是从当前位向前顺序读, 从 0
+        // 扫等于全片过网, 贴着目标前起扫一般一秒内落准
+        LOGFLF(LogLevel::info, "flv fastseek fallback, landed:", landedMs,
+               " target:", pos);
+        clearSeekStash();
+        if (fmtCtx->duration > 0) {
+          const int64_t sz = avio_size(fmtCtx->pb);
+          const int64_t durMs = fmtCtx->duration / 1000;
+          if (sz > 0 && durMs > 0) {
+            int64_t back = (int64_t)((double)(pos - 30000) * (double)sz /
+                                     (double)durMs);
+            back = std::max<int64_t>(0, std::min<int64_t>(back, sz - 1));
+            avio_seek(fmtCtx->pb, back, SEEK_SET);
+          }
+        }
+        avformat_flush(fmtCtx.get());
+        bSeek = rawSeek(0);
+      }
+    } else {
       bSeek = rawSeek(0);
+      // 被打断/interrupt 竞态误杀的一次性失败(同上下文重试即准)给一次重试
+      if (!bSeek && bVerifyLanding) {
+        bSeek = rawSeek(0);
+      }
     }
   } else if (st == SeekType::time) {
     // 基于字节位置的跳转 (单位：字节)
@@ -1385,8 +1442,6 @@ bool IOParseFF::seekTo(int64_t pos) {
   }
   // 落点校验+纠偏: 首个视频包 pts 偏差超容差(向前 2s/向后 30s)则换变体
   // 重试, 取偏差最小者; 始终超差也归位最优落点并留痕
-  int64_t landedMs = AV_NOPTS_VALUE;
-  bool sawKey = false;
   if (bSeek && bVerifyLanding) {
     const bool bLanded = verifySeekLanding(videoStreamId, landedMs, sawKey);
     const int64_t dev = bLanded ? landedMs - pos : 0;
@@ -1466,7 +1521,7 @@ bool IOParseFF::seekTo(int64_t pos) {
 }
 
 bool IOParseFF::verifySeekLanding(int32_t videoStreamId, int64_t& landedMs,
-                                  bool& sawKey) {
+                                  bool& sawKey, int32_t budgetMs) {
   landedMs = AV_NOPTS_VALUE;
   sawKey = false;
   if (!fmtCtx || videoStreamId < 0) {
@@ -1474,7 +1529,7 @@ bool IOParseFF::verifySeekLanding(int32_t videoStreamId, int64_t& landedMs,
   }
   // 兜底上限: RM 音视频交织下首视频包就在前几个包, 256 包/1s 远够
   const auto deadline =
-      std::chrono::steady_clock::now() + std::chrono::milliseconds(1000);
+      std::chrono::steady_clock::now() + std::chrono::milliseconds(budgetMs);
   AVPacketPtr pkt = getUniquePtr(av_packet_alloc());
   for (int32_t i = 0; i < 256; i++) {
     if (std::chrono::steady_clock::now() > deadline) {
@@ -1517,6 +1572,118 @@ void IOParseFF::clearSeekStash() {
     av_packet_free(&p);
   }
   seekStash.clear();
+}
+
+bool IOParseFF::flvEstimateSeek(int64_t posMs, int32_t videoStreamId,
+                                int64_t& landedMs, bool& sawKey) {
+  landedMs = AV_NOPTS_VALUE;
+  sawKey = false;
+  if (!fmtCtx || !fmtCtx->pb || fmtCtx->duration <= 0 || posMs < 0) {
+    return false;
+  }
+  const int64_t fileSize = avio_size(fmtCtx->pb);
+  const int64_t durationMs = fmtCtx->duration / 1000;
+  if (fileSize <= 0 || durationMs <= 0) {
+    return false;
+  }
+  auto* vs = fmtCtx->streams[videoStreamId];
+  // 索引直跳优先: flvdec 播放期给每个关键帧/音频包自建流索引但 read_seek 从
+  // 不自用(恒 ENOSYS 退化整扫), 这里取目标前最近条目直接 Range 落位——回到
+  // 已看过的区间时字节精确, 零修正。条目离目标超 BACKWARD 容差视为不覆盖
+  // (刚起播就远跳的场景索引只有开头几个点), 走估算
+  const AVIndexEntry* entry = avformat_index_get_entry_from_timestamp(
+      vs, av_rescale_q(posMs, {1, 1000}, vs->time_base), AVSEEK_FLAG_BACKWARD);
+  if (entry && entry->pos > 0 && entry->timestamp != AV_NOPTS_VALUE) {
+    const int64_t entryMs =
+        av_rescale_q(entry->timestamp, vs->time_base, {1, 1000});
+    if (posMs - entryMs <= kSeekLandBackTolMs &&
+        avio_seek(fmtCtx->pb, entry->pos, SEEK_SET) >= 0) {
+      avformat_flush(fmtCtx.get());
+      if (flvResyncTag(entry->pos) &&
+          verifySeekLanding(videoStreamId, landedMs, sawKey, 8000) &&
+          landedMs != AV_NOPTS_VALUE &&
+          landedMs - posMs <= kSeekLandFwdTolMs) {
+        return true;
+      }
+      clearSeekStash();
+    }
+  }
+  const double bytesPerMs = (double)fileSize / (double)durationMs;
+  // 三跳兜 VBR: 首跳按平均码率估位, 落点偏差按误差线性折算成字节修正量累计
+  // 到 corrMs 再跳; 实测码率波动(本片 433MB 处偏差 -47s)一两轮内归位
+  int64_t corrMs = 0;
+  for (int32_t attempt = 0; attempt < 3; attempt++) {
+    int64_t bytePos =
+        (int64_t)((double)(posMs + corrMs) * bytesPerMs);
+    bytePos = std::max<int64_t>(0, std::min<int64_t>(bytePos, fileSize - 1));
+    if (avio_seek(fmtCtx->pb, bytePos, SEEK_SET) < 0) {
+      return false;
+    }
+    // 裸挪读位后 demuxer 包缓冲/解析中间态全作废, 读前先清
+    avformat_flush(fmtCtx.get());
+    if (!flvResyncTag(bytePos)) {
+      return false;
+    }
+    landedMs = AV_NOPTS_VALUE;
+    sawKey = false;
+    // 超时/超包数退出时 landedMs 已记首视频包位置: 修正仍可进行, 关键帧
+    // 由 bWaitKeyframe 门闸兜底(见 seekTo 尾部)
+    if (!verifySeekLanding(videoStreamId, landedMs, sawKey, 8000)) {
+      return false;
+    }
+    const int64_t dev = landedMs - posMs;
+    if (dev <= kSeekLandFwdTolMs && dev >= -kSeekLandBackTolMs) {
+      return true;
+    }
+    corrMs += posMs - landedMs;
+    LOGFLF(LogLevel::info, "flv fastseek correct attempt:", attempt,
+           " landed:", landedMs, " target:", posMs, " corrMs:", corrMs);
+  }
+  return false;
+}
+
+bool IOParseFF::flvResyncTag(int64_t from) {
+  if (!fmtCtx || !fmtCtx->pb) {
+    return false;
+  }
+  constexpr int32_t kWin = 256 * 1024;
+  constexpr int64_t kMaxScan = 4 * 1024 * 1024;
+  std::vector<uint8_t> buf(kWin);
+  int64_t base = from;
+  while (base < from + kMaxScan) {
+    const int n = avio_read(fmtCtx->pb, buf.data(), kWin);
+    if (n < 15) {
+      // 尾窗不足 prevTagSize+tag 头: 文件尾
+      return false;
+    }
+    for (int32_t p = 0; p + 15 <= n; p++) {
+      // 候选=tag 头(11B): type(1) size(3) ts(3+1) streamid(3)。tag 头自洽判定
+      // = 紧随其后的 prevTagSize(4) == size+11 且 type∈{8,9,18} 且 streamid
+      // 恒 0(FLV 布局 [tag][prevTagSize=size+11] 交替, 前导字段存的是上一个
+      // tag 的大小, 不能拿来校验当前 tag)。32 位自洽+类型+3 零字节, 误报概率
+      // 可忽略; tag 数据跨窗导致尾随字段出窗的候选放过, 由后续小 tag 命中
+      const uint8_t* q = buf.data() + p;
+      const uint32_t type = q[0];
+      const uint32_t size =
+          ((uint32_t)q[1] << 16) | ((uint32_t)q[2] << 8) | q[3];
+      if ((type != 8 && type != 9 && type != 18) || size == 0 ||
+          q[8] != 0 || q[9] != 0 || q[10] != 0) {
+        continue;
+      }
+      const uint64_t end = (uint64_t)p + 11 + size;
+      if (end + 4 > (uint64_t)n ||
+          AV_RB32(buf.data() + end) != (uint32_t)(size + 11)) {
+        continue;
+      }
+      // flv_read_packet 期望落在 tag 头(尾随 prevTagSize 由 leave 消费)
+      avio_seek(fmtCtx->pb, base + p, SEEK_SET);
+      return true;
+    }
+    // tag 头 11 字节可能被窗边界切开, 回退重叠续扫
+    base += n - 15;
+    avio_seek(fmtCtx->pb, base, SEEK_SET);
+  }
+  return false;
 }
 
 int64_t IOParseFF::duration() const {

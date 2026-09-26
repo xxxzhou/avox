@@ -26,6 +26,8 @@ generatetest(seektest)
 if(MSVC)
     target_compile_options(seektest PRIVATE /utf-8)
 endif()
+# seek 风暴探针: 密集连发 seek(拖进度条节奏)后帧流是否恢复
+generatetest(seekstorm)
 # seek 后播放节奏探针: 量化「播一会卡一会」(帧间隔/buffering 段/位置推进)
 generatetest(stutterprobe)
 if(MSVC)
