@@ -8,27 +8,30 @@ namespace avox {
 
 bool checkAvccPacket(const uint8_t* data, int32_t size) {
   // annexb 4肯定不是avcc包，但是ann3可能是avcc包
+  if (size < 4) {
+    return false;
+  }
   if (data[0] == 0 && data[1] == 0 && data[2] == 0 && data[3] == 1) {
     return false;
-  } else {
-    uint32_t avccSize =
-        ((data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]);
-    avccSize += 4;
-    while (avccSize <= size) {
-      // 如果长度对的上，说明是avcc包
-      if (avccSize == size) {
-        return true;
-      }
-      if (avccSize > size + 4) {
-        break;
-      }
-      // 下一包的长度
-      uint32_t nextSize = ((data[avccSize] << 24) | (data[avccSize + 1] << 16) |
-                           (data[avccSize + 2] << 8) | data[avccSize + 3]);
-      avccSize += nextSize + 4;
-    }
   }
-  return false;
+  // 长度链逐环校验。游标运算必须 64 位: 垃圾包里 FC FF FF FF 的
+  // nextSize+4 在 uint32 回绕成 0, 游标原地踏步死循环, IO 线程冻死
+  // 整个播放器(极空间 seek 后 partial 风暴期的错位包实测踩中);
+  // 每环至少前进 4 字节, 循环有界必终止
+  uint32_t pos = 0;
+  while (pos < (uint32_t)size) {
+    if ((uint64_t)pos + 4 > (uint64_t)size) {
+      return false;
+    }
+    const uint64_t nextSize =
+        ((uint32_t)data[pos] << 24) | ((uint32_t)data[pos + 1] << 16) |
+        ((uint32_t)data[pos + 2] << 8) | (uint32_t)data[pos + 3];
+    if ((uint64_t)pos + 4 + nextSize > (uint64_t)size) {
+      return false;
+    }
+    pos = (uint32_t)(pos + 4 + nextSize);
+  }
+  return true;
 }
 
 void copyBuf(PacketBufPtr& pack, const AvoxPacket& data) {

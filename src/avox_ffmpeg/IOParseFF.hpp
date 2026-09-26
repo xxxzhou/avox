@@ -108,6 +108,8 @@ private:
   HttpSeg* touchHttpSeg(int64_t segStart);
   // 底层 seek+循环读抓整段(短读循环凑满, EOF 取实际量); bAnchor=true 入钉住区
   HttpSeg* fetchHttpSeg(int64_t segStart, bool bAnchor);
+  // 单次抓取(fetchHttpSeg 的重试体): 失败返回 nullptr
+  HttpSeg* fetchHttpSegOnce(int64_t segStart, bool bAnchor);
   // 驱逐对应区链表尾段: 记驱逐时刻(锚点判定)并摘表
   void evictHttpSeg(bool bPin);
   // PGS 位图字幕解码(§3.6): 选中该轨时 IO 循环喂包, 出 RGBA 画布

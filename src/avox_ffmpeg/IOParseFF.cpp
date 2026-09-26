@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <thread>
 
 #include "avox/Avox.hpp"
 #include "avox/codec/H26XHelper.hpp"
@@ -623,11 +624,44 @@ int IOParseFF::wrapReadAt(uint8_t* buf, int size, int64_t pos) {
   if (!seg) {
     return AVERROR(EIO);
   }
-  const int64_t inSeg = pos - seg->off;
-  const int64_t avail = (int64_t)seg->data.size() - inSeg;
+  int64_t inSeg = pos - seg->off;
+  int64_t avail = (int64_t)seg->data.size() - inSeg;
   if (avail <= 0) {
-    // 短段=文件尾, 段尾之后无数据
-    return AVERROR_EOF;
+    // 短段只在真文件尾是合法事实。中文件的短段(预读期连接被服务端提前收尾
+    // 等原因入库)是毒段: mov 在 avio_seek 的前向 fill 循环吃到这个 EOF 会
+    // should_retry 撤样本重试, 同段永远 EOF, 刷 partial file 风暴把音频丢光。
+    // 按底层文件大小判别, 毒段驱逐重抓一次; 刚治过的段短时间内再毒直接认尾,
+    // 防服务端持续截断时的无限重抓
+    const int64_t sz = avio_size(httpPb);
+    if (sz > 0 && seg->off + (int64_t)seg->data.size() >= sz) {
+      return AVERROR_EOF;
+    }
+    const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                              std::chrono::steady_clock::now().time_since_epoch())
+                              .count();
+    auto evict = segEvictMs.find(segStart);
+    if (evict != segEvictMs.end() && nowMs - evict->second < 3000) {
+      return AVERROR_EOF;
+    }
+    auto& lst = segIdxLru.count(segStart) ? segLru : segPin;
+    auto& idx = segIdxLru.count(segStart) ? segIdxLru : segIdxPin;
+    auto& bytes = segIdxLru.count(segStart) ? segLruBytes : segPinBytes;
+    auto it = idx.find(segStart);
+    if (it != idx.end()) {
+      bytes -= (int64_t)it->second->data.size();
+      lst.erase(it->second);
+      idx.erase(it);
+    }
+    segEvictMs[segStart] = nowMs;
+    seg = touchHttpSeg(segStart);
+    if (!seg) {
+      return AVERROR(EIO);
+    }
+    inSeg = pos - seg->off;
+    avail = (int64_t)seg->data.size() - inSeg;
+    if (avail <= 0) {
+      return AVERROR_EOF;
+    }
   }
   const int n = (int)std::min<int64_t>(size, avail);
   memcpy(buf, seg->data.data() + inSeg, n);
@@ -656,7 +690,37 @@ IOParseFF::HttpSeg* IOParseFF::touchHttpSeg(int64_t segStart) {
 }
 
 IOParseFF::HttpSeg* IOParseFF::fetchHttpSeg(int64_t segStart, bool bAnchor) {
-  if (avio_seek(httpPb, segStart, SEEK_SET) < 0) {
+  // 服务端瞬断单次即败会退化成 mov partial 风暴: demuxer 对音频样本逐个回退
+  // 重试, 音频供给断流 A/V 撕裂(极空间 seek 后实测), 错位包还会喂出垃圾帧。
+  // 底层抓取自带短间隔重试吸收瞬断; 重试都失败才交回上层(上层自有无穷重试)。
+  // 打断窗口(seek 暂停/close)内 avio_seek 恒吐 AVERROR_EXIT, 重试纯空转,
+  // 立即放弃——恢复读循环后按新读位重新取段
+  for (int32_t attempt = 0; attempt < 3; ++attempt) {
+    HttpSeg* seg = fetchHttpSegOnce(segStart, bAnchor);
+    if (seg) {
+      return seg;
+    }
+    if (interruptIo()) {
+      return nullptr;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
+  return nullptr;
+}
+
+IOParseFF::HttpSeg* IOParseFF::fetchHttpSegOnce(int64_t segStart,
+                                                bool bAnchor) {
+  // 落点必须逐字节相等: 只查 <0 会放过「返回成功但底层实际落位偏移」的
+  // http 瞬断半程(连接重建后 Range 未生效等), 错位数据入库后整段所有包
+  // 字节平移——视频包 NAL 边界全错解码不出, 音频靠 AAC 重同步静默吞掉
+  // (极空间重访区实测), 表现即 seek 后视频永久断供
+  const int64_t landed = avio_seek(httpPb, segStart, SEEK_SET);
+  if (landed != segStart) {
+    // 打断窗口内恒吐 EXIT 属预期(seek/close 接管), 不刷屏; 其余落位失败留痕
+    if (landed != AVERROR_EXIT || !interruptIo()) {
+      LOGFLF(LogLevel::warn, "seg fetch seek misland, want:", segStart,
+             " got:", landed);
+    }
     return nullptr;
   }
   // seek 落位即清底层 avio 的读错/EOF 残留: 打断窗口刚结束的首个抓取会被
@@ -695,12 +759,30 @@ IOParseFF::HttpSeg* IOParseFF::fetchHttpSeg(int64_t segStart, bool bAnchor) {
     return nullptr;
   }
   seg.data.resize((size_t)total);
+  // 段追踪(临时诊断口): AVOX_SEG_TRACE=1 时打印每段落位/字节数/首 8 字节,
+  // 供与 curl 直读字节对照定位错位层
+  char headHex[17] = {0};
+  const bool bTrace = [] {
+    static const bool b = getenv("AVOX_SEG_TRACE") &&
+                          getenv("AVOX_SEG_TRACE")[0] == '1';
+    return b;
+  }();
+  if (bTrace) {
+    for (int i = 0; i < 8 && i < (int)seg.data.size(); ++i) {
+      snprintf(headHex + i * 2, sizeof(headHex) - i * 2, "%02x",
+               seg.data[(size_t)i]);
+    }
+  }
   auto& lst = bAnchor ? segPin : segLru;
   auto& idx = bAnchor ? segIdxPin : segIdxLru;
   auto& bytes = bAnchor ? segPinBytes : segLruBytes;
   lst.push_front(std::move(seg));
   idx[segStart] = lst.begin();
   bytes += total;
+  if (bTrace) {
+    LOGFLF(LogLevel::info, "seg fetched off:", segStart, " bytes:", total,
+           " head:", headHex, " anchor:", bAnchor ? 1 : 0);
+  }
   // 超预算从链表尾驱逐(钉住区至少保留刚入库的这段)
   while (bytes > (bAnchor ? kHttpSegPinBytes : kHttpSegLruBytes) &&
          lst.size() > (size_t)(bAnchor ? 1 : 0)) {
@@ -732,6 +814,14 @@ IOParseFF::HttpSeg* IOParseFF::fetchHttpSeg(int64_t segStart, bool bAnchor) {
     }
     if (got <= 0 || (bErr && got < kHttpSegSize)) {
       break;
+    }
+    // EOF 短段只在真文件尾入库; 中文件的干净收尾短段是毒段(之后这段永远
+    // EOF, 见 wrapReadAt 毒段自愈注释), 丢弃
+    if (got < kHttpSegSize) {
+      const int64_t sz = avio_size(httpPb);
+      if (!(bEof && sz > 0 && next + got >= sz)) {
+        break;
+      }
     }
     pre.data.resize((size_t)got);
     segLru.push_front(std::move(pre));
