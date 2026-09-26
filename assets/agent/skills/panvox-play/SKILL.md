@@ -8,7 +8,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 
 ## 0. 前置事实
 - **双仓同级**(panvox 宿主, avox 引擎): Windows `D:\Work\github\{panvox,avox}`; Mac 构建盘 `/Volumes/PSSD/work/github/`(另有部署克隆 `~/development/panvox`); Linux/WSL `~/github/`。全平台编译/部署配方在 panvox 仓 `docs/avox-build-and-deploy.md`(启动闸/部署脚本/新鲜度闸门都在里面, 需要重编先读它 §2/§3)。
-- **通道**: 本机通常是 Windows 开发机; `ssh mac` / `ssh pc` 双向免密; Android 真机经 Windows `adb`; iOS 模拟器经 Mac `xcrun simctl`。动手先确认自己落在哪台(uname), 目标≠本机就过 SSH/adb, **Windows 目标过 ssh 起 GUI app 会落在不可见会话**——app 级复现让用户手起, 引擎级复现走免窗的 engine_play_test。
+- **通道**: 本机通常是 Windows 开发机; `ssh mac` / `ssh pc` 双向免密; Android 真机经 Windows `adb`; iOS 模拟器经 Mac `xcrun simctl`; **Linux 环境 = Windows 本机里的 WSL(Ubuntu), 不是独立目标机**, 经 `wsl bash -c '...'` 进场(无 ssh), 仓库在 WSL 内 `~/github/{panvox,avox}`。动手先确认自己落在哪台(uname), 目标≠本机就过 SSH/adb, **Windows 目标过 ssh 起 GUI app 会落在不可见会话**——app 级复现让用户手起, 引擎级复现走免窗的 engine_play_test。
 - **数据目录**: Windows `%APPDATA%\panvox\`; Mac `~/Library/Application Support/com.panvox.panvox/`。关键文件: `sources.json`(源配置: id/kind/origin/user/pass/root/token —— **明文凭据**)、`history.json`(键=源id+路径, 值=title/position/duration/updated)、`local_library.json`(文件清单)、`unplayable.json`(打不开下墙记录)、`freeze/`(冻结名片)。
 
 ## 1. 流程(五步)
@@ -34,7 +34,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 
 **iOS**: 模拟器 `xcrun simctl launch --console-pty booted com.panvox.panvox` 收 stdout; 真机无控制台, 依赖用户复述+ repro 降级到 Mac/Windows。
 
-**WSL/Linux**: `app/build/linux/x64/release/bundle/panvox 2>&1 | tee /tmp/panvox-run.log`; 画面恒走 frame_poll CPU 车道, 与 Win/mac 硬解车道表现不可直接互推。
+**Linux/WSL**(= Windows 本机里的 WSL Ubuntu, 经 `wsl bash -c` 进场): 仓库在 WSL 内 `~/github/{panvox,avox}`; 起 app `~/github/panvox/app/build/linux/x64/release/bundle/panvox 2>&1 | tee /tmp/panvox-run.log`, **必须普通用户**起(WSLg 下 root 连不上用户 Wayland socket)。wsl.exe 实操: 复杂命令写 .sh 进去跑(引号经 Windows 层易被吃), 路径用 wslpath 转, bash 脚本忌 CRLF。画面恒走 frame_poll CPU 车道, 与 Win/mac 硬解车道表现不可直接互推; 引擎构建车道归夜班 openclaw 会话, 动手前 `ps aux | grep build_linux` 确认没人编别抢树。
 
 ## 3. 日志分析
 - 按目录 mtime 取最新文件读; **严禁全盘/递归搜索日志**(必超时)。大文件先看头尾定时间戳格式, 再按用户说的时刻 grep 时间窗。
