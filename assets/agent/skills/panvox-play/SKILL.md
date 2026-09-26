@@ -9,7 +9,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 ## 0. 前置事实
 - **双仓同级**(panvox 宿主, avox 引擎): Windows `D:\Work\github\{panvox,avox}`; Mac 构建盘 `/Volumes/PSSD/work/github/`(另有部署克隆 `~/development/panvox`); Linux/WSL `~/github/`。全平台编译/部署配方在 panvox 仓 `docs/avox-build-and-deploy.md`(启动闸/部署脚本/新鲜度闸门都在里面, 需要重编先读它 §2/§3)。
 - **通道**: 本机通常是 Windows 开发机; `ssh mac` / `ssh pc` 双向免密; Android 真机经 Windows `adb`; iOS 模拟器经 Mac `xcrun simctl`; **Linux 环境 = Windows 本机里的 WSL(Ubuntu), 不是独立目标机**, 经 `wsl bash -c '...'` 进场(无 ssh), 仓库在 WSL 内 `~/github/{panvox,avox}`。动手先确认自己落在哪台(uname), 目标≠本机就过 SSH/adb, **Windows 目标过 ssh 起 GUI app 会落在不可见会话**——app 级复现让用户手起, 引擎级复现走免窗的 engine_play_test。
-- **数据目录**: Windows `%APPDATA%\panvox\`; Mac `~/Library/Application Support/com.panvox.panvox/`。关键文件: `sources.json`(源配置: id/kind/origin/user/pass/root/token —— **明文凭据**)、`history.json`(键=源id+路径, 值=title/position/duration/updated)、`media_info.json`(播放档案: at=ms epoch/via=thumb|playback/轨道表, ready/playing 才落档 —— **重建用户操作时间线最可靠; 某片有档=引擎当时 open 成功过, 卡点就在其后**)、`local_library.json`(文件清单)、`unplayable.json`(打不开下墙记录)、`freeze/`(冻结名片)。
+- **数据目录**: Windows `%APPDATA%\panvox\`; **Mac 真位=沙盒容器 `~/Library/Containers/com.panvox.panvox/Data/Documents/panvox/`**(history/media_info/sources 都在这; 裸 `~/Library/Application Support/com.panvox.panvox/` 只有残缺旧位, 0926 两案实证)。关键文件: `sources.json`(源配置: id/kind/origin/user/pass/root/token —— **明文凭据**)、`history.json`(键=源id+路径, 值=title/position/duration/updated)、`media_info.json`(播放档案: at=ms epoch/via=thumb|playback/轨道表, ready/playing 才落档 —— **重建用户操作时间线最可靠; 某片有档=引擎当时 open 成功过, 卡点就在其后**)、`local_library.json`(文件清单)、`unplayable.json`(打不开下墙记录)、`freeze/`(冻结名片)。
 
 ## 1. 流程
 0. **先对表版本**(防"改了没编/没部署, 查的全是已修掉的问题"): 运行日志首行 banner(`avox version:... commit_hash:X build_time:Y`)对比 `git -C <avox仓> log -1`; banner 落后 HEAD、或启动闸打「install 落后 HEAD」WARNING → 先重编引擎+部署(部署文档 §2/§3)再排查。Windows 启动闸每次启动哈希同步 dll; 其余平台闸门见部署文档 §4, 见闸照做别绕。**banner 的 commit_hash 是 configure 时烤的会失真**, 精确判"修复是否编入"用 dll 考古(§3)。
@@ -55,6 +55,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 
 **open/起播**
 - 容器头解析失败(EBML header parsing failed 等) → 拿到的非容器: 假 mkv(.torrent)/改后缀 FLV → 源端假片, §1.2 体检定真身。
+- open 后卡死: `partial file` ×数千同秒 + `seg fetch seek misland got:-541478725(AVERROR_EOF)` + Dart `clock-leak guard seek(0)` 死循环 → 服务端时变收尾连接→FFmpeg http filesize 认知被响应污染(干净 EOF 只在 off≥filesize, 无 "Stream ends prematurely" ERROR 行是判据)→eof 闩+seek 失败路径不清闩→段断供雪崩(0926 定谳未修, 修法=seek 败清闩+EOF 未到真尾重建通道)。**先验文件/服务端(curl 全文件顺序流)排除源端, 再对表**; 二次复现可能不卡(时变), 别因复现不出就翻案。
 - http 直链 open 卡 10 分钟+(迅雷逐 GOP 落盘 mp4, 全文件数千个 mdat, FFmpeg 顶层扫描每 mdat 一次 http 断连重连) → 已修 39aa4aa(http 预扫+AVSEEK_SIZE 谎报早退)。
 - 开片即崩(avsubtitle_free 栈, 播 PGS 字幕触发; **cli 不渲字幕故不崩=最大迷惑点**) → ffmpeg dll 与 .lib 序号错位 → 已修 c08adb4(按名字重生成导入库); 根训=dll 与 lib 必须成对更新。
 - 网络源硬解首帧慢(~4.6s)被 5s 看门狗误杀→vulkan 接棒炸→软解 GOP 中段缺参考, 起播空转 ~15s → 已修 2c2444b(供给窗看门狗+openFailed 瞬时降级+回退吸 IDR)。
@@ -76,6 +77,11 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 - 播放时间来回跳+无限 buffering = 拼装 mp4 音轨锚文件头(前 60s 假音频 stco 锚在偏移 48, 每个音频包把读位拉回文件头跨几十 MB 重连) → 已修 a0107be(http 段缓存+锚点钉住)。
 - 直链反复 buffering 无时间跳 = 吞吐临界非 bug → 垫子默认已 2s(2a200e9, 首帧/秒开不吃它); 直播延迟敏感经 `mp.delay.ms` 调回。
 - 花屏伴 rtp 丢包/packet dropped=网络; 从 P 起解不自愈(持续到 GOP 边)=落点缺参考; 1~2s 自愈=渲染突发/竞态另有因。
+
+**网络环境(本机代理/TUN, 非引擎病)**
+- IPTV/m3u 列表与国内流普遍慢、超时、周期 buffering, 而 NAS/局域网源全正常 → 先查本机 TUN 接管: `route print` 见 Meta Tunnel/Wintun + `tasklist` 见 verge-mihomo(Clash Verge)=全机流量过代理。**对照法: `curl` 默认路由 vs `curl --interface <物理网卡IP>` 直连**(0923 实锤 CCTV1 列表 TUN 19s→直连 1s; 0926 复测首响 3.2s vs 1.2s); 修法=Clash 给国内直播域名加 DIRECT 规则或关 TUN, 不动引擎。**绑定源地址法在部分环境只是绕路成功, 直连腿 000 时先核对绑定语义再下结论**。
+- 免费聚合清单(live.zbds 类)两大常态别当 app 病: ①大量「频道」=点播循环(HTTP-FLV 服务端把整剧/整片循环推流, 0926 抽样 542 频道 107 个循环体, metshop 一台 66 个——循环是内容本身, 永不完播); ②死链/整台服务器超时常态(145 台流服务器抽样过半 8s 无响应)。
+
 
 ## 5. 引擎级复现与探针
 - `tools/engine_play_test.exe`(须与 avox.dll 同目录, tools/build_engine_play_test.bat 出; `engine_play_test <url> [sec=8] [hard=1] [vulk=1]`, 免窗可过 ssh); 或 avox_cli play(加载 avox-cli skill: `-io ffmpeg` / `-transport tcp` / `-log-packet` / `-log-decode` / `-loglevel verbose`)。
