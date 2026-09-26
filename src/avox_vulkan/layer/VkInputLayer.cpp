@@ -300,12 +300,17 @@ void VkInputLayer::inputGpuData(IRenderContext* context) {
     glesFormat.imageType = ImageType::rgba8;
   }
   uint32_t glesTextureId = glesContext->getImage();
+  // GLES侧重建(如seek重置解码器)会删输出纹理再gen, 数字id常被复用, 仅凭id
+  // 检测不到换新 → AHB仍绑死旧纹理, 合成永远采旧帧(seek后画面冻住只有声);
+  // 重建必换EGLContext, 一并纳入判据
+  void* glesEglCtx = (void*)glesContext->getContext();
   if (glesFormat.width > 0 && glesFormat.height > 0 &&
       (imageFormat.width != glesFormat.width ||
        imageFormat.height != glesFormat.height ||
        imageFormat.imageType != glesFormat.imageType ||
-       textureId != glesTextureId)) {
+       textureId != glesTextureId || bindEglCtx != glesEglCtx)) {
     textureId = glesTextureId;
+    bindEglCtx = glesEglCtx;
     LOGFLF(LogLevel::info, "gles texture change, textureId:", textureId,
            " width:", glesFormat.width, " height:", glesFormat.height,
            " image type:", getImageTypeStr(glesFormat.imageType));

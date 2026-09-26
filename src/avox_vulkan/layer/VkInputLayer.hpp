@@ -32,6 +32,8 @@ class VkInputLayer : public VInputLayer, public VkLayer {
 #elif __ANDROID__
   std::unique_ptr<VkAndImage> vkAndImage = nullptr;
   uint32_t textureId = 0;
+  // 上次bindGL时GLES侧的EGLContext; GLES重建后纹理id常被复用, 须连它一起判换新
+  void* bindEglCtx = nullptr;
   bool bAndInterop = false;
 #elif __APPLE__
   std::unique_ptr<VkIosImage> vkIosImage = nullptr;
