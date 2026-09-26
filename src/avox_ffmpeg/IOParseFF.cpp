@@ -712,6 +712,32 @@ IOParseFF::HttpSeg* IOParseFF::fetchHttpSeg(int64_t segStart, bool bAnchor) {
   return nullptr;
 }
 
+// 重建 httpPb 自开通道: 服务端收尾连接是协议层"干净 EOF", http.c 把 eof 闩死,
+// 之后 avio_seek 恒吐 AVERROR_EOF(misland), 死通道上重试纯空转(misland 提前
+// return 又发生在清闩点之前) —— 只能换新连接。仅协议级选项子集, 与 open 期一致
+bool IOParseFF::rebuildHttpPb() {
+  if (httpPb) {
+    avio_closep(&httpPb);
+  }
+  AVDictionary* dict = nullptr;
+  const std::string timeoutStr = std::to_string(timeoutMs * 1000);
+  av_dict_set(&dict, "timeout", timeoutStr.c_str(), 0);
+  av_dict_set(&dict, "buffer_size", "10485760", 0);
+  av_dict_set(&dict, "reconnect", "1", 0);
+  av_dict_set(&dict, "reconnect_streamed", "1", 0);
+  av_dict_set(&dict, "reconnect_delay_max", "5", 0);
+  av_dict_set(&dict, "http_persistent", httpPersistent ? "1" : "0", 0);
+  AVIOInterruptCB cb = {decode_interrupt_cb, this};
+  const int ret = avio_open2(&httpPb, url.c_str(), AVIO_FLAG_READ, &cb, &dict);
+  av_dict_free(&dict);
+  if (ret < 0) {
+    AVOX_FFMEPG_LOG(ret, "rebuild httpPb failed")
+    return false;
+  }
+  LOGFLF(LogLevel::info, "httpPb rebuilt after channel eof latch");
+  return true;
+}
+
 IOParseFF::HttpSeg* IOParseFF::fetchHttpSegOnce(int64_t segStart,
                                                 bool bAnchor) {
   // 落点必须逐字节相等: 只查 <0 会放过「返回成功但底层实际落位偏移」的
@@ -724,6 +750,13 @@ IOParseFF::HttpSeg* IOParseFF::fetchHttpSegOnce(int64_t segStart,
     if (landed != AVERROR_EXIT || !interruptIo()) {
       LOGFLF(LogLevel::warn, "seg fetch seek misland, want:", segStart,
              " got:", landed);
+    }
+    // 非 EXIT 的 misland(EOF/EIO)=通道被服务端收尾后 http.c eof 闩死: 同通道
+    // 重试恒败, 下面俩清闩也救不了 seek(fail 点在 fill_buffer) —— 重建通道,
+    // 重试预算里下一轮 attempt 用新连接; 不重建则整份预算在死通道上空转,
+    // 段断供→mov 拼截断包(Invalid NAL)→周期跳画(极空间 0926 实证)
+    if (landed != AVERROR_EXIT) {
+      rebuildHttpPb();
     }
     return nullptr;
   }

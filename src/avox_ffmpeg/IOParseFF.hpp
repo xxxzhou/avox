@@ -110,6 +110,9 @@ private:
   HttpSeg* fetchHttpSeg(int64_t segStart, bool bAnchor);
   // 单次抓取(fetchHttpSeg 的重试体): 失败返回 nullptr
   HttpSeg* fetchHttpSegOnce(int64_t segStart, bool bAnchor);
+  // 重建 httpPb 自开通道: 服务端收尾连接后 http.c eof 闩死, 死通道上重试恒败,
+  // misland 非打断路径换新连接再试(协议级选项子集与 open 期一致)
+  bool rebuildHttpPb();
   // 驱逐对应区链表尾段: 记驱逐时刻(锚点判定)并摘表
   void evictHttpSeg(bool bPin);
   // PGS 位图字幕解码(§3.6): 选中该轨时 IO 循环喂包, 出 RGBA 画布
