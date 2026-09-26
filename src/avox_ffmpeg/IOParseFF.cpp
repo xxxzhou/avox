@@ -694,8 +694,12 @@ IOParseFF::HttpSeg* IOParseFF::fetchHttpSeg(int64_t segStart, bool bAnchor) {
   // 重试, 音频供给断流 A/V 撕裂(极空间 seek 后实测), 错位包还会喂出垃圾帧。
   // 底层抓取自带短间隔重试吸收瞬断; 重试都失败才交回上层(上层自有无穷重试)。
   // 打断窗口(seek 暂停/close)内 avio_seek 恒吐 AVERROR_EXIT, 重试纯空转,
-  // 立即放弃——恢复读循环后按新读位重新取段
-  for (int32_t attempt = 0; attempt < 3; ++attempt) {
+  // 立即放弃——恢复读循环后按新读位重新取段。
+  // 预算 10 次: 每次抓取 avio_seek 新建连接(旧连接被服务端收尾后 seek 即重连),
+  // 恶劣网关按连接随机掐杀(极空间 0926 夜实测单连被掐率~25%)时, 耗尽 3 次
+  // 的概率~1.6% → 截断包漏给 demuxer 拼成 Invalid NAL → 周期跳帧; 拉到 10 次
+  // 后连杀概率降到百万分之一量级
+  for (int32_t attempt = 0; attempt < 10; ++attempt) {
     HttpSeg* seg = fetchHttpSegOnce(segStart, bAnchor);
     if (seg) {
       return seg;
