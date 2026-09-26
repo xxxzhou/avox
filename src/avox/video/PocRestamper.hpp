@@ -14,7 +14,8 @@ class H265Parse;
 //       B 帧内容在显示序上往复 → 画面来回闪动(POC 倒挂实证片源见
 //       avox-test 台妹子/91tims 系列)
 // 做法: 流内证据激活——全 pts==dts 且 POC 出现倒挂才工作; 激活后解码序不变,
-//       pts 按帧内 POC 平移到显示格(pts = 首帧pts + 显示位*帧长), 等效把
+//       pts 按帧内 POC 平移到显示格(pts = 首帧pts + 显示位*帧长, µs 精度格,
+//       ms 整数格对 29.97 这类非整帧率每帧欠 ~0.4ms 会累积成周期丢帧), 等效把
 //       丢掉的 ctts 注回时间轴。dts 不动, 解码两条车道(VT 按 max(pts-dts)
 //       推重排深度 / FFmpeg 按 pts 重排)自然恢复
 // 恒等性: armed 只记账不改写, 正常流(pts!=dts 或 POC 单调)全程零触碰;
@@ -52,6 +53,8 @@ class AVOX_EXPORT PocRestamper {
   std::unique_ptr<H264Parse> h264Parse;
   std::unique_ptr<H265Parse> h265Parse;
   int64_t frameDurMs = 0;
+  int64_t frameDurUs = 0;   // 显示格步长用 µs: ms 整数对非整帧率截断累积漂移
+  int64_t pts0Us = 0;       // pts0 的 µs 形式(改写基准)
   int64_t pocStep = 2;      // 相邻显示帧的 lsb 步进: h264=2, h265=1
   int64_t lsbWrap = 512;    // lsb 回绕周期 2^log2_max_pic_order_cnt_lsb
   bool bPocReady = false;   // SPS 已解出(poc 参数可读)

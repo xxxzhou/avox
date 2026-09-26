@@ -23,6 +23,7 @@ PocRestamper::~PocRestamper() = default;
 void PocRestamper::setup(VCodecId vcodecId, double fps) {
   codecId = vcodecId;
   frameDurMs = fps > 1.0 ? (int64_t)(1000.0 / fps + 0.5) : 0;
+  frameDurUs = fps > 1.0 ? (int64_t)(1000000.0 / fps + 0.5) : 0;
   if (codecId == VCodecId::h264) {
     pocStep = 2;  // frame_mbs_only 下相邻显示帧 lsb 差 2
     h264Parse = std::make_unique<H264Parse>();
@@ -42,6 +43,7 @@ void PocRestamper::reset() {
   prevLsb = 0;
   fullPoc0 = 0;
   pts0 = 0;
+  pts0Us = 0;
   bPts0 = false;
   lastDts = 0;
   bAnchor = false;
@@ -212,6 +214,7 @@ bool PocRestamper::feed(AvoxPacket& packet) {
       return false;
     }
     pts0 = packet.pts;
+    pts0Us = pts0 * 1000;
     bPts0 = true;
   }
   // armed 只记账不改写: VFR/无B流(pts==dts且poc单调)永不激活, 时间戳零触碰;
@@ -219,8 +222,12 @@ bool PocRestamper::feed(AvoxPacket& packet) {
   if (mode != Mode::active) {
     return false;
   }
+  // 显示格步长按 µs: ms 整数格对 29.97(33.367ms) 每帧欠 0.367ms, 视频钟相对
+  // 音频持续落后, 每 ~4.5s 攒满丢帧门限触发静默丢帧追赶 = 周期跳帧。VT 车道
+  // 透传包 pts 吃满漂移; FFmpeg 车道输出走 dts 链不吃包 pts 故无感
   const int64_t dispUnits = fullPoc - fullPoc0;
-  const int64_t newPts = pts0 + dispUnits * frameDurMs / pocStep;
+  const int64_t newPtsUs = pts0Us + dispUnits * frameDurUs / pocStep;
+  const int64_t newPts = newPtsUs / 1000;
   if (bSanePts && newPts != packet.pts) {
     packet.pts = newPts;
     return true;
