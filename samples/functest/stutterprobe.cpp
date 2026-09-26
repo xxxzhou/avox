@@ -199,6 +199,7 @@ int main(int argc, char* argv[]) {
         std::printf("io.http.persistent -> 1\n");
     }
     if (fflog) {
+#ifdef _WIN32
         HMODULE avutil = LoadLibraryA("avutil-61.dll");
         if (avutil) {
             auto setLevel = (void (*)(int))GetProcAddress(avutil, "av_log_set_level");
@@ -207,6 +208,7 @@ int main(int argc, char* argv[]) {
                 std::printf("ffmpeg log level -> %s\n", fftrace ? "TRACE" : "DEBUG");
             }
         }
+#endif
     }
     ISurfaceRender* sr = player->getSurfaceRender();
     sr->setVulkan(false);
