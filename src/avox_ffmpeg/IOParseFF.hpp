@@ -32,8 +32,6 @@ protected:
   AVIOContextPtr wrapPb = nullptr;
   bool bLieSize = false;
   int64_t mdat1End = 0;
-  // 通道重建上次失败时刻(0=无失败): 冷却期内不再尝试, 防拒绝期连接风暴
-  int64_t rebuildFailMs = 0;
   // http 段缓存(仅 IO 线程碰): 病态交错封装(逐段拼装的 mp4, 音轨锚在头部/
   // 尾部, 与视频读位相距数十 MB)在 http 下按 DTS 交错吐包, 每包一次跨 MB
   // range 重连喂不动; 段缓存把 V/A 交替吸收进内存
@@ -112,9 +110,6 @@ private:
   HttpSeg* fetchHttpSeg(int64_t segStart, bool bAnchor);
   // 单次抓取(fetchHttpSeg 的重试体): 失败返回 nullptr
   HttpSeg* fetchHttpSegOnce(int64_t segStart, bool bAnchor);
-  // 重建 httpPb 自开通道: 服务端收尾连接后 http.c eof 闩死, 死通道上重试恒败,
-  // misland 非打断路径换新连接再试(协议级选项子集与 open 期一致)
-  bool rebuildHttpPb();
   // 驱逐对应区链表尾段: 记驱逐时刻(锚点判定)并摘表
   void evictHttpSeg(bool bPin);
   // PGS 位图字幕解码(§3.6): 选中该轨时 IO 循环喂包, 出 RGBA 画布

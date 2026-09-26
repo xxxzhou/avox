@@ -26,13 +26,6 @@ static constexpr int32_t kHttpSegPrefetchSegs = 8;
 static constexpr int64_t kHttpSegLruBytes = 16 * 1024 * 1024;
 static constexpr int64_t kHttpSegPinBytes = 4 * 1024 * 1024;
 static constexpr int64_t kHttpSegAnchorWinMs = 10 * 1000;
-// 读路径有界补给窗: 服务端连发惩罚窗为秒级, 窗内重试骑过去而非把 EOF 闩给 demuxer。
-// 4s 上限: 窗内零供给的每一毫秒都在吃上层缓冲, panvox 缓冲看门狗 10s, 窗必须
-// 明显短于它——10s 版把看门狗撞死(seek 后无画面→onError 关闭, 0926 夜实测)
-static constexpr int64_t kHttpResupplyWinMs = 4 * 1000;
-// 通道重建失败冷却: 拒绝建连期反复重建会加固网关惩罚(连接风暴正反馈)。
-// 2s: 惩罚窗过后最多再拖 2s 就能重建, 太长会把恢复往后推(看门狗在数着)
-static constexpr int64_t kHttpRebuildCooldownMs = 2 * 1000;
 
 // FFmpeg av_log 级别 -> avox LogLevel
 static LogLevel ffToAvoxLevel(int ffLevel) {
@@ -627,71 +620,52 @@ int64_t IOParseFF::wrapSeekCb(void* opaque, int64_t offset, int whence) {
 
 int IOParseFF::wrapReadAt(uint8_t* buf, int size, int64_t pos) {
   const int64_t segStart = pos / kHttpSegSize * kHttpSegSize;
-  // 有界补给窗: 服务端对开片/seek 后的连发请求有秒级惩罚窗, 单轮抓取失败即返
-  // EOF/EIO 会把 mov 的 eof 闩死——buffering 到死且不 seek 无法自愈(实测 seek
-  // 后 10s buffering 停摆)。250ms 步进重试骑过惩罚窗, interruptIo(seek/close)
-  // 即刻放行, 窗口(10s)耗尽才认败
-  const auto nowTick = [] {
-    return std::chrono::duration_cast<std::chrono::milliseconds>(
-               std::chrono::steady_clock::now().time_since_epoch())
-        .count();
-  };
-  const int64_t deadlineMs = nowTick() + kHttpResupplyWinMs;
-  while (true) {
-    // 打断窗内 rebuild 会被 avio_open2 的中断回调拒斥, httpPb 可能悬空: 非打断
-    // 状态下来读就先自愈(否则 demuxer 的 eof 闩让它不再来读, 通道永远救不回)
-    if (!httpPb && !interruptIo()) {
-      rebuildHttpPb();
-    }
-    HttpSeg* seg = touchHttpSeg(segStart);
-    if (!seg) {
-      if (interruptIo() || nowTick() > deadlineMs) {
-        return AVERROR(EIO);
-      }
-      std::this_thread::sleep_for(std::chrono::milliseconds(250));
-      continue;
-    }
-    int64_t inSeg = pos - seg->off;
-    int64_t avail = (int64_t)seg->data.size() - inSeg;
-    if (avail <= 0) {
-      // 短段只在真文件尾是合法事实。中文件的短段(预读期连接被服务端提前收尾
-      // 等原因入库)是毒段: mov 在 avio_seek 的前向 fill 循环吃到这个 EOF 会
-      // should_retry 撤样本重试, 同段永远 EOF, 刷 partial file 风暴把音频丢光。
-      // 按底层文件大小判别, 毒段驱逐重抓; 刚治过的段短时间内再毒先等冷却,
-      // 补给窗内冷却过了会再驱逐
-      // 段可能来自缓存而通道悬空(rebuild 失败): 无底层大小可比, 按毒段处理
-      // 走驱逐, 循环顶部自愈重建后重抓
-      const int64_t sz = httpPb ? avio_size(httpPb) : -1;
-      if (sz > 0 && seg->off + (int64_t)seg->data.size() >= sz) {
-        return AVERROR_EOF;
-      }
-      const int64_t nowMs = nowTick();
-      auto evict = segEvictMs.find(segStart);
-      if (evict != segEvictMs.end() && nowMs - evict->second < 3000) {
-        if (interruptIo() || nowMs > deadlineMs) {
-          // 只有确认过真文件尾(上面 sz 分支)才配 EOF; 窗口耗尽/通道悬空的
-          // 失败返 EIO, EOF 会把 demuxer 的 eof 闩死(不 seek 无法自愈)
-          return AVERROR(EIO);
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(250));
-        continue;
-      }
-      auto& lst = segIdxLru.count(segStart) ? segLru : segPin;
-      auto& idx = segIdxLru.count(segStart) ? segIdxLru : segIdxPin;
-      auto& bytes = segIdxLru.count(segStart) ? segLruBytes : segPinBytes;
-      auto it = idx.find(segStart);
-      if (it != idx.end()) {
-        bytes -= (int64_t)it->second->data.size();
-        lst.erase(it->second);
-        idx.erase(it);
-      }
-      segEvictMs[segStart] = nowMs;
-      continue;
-    }
-    const int n = (int)std::min<int64_t>(size, avail);
-    memcpy(buf, seg->data.data() + inSeg, n);
-    return n;
+  HttpSeg* seg = touchHttpSeg(segStart);
+  if (!seg) {
+    return AVERROR(EIO);
   }
+  int64_t inSeg = pos - seg->off;
+  int64_t avail = (int64_t)seg->data.size() - inSeg;
+  if (avail <= 0) {
+    // 短段只在真文件尾是合法事实。中文件的短段(预读期连接被服务端提前收尾
+    // 等原因入库)是毒段: mov 在 avio_seek 的前向 fill 循环吃到这个 EOF 会
+    // should_retry 撤样本重试, 同段永远 EOF, 刷 partial file 风暴把音频丢光。
+    // 按底层文件大小判别, 毒段驱逐重抓一次; 刚治过的段短时间内再毒直接认尾,
+    // 防服务端持续截断时的无限重抓
+    const int64_t sz = avio_size(httpPb);
+    if (sz > 0 && seg->off + (int64_t)seg->data.size() >= sz) {
+      return AVERROR_EOF;
+    }
+    const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                              std::chrono::steady_clock::now().time_since_epoch())
+                              .count();
+    auto evict = segEvictMs.find(segStart);
+    if (evict != segEvictMs.end() && nowMs - evict->second < 3000) {
+      return AVERROR_EOF;
+    }
+    auto& lst = segIdxLru.count(segStart) ? segLru : segPin;
+    auto& idx = segIdxLru.count(segStart) ? segIdxLru : segIdxPin;
+    auto& bytes = segIdxLru.count(segStart) ? segLruBytes : segPinBytes;
+    auto it = idx.find(segStart);
+    if (it != idx.end()) {
+      bytes -= (int64_t)it->second->data.size();
+      lst.erase(it->second);
+      idx.erase(it);
+    }
+    segEvictMs[segStart] = nowMs;
+    seg = touchHttpSeg(segStart);
+    if (!seg) {
+      return AVERROR(EIO);
+    }
+    inSeg = pos - seg->off;
+    avail = (int64_t)seg->data.size() - inSeg;
+    if (avail <= 0) {
+      return AVERROR_EOF;
+    }
+  }
+  const int n = (int)std::min<int64_t>(size, avail);
+  memcpy(buf, seg->data.data() + inSeg, n);
+  return n;
 }
 
 IOParseFF::HttpSeg* IOParseFF::touchHttpSeg(int64_t segStart) {
@@ -733,71 +707,13 @@ IOParseFF::HttpSeg* IOParseFF::fetchHttpSeg(int64_t segStart, bool bAnchor) {
     if (interruptIo()) {
       return nullptr;
     }
-    // 退避步进: 惩罚窗内固定 100ms 十连发本身就是新攻击面(JUFE346 open 实测
-    // 打不开), 每轮多等一点给网关降温; 单轮上限 500ms 配合外层 10s 补给窗
-    std::this_thread::sleep_for(
-        std::chrono::milliseconds(std::min<int64_t>(100 * (attempt + 1), 500)));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
   return nullptr;
 }
 
-// 重建 httpPb 自开通道: 服务端收尾连接是协议层"干净 EOF", http.c 把 eof 闩死,
-// 之后 avio_seek 恒吐 AVERROR_EOF(misland), 死通道上重试纯空转(misland 提前
-// return 又发生在清闩点之前) —— 只能换新连接。仅协议级选项子集, 与 open 期一致
-bool IOParseFF::rebuildHttpPb() {
-  // 失败冷却: 网关拒绝建连期(惩罚窗)反复重建是连接风暴正反馈——越重建越像
-  // 攻击越被拒(JUFE346 open 打不开实测); 冷却期交回外层节奏(补给窗 250ms 步进)
-  const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                            std::chrono::steady_clock::now().time_since_epoch())
-                            .count();
-  if (nowMs - rebuildFailMs < kHttpRebuildCooldownMs) {
-    return false;
-  }
-  if (httpPb) {
-    avio_closep(&httpPb);
-  }
-  AVDictionary* dict = nullptr;
-  const std::string timeoutStr = std::to_string(timeoutMs * 1000);
-  av_dict_set(&dict, "timeout", timeoutStr.c_str(), 0);
-  av_dict_set(&dict, "buffer_size", "10485760", 0);
-  av_dict_set(&dict, "reconnect", "1", 0);
-  av_dict_set(&dict, "reconnect_streamed", "1", 0);
-  av_dict_set(&dict, "reconnect_delay_max", "5", 0);
-  av_dict_set(&dict, "http_persistent", httpPersistent ? "1" : "0", 0);
-  AVIOInterruptCB cb = {decode_interrupt_cb, this};
-  const int ret = avio_open2(&httpPb, url.c_str(), AVIO_FLAG_READ, &cb, &dict);
-  av_dict_free(&dict);
-  if (ret < 0) {
-    rebuildFailMs = nowMs;
-    AVOX_FFMEPG_LOG(ret, "rebuild httpPb failed")
-    return false;
-  }
-  rebuildFailMs = 0;
-  // 换连接即清段缓存: 抽风期(misland/断连前后)抓的段可能整体错位——avio_seek
-  // 落位只对返回值校验, 拦不住「响应 Range 未生效但返回成功」的错位数据; 毒段
-  // 留在缓存会让连接恢复健康后 mov 仍持续 partial 风暴(同错段重试 N 次都死,
-  // Mac 0926 深夜实测)。全清代价=重抓一遍, 换数据可信
-  while (!segPin.empty()) {
-    evictHttpSeg(true);
-  }
-  while (!segLru.empty()) {
-    evictHttpSeg(false);
-  }
-  segIdxLru.clear();
-  segIdxPin.clear();
-  segLruBytes = 0;
-  segPinBytes = 0;
-  LOGFLF(LogLevel::info, "httpPb rebuilt after channel eof latch");
-  return true;
-}
-
 IOParseFF::HttpSeg* IOParseFF::fetchHttpSegOnce(int64_t segStart,
                                                 bool bAnchor) {
-  // rebuild 失败(网关拒绝建连)后通道悬空: 空通道上抓取必败, 快速交回让外层
-  // 预算轮询(rebuild 有失败冷却), 决不能往下走到 avio_seek(NULL)
-  if (!httpPb) {
-    return nullptr;
-  }
   // 落点必须逐字节相等: 只查 <0 会放过「返回成功但底层实际落位偏移」的
   // http 瞬断半程(连接重建后 Range 未生效等), 错位数据入库后整段所有包
   // 字节平移——视频包 NAL 边界全错解码不出, 音频靠 AAC 重同步静默吞掉
@@ -808,13 +724,6 @@ IOParseFF::HttpSeg* IOParseFF::fetchHttpSegOnce(int64_t segStart,
     if (landed != AVERROR_EXIT || !interruptIo()) {
       LOGFLF(LogLevel::warn, "seg fetch seek misland, want:", segStart,
              " got:", landed);
-    }
-    // 非 EXIT 的 misland(EOF/EIO)=通道被服务端收尾后 http.c eof 闩死: 同通道
-    // 重试恒败, 下面俩清闩也救不了 seek(fail 点在 fill_buffer) —— 重建通道,
-    // 重试预算里下一轮 attempt 用新连接; 不重建则整份预算在死通道上空转,
-    // 段断供→mov 拼截断包(Invalid NAL)→周期跳画(极空间 0926 实证)
-    if (landed != AVERROR_EXIT) {
-      rebuildHttpPb();
     }
     return nullptr;
   }
@@ -833,27 +742,18 @@ IOParseFF::HttpSeg* IOParseFF::fetchHttpSegOnce(int64_t segStart,
     const int n =
         avio_read(httpPb, seg.data.data() + total, (int)(kHttpSegSize - total));
     if (n == AVERROR_EOF) {
-      // 段起点即 EOF 且离文件尾还远: 服务端掐了这条新连接(Accept+Range 后秒断,
-      // 同区间 curl 直拉正常, 极空间 0926 实证) —— 通道已废, 重建后由外层重试
-      // 轮换新连接; 静默失败(不 rebuild 不 log)会让整份重试预算在废通道上空转
-      if (total == 0 && segStart + kHttpSegSize < avio_size(httpPb)) {
-        rebuildHttpPb();
-      }
       break;
     }
     if (n <= 0) {
       // 已读若干字节后吃错: 仅当正好读满文件尾(段起+已读==底层文件大小)才
       // 入库短段——尾部数据是完整事实, 打断/连接收尾杂音不构成丢弃理由(mkv
       // seek 解析尾部 Cues 必经此路, 丢段=seek 判死掉进分钟级内部扫描);
-      // 中途吃错照旧丢弃(半截段入库会让后续读到假 EOF); 废通道顺手重建
+      // 中途吃错照旧丢弃(半截段入库会让后续读到假 EOF)
       if (total > 0) {
         const int64_t sz = avio_size(httpPb);
         if (sz > 0 && segStart + total >= sz) {
           break;
         }
-      }
-      if (n != AVERROR_EXIT) {
-        rebuildHttpPb();
       }
       return nullptr;
     }
@@ -1154,8 +1054,6 @@ void IOParseFF::onRunTask() {
   AVPacketPtr bsfPkt = getUniquePtr(av_packet_alloc());
   AVPacketPtr adtsPkt = getUniquePtr(av_packet_alloc());
   bool bEof = false;
-  // wrapper 车道连续补给窗全灭计数(成功读包即清零): 限次韧性见循环内注释
-  int wrapErrRun = 0;
   while (running()) {
     // 检查暂停
     if (pauseing()) {
@@ -1221,18 +1119,6 @@ void IOParseFF::onRunTask() {
         if (bInterruptRead.load()) {
           continue;
         }
-        // wrapper 自定义读路径的其余错误(段抓取补给窗耗尽的 EIO 等): 惩罚窗
-        // 是秒级~十几秒的暂态, 单窗(4s)没骑过不该终局——连续三窗全灭(≈13s,
-        // 仍在看门狗放宽后的 20s 内)才认死; 每轮循环顶已清陈年闩, av_read_frame
-        // 拿到的都是新鲜错误, 重读会重新进补给窗再骑一次。一次 EIO 即 onError
-        // 会让 panvox 直接关播放页(seek 后黑屏→关闭, 0926 夜实测)
-        if (fmtCtx->pb && fmtCtx->pb == wrapPb.get()) {
-          if (++wrapErrRun <= 3) {
-            AVOX_FFMEPG_LOG(ret, "read frame transient, retry in wrapper lane")
-            sleepTask(false, 250);
-            continue;
-          }
-        }
         // 其余 IO 错误(OSS 截断 range 致 INVALIDDATA / 连接断开等): 上报错误。
         // close 在拆(bStopIo)时的 EIO 是打断在飞读取的副产物, 不上报——
         // 否则每次正常关闭都给 app 发一条假错误污染日志与归因
@@ -1244,7 +1130,6 @@ void IOParseFF::onRunTask() {
       }
     }
     int32_t streamId = pkt->stream_index;
-    wrapErrRun = 0;
     auto st = fmtCtx->streams[streamId];
     // 跳过封面图等附加静态图流的数据包, 避免污染 avcc/annexb 判定(见 onRunTask
     // 建流处)
