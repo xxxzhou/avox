@@ -1495,6 +1495,13 @@ void MediaPlayer::cmdOpen(OpenCommandPtr cmd) {
       AvoxManager::Get().ioSources.hasObjectId(IoPlan::dav)) {
     useIO = IoPlan::dav;
   }
+  // rtsp/rtmp 自动路由: zm 腿有真倍速语义(服务端切流), 插件已注册时直连流
+  // 优先走它, 未注册回落 ffmpeg; 只影响本次open, 不改动selectIO
+  if ((url.rfind("rtsp://", 0) == 0 || url.rfind("rtmp://", 0) == 0) &&
+      useIO != IoPlan::zlmediakit &&
+      AvoxManager::Get().ioSources.hasObjectId(IoPlan::zlmediakit)) {
+    useIO = IoPlan::zlmediakit;
+  }
   // torrent是渐进下载源: seek落到未下载区域要等片落地(秒级~十几秒),
   // 10s缓冲看门狗会误杀播放器; 业务未显式设置时默认放宽到30s
   if (useIO == IoPlan::torrent && !bufferingTimeoutUserSet) {
