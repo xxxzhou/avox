@@ -3,6 +3,7 @@
 #include "../module/OptionKey.hpp"
 #include "../codec/H26XHelper.hpp"
 #include "../module/LogHelper.hpp"
+#include "../video/PocRestamper.hpp"
 
 namespace avox {
 
@@ -220,6 +221,17 @@ void AVSource::processVideo(AvoxPacket& packet) {
     // annexb 4字节以及avcc/hvcc都是4字节
     packet.prefixSize = 4;
   }
+  // 丢ctts的B帧流修复: pts按POC平移到显示格(正常流零改写)。
+  // 在拆包前改, 拆出的配置/SEI/帧子包共享同一父pts, SEI与帧不脱钩
+  if (!pocRestamper) {
+    pocRestamper = std::make_unique<PocRestamper>();
+    double fps = 0;
+    if (packet.index >= 0 && (size_t)packet.index < videoTracks.size()) {
+      fps = videoTracks[packet.index].desc.fps;
+    }
+    pocRestamper->setup(vcodecId, fps);
+  }
+  pocRestamper->feed(packet);
   // 几个点.
   // 组合类型(配置帧组+I帧)(配置帧组+SEI+I帧)
   // 拆分类型(多个I帧)(多个P帧)

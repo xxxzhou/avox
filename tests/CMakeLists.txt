@@ -30,6 +30,7 @@ add_executable(avox_tests
   ${AVOX_TESTS_SRC}/test_charset.cpp
   ${AVOX_TESTS_SRC}/test_subcandidates.cpp
   ${AVOX_TESTS_SRC}/test_ptsflattener.cpp
+  ${AVOX_TESTS_SRC}/test_pocrestamper.cpp
   ${AVOX_TESTS_SRC}/log_sink.cpp
   # 被测源码 (自包含编译)
   ${AVOX_SRC}/module/AvoxMath.cpp
@@ -52,6 +53,8 @@ add_executable(avox_tests
   ${AVOX_SRC}/video/ColorSpace.cpp
   # 被测 TU (老容器簇状时间戳摊平, 纯逻辑无播放器依赖)
   ${AVOX_SRC}/video/PtsFlattener.cpp
+  # 被测 TU (丢ctts的B帧流POC重排, 纯逻辑, 依赖 H264Parse/H265Parse/PacketBuf)
+  ${AVOX_SRC}/video/PocRestamper.cpp
   ${AVOX_SRC}/module/Json.cpp   # parserJson
   ${AVOX_SRC}/module/Time.cpp   # timeStampMS / localTimeStampMS / timeTick
 )

@@ -2,12 +2,15 @@
 
 #include <atomic>
 #include <deque>
+#include <memory>
 #include <utility>
 
 #include "../subtitle/IAssOverlay.hpp"
 #include "BaseSource.hpp"
 
 namespace avox {
+
+class PocRestamper;
 
 // I帧历史, 用于检测HLS分片重叠导致的重复GOP
 // 服务器相邻TS分片常重叠1~3个GOP, 重叠部分是已播过的完整GOP(I帧起, PTS与SIZE完全一致)
@@ -161,6 +164,8 @@ class AVOX_EXPORT AVSource : public BaseSource,
   PacketBufPtr aconfigPacket = nullptr;
   // 检测每个I帧前是否有发送过配置包
   bool bSendConfig = false;
+  // 丢ctts的B帧流POC重排修复器(仅h264/h265, 正常流零改写, 详见PocRestamper.hpp)
+  std::unique_ptr<PocRestamper> pocRestamper;
   // 如果有音频与视频
   bool bAVAlign = false;
   // 检查是否annexb/avcc
