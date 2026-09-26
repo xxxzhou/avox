@@ -633,6 +633,11 @@ int IOParseFF::wrapReadAt(uint8_t* buf, int size, int64_t pos) {
   };
   const int64_t deadlineMs = nowTick() + kHttpResupplyWinMs;
   while (true) {
+    // 打断窗内 rebuild 会被 avio_open2 的中断回调拒斥, httpPb 可能悬空: 非打断
+    // 状态下来读就先自愈(否则 demuxer 的 eof 闩让它不再来读, 通道永远救不回)
+    if (!httpPb && !interruptIo()) {
+      rebuildHttpPb();
+    }
     HttpSeg* seg = touchHttpSeg(segStart);
     if (!seg) {
       if (interruptIo() || nowTick() > deadlineMs) {
