@@ -34,7 +34,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 
 **iOS**: 模拟器 `xcrun simctl launch --console-pty booted com.panvox.panvox` 收 stdout; 真机无控制台, 依赖用户复述+ repro 降级到 Mac/Windows。
 
-**Linux/WSL**(= Windows 本机里的 WSL Ubuntu, 经 `wsl bash -c` 进场): 仓库在 WSL 内 `~/github/{panvox,avox}`; 起 app `~/github/panvox/app/build/linux/x64/release/bundle/panvox 2>&1 | tee /tmp/panvox-run.log`, **必须普通用户**起(WSLg 下 root 连不上用户 Wayland socket)。wsl.exe 实操: 复杂命令写 .sh 进去跑(引号经 Windows 层易被吃), 路径用 wslpath 转, bash 脚本忌 CRLF。画面恒走 frame_poll CPU 车道, 与 Win/mac 硬解车道表现不可直接互推; 引擎构建车道归夜班 openclaw 会话, 动手前 `ps aux | grep build_linux` 确认没人编别抢树。
+**Linux/WSL**(= Windows 本机里的 WSL Ubuntu, 经 `wsl bash -c` 进场): 仓库在 WSL 内 `~/github/{panvox,avox}`; 起 app `~/github/panvox/app/build/linux/x64/release/bundle/panvox 2>&1 | tee /tmp/panvox-run.log`, **必须普通用户**起(WSLg 下 root 连不上用户 Wayland socket)。wsl.exe 实操: 复杂命令写 .sh 进去跑(引号经 Windows 层易被吃), 路径用 wslpath 转, bash 脚本忌 CRLF, **wsl.exe 的 stderr 提示常是乱码**(编码问题), 以命令正常输出为准别被它带偏。画面恒走 frame_poll CPU 车道, 与 Win/mac 硬解车道表现不可直接互推; 引擎构建车道归夜班 openclaw 会话, 动手前 `ps aux | grep build_linux` 确认没人编别抢树。
 
 ## 3. 日志分析
 - 按目录 mtime 取最新文件读; **严禁全盘/递归搜索日志**(必超时)。大文件先看头尾定时间戳格式, 再按用户说的时刻 grep 时间窗。
