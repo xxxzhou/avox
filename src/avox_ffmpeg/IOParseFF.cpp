@@ -1076,6 +1076,14 @@ void IOParseFF::onRunTask() {
       pkt = getUniquePtr(seekStash.front());
       seekStash.pop_front();
     } else {
+      // wrapper 模式读前不信任 pb->error: 打断窗口内在飞取段的 EIO/EXIT 会
+      // 闩进去, 而小距离 seek 落在 wrapPb 缓冲内时 wrapSeekCb 不被调用、清
+      // 不到, 恢复后 fill_buffer 见闩即毙, 首读 2ms 内 onError(极空间拖动
+      // 风暴实测, 全程五分钟只撞一次的罕见组合)。自定义读路径每轮都给出
+      // 新鲜错误, 闩值一律作废; 本地文件的原生 avio 语义不动
+      if (fmtCtx->pb && fmtCtx->pb == wrapPb.get() && !interruptIo()) {
+        fmtCtx->pb->error = 0;
+      }
       pkt = getUniquePtr(av_packet_alloc());
       if ((ret = av_read_frame(fmtCtx.get(), pkt.get())) < 0) {
         if (ret == AVERROR_EOF) {
@@ -1107,9 +1115,13 @@ void IOParseFF::onRunTask() {
         if (bInterruptRead.load()) {
           continue;
         }
-        // 其余 IO 错误(OSS 截断 range 致 INVALIDDATA / 连接断开等): 上报错误
+        // 其余 IO 错误(OSS 截断 range 致 INVALIDDATA / 连接断开等): 上报错误。
+        // close 在拆(bStopIo)时的 EIO 是打断在飞读取的副产物, 不上报——
+        // 否则每次正常关闭都给 app 发一条假错误污染日志与归因
         AVOX_FFMEPG_LOG(ret, "read frame failed");
-        dispatch(&IAVSourceOb::onError, ffIoError(ret), "read frame failed");
+        if (!bStopIo.load()) {
+          dispatch(&IAVSourceOb::onError, ffIoError(ret), "read frame failed");
+        }
         break;
       }
     }
@@ -1511,6 +1523,13 @@ bool IOParseFF::seekTo(int64_t pos) {
          fmtCtx->streams[videoStreamId]->codecpar->codec_id == AV_CODEC_ID_HEVC);
     bWaitKeyframe.store(!sawKey && !bH26xStream);
     waitKeyframeDrops = 0;
+  }
+  // seek 落点在 wrapPb 缓冲内时 avio_seek 走快速路径不进 wrapSeekCb, 打断
+  // 窗口闩进来的错误清不到, 恢复后首读即毙(seek 后不动→结束定谳②); 兜底
+  // 显式清一次, 本地文件 wrapPb 为空不受影响
+  if (bSeek && wrapPb) {
+    wrapPb->error = 0;
+    wrapPb->eof_reached = 0;
   }
   // 恢复IO线程
   resumeTask();
