@@ -82,6 +82,10 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 - IPTV/m3u 列表与国内流普遍慢、超时、周期 buffering, 而 NAS/局域网源全正常 → 先查本机 TUN 接管: `route print` 见 Meta Tunnel/Wintun + `tasklist` 见 verge-mihomo(Clash Verge)=全机流量过代理。**对照法: `curl` 默认路由 vs `curl --interface <物理网卡IP>` 直连**(0923 实锤 CCTV1 列表 TUN 19s→直连 1s; 0926 复测首响 3.2s vs 1.2s); 修法=Clash 给国内直播域名加 DIRECT 规则或关 TUN, 不动引擎。**绑定源地址法在部分环境只是绕路成功, 直连腿 000 时先核对绑定语义再下结论**。
 - 免费聚合清单(live.zbds 类)两大常态别当 app 病: ①大量「频道」=点播循环(HTTP-FLV 服务端把整剧/整片循环推流, 0926 抽样 542 频道 107 个循环体, metshop 一台 66 个——循环是内容本身, 永不完播); ②死链/整台服务器超时常态(145 台流服务器抽样过半 8s 无响应)。
 
+**网络环境(本机代理/TUN, 非引擎病)**
+- IPTV/m3u 列表与国内流普遍慢、超时、周期 buffering, 而 NAS/局域网源全正常 → 先查本机 TUN 接管: `route print` 见 Meta Tunnel/Wintun + `tasklist` 见 verge-mihomo(Clash Verge)=全机流量过代理。**对照法: `curl` 默认路由 vs `curl --interface <物理网卡IP>` 直连**(0923 实锤 CCTV1 列表 TUN 19s→直连 1s; 0926 复测首响 3.2s vs 1.2s); 修法=Clash 给国内直播域名加 DIRECT 规则或关 TUN, 不动引擎。**绑定源地址法在部分环境只是绕路成功, 直连腿 000 时先核对绑定语义再下结论**。
+- 免费聚合清单(live.zbds 类)两大常态别当 app 病: ①大量「频道」=点播循环(HTTP-FLV 服务端把整剧/整片循环推流, 0926 抽样 542 频道 107 个循环体, metshop 一台 66 个——循环是内容本身, 永不完播); ②死链/整台服务器超时常态(145 台流服务器抽样过半 8s 无响应)。
+
 
 ## 5. 引擎级复现与探针
 - `tools/engine_play_test.exe`(须与 avox.dll 同目录, tools/build_engine_play_test.bat 出; `engine_play_test <url> [sec=8] [hard=1] [vulk=1]`, 免窗可过 ssh); 或 avox_cli play(加载 avox-cli skill: `-io ffmpeg` / `-transport tcp` / `-log-packet` / `-log-decode` / `-loglevel verbose`)。
