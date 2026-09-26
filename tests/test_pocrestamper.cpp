@@ -76,7 +76,7 @@ TEST_CASE("PocRestamper: 丢ctts的B帧流按POC重建显示时间戳") {
   rst.setup(VCodecId::h264, 30.0);
   Storage st = buildFixture(0, 0, 33);
   // 期望: s0~s4 armed 原值; s5(POC 10→8 倒挂)激活, 之后按显示格
-  static const int64_t kExpect[] = {0, 33, 66, 99, 133, 132, 297, 231,
+  static const int64_t kExpect[] = {0, 33, 66, 99, 132, 132, 297, 231,
                                     198, 264, 330, 363, 528, 429, 396, 462};
   bool bActivated = false;
   for (int32_t i = 0; i < (int32_t)st.packets.size(); ++i) {
@@ -137,7 +137,7 @@ TEST_CASE("PocRestamper: seek回跳自愈重置记账") {
     rst.feed(st.packets[i]);
   }
   // 模拟 seek 重入: 从头再喂, dts 回跳远超 2 帧, 记账重置后表现一致
-  static const int64_t kExpect8[] = {0, 33, 66, 99, 133, 132, 297, 231};
+  static const int64_t kExpect8[] = {0, 33, 66, 99, 132, 132, 297, 231};
   Storage st2 = buildFixture(0, 0, 33);
   for (int32_t i = 0; i < 8; ++i) {
     rst.feed(st2.packets[i]);
