@@ -257,6 +257,7 @@ int main(int argc, char* argv[]) {
   std::string prefix = argc > 3 ? (std::string(argv[3]) + "_") : "seek_";
   bool hard = true;
   bool fflog = false;
+  bool fftrace = false;
   for (int i = 1; i < argc; i++) {
     std::string arg = argv[i];
     if (arg == "-soft") {
@@ -265,6 +266,9 @@ int main(int argc, char* argv[]) {
       hard = true;
     } else if (arg == "-fflog") {
       fflog = true;
+    } else if (arg == "-fftrace") {
+      fflog = true;
+      fftrace = true;
     }
   }
 
@@ -275,20 +279,23 @@ int main(int argc, char* argv[]) {
   }
   player->setHardDecode(hard);
   if (fflog) {
-    // FFmpeg 日志放到 INFO: 看 mov demuxer 的 seek 落点 ("seeking to ...")。
-    // 必须在 createMediaPlayer 之后调 —— 引擎初始化(regFFIO)会把级别设回
-    // WARNING; avox 把 avutil 私有链接, 只能从同目录 dll 动态取函数
+    // FFmpeg 日志放到 DEBUG/TRACE: 看 mov demuxer 的 seek 落点与 http 请求头
+    // (TRACE 才有 http.c 的请求/响应细节)。必须在 createMediaPlayer 之后调
+    // —— 引擎初始化(regFFIO)会把级别设回 WARNING; Windows 上 avutil 私有
+    // 链接只能从同目录 dll 动态取函数, Apple 上 avutil 静态链进程内可见
 #ifdef _WIN32
     HMODULE avutil = LoadLibraryA("avutil-61.dll");
     if (avutil) {
       auto setLevel = (void (*)(int))GetProcAddress(avutil, "av_log_set_level");
       if (setLevel) {
-        setLevel(48);  // AV_LOG_DEBUG
-        std::printf("ffmpeg log level -> DEBUG\n");
+        setLevel(fftrace ? 56 : 48);  // AV_LOG_TRACE / AV_LOG_DEBUG
+        std::printf("ffmpeg log level -> %s\n", fftrace ? "TRACE" : "DEBUG");
       }
     }
 #else
-    std::printf("fflog: only supported on Windows (avutil dll)\n");
+    extern "C" void av_log_set_level(int level);
+    av_log_set_level(fftrace ? 56 : 48);
+    std::printf("ffmpeg log level -> %s (static)\n", fftrace ? "TRACE" : "DEBUG");
 #endif
   }
   ISurfaceRender* sr = player->getSurfaceRender();
