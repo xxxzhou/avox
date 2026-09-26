@@ -925,6 +925,14 @@ void IOParseFF::onRunTask() {
         // 循环顶会处理暂停. 打断窗口(preSeek→pauseTask 之间约 50ms)内循环顶尚
         // 未暂停, 会在此 EXIT→continue 裸转, 必须阻塞 sleep 避免 100% CPU 空转
         if (ret == AVERROR_EXIT || ret == AVERROR(EAGAIN)) {
+          // seek 打断窗口的首个 EXIT 会被 avio 闩进 pb->error: 窗口结束后
+          // 回调已不打断(intr 清零), av_read_frame 仍恒吐闩值, 读线程从此
+          // 空转, EOF 永远到不了 -> onComplete 不发, 播放器在片尾 buffering
+          // 到看门狗超时(短视频 seek 尾部必撞). 判为闩残留, 清掉重读
+          if (ret == AVERROR_EXIT && !interruptIo() && fmtCtx &&
+              fmtCtx->pb && fmtCtx->pb->error == AVERROR_EXIT) {
+            fmtCtx->pb->error = 0;
+          }
           sleepTask(false, 1);
           continue;
         }

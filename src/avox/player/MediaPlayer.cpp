@@ -1221,6 +1221,11 @@ void MediaPlayer::tick() {
       // 超过4倍只有I帧,有视频数据就播放,音频4倍之上不会渲染
       canRender = videoStatus.frameSize > 0;
     }
+    // IO已报EOF: 剩余尾包不足delayMs也恢复渲染放完, 放空后走complete;
+    // 否则seek落点离片尾不足delayMs时门闸永不满足, 只能等看门狗超时关闭
+    if (bIOComplete) {
+      canRender = true;
+    }
     // 速度快的话,其包会快速占满,但是超过4倍又只会有I帧
     if (canRender) {
       log(LogLevel::info, "buffering tick, vTime:", vTime, " aTime:", aTime,
@@ -1732,6 +1737,8 @@ void MediaPlayer::cmdSeek(SeekCommandPtr cmd) {
     sleepTask(false, 50);
     // 清空队列
     flush();
+    // seek作废旧EOF结论, 续读由IO重新定性
+    bIOComplete = false;
     // 字幕: 清旁路队列 + flush libass 事件(seek 后旧事件作废, 防残留帧)
     subtitleView->resetEvents();
     bool bSeek = ioSource->seekTo(spts);
