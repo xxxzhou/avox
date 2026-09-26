@@ -27,6 +27,9 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#else
+// Apple: avutil 静态链进 libavox.a, fflog 直接调符号看 http/mov 细节
+extern "C" void av_log_set_level(int level);
 #endif
 
 using namespace avox;
@@ -293,7 +296,6 @@ int main(int argc, char* argv[]) {
       }
     }
 #else
-    extern "C" void av_log_set_level(int level);
     av_log_set_level(fftrace ? 56 : 48);
     std::printf("ffmpeg log level -> %s (static)\n", fftrace ? "TRACE" : "DEBUG");
 #endif
