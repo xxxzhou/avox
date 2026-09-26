@@ -12,7 +12,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 - **数据目录**: Windows `%APPDATA%\panvox\`; Mac `~/Library/Application Support/com.panvox.panvox/`。关键文件: `sources.json`(源配置: id/kind/origin/user/pass/root/token —— **明文凭据**)、`history.json`(键=源id+路径, 值=title/position/duration/updated)、`local_library.json`(文件清单)、`unplayable.json`(打不开下墙记录)、`freeze/`(冻结名片)。
 
 ## 1. 流程(五步)
-1. **问清三要素**, 缺先问: 平台(Windows/mac/Android/iOS/WSL)、片源(哪个源哪部片, 文件名)、现象(打不开/卡顿/花屏/无声/音画不同步/字幕/崩溃 + 大概时刻)。
+1. **三要素**: 平台**不指明=当前机器**(本机直查, 不走 SSH/adb; 用户点名别的平台才切通道)。片源(哪个源哪部片, 文件名)与现象(打不开/卡顿/花屏/无声/音画不同步/字幕/崩溃 + 大概时刻)缺了先问; 片源模糊可先拿 `history.json` 最近条目猜并跟用户确认, 别空手反问。
 2. **定片源**: 读目标机 `history.json` 最近条目 + `sources.json` 映射出 kind/origin/路径。可播 URL 推导: webdav/http = `origin+root+path`(路径段 URL 编码); smb = UNC `\\origin\共享\路径`; 本地 = 直接路径; **jellyfin/emby/云盘/IPTV 不手拼 URL**(需 token/接口), 驱动 app 内复现或向用户要直链。
 3. **带日志复现**(§2, 按平台)。复现前**单实例检查**: Windows `tasklist | grep -i panvox`、Mac `pgrep -x panvox` —— 多实例共用数据目录互覆快照, 会出假象; 有实例先让用户关或 kill。
 4. **按用户描述触发**: 能自动化就自动化 —— `PANVOX_AUTOPLAY=<可播URL或路径>` 环境变量让 app 启动后直接播该条(免手点; Windows cmd: `set PANVOX_AUTOPLAY=... && start panvox.exe -Log`); 需要真实 UI 操作(切轨/倍速/字幕切换)在 Windows 本机可加载 avox-cli skill 用 ops 找字点击。
