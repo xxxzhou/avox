@@ -573,6 +573,13 @@ int64_t IOParseFF::wrapSeekCb(void* opaque, int64_t offset, int whence) {
   if (offset < 0) {
     return AVERROR(EINVAL);
   }
+  // 逻辑 seek 是打断/读错残留的清零点: demuxer 寻位后的解析应从干净状态开始
+  // (matroska 解析失败时直接读 pb->error 定死因, 陈年旧错会把合法 seek 毒死;
+  // 且 avio_seek 小距离分支只挪指针不清 latch, 必须在此显式清)
+  if (self->wrapPb) {
+    self->wrapPb->error = 0;
+    self->wrapPb->eof_reached = 0;
+  }
   self->wrapPos = offset;
   return offset;
 }
@@ -619,6 +626,11 @@ IOParseFF::HttpSeg* IOParseFF::fetchHttpSeg(int64_t segStart, bool bAnchor) {
   if (avio_seek(httpPb, segStart, SEEK_SET) < 0) {
     return nullptr;
   }
+  // seek 落位即清底层 avio 的读错/EOF 残留: 打断窗口刚结束的首个抓取会被
+  // 上一次的 latch 毒死(fill_buffer 只看 eof_reached, avio_seek 只清它不清
+  // error), mkv 经 Cues 在文件尾的合法 seek 就这么被打断残留误杀过
+  httpPb->eof_reached = 0;
+  httpPb->error = 0;
   HttpSeg seg;
   seg.off = segStart;
   seg.data.resize(kHttpSegSize);
@@ -632,6 +644,16 @@ IOParseFF::HttpSeg* IOParseFF::fetchHttpSeg(int64_t segStart, bool bAnchor) {
       break;
     }
     if (n <= 0) {
+      // 已读若干字节后吃错: 仅当正好读满文件尾(段起+已读==底层文件大小)才
+      // 入库短段——尾部数据是完整事实, 打断/连接收尾杂音不构成丢弃理由(mkv
+      // seek 解析尾部 Cues 必经此路, 丢段=seek 判死掉进分钟级内部扫描);
+      // 中途吃错照旧丢弃(半截段入库会让后续读到假 EOF)
+      if (total > 0) {
+        const int64_t sz = avio_size(httpPb);
+        if (sz > 0 && segStart + total >= sz) {
+          break;
+        }
+      }
       return nullptr;
     }
     total += n;
