@@ -49,6 +49,17 @@ bool ADecoderTask::start(AudioTrack* context) {
         break;
       }
     }
+  } else {
+    // 同族codec共用avox枚举(MLP/TRUEHD都注册在truehd下)时按流的FFmpeg原生
+    // codec id选车道: TrueHD流走MLP车道会全程0输出并逐包刷
+    // "Stream parameters not seen"(实测本地TrueHD素材14400包全跳)
+    const int32_t nativeId = trackContext->getFFCodecId();
+    for (size_t i = 0; i < decodes.size(); ++i) {
+      if (decodes[i].desc.codecId == nativeId) {
+        sIndex = i;
+        break;
+      }
+    }
   }
   auto& aDecode = decodes[sIndex];
   // 回退链: 首选之后的注册解码器(如 fdk-aac失败后 ffmpeg_aac)
@@ -173,8 +184,12 @@ void ADecoderTask::onRunTask() {
       decode->dispatch(&IAudioDecoderOb::onAudioComplete);
       return;
     }
-    // 根据队列状态动态选择策略
-    sleepTask(result == DecodeResult::noConfig, 5);
+    // 空转(队列无包)才休眠让出CPU; 处理了包不垫睡——碎片化音轨实测~3000包/
+    // 内容秒, 逐包5ms会把消费上限钉在200包/s, 包队列(200)被灌满后enqueueWait
+    // 反向堵死demux, 视频包断供画面慢放(TrueHD碎片轨实证18倍慢)
+    if (!bGet) {
+      sleepTask(false, 5);
+    }
   }
 }
 

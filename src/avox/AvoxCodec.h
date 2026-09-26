@@ -119,6 +119,9 @@ struct ATrackDesc {
   // 对应流Id,音频与视频可能同用一个
   int32_t trackId = 0;
   ACodecId codecId = ACodecId::none;
+  // FFmpeg原生codec id: 同族codec共用avox枚举(MLP/TRUEHD都折进truehd),
+  // 解码器注册表按它选车道, 选错车道全程0输出(TrueHD走MLP车道实证)
+  int32_t ffCodecId = 0;
   // 音频信息
   AudioDesc desc = {};
 };
