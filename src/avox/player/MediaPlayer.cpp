@@ -447,7 +447,11 @@ void MediaPlayer::onPacket(const AvoxPacket& packet) {
         LOGFLF(LogLevel::warn, "video index out of range:", index);
         return;
       }
-      if (!videoTracks[index] || packet.data.size <= 4) {
+      // 尺寸闸只挡普通视频包: 4字节WMV3/VC-1序列头是合法vconfig,
+      // 误杀令解码器空extradata起播, avcodec_open2静默Invalid data(夜巡wmv3族)
+      if (!videoTracks[index] ||
+          (packet.packtype == (int32_t)PackType::video &&
+           packet.data.size <= 4)) {
         break;
       }
       videoTracks[index]->pushPacket(packet);
