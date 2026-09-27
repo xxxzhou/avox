@@ -9,8 +9,7 @@ TaskTrack::TaskTrack() {
 }
 
 TaskTrack::~TaskTrack() {
-  // 静态对象析构顺序：TrackMgr 为 Meyers 单例，进程退出时可能已析构
-  // 此处 get() 会重建一个空单例（无副作用），安全
+  // TrackMgr 为常驻不析构单例(见 get()), 退出期调用仍安全
   TrackMgr::get().remove(this);
 }
 
@@ -61,8 +60,13 @@ bool TaskTrack::haveIdLocked(std::thread::id tid) const {
 }
 
 TrackMgr& TrackMgr::get() {
-  static TrackMgr inst;
-  return inst;
+  // 故意泄漏不析构: 若 TrackMgr 参与静态析构, exit() 后仍在跑的工作线程
+  // (硬解回调线程等不可 join)打日志会锁已析构的 mtx -> pthread_mutex_lock
+  // 返 EINVAL -> libc++ 抛 system_error -> 线程入口/C 回调无人接 -> abort
+  // (2026-09-27 rc_seek_v3 实证)。常驻后退出期日志路径恒安全, 同 ZLM
+  // Logger / RtcEngine 的泄漏策略; 静态存储随进程回收, 不算真泄漏。
+  static TrackMgr* inst = new TrackMgr();
+  return *inst;
 }
 
 void TrackMgr::add(TaskTrack* t) {

@@ -221,19 +221,25 @@ void log(const LogItem& item) {
 }
 
 void logMsg(LogLevel level, const char* message) {
-  LogItem item = {};
-  item.level = level;
-  item.msg = message;
-  // 多实例时带所属 TaskTrack 可读前缀（如 [MP0]）；单实例/无归属则无前缀
-  std::string tag = TrackMgr::get().currentTag();
-  if (!tag.empty()) {
-    item.msg = "[" + tag + "] " + item.msg;
-  }
-  item.timestamp = {localTimeStampMS() * 10000};
-  if (bAsyncLog && logTask.running()) {
-    logTask.addItem(item);
-  } else {
-    log(item);
+  // 日志链路必须不抛: 调用方含 catch 处理器/析构/系统回调(如 VT 解码回调),
+  // 抛出即穿透线程入口或 C 回调 -> terminate -> abort。退出期全局若已析构,
+  // currentTag() 加锁、前缀拼接、格式化都可能抛, 就地吞掉保进程只丢日志。
+  try {
+    LogItem item = {};
+    item.level = level;
+    item.msg = message;
+    // 多实例时带所属 TaskTrack 可读前缀（如 [MP0]）；单实例/无归属则无前缀
+    std::string tag = TrackMgr::get().currentTag();
+    if (!tag.empty()) {
+      item.msg = "[" + tag + "] " + item.msg;
+    }
+    item.timestamp = {localTimeStampMS() * 10000};
+    if (bAsyncLog && logTask.running()) {
+      logTask.addItem(item);
+    } else {
+      log(item);
+    }
+  } catch (...) {
   }
 }
 

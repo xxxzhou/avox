@@ -10,6 +10,20 @@
 
 namespace avox {
 
+namespace {
+
+// 线程内日志不得抛: 退出期全局(单例/锁)可能已析构, log 链路会抛, 逃出线程
+// 入口即 terminate -> abort。就地吞掉, 只丢日志保住进程。
+template <typename... Args>
+void logNoThrow(LogLevel level, Args... args) {
+  try {
+    log(level, args...);
+  } catch (...) {
+  }
+}
+
+}  // namespace
+
 void sleepThread(bool yield, int32_t ms) {
   if (yield) {
     // 高优先级实时处理,密集数据包队列
@@ -63,25 +77,26 @@ void RunTask::runTask() {
     return;
   }
   // LOGFLF(LogLevel::info, "usage memory:", getCurrentMemoryUsageKB());
-  log(LogLevel::info, "task run:", taskName, " thread id ",
-      std::this_thread::get_id());
+  logNoThrow(LogLevel::info, "task run:", taskName, " thread id ",
+             std::this_thread::get_id());
   // 线程边界兜底: 异常逃出线程proc会 terminate→abort 整进程 (0xc0000409
   // fail-fast, 真机注入环境下日志/格式化链路的 bad_alloc 等即此链), 在此
-  // 就地拦截转错误日志, 任务按正常收尾处理
+  // 就地拦截转错误日志, 任务按正常收尾处理。兜底日志自身用 logNoThrow,
+  // 否则它再抛一次会直接绕过本 catch 逃出线程(2026-09-27 rc_seek_v3 实证)。
   try {
     // 子类用runflag做判断
     onRunTask();
   } catch (const std::exception& e) {
-    log(LogLevel::error, "task:", taskName,
-        " onRunTask exception:", e.what());
+    logNoThrow(LogLevel::error, "task:", taskName,
+               " onRunTask exception:", e.what());
   } catch (...) {
-    log(LogLevel::error, "task:", taskName, " onRunTask unknown exception");
+    logNoThrow(LogLevel::error, "task:", taskName, " onRunTask unknown exception");
   }
   // 清理资源
   try {
     onStopTask();
   } catch (...) {
-    log(LogLevel::error, "task:", taskName, " onStopTask exception");
+    logNoThrow(LogLevel::error, "task:", taskName, " onStopTask exception");
   }
   // 非外部关闭，自身关闭也需要重置flag
   runflag.store(false);

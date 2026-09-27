@@ -22,8 +22,12 @@ class TaskTrack {
  public:
   TaskTrack();
   virtual ~TaskTrack();
-  // 子类实现，返回类型名，如 "MP"/"SP"/"TR"（构造期不可调，TrackMgr 延后取）
-  virtual const char* getTrackName() = 0;
+  // 子类实现，返回类型名，如 "MP"/"SP"/"TR"（构造期不可调，TrackMgr 延后取）。
+  // 刻意不设纯虚: refreshTags() 会对 tracks 里**所有**对象取名字, 而对象可能正处
+  // 「基类构造期」或「派生析构已完、~TaskTrack 未 remove」两个窗口, 此时 vptr 已是
+  // TaskTrack 自身 -> 纯虚调用直接 __cxa_pure_virtual -> abort(不可 catch)。
+  // 给安全默认值 "?" 后窗口内只丢可读前缀, 不再崩。多实例 + 并发打日志才可能命中。
+  virtual const char* getTrackName() { return "?"; }
 
   // 加/移除关联线程（自加锁；bSelf=true 设自身主线程 selfTid，不入 tids）
   void addTrack(std::thread::id tid, bool bSelf = false);
