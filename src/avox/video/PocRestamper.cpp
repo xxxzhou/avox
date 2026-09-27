@@ -40,6 +40,7 @@ void PocRestamper::reset() {
   mode = Mode::armed;
   bPocReady = false;
   fullPoc = 0;
+  maxFullPoc = 0;
   prevLsb = 0;
   fullPoc0 = 0;
   pts0 = 0;
@@ -47,6 +48,14 @@ void PocRestamper::reset() {
   bPts0 = false;
   lastDts = 0;
   bAnchor = false;
+}
+
+void PocRestamper::activate(const char* reason) {
+  mode = Mode::active;
+  if (!bLogged) {
+    log(LogLevel::info, "poc restamp active: ", reason, ", restamping pts by POC");
+    bLogged = true;
+  }
 }
 
 // 遍历包内 NAL, 配置帧喂上下文, 首个 VCL 解 slice 头取 poc。
@@ -86,6 +95,16 @@ bool PocRestamper::processPacketNals(AvoxPacket& packet, bool& bIdr) {
             return false;
           }
           bPocReady = true;
+          // VUI 权威声明有重排帧 → 流必然乱序显示, pts==dts 即 ctts 缺失。
+          // 据此首帧即预激活, 消掉「等 POC 倒挂实证」期间的接缝错位(激活前已
+          // 下发的参考帧保持解码序戳, 显示位实测错后 3 格而非 1ms 级)。
+          // 无此声明则维持原样, 仍等倒挂实证; 有 ctts 的正常流下一帧 pts!=dts
+          // 即被 bypass 闸拦下, 首帧 dispUnits=0 恒等不改写
+          if (sps->vui_parameters_present_flag &&
+              sps->vui_seq_parameters.bitstream_restriction_flag &&
+              sps->vui_seq_parameters.num_reorder_frames > 0) {
+            activate("SPS VUI declares reorder frames (pts==dts)");
+          }
         }
         continue;
       }
@@ -149,13 +168,18 @@ bool PocRestamper::updatePoc(int64_t lsb, bool bIrap) {
     fullPoc = lsb;
     prevLsb = lsb;
     fullPoc0 = lsb;
+    maxFullPoc = lsb;
     bAnchor = true;
     return true;
   }
   if (bIrap) {
-    // IRAP 起 GOP: 显示位紧接上一 GOP 末帧, lsb 归零不参与差分
-    fullPoc += pocStep;
+    // IRAP 起 GOP: 显示位紧接上一 GOP 的**显示序末帧**。末帧必须取本 GOP 的
+    // 最大显示位而非解码序末帧——自适应 B 位置下解码序末帧常是显示位靠前的
+    // B, 直接 +pocStep 会撞上已占格(重复 pts)并留一个空格, 下游
+    // restampFramePts 的单调守卫再把重复值摊成纯 33ms 格 → 每 GOP 一次半帧跳
+    fullPoc = maxFullPoc + pocStep;
     prevLsb = lsb;
+    maxFullPoc = fullPoc;
     return true;
   }
   int64_t d = lsb - prevLsb;
@@ -167,15 +191,12 @@ bool PocRestamper::updatePoc(int64_t lsb, bool bIrap) {
   prevLsb = lsb;
   const int64_t prev = fullPoc;
   fullPoc += d;
+  if (fullPoc > maxFullPoc) {
+    maxFullPoc = fullPoc;
+  }
   if (fullPoc < prev && mode == Mode::armed) {
     // 解码序里 POC 倒挂 = B 帧重排实证, 激活注入
-    mode = Mode::active;
-    if (!bLogged) {
-      log(LogLevel::info,
-          "poc restamp active: stream reorders but pts==dts (ctts lost), "
-          "restamping pts by POC");
-      bLogged = true;
-    }
+    activate("stream reorders but pts==dts (ctts lost)");
   }
   return true;
 }

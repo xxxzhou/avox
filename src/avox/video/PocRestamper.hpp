@@ -19,8 +19,11 @@ class H265Parse;
 //       丢掉的 ctts 注回时间轴。dts 不动, 解码两条车道(VT 按 max(pts-dts)
 //       推重排深度 / FFmpeg 按 pts 重排)自然恢复
 // 恒等性: armed 只记账不改写, 正常流(pts!=dts 或 POC 单调)全程零触碰;
-//       激活点接缝(1帧 1ms 级)由下游 restampFramePts 兜底
-// poc_type!=0 / 解不出 SPS / 多帧包: 该包不改写不记账, 后续帧 lsb 差分吸收
+//       VUI 权威声明 num_reorder_frames>0 的流首帧即预激活(接缝归零, 首帧
+//       dispUnits=0 恒等不改写), 无此声明则仍等 POC 倒挂实证
+// 激活点接缝由下游 restampFramePts 兜底, 但接缝错位可达数个显示格(非 1ms 级),
+// 故预激活优先; poc_type!=0 / 解不出 SPS / 多帧包: 该包不改写不记账, 后续帧
+// lsb 差分吸收
 class AVOX_EXPORT PocRestamper {
  public:
   PocRestamper();
@@ -46,6 +49,8 @@ class AVOX_EXPORT PocRestamper {
   bool processPacketNals(AvoxPacket& packet, bool& bIdr);
   // POC 记账: lsb 解回绕, IRAP 重置 GOP; 返回 false 表示本帧不可用
   bool updatePoc(int64_t lsb, bool bIrap);
+  // 置 active 并按 reason 打一次激活日志
+  void activate(const char* reason);
 
  private:
   VCodecId codecId = VCodecId::none;
@@ -59,6 +64,7 @@ class AVOX_EXPORT PocRestamper {
   int64_t lsbWrap = 512;    // lsb 回绕周期 2^log2_max_pic_order_cnt_lsb
   bool bPocReady = false;   // SPS 已解出(poc 参数可读)
   int64_t fullPoc = 0;      // 解回绕后的全 POC(显示序单调)
+  int64_t maxFullPoc = 0;   // 本 GOP 内最大全 POC = 显示序末帧位(IRAP 定位用)
   int64_t prevLsb = 0;
   int64_t fullPoc0 = 0;     // 首帧全 POC(显示位基准)
   int64_t pts0 = 0;         // 首帧原始 pts(改写基准)
