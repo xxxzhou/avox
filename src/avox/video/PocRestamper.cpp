@@ -10,6 +10,9 @@ namespace avox {
 namespace {
 // dts 回跳超过该帧数视为 seek 重入, 记账重置重新起量
 constexpr int64_t kSeekRewindFrames = 2;
+// IRAP 上本轴与容器时间的容许偏差: 正常流只有容器自身毫秒级取整(实测 ≤7ms),
+// 超过即判定 seek 落点, 重锚回容器时间轴
+constexpr int64_t kRebaseOffMs = 1000;
 // lsb 回绕周期的合理上限(log2_minus4 <= 12), 防SPS解析出野值
 constexpr int64_t kMaxLsbWrap = 1 << 16;
 // NOPTS 类野值闸: |pts|/|dts| 超过视为无效时间戳(约34年, 正常流到不了)
@@ -229,7 +232,25 @@ bool PocRestamper::feed(AvoxPacket& packet) {
   if (bSaneDts) {
     lastDts = packet.dts;
   }
-  // 锚定首帧原始 pts 作为显示格基准
+  // 显示格原点常态只锚首帧——轴绝对均匀(实测 33/34ms 严格交替, 无格点抖动)。
+  // 但帧计数轴只在连续播放时与容器时间轴重合: seek 后容器时间大跳、轴却原地
+  // 续数, 实测 seek 到 1:24:13 后轴停在 10.4s(容器已到 5051s), 音频被
+  // alignPacketPts 拉去追视频 → 持续抖动。故在 IRAP 上校验本轴与容器时间是否
+  // 严重不符(正常流两者只差容器自身的毫秒级取整, 实测 ≤7ms), 是则重锚到该
+  // IRAP 的容器戳——IRAP 解码位次与显示位次重合, 容器戳即其显示时刻。用 dts
+  // 而非 pts 做基准: dts 单调且无 NOPTS 类野值, 是解封装侧最可靠的时钟
+  if (bIdr && bPts0 && bSaneDts) {
+    const int64_t axisMs = (pts0Us + (fullPoc - fullPoc0) * frameDurUs / pocStep) / 1000;
+    const int64_t offMs = packet.dts - axisMs;
+    if (offMs > kRebaseOffMs || offMs < -kRebaseOffMs) {
+      log(LogLevel::info, "poc restamp rebase: axis off ", offMs,
+          " ms (seek), rebase to container time");
+      pts0 = packet.dts;
+      pts0Us = pts0 * 1000;
+      fullPoc0 = fullPoc;
+    }
+  }
+  // 首帧锚定: 显示格基准 = 首帧原始 pts
   if (!bPts0) {
     if (!bSanePts) {
       return false;
@@ -237,6 +258,7 @@ bool PocRestamper::feed(AvoxPacket& packet) {
     pts0 = packet.pts;
     pts0Us = pts0 * 1000;
     bPts0 = true;
+    fullPoc0 = fullPoc;
   }
   // armed 只记账不改写: VFR/无B流(pts==dts且poc单调)永不激活, 时间戳零触碰;
   // 激活帧起 pts = 首帧pts + 显示位*帧长, 激活点接缝由下游 restampFramePts 兜底
