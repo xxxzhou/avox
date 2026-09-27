@@ -30,6 +30,8 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 **Mac**(ssh mac): shim 无 -Log 开关, 靠终端捕获+os_log。
 - **用户实际启动位是 `~/Applications/panvox.app`(非 build products)**, 引擎静态链进 libpanvox_native.dylib(无独立 avox dylib); 换引擎 `bash tools/deploy_macos_shim_app.sh`(部署文档 §3.3)后核对启动位 dylib 已刷新(`strings <dylib> | grep <修复特征串>` 最实)。
 - **Finder/launchd 启动引擎 stdout 全丢**(os_log 也常无条目、无自有日志文件): 复现必须终端带重定向重启 `nohup ~/Applications/panvox.app/Contents/MacOS/panvox >/tmp/panvox-run.log 2>&1`, 否则出事后无日志可读。
+- **本机(0927)实测: 上面这条 nohup 法可能走不通** —— 直启沙盒 app 会死在 `_libsecinit_appsandbox`(SIGTRAP, 非 app 崩溃), `log show --predicate 'process == "panvox"'` 也无条目。绕法: 经 LaunchServices 启动(`open -a`, 需传 env 用 `open --env`), 或**直接降级到引擎级复现**(§5 avox_cli / vsynctest), 后者对「解码/渲染时序」类病等价且更可控。
+- **xcodebuild 在本机沙箱下会被拦**: `CreateBuildDescription failed` / `Unable to write manifest.json` / `Operation not permitted`(写 `~/Library/Developer/Xcode/DerivedData/.../info.plist` 与 SWBBuildService)。**解法 = 前台执行 + 关沙箱**(0927 实证有效: `xcodebuild -project avox.xcodeproj -configuration Release -target ALL_BUILD build`); 注意**放后台跑时即使带了关沙箱旗标也不生效**, 仍报同样的错。改 `TMPDIR` 到工作区内、`-derivedDataPath` 均**无效**。兜底=手写 clang++ 链接命令直接产出可执行(清单见 avox-macos-playmatrix-runner skill 附录), 或 `cmake -S . -B build/macos/avox -DAVOX_ENABLE_CLI=ON` 重配后走 ninja(`avox_cli` 目标默认关, 见 src/CMakeLists.txt)。
 - 引擎日志备选: `log show --last 10m --predicate 'process == "panvox"' --info`, 或 `log stream` 边播边收。
 - 「卡住/停止」先查 `~/Library/Logs/DiagnosticReports/` 有无 panvox .ips 区分**崩溃 vs 冻住**(无 .ips=冻死非崩); 解码自愈停顿 ≤1GOP(dropped 数百帧≈9s)易被用户当「停止」, 别误判。
 
@@ -49,6 +51,8 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 - **dll 考古**(判"修复是否真的编入部署位"): 内嵌 commit_hash/build_time 不可信(§1.0); 看 `build/windows/avox/src/<模块>.dir/Release/<改过的文件>.obj` mtime vs 源文件 mtime vs 提交时间; Windows 启动闸 Copy-Item **保留源 mtime**(runner 目录 dll 的 mtime=源构建时间≠同步时间)。
 - **seektest 判读**: post0 near-black 且不同目标位置统计全同=seek 前在飞残帧伪影, **勿当 bug 追**; 验收看 post1+alive+耗时指标(测试判定行可能因此恒 FAIL, 属测试口径非缺陷)。
 - cli 默认级别看不到 [FF] 桥日志, 要 `-loglevel verbose`(但 open_input_ms/first_frame 等指标与级别无关)。FFmpeg 日志行出处用本机源码树 `D:/Work/github/ffmpeg/` grep 字符串定位最快, 别猜(引擎=FFmpeg 9.0.1, avformat-63)。
+- **本机是 BSD grep**: `\|` **不是**「或」, 多选一律 `grep -E "a|b"`——用 GNU 写法会**静默零命中**, 极易误判「日志里没有这条」(0927 实证: `poc restamp active` 明明在, 被 `\|` 吃掉差点翻案)。
+- **取码流头字段(判显示序)用 `ffmpeg -bsf:v trace_headers`**: `-i <file> -c:v copy -bsf:v trace_headers -frames:v N -f null -`, 从 stderr 抽 `pic_order_cnt_lsb`/`slice_type`/`nal_unit_type`(本机无 ffprobe, 只有 `~/.local/bin/ffmpeg`)。这是「重打戳对不对」的 ground truth, 比看引擎输出反推可靠。moov 在头时可只下前缀(`curl -r 0-N`)建可解析的局部文件。
 - 需脱离 app 隔离引擎时用 §5 探针; 细化旋钮: 引擎级复现按症状加 `-log-packet`(包时间/PTS)/`-log-decode`/`-log-render`(app 内无此开关); `PANVOX_THUMB_TRACE=1`(抽帧链); FFmpeg 桥默认压在 WARNING, info 级需引擎侧另开。
 
 ## 4. 已知病族速查(定谳在案, 排查先对表)
@@ -77,6 +81,13 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 - `[FF][mlp] Stream parameters not seen` 刷屏(数十条/s) ± 位置 18 倍慢放、无 buffering 状态 = TrueHD 轨车道错配 → 已修 96e205b(MLP 独立 ACodecId)+f58bc94(同文日志折叠); **先用 media_info.json 时间线定刷屏是哪片开的**(常是几分钟前另开的 TrueHD 片); TrueHD 碎片轨(数千包/内容秒)数据完好可解≠损坏。
 - 全片**每秒周期跳帧**(快进-冻结循环)、无 buffering、声音正常, 碎片音轨片(TrueHD 40采样/包=0.83ms, 实测1201包/s) = 音频采样游标 ms 整数截断: `getAudioFrameMs(40采样)=0`→游标冻结→解码 pts 漂 ~1s 重锚→音频钟锯齿→视频钟被拖成快进/冻结循环 → 已修 c3f92b0(getAudioFrameUs 微秒游标+WindowRender 升 fps 上限越界伴修); A/B 判据: 修复前视频 zeroDelay 56-78 次/5s 持续(对冻结钟追赶), 修复后 0; 全片解码扫(vptsscan: 视频输出零缺口+音频包 0.83ms/1201包s)定性「片源干净→渲染侧」。
 - 全片**每几秒周期跳一下**(丢帧追赶)、无 buffering、无 crash, **Windows 正常仅 Mac(VT)跳** = 丢 ctts 的 B 帧流 POC 显示格 ms 截断: PocRestamper(eb106f0)激活后 pts 按 33ms 平坦格推进, 对 30000/1001(33.367ms) 每帧欠 0.367ms→视频钟持续落后音频→每~4.5s 攒满丢帧门限静默丢一帧(drop 日志被注释); **FFmpeg 车道输出走 dts 链不吃包 pts 故 Windows 无感, VT 车道透传包 pts 吃满漂移**(IOSVDecoder 用 packet.pts 喂 CMTime) → 已修 79abb44(显示格 µs 化, 与 c3f92b0 同 ms 截断族); 判据: cli -log-packet 看包 pts 显示序增量恒 33(旧病)/33 与 34 交替(修复); 片源特征: moov 里 0 个 ctts 有 stss, 迅雷拼装 mp4 高发。
+  - **残宗已修(0927, 同族同签名, 别因「79abb44 已修」就结案)**: 同类片源仍每 **2s** 跳一下。根因=PocRestamper::updatePoc 的 IRAP 分支原为 `fullPoc += pocStep`, 用**解码序前一帧**的 POC 定位 IDR 显示格, 而解码序前帧不是该 GOP 显示序末帧(自适应 B 位置) → IDR 抢到已被占用的显示格(**重复 pts**)+ 留一个空格; 重复 pts 触发 VideoTrack::restampFramePts 的 `pts < lastInPts + nominalFrameMs/2`(=16ms) 单调守卫 → 后续帧被强制成**纯 33ms 格**(29.97 真值需 33/34 交替)→ 每帧快 0.367ms, ~43 帧后累积超 16ms 阈值**一次性跳回(16ms 半帧)** = 视觉抖动, 每 IDR(60 帧≈2s)一轮。
+    - **判据三连**(缺一不可): ①`grep -E "restamp|reorders"` 见 `poc restamp active: ... (ctts lost)` 或 `SPS VUI declares reorder frames`; ②`-log-decode` 输出序增量出现 **16**(半帧), 且 34ms 占比仅 ~18%(正确应 36.7%); ③`-log-packet` 里**每个 IDR 的 pts == 前 2 帧的 pts**(撞格, 实测 10 个 IDR 中 7 个)。
+    - **软解对照干净**(34ms 占比 37.2%, 输出走 dts 链严格单调 → 不触发守卫)= 硬解 VT 车道独有, 与「Windows 正常」一致。
+    - **修法(已落地)**: IRAP 分支改 `fullPoc = maxFullPoc + pocStep`, GOP 内维护 `maxFullPoc`; 另加 **VUI 预激活**(SPS 声明 `bitstream_restriction_flag && num_reorder_frames>0` 即首帧 `activate`, 消掉等 POC 倒挂实证期间的接缝错位; 首帧 dispUnits=0 恒等, 带 ctts 的正常流下一帧被 `pts!=dts` 旁路闸拦下)。
+    - **验收数据**(同片源 12s, Mac VT 硬解, 修复前→后): IDR 撞格 **7/10 → 0/10**; 34ms 占 (33+34) **17.9% → 37.0%**(理论 36.7%, 四次重跑 36.9~37.1% 稳定); 16ms 半帧 **4 → 0**; IDR 间距 **1968/1969 抖动 → 恒定 2002ms**(=60×33.367ms)。
+    - 关键片源参数: POC lsb 仅 5 位(`log2_max_pic_order_cnt_lsb_minus4=1`, wrap=32), 自适应 B 位置(P 间距不匀), stss IDR 每 60 帧。**注意 moov 可能在文件头**(本例 moov 11.7MB 在 ftyp 后, 与「moov 在尾」的常见拼装片相反)。
+    - **验证坑**: 改动给 PocRestamper **加了成员**(`sizeof` 变), 只重编 `.cpp` 再手工重链会得到「新头文件对象 + 旧头文件库」的错配 → 库里 `make_unique<PocRestamper>()` 按旧尺寸分配, 新 `.o` 写新成员即**堆越界**; 症状是 `BUG IN CLIENT OF LIBMALLOC: memory corruption of free block`(EXC_BREAKPOINT/SIGTRAP) 而栈落在无关的 AppKit/CoreUI/CoreSVG —— **极具误导性, 必须整库重建**。
 - 全片**零规律散点跳画**(一次一帧洞)、日志 `[FF][h264] Invalid NAL unit size (声明>实际)` 与 `partial file` 风暴同现、文件 moov stco/stsz 逐样本对字节完好 = 网关按连接随机掐杀读段: 每次抓段=avio_seek 新建连接都过一次掐杀彩票, 重试耗尽后 EIO 漏给 avio_read 把已缓冲半截样本当成功, mov.c 拼出截断包喂出 Invalid NAL→丢 AU→跳; 中文件的 moov 表区(如 4.2MB)再读被掐=同源。→ 已修 e409b32(抓段重试预算 3→10, 单连被掐率~25% 时连杀 10 次≈百万分之一); **判据: 同内容区段换时间重放 corrupt 位置漂移=读路径, 位置钉死=文件真坏**(curl+moov 对账定谳, avcc 长度前缀逐样本比对)。
 - 播放时间来回跳+无限 buffering = 拼装 mp4 音轨锚文件头(前 60s 假音频 stco 锚在偏移 48, 每个音频包把读位拉回文件头跨几十 MB 重连) → 已修 a0107be(http 段缓存+锚点钉住)。
 - 直链反复 buffering 无时间跳 = 吞吐临界非 bug → 垫子默认已 2s(2a200e9, 首帧/秒开不吃它); 直播延迟敏感经 `mp.delay.ms` 调回。
