@@ -56,7 +56,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 
 **open/起播**
 - 容器头解析失败(EBML header parsing failed 等) → 拿到的非容器: 假 mkv(.torrent)/改后缀 FLV → 源端假片, §1.2 体检定真身。
-- wmv3 拒播/有声无画: `io open success`→流信息正常(wmv3+wma2)→`avcodec_open2 failed -1094995529` 且**无任何 [FF][wmv3] 行**(extradata 空即静默拒, vc1_decode_init 形态)→永不到 playing; 或音频代打到 playing 但 video 帧队列恒 0(有声无画)。**判据: 4 字节序列头 extradata 全拒, 5 字节同库可播**(对照 `add video config data:` 字节数, 0927 夜巡 6 片实锤: 拒 `0x4FF11A01`/成 `0x4FF1080100`) → 未修立案(FFVDecoder extradata 透传/WMV3 支持面)。
+- wmv3 拒播/有声无画: `io open success`→流信息正常(wmv3+wma2)→`avcodec_open2 failed -1094995529` 且**无任何 [FF][wmv3] 行**(extradata 空即静默拒, vc1_decode_init 形态)→永不到 playing; 或音频代打到 playing 但 video 帧队列恒 0(有声无画)。**判据: 4 字节序列头 extradata 全拒, 5 字节同库可播**(对照 `add video config data:` 字节数, 0927 夜巡 6 片实锤: 拒 `0x4FF11A01`/成 `0x4FF1080100`) → **已修 ee8bf7b(0927)**: 真根因不在 FFVDecoder——MediaPlayer::onPacket 视频分支 `data.size<=4` 垃圾包闸把 4 字节 vconfig(序列头)整包丢掉, aconfig 无此闸故音频 config 照到; 修法=vconfig 豁免尺寸闸。签名仍见于此族=查部署位修态(dll 考古)。
 - open 后卡死: `partial file` ×数千同秒 + `seg fetch seek misland got:-541478725(AVERROR_EOF)` + Dart `clock-leak guard seek(0)` 死循环 → 服务端时变收尾连接→FFmpeg http filesize 认知被响应污染(干净 EOF 只在 off≥filesize, 无 "Stream ends prematurely" ERROR 行是判据)→eof 闩+seek 失败路径不清闩→段断供雪崩(0926 定谳未修, 修法=seek 败清闩+EOF 未到真尾重建通道)。**先验文件/服务端(curl 全文件顺序流)排除源端, 再对表**; 二次复现可能不卡(时变), 别因复现不出就翻案。
 - http 直链 open 卡 10 分钟+(迅雷逐 GOP 落盘 mp4, 全文件数千个 mdat, FFmpeg 顶层扫描每 mdat 一次 http 断连重连) → 已修 39aa4aa(http 预扫+AVSEEK_SIZE 谎报早退)。
 - 开片即崩(avsubtitle_free 栈, 播 PGS 字幕触发; **cli 不渲字幕故不崩=最大迷惑点**) → ffmpeg dll 与 .lib 序号错位 → 已修 c08adb4(按名字重生成导入库); 根训=dll 与 lib 必须成对更新。
