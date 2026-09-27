@@ -622,6 +622,12 @@ int IOParseFF::wrapReadAt(uint8_t* buf, int size, int64_t pos) {
   const int64_t segStart = pos / kHttpSegSize * kHttpSegSize;
   HttpSeg* seg = touchHttpSeg(segStart);
   if (!seg) {
+    // 越过文件尾的取段失败是钳尾 seek 后越界读的合法事实, 回 EOF 让 demux 走
+    // onComplete; 回 EIO 会被当真故障 onError, seek 后恒 buffering(夜巡 mac SEEK_HANG ×10)
+    const int64_t sz = avio_size(httpPb);
+    if (sz > 0 && pos >= sz) {
+      return AVERROR_EOF;
+    }
     return AVERROR(EIO);
   }
   int64_t inSeg = pos - seg->off;
@@ -690,6 +696,14 @@ IOParseFF::HttpSeg* IOParseFF::touchHttpSeg(int64_t segStart) {
 }
 
 IOParseFF::HttpSeg* IOParseFF::fetchHttpSeg(int64_t segStart, bool bAnchor) {
+  // 越过文件尾的段抓取必败(钳尾 seek 后越界读), 10 次重试纯空转(夜巡 2 秒风暴);
+  // 快速交上层, 由 wrapReadAt 按文件大小回 EOF
+  {
+    const int64_t sz0 = avio_size(httpPb);
+    if (sz0 > 0 && segStart >= sz0) {
+      return nullptr;
+    }
+  }
   // 服务端瞬断单次即败会退化成 mov partial 风暴: demuxer 对音频样本逐个回退
   // 重试, 音频供给断流 A/V 撕裂(极空间 seek 后实测), 错位包还会喂出垃圾帧。
   // 底层抓取自带短间隔重试吸收瞬断; 重试都失败才交回上层(上层自有无穷重试)。
@@ -718,6 +732,10 @@ IOParseFF::HttpSeg* IOParseFF::fetchHttpSegOnce(int64_t segStart,
   // http 瞬断半程(连接重建后 Range 未生效等), 错位数据入库后整段所有包
   // 字节平移——视频包 NAL 边界全错解码不出, 音频靠 AAC 重同步静默吞掉
   // (极空间重访区实测), 表现即 seek 后视频永久断供
+  // 寻位前先清 eof/error 残留: eof_reached 闩着时 avio_seek 的 fill_buffer
+  // 小前向路径直接吐 EOF, 界内尾段抓取恒 misland; 旧清法在落位后, 毒的恰是落位这步
+  httpPb->eof_reached = 0;
+  httpPb->error = 0;
   const int64_t landed = avio_seek(httpPb, segStart, SEEK_SET);
   if (landed != segStart) {
     // 打断窗口内恒吐 EXIT 属预期(seek/close 接管), 不刷屏; 其余落位失败留痕
@@ -727,9 +745,7 @@ IOParseFF::HttpSeg* IOParseFF::fetchHttpSegOnce(int64_t segStart,
     }
     return nullptr;
   }
-  // seek 落位即清底层 avio 的读错/EOF 残留: 打断窗口刚结束的首个抓取会被
-  // 上一次的 latch 毒死(fill_buffer 只看 eof_reached, avio_seek 只清它不清
-  // error), mkv 经 Cues 在文件尾的合法 seek 就这么被打断残留误杀过
+  // 落位再清一次: 寻位路径的 fill_buffer 可能又置位
   httpPb->eof_reached = 0;
   httpPb->error = 0;
   HttpSeg seg;
