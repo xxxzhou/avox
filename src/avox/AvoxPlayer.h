@@ -495,5 +495,8 @@ AVOX_EXPORT void removeRtcPlayerOb(IRtcPlayer* player, IMediaPlayerOb* ob);
 AVOX_EXPORT IRtcEventOb* createZlTestSdpAgent(IRtcPlayer* player,
                                              const char* serverUrl);
 AVOX_EXPORT const char* getRtcConnStateStr(RtcConnState state);
+// 构建指纹: 本 dll/a 的编译时刻(宿主顶栏/关于页核对部署版本用)。
+// 注: 增量编译未触及实现文件时保持上次值, 与 dll 未变更语义一致
+AVOX_EXPORT const char* avox_build_stamp(void);
 }
 }

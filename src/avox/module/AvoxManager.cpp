@@ -372,3 +372,9 @@ IRemoteSource* createRemoteSource(const char* type) {
 }
 
 }
+
+// 构建指纹: 宿主(shim)关于页/顶栏核对部署版本用。注: 增量编译未触及本
+// 文件时保持上次值, 与「dll 未变更」语义一致
+extern "C" AVOX_EXPORT const char* avox_build_stamp(void) {
+  return __DATE__ " " __TIME__;
+}
