@@ -44,6 +44,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 - 引擎行([MPx] 实例前缀 / [FF] ffmpeg / [ZL] zlmediakit / io create-open result / addVideoDesc-addAudioDesc / state from X to Y / playing↔buffering / av not align)与 **analyze-log skill 同一套判定表**, 卡顿/打不开的细判直接加载它, 不在本 skill 重复。
 - panvox 层特征行: `[panvox-boot]`(启动顺序), `[panvox-shim]`/`[panvox-runner]`(shim/GPU 适配器), `[dart]`(-Log 进程内档的 Dart 行), `[avox][级别]`(引擎桥行), `watchdog armed`(冻结名片机制), unplayable 记录(打不开自动下墙: 引擎败+文件头非容器才标, **网络类错误永不标**, 见 unplayable.json)。
 - 归属判定顺序: ①io open 失败/超时/403/404/503 → 源或网络(签名限时源失效**严禁同参自动重播**); ②流信息缺/decode create fail → 编码不支持或硬解问题; ③opening 长停 → IO 慢/假成功; ④buffering 频繁 → 查队列与丢包行; ⑤Dart exception/zone-error → app 层逻辑; ⑥无日志直接退 → 走 dmp 流程。**最有力的归属证据=本地同文件零卡 + http 卡**(病在 http IO 路径)。
+- **open 成功却不到 playing 先分两族再归属**: 有 `avcodec_open2 failed`/`videodecode error … open failed` 行=**编码族**(归属②, extradata/编码支持面, 见 §4 wmv3 族); `io open result: success` 后整段静默(无 open_input_ms/流信息/任何错误行)=**长停族**(归属③, 嫌疑 demuxer 卡在容器头或服务端读行为)。两族判定序都落同一档, **归因别并类**(0927 夜巡 7 片两族各半)。
 - **时间线重建**: panvox_stdout.log 在 Release 目录常是旧文件; stdout 未重定向的实例死了就无日志(无法尸检, 只能收敛怀疑面让用户带日志复点)。重建用户操作时间线用 media_info.json 的 at/via 逐条排(实测: [FF] 刷屏真凶是几分钟前另开的另一片, 靠它定案)。
 - **dll 考古**(判"修复是否真的编入部署位"): 内嵌 commit_hash/build_time 不可信(§1.0); 看 `build/windows/avox/src/<模块>.dir/Release/<改过的文件>.obj` mtime vs 源文件 mtime vs 提交时间; Windows 启动闸 Copy-Item **保留源 mtime**(runner 目录 dll 的 mtime=源构建时间≠同步时间)。
 - **seektest 判读**: post0 near-black 且不同目标位置统计全同=seek 前在飞残帧伪影, **勿当 bug 追**; 验收看 post1+alive+耗时指标(测试判定行可能因此恒 FAIL, 属测试口径非缺陷)。
@@ -55,12 +56,14 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 
 **open/起播**
 - 容器头解析失败(EBML header parsing failed 等) → 拿到的非容器: 假 mkv(.torrent)/改后缀 FLV → 源端假片, §1.2 体检定真身。
+- wmv3 拒播/有声无画: `io open success`→流信息正常(wmv3+wma2)→`avcodec_open2 failed -1094995529` 且**无任何 [FF][wmv3] 行**(extradata 空即静默拒, vc1_decode_init 形态)→永不到 playing; 或音频代打到 playing 但 video 帧队列恒 0(有声无画)。**判据: 4 字节序列头 extradata 全拒, 5 字节同库可播**(对照 `add video config data:` 字节数, 0927 夜巡 6 片实锤: 拒 `0x4FF11A01`/成 `0x4FF1080100`) → 未修立案(FFVDecoder extradata 透传/WMV3 支持面)。
 - open 后卡死: `partial file` ×数千同秒 + `seg fetch seek misland got:-541478725(AVERROR_EOF)` + Dart `clock-leak guard seek(0)` 死循环 → 服务端时变收尾连接→FFmpeg http filesize 认知被响应污染(干净 EOF 只在 off≥filesize, 无 "Stream ends prematurely" ERROR 行是判据)→eof 闩+seek 失败路径不清闩→段断供雪崩(0926 定谳未修, 修法=seek 败清闩+EOF 未到真尾重建通道)。**先验文件/服务端(curl 全文件顺序流)排除源端, 再对表**; 二次复现可能不卡(时变), 别因复现不出就翻案。
 - http 直链 open 卡 10 分钟+(迅雷逐 GOP 落盘 mp4, 全文件数千个 mdat, FFmpeg 顶层扫描每 mdat 一次 http 断连重连) → 已修 39aa4aa(http 预扫+AVSEEK_SIZE 谎报早退)。
 - 开片即崩(avsubtitle_free 栈, 播 PGS 字幕触发; **cli 不渲字幕故不崩=最大迷惑点**) → ffmpeg dll 与 .lib 序号错位 → 已修 c08adb4(按名字重生成导入库); 根训=dll 与 lib 必须成对更新。
 - 网络源硬解首帧慢(~4.6s)被 5s 看门狗误杀→vulkan 接棒炸→软解 GOP 中段缺参考, 起播空转 ~15s → 已修 2c2444b(供给窗看门狗+openFailed 瞬时降级+回退吸 IDR)。
 
 **seek 后**
+- **seek 落尾/越尾钳尾先分两态**: 健康态=短暂 buffering 后 `io complete`/completed(短片钳尾常态, 0927 夜巡 133 片); 病态=滞留 buffering 无 completed, 三形态——①尾部段 `seg fetch seek misland got:-541478725(AVERROR_EOF)` 重试转 `read frame failed EIO` 源被闩死; ②落尾帧队列空恒 buffering(实例时长 606s>seek 600s, 非钳尾也滞留); ③改后缀 FLV flvEstimateSeek fallback 落点后 demux 无下文 → 疑 a501667(bIOComplete 逃生)/8d61674(清闩)修态未覆盖「目标越界钳尾」分支(0927 夜巡 16 片, 未修, 待定点二刷)。
 - mkv seek 卡 ~3 分钟(matroska 内部前向扫描兜底) = avio error/eof 闩残留毒死尾部 Cues 解析 → 已修 8d61674(wrapSeekCb 清闩+读满文件尾短段入库)。
 - 改后缀 FLV(无 keyframes 索引) seek 转 25~46s(顺序整扫, 耗时=目标偏移÷实测吞吐可精算对账) → 已修 flvEstimateSeek 字节估算直跳(四点位 0.4~0.6s; IOParseFF bFlvFastSeek 门, 0926 落地, 提交态 `git log -S flvEstimateSeek` 自查); 家族=所有迅雷改后缀网络 FLV。**关键认知**: flvdec 播放期按关键帧/音频包自建流索引但 flv_read_seek 恒不用(委托 avio_seek_time 需 pb->read_seek→ENOSYS); 单点 seektest 绿但拖动(密集 seek)仍冻 → seek 命令层有合并, 杀伤在 ack 等待 200ms 撞 http 重连退避(1s 不可打断)→快速 seek 门(要求 IO acked)全关退回整扫+并发撕 demuxer → 已修 ack 上限 1.2s(IOParseFF seekTo); 复现/回归用 seekstorm 探针(samples/functest, 密集连发 seek 判帧流恢复)。
 - seek 进片尾 buffering 死锁(剩余 <垫子 2s 恢复门闸永不满足 + avio pb->error 闩致 EOF 永不到, 读线程 60 次/s 空转) → 已修 a501667(门闸 bIOComplete 逃生+cmdSeek 复位+清闩)。
