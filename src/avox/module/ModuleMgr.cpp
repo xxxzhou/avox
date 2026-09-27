@@ -95,6 +95,9 @@ std::string ModuleMgr::getAvoxPluginsDir() {
   std::string dir = getAvoxDllDir();
 #ifdef WIN32
   return dir + "\\plugins";
+#elif defined(__ANDROID__)
+  // Android jniLibs 平铺(无 plugins/ 子目录): 插件 so 与 libavox.so 同在 nativeLibraryDir
+  return dir;
 #else
   return dir + "/plugins";
 #endif
