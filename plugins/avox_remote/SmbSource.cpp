@@ -1,11 +1,25 @@
 // 整文件条件编译: libsmb2 就位才定义此宏(CMakeLists, cmake/FindLibsmb2.cmake)
 #ifdef AVOX_REMOTE_SMB
 
+// winsock2 须先于 windows 系领头; POSIX 侧用 poll
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <poll.h>
+#endif
+#include <errno.h>
+
 #include "SmbSource.hpp"
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cstring>
+#include <thread>
+
+#include <smb2/libsmb2-dcerpc-srvsvc.h>
+#include <smb2/libsmb2-raw.h>
 
 namespace avox {
 
@@ -107,9 +121,10 @@ bool SmbSource::parseUrl(const std::string& url, UrlParts* out) {
   if (out->port == 0) {
     out->port = 445;
   }
-  // 第一段路径 = 共享名(必填); 其余为初始路径
+  // 第一段路径 = 共享名; 无 share = 服务器级会话(仅供 listShares, §六228 M1)
   if (path.empty() || path == "/") {
-    return false;  // 无 share: 枚举共享列表属 srvsvc 范畴, v1 不做
+    out->rootToken = "/";
+    return true;
   }
   if (path.back() == '/') {
     path.pop_back();
@@ -207,6 +222,18 @@ bool SmbSource::list(const char* nodeToken, int32_t timeoutMs) {
   return true;
 }
 
+bool SmbSource::listShares(int32_t timeoutMs) {
+  if (running() || !openedFlag.load()) {
+    return false;
+  }
+  opTimeoutMs = timeoutMs > 0 ? timeoutMs : opTimeoutMs;
+  abortFlag.store(false);
+  op = Op::enumShares;
+  taskName = "smb enum";
+  startTask();
+  return true;
+}
+
 void SmbSource::stopList() {
   abortFlag.store(true);
   if (running()) {
@@ -233,6 +260,7 @@ bool SmbSource::fillBatch(struct smb2_context* ctx, struct smb2dir* dir,
                    : (isMediaPath(e.name) ? RemoteEntryType::media
                                           : RemoteEntryType::file);
     e.size = isDir ? 0 : (uint64_t)ent->st.smb2_size;
+    e.mtime = (int64_t)ent->st.smb2_mtime;
     items.push_back(std::move(e));
   }
   // 目录在前, 同类名称升序
@@ -252,10 +280,8 @@ struct smb2_context* SmbSource::ensureConnected() {
   // 陈连接失效场景: 销毁重建全新重试一次(半开/服务端断连常见)
   for (int attempt = 0; attempt < 2; ++attempt) {
     if (smbCtx == nullptr) {
-      smbCtx = smb2_init_context();
+      smbCtx = newServerCtx();
       if (smbCtx == nullptr) {
-        std::lock_guard<std::mutex> lk(resultMutex);
-        lastError = "smb2_init_context failed";
         return nullptr;
       }
     }
@@ -291,6 +317,28 @@ bool SmbSource::isAuthErrorText(const std::string& err) {
 }
 
 void SmbSource::runOpen() {
+  // 服务器级会话(无 share): 不 connect_share, 仅供 listShares
+  if (parts->share.empty()) {
+    int32_t code = (int32_t)RemoteCode::ok;
+    struct smb2_context* ctx = newServerCtx();
+    if (ctx == nullptr) {
+      code = (int32_t)RemoteCode::net;
+    } else {
+      smbCtx = ctx;
+      std::lock_guard<std::mutex> lk(resultMutex);
+      sessionName = parts->host;
+      lastError = "";
+      openedFlag.store(true);
+    }
+    if (abortFlag.load()) {
+      return;
+    }
+    IRemoteSourceOb* o = obAt.load();
+    if (o) {
+      o->onOpenResult(code);
+    }
+    return;
+  }
   int32_t code = (int32_t)RemoteCode::ok;
   if (ensureConnected() == nullptr) {
     std::string err;
@@ -318,6 +366,21 @@ void SmbSource::runOpen() {
 
 void SmbSource::runList() {
   const UrlParts& p = *parts;
+  if (p.share.empty()) {
+    // 服务器级会话无 share 可列(只许 listShares)
+    {
+      std::lock_guard<std::mutex> lk(resultMutex);
+      lastError = "no share in session(server-level)";
+    }
+    if (abortFlag.load()) {
+      return;
+    }
+    IRemoteSourceOb* o = obAt.load();
+    if (o) {
+      o->onListResult((int32_t)RemoteCode::notFound);
+    }
+    return;
+  }
   // 顶层"/"映射到会话入口子目录(rootToken); 其余 token 即 share 内绝对路径
   std::string dir = listToken.empty() ? "/" : listToken;
   if ((dir == "/" || dir.empty()) && p.rootToken != "/") {
@@ -381,8 +444,170 @@ void SmbSource::runList() {
 void SmbSource::onRunTask() {
   if (op == Op::open) {
     runOpen();
+  } else if (op == Op::enumShares) {
+    runEnumShares();
   } else {
     runList();
+  }
+}
+
+// 服务器级 ctx(init+凭据+timeout, 不 connect_share)
+struct smb2_context* SmbSource::newServerCtx() {
+  const UrlParts& p = *parts;
+  struct smb2_context* ctx = smb2_init_context();
+  if (ctx == nullptr) {
+    std::lock_guard<std::mutex> lk(resultMutex);
+    lastError = "smb2_init_context failed";
+    return nullptr;
+  }
+  smb2_set_timeout(ctx, std::max<int32_t>(1, (opTimeoutMs + 999) / 1000));
+  if (!p.user.empty()) {
+    smb2_set_user(ctx, p.user.c_str());
+    smb2_set_password(ctx, p.pass.c_str());
+  }
+  return ctx;
+}
+
+void SmbSource::enumCb(struct smb2_context* ctx, int status,
+                       void* command_data, void* cb_data) {
+  (void)ctx;
+  auto* self = static_cast<SmbSource*>(cb_data);
+  self->enumStatus = status;
+  self->enumRep = status == 0 ? command_data : nullptr;
+  self->enumDone = true;
+}
+
+// 异步 op 泵: 官方示例同款(select/poll 服务 fd), 完成回调在泵内联触发
+bool SmbSource::pumpAsync(struct smb2_context* ctx,
+                          const std::function<bool()>& done) {
+  for (;;) {
+    if (done()) {
+      return true;
+    }
+    if (abortFlag.load()) {
+      return false;
+    }
+    int fd = smb2_get_fd(ctx);
+    short events = (short)smb2_which_events(ctx);
+    short revents = 0;
+    if (fd < 0) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      continue;
+    }
+#ifdef _WIN32
+    fd_set rfds, wfds, efds;
+    FD_ZERO(&rfds);
+    FD_ZERO(&wfds);
+    FD_ZERO(&efds);
+    FD_SET((SOCKET)fd, &rfds);
+    FD_SET((SOCKET)fd, &wfds);
+    FD_SET((SOCKET)fd, &efds);
+    timeval tv{0, 100 * 1000};
+    int r = select(0, &rfds, &wfds, &efds, &tv);
+    if (r > 0) {
+      if (FD_ISSET((SOCKET)fd, &rfds)) revents |= POLLIN;
+      if (FD_ISSET((SOCKET)fd, &wfds)) revents |= POLLOUT;
+      if (FD_ISSET((SOCKET)fd, &efds)) revents |= POLLERR;
+    }
+#else
+    struct pollfd pfd;
+    pfd.fd = fd;
+    pfd.events = events;
+    int r = poll(&pfd, 1, 100);
+    if (r > 0) {
+      revents = pfd.revents;
+    }
+#endif
+    if (r < 0) {
+      return false;
+    }
+    if (revents != 0 && smb2_service_fd(ctx, fd, revents) < 0) {
+      return false;
+    }
+  }
+}
+
+void SmbSource::runEnumShares() {
+  const UrlParts& p = *parts;
+  int32_t code = (int32_t)RemoteCode::ok;
+  // srvsvc 走 IPC$ 会话(官方示例同款); ctx 复用/新建均服务器级
+  if (smbCtx == nullptr) {
+    smbCtx = newServerCtx();
+  }
+  if (smbCtx != nullptr) {
+    smb2_set_security_mode(smbCtx, SMB2_NEGOTIATE_SIGNING_ENABLED);
+  }
+  if (smbCtx == nullptr ||
+      smb2_connect_share(smbCtx, p.host.c_str(), "IPC$",
+                         p.user.empty() ? nullptr : p.user.c_str()) != 0) {
+    {
+      std::lock_guard<std::mutex> lk(resultMutex);
+      lastError = "connect IPC$ failed: " +
+                  (smbCtx != nullptr ? std::string(smb2_get_error(smbCtx)) : "");
+    }
+    code = (int32_t)RemoteCode::net;
+    if (smbCtx != nullptr) {
+      smb2_disconnect_share(smbCtx);
+      smb2_destroy_context(smbCtx);
+      smbCtx = nullptr;
+    }
+  } else {
+    enumDone = false;
+    enumStatus = 0;
+    enumRep = nullptr;
+    if (smb2_share_enum_async(smbCtx, SHARE_INFO_1, &SmbSource::enumCb,
+                              this) != 0) {
+      {
+        std::lock_guard<std::mutex> lk(resultMutex);
+        lastError =
+            "share enum start failed: " + std::string(smb2_get_error(smbCtx));
+      }
+      code = (int32_t)RemoteCode::net;
+    } else if (!pumpAsync(smbCtx, [this] { return enumDone; })) {
+      {
+        std::lock_guard<std::mutex> lk(resultMutex);
+        lastError = "share enum timeout/aborted";
+      }
+      code = (int32_t)RemoteCode::net;
+    } else if (enumStatus != 0) {
+      std::lock_guard<std::mutex> lk(resultMutex);
+      lastError = "share enum failed: status " + std::to_string(enumStatus) +
+                  ": " + std::string(smb2_get_error(smbCtx));
+      code = (int32_t)RemoteCode::net;
+    } else {
+      // SHARE_INFO_1 → 批次(只收 Disk 共享; IPC$/打印/设备滤除)
+      auto* rep = static_cast<struct srvsvc_NetrShareEnum_rep*>(enumRep);
+      std::vector<Entry> items;
+      uint32_t n = rep->ses.ShareInfo.Level1.EntriesRead;
+      for (uint32_t i = 0; i < n; ++i) {
+        const auto& s = rep->ses.ShareInfo.Level1.Buffer->share_info_1[i];
+        if ((s.type & 3) != SHARE_TYPE_DISKTREE) {
+          continue;
+        }
+        Entry e;
+        e.type = RemoteEntryType::dir;
+        e.name = s.netname.utf8 != nullptr ? s.netname.utf8 : "";
+        e.token = e.name;  // 共享条目 token = 共享名(与目录 token 空间不同)
+        items.push_back(std::move(e));
+      }
+      std::stable_sort(items.begin(), items.end(),
+                       [](const Entry& a, const Entry& b) {
+                         return a.name < b.name;
+                       });
+      {
+        std::lock_guard<std::mutex> lk(resultMutex);
+        batch = std::move(items);
+      }
+      smb2_free_data(smbCtx, enumRep);
+      enumRep = nullptr;
+    }
+  }
+  if (abortFlag.load()) {
+    return;
+  }
+  IRemoteSourceOb* o = obAt.load();
+  if (o) {
+    o->onListResult(code);
   }
 }
 
@@ -438,6 +663,11 @@ uint64_t SmbSource::getEntrySize(int32_t i) {
   return (i >= 0 && i < (int32_t)batch.size()) ? batch[i].size : 0;
 }
 
+int64_t SmbSource::getEntryMtime(int32_t i) {
+  std::lock_guard<std::mutex> lk(resultMutex);
+  return (i >= 0 && i < (int32_t)batch.size()) ? batch[i].mtime : 0;
+}
+
 const char* SmbSource::getEntryToken(int32_t i) {
   std::lock_guard<std::mutex> lk(resultMutex);
   return (i >= 0 && i < (int32_t)batch.size()) ? batch[i].token.c_str() : "";
@@ -460,6 +690,10 @@ const char* SmbSource::getSessionField(const char* key) {
 const char* SmbSource::resolve(int32_t entryIndex, IOption* option) {
   (void)option;  // smb 播放无需私有 option 键 (鉴权已嵌 userinfo)
   std::lock_guard<std::mutex> lk(resultMutex);
+  if (parts && parts->share.empty()) {
+    lastError = "server-level session has no share";
+    return nullptr;
+  }
   if (entryIndex < 0 || entryIndex >= (int32_t)batch.size()) {
     lastError = "entry index out of range";
     return nullptr;

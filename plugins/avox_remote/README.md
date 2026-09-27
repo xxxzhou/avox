@@ -85,6 +85,13 @@ src->resolve(i, nullptr);  // → smb://user:pass@host[:port]/share/path/文件.
     服务端 quirk;
   - 2 例 .mpg avformat_open_input Invalid data: 文件本体损坏。
 
+## SMB 服务器级会话与共享枚举
+
+`open("smb://host[:port]")`(无 share)= 服务器级会话, 仅供 `listShares(timeoutMs)`:
+srvsvc NetrShareEnum(IPC$ + `smb2_share_enum_async`, fd 泵等完成), 只收 Disk 共享;
+条目 name/token = 共享名, type=dir; 错误经 getLastError。普通会话的条目另带
+`getEntryMtime(i)`(秒级 epoch, readdir 自带, 剪枝判据)。
+
 ## 构建
 
 依赖: cpp-httplib(仓库内 header-only) + OpenSSL 3.0+(全局 find_package, 未找到自动跳过本插件)。

@@ -4,6 +4,7 @@
 #ifdef AVOX_REMOTE_SMB
 
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -43,11 +44,15 @@ class SmbSource : public IRemoteSource, public RunTask {
 
   virtual bool list(const char* nodeToken, int32_t timeoutMs) override;
   virtual void stopList() override;
+  // 服务器级会话(open(smb://host) 无 share)下枚举共享: srvsvc NetrShareEnum,
+  // 只收 Disk 共享; 条目 name/token = 共享名, type=dir
+  virtual bool listShares(int32_t timeoutMs) override;
 
   virtual int32_t getEntryCount() override;
   virtual RemoteEntryType getEntryType(int32_t i) override;
   virtual const char* getEntryName(int32_t i) override;
   virtual uint64_t getEntrySize(int32_t i) override;
+  virtual int64_t getEntryMtime(int32_t i) override;
   virtual const char* getEntryToken(int32_t i) override;
   virtual const char* getSessionField(const char* key) override;
   virtual const char* resolve(int32_t entryIndex, IOption* option) override;
@@ -58,12 +63,13 @@ class SmbSource : public IRemoteSource, public RunTask {
   virtual void onRunTask() override;
 
  private:
-  // 结果批次条目(list 输出: 目录或文件)
+  // 结果批次条目(list 输出: 目录或文件; enumShares 输出: 共享, token=共享名)
   struct Entry {
     RemoteEntryType type = RemoteEntryType::other;
     std::string name = "";
     std::string token = "";
     uint64_t size = 0;
+    int64_t mtime = 0;  // 秒级 epoch; 共享条目为 0
   };
   // 入口 URL 解析产物(resolve/会话复用)
   struct UrlParts {
@@ -75,7 +81,7 @@ class SmbSource : public IRemoteSource, public RunTask {
     std::string rootToken = "/";  // share 内初始路径(目录带尾'/')
   };
   // 工作线程本次要跑的操作
-  enum class Op { open, list };
+  enum class Op { open, list, enumShares };
 
   // 工作线程分派: 验会话 / 列目录
   void runOpen();
@@ -87,6 +93,15 @@ class SmbSource : public IRemoteSource, public RunTask {
   // smb2dirent → 批次条目(跳过 . ..; token = dirToken + name, 绝对路径)
   bool fillBatch(struct smb2_context* ctx, struct smb2dir* dir,
                  const std::string& dirToken);
+  // 无 share 的服务器级 ctx(init+凭据+timeout, 不 connect_share): enumShares 专用
+  struct smb2_context* newServerCtx();
+  // 工作线程: srvsvc NetrShareEnum(IPC$ + smb2_share_enum_async + fd 泵)
+  void runEnumShares();
+  // 异步 op 泵: select/poll 服务 libsmb2 fd 直到 done/超时/中止
+  bool pumpAsync(struct smb2_context* ctx, const std::function<bool()>& done);
+  // smb2_share_enum_async 完成回调(工作线程内)
+  static void enumCb(struct smb2_context* ctx, int status, void* command_data,
+                     void* cb_data);
 
   // token 工具(与 DavSource 同口径)
   static std::string baseName(const std::string& token);
@@ -119,6 +134,10 @@ class SmbSource : public IRemoteSource, public RunTask {
   std::string sessionName;
   std::string lastError;
   std::string resolvedBuf;  // resolve 返回缓冲(会话内稳定)
+  // enumShares 异步结果(仅工作线程触碰)
+  bool enumDone = false;
+  int enumStatus = 0;
+  void* enumRep = nullptr;
 };
 
 }  // namespace avox

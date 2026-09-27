@@ -212,6 +212,10 @@ class IRemoteSource {
   virtual bool listMore(int32_t timeoutMs) { (void)timeoutMs; return false; }
   // 打断进行中的列表/搜索 (结果作废, 不再回调)
   virtual void stopList() = 0;
+  // 枚举服务器共享列表 (仅 SMB; 前提 open(smb://host) 无 share 服务器级会话。
+  // 结果进同一结果批次: 条目 type=dir, name/token = 共享名, 非 Disk 共享滤除;
+  // 不支持返回 false)。完成经 onListResult。
+  virtual bool listShares(int32_t timeoutMs) { (void)timeoutMs; return false; }
 
  public:
   // ---- 结果批次 (onListResult(0) 后有效; 字符串为内部缓冲, 下次 list/析构前有效) ----
@@ -225,6 +229,8 @@ class IRemoteSource {
   virtual const char* getEntryToken(int32_t i) = 0;
   // 缩略图/海报 URL (kCapThumb; 无则空)
   virtual const char* getEntryThumb(int32_t i) { (void)i; return ""; }
+  // 条目修改时间 (秒级 epoch; 未知为 0。SMB/DAV 目录剪枝判据)
+  virtual int64_t getEntryMtime(int32_t i) { (void)i; return 0; }
   // 协议长尾元数据 (kCapMeta; 键约定见各实现文档: "year"/"rating"/"overview"...)
   virtual const char* getEntryField(int32_t i, const char* key) { (void)i; (void)key; return ""; }
   // 会话级信息键值 (如 torrent 的 "name"/"infoHash"/"totalSize"; 无则空)

@@ -14,6 +14,7 @@
 #include <condition_variable>
 #include <cstdio>
 #include <cstring>
+#include <algorithm>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -125,6 +126,7 @@ int runMain(int argc, char** argv) {
   std::string mediaHint;
   int playSec = 6;
   bool doPlay = true;
+  bool doEnum = false;
   bool verbose = false;
   for (int i = 1; i < argc; ++i) {
     auto next = [&]() -> const char* { return argv[i + 1] != nullptr && i + 1 < argc ? argv[++i] : ""; };
@@ -134,6 +136,8 @@ int runMain(int argc, char** argv) {
       user = next();
     } else if (std::strcmp(argv[i], "-p") == 0) {
       pass = next();
+    } else if (std::strcmp(argv[i], "--enum") == 0) {
+      doEnum = true;
     } else if (std::strcmp(argv[i], "-m") == 0) {
       mediaHint = next();
     } else if (std::strcmp(argv[i], "--play-sec") == 0) {
@@ -148,6 +152,44 @@ int runMain(int argc, char** argv) {
     printf("用法: smbsourcetest -u smb://host[:port]/share[/dir] [-n user] [-p pass]"
            " [-m 媒体名子串] [--play-sec N] [--no-play]\n");
     return 2;
+  }
+
+  // ---- 枚举模式(--enum): 服务器级会话(smb://host 无 share) + listShares ----
+  if (doEnum) {
+    IRemoteSource* src = createRemoteSource("smb");
+    if (src == nullptr) {
+      result("create", false, "createRemoteSource(smb) 返回 nullptr");
+      return 1;
+    }
+    result("create", true);
+    SessionOb ob;
+    src->setOb(&ob);
+    if (!src->open(url.c_str(), user.c_str(), pass.c_str(), nullptr, 10000)) {
+      result("open", false, "open 返回 false: " + std::string(src->getLastError()));
+      return 1;
+    }
+    bool openOk = ob.waitOpen(15000);
+    result("open", openOk, openOk ? "server-level" : src->getLastError());
+    if (!openOk) {
+      return 1;
+    }
+    if (!src->listShares(10000)) {
+      result("enum", false, "listShares 返回 false");
+      printf("SUMMARY %d/%d\n", g_pass, g_pass + g_fail);
+      return 1;
+    }
+    bool enumOk = ob.waitList(15000);
+    int32_t n = enumOk ? src->getEntryCount() : 0;
+    std::string names;
+    for (int32_t i = 0; i < n && i < 16; ++i) {
+      names += (i ? ", " : "") + std::string(src->getEntryName(i));
+    }
+    result("enum", enumOk && n > 0,
+           std::to_string(n) + " Disk 共享: " + names);
+    src->close();
+    delete src;
+    printf("SUMMARY %d/%d\n", g_pass, g_pass + g_fail);
+    return g_fail == 0 ? 0 : 1;
   }
 
   // ---- 阶段1: 会话 ----
@@ -233,6 +275,13 @@ int runMain(int argc, char** argv) {
   if (!found) {
     return 1;
   }
+
+  // ---- 阶段2.5: mtime(目录剪枝判据, readdir 自带无需额外 stat) ----
+  int64_t mtimeSeen = 0;
+  for (int32_t i = 0; i < src->getEntryCount(); ++i) {
+    mtimeSeen = std::max<int64_t>(mtimeSeen, src->getEntryMtime(i));
+  }
+  result("mtime", mtimeSeen > 0, "max=" + std::to_string(mtimeSeen));
 
   // ---- 阶段3: resolve ----
   // walk 结束后的批次已不在 media 所在目录, 重新列一次父目录再 resolve
