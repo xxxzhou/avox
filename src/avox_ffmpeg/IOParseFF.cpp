@@ -26,6 +26,9 @@ static constexpr int32_t kHttpSegPrefetchSegs = 8;
 static constexpr int64_t kHttpSegLruBytes = 16 * 1024 * 1024;
 static constexpr int64_t kHttpSegPinBytes = 4 * 1024 * 1024;
 static constexpr int64_t kHttpSegAnchorWinMs = 10 * 1000;
+// AVI 剪尾门: 实际比 RIFF 申报大 4MB 才启用, 剪尾线=申报+8MB(容忍轻微申报偏差)
+static constexpr int64_t kAviTailClipMinGap = 4 * 1024 * 1024;
+static constexpr int64_t kAviTailClipSlack = 8 * 1024 * 1024;
 
 // FFmpeg av_log 级别 -> avox LogLevel
 static LogLevel ffToAvoxLevel(int ffLevel) {
@@ -448,8 +451,17 @@ int IOParseFF::reopenInput() {
       }
     }
   }
+  // AVI 虚报族: open 窗口内降 seekable 让 avidec 跳过索引加载(avidec 的
+  // indx/idx1 两处都吃该标志); 探测期不降(probe 要回卷), open 返回即恢复
+  if (wrapPb && bAviNoSeekOpen) {
+    wrapPb->seekable = 0;
+  }
   int ret = avformat_open_input(&temp, url.c_str(), probeFmt, &dict);
   bLieSize = false;
+  bAviNoSeekOpen = false;
+  if (wrapPb) {
+    wrapPb->seekable = httpPb ? httpPb->seekable : 0;
+  }
   av_dict_free(&dict);
   if (ret < 0) {
     AVOX_FFMEPG_LOG(ret, "avformat_open_input failed")
@@ -475,6 +487,21 @@ bool IOParseFF::prescanHttpBoxes() {
   std::vector<uint8_t> win(kWinSize);
   const int32_t n = avio_read(httpPb, win.data(), kWinSize);
   if (n < 8) {
+    return false;
+  }
+  // RIFF/AVI 申报虚报族(迅雷类虚拟盘): open 期 avi_load_index 会从申报
+  // movi_end 把 GB 级尾区逐块爬完(夜巡实测 14.5s 静默)。申报范围外只有
+  // 爬找会读, 记剪尾线并置 open 窗口内跳过索引加载的开关
+  if (n >= 12 && AV_RL32(win.data()) == AV_RL32("RIFF") &&
+      AV_RL32(win.data() + 8) == AV_RL32("AVI ")) {
+    const int64_t declared = (int64_t)AV_RL32(win.data() + 4) + 8;
+    const int64_t real = avio_size(httpPb);
+    if (declared >= 1024 * 1024 && real > declared + kAviTailClipMinGap) {
+      aviClipPos = declared + kAviTailClipSlack;
+      bAviNoSeekOpen = true;
+      LOGFLF(LogLevel::warn, "avi tail clip on, declared:", declared,
+             " real:", real);
+    }
     return false;
   }
   int64_t fileSize = -1;
@@ -563,6 +590,8 @@ void IOParseFF::closeCustomAvio() {
   }
   bLieSize = false;
   mdat1End = 0;
+  aviClipPos = 0;
+  bAviNoSeekOpen = false;
   wrapPos = 0;
 }
 
@@ -625,7 +654,7 @@ int IOParseFF::wrapReadAt(uint8_t* buf, int size, int64_t pos) {
     // 越过文件尾的取段失败是钳尾 seek 后越界读的合法事实, 回 EOF 让 demux 走
     // onComplete; 回 EIO 会被当真故障 onError, seek 后恒 buffering(夜巡 mac SEEK_HANG ×10)
     const int64_t sz = avio_size(httpPb);
-    if (sz > 0 && pos >= sz) {
+    if ((sz > 0 && pos >= sz) || (aviClipPos > 0 && pos >= aviClipPos)) {
       return AVERROR_EOF;
     }
     return AVERROR(EIO);
@@ -701,6 +730,9 @@ IOParseFF::HttpSeg* IOParseFF::fetchHttpSeg(int64_t segStart, bool bAnchor) {
   {
     const int64_t sz0 = avio_size(httpPb);
     if (sz0 > 0 && segStart >= sz0) {
+      return nullptr;
+    }
+    if (aviClipPos > 0 && segStart >= aviClipPos) {
       return nullptr;
     }
   }
