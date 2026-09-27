@@ -33,9 +33,12 @@ protected:
   bool bLieSize = false;
   int64_t mdat1End = 0;
   // aviClipPos=RIFF 虚报族剪尾线(0=未启用), 线外读/抓一律按文件尾处理;
-  // bAviNoSeekOpen=open_input 窗口内临时降 seekable 跳过 avidec 索引加载
+  // bAviNoSeekOpen=open_input 窗口内临时降 seekable 跳过 avidec 索引加载;
+  // bAviNoOdml=ODML indx 族会话旗标: open 传 use_odml=0 免逐叶追读, idx1
+  // 照常加载(索引/seek/时钟全保留)
   int64_t aviClipPos = 0;
   bool bAviNoSeekOpen = false;
+  bool bAviNoOdml = false;
   // http 段缓存(仅 IO 线程碰): 病态交错封装(逐段拼装的 mp4, 音轨锚在头部/
   // 尾部, 与视频读位相距数十 MB)在 http 下按 DTS 交错吐包, 每包一次跨 MB
   // range 重连喂不动; 段缓存把 V/A 交替吸收进内存

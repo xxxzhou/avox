@@ -452,7 +452,11 @@ int IOParseFF::reopenInput() {
     }
   }
   // AVI 虚报族: open 窗口内降 seekable 让 avidec 跳过索引加载(avidec 的
-  // indx/idx1 两处都吃该标志); 探测期不降(probe 要回卷), open 返回即恢复
+  // indx/idx1 两处都吃该标志); 探测期不降(probe 要回卷), open 返回即恢复。
+  // ODML 族传 use_odml=0 免逐叶追读(demuxer 私有选项, idx1 照常加载)
+  if (bAviNoOdml) {
+    av_dict_set(&dict, "use_odml", "0", 0);
+  }
   if (wrapPb && bAviNoSeekOpen) {
     wrapPb->seekable = 0;
   }
@@ -489,12 +493,14 @@ bool IOParseFF::prescanHttpBoxes() {
   if (n < 8) {
     return false;
   }
-  // RIFF/AVI 慢开两族(迅雷类虚拟盘): 都在 open 期做全量索引加载, http 下
-  // 被逐段重连拖成 6-15s 静默——①申报虚报(夜巡321: 1.07GB vs 1.39GB)时
-  // avi_load_index 从申报 movi_end 逐块爬找 idx1 把 GB 级尾区走网爬完, 记
-  // 剪尾线止损; ②ODML indx 主索引(夜巡383: 布局健康)时 read_odml_index 逐
-  // ix## 叶索引 ~32MB 步进跨全文件追读。两路的索引加载都吃 seekable 门,
-  // 置 open 窗口内跳索引开关, 索引由读包自建, seek 不受累
+  // RIFF/AVI 慢开两族(迅雷类虚拟盘), open 期全量索引加载被 http 逐段重连
+  // 拖成 6-15s 静默, 分而治之: ①申报虚报(夜巡321: 1.07GB vs 1.39GB)时
+  // avi_load_index 从申报 movi_end 逐块爬找 idx1 把 GB 级尾区走网爬完, 且
+  // 此类半截片尾本无 idx1(实锤)——记剪尾线+置 open 窗口内跳索引开关, seek
+  // 仍走 avidec 自身钳边(数据缺失, 无索引可要); ②ODML indx 主索引(夜巡
+  // 383: 布局健康)时 read_odml_index 逐 ix## 叶 ~32MB 步进跨全文件追读
+  // (AVOX_SEG_TRACE=1 实锤 37 次 ~150ms 重连)——传 use_odml=0 只免逐叶追读,
+  // idx1 照常在 open 期加载(就在 movi_end, 半秒), 索引/seek/时钟全保留
   if (n >= 12 && AV_RL32(win.data()) == AV_RL32("RIFF") &&
       AV_RL32(win.data() + 8) == AV_RL32("AVI ")) {
     const int64_t declared = (int64_t)AV_RL32(win.data() + 4) + 8;
@@ -527,8 +533,8 @@ bool IOParseFF::prescanHttpBoxes() {
       LOGFLF(LogLevel::warn, "avi tail clip on, declared:", declared,
              " real:", real);
     } else if (bOdml) {
-      bAviNoSeekOpen = true;
-      LOGFLF(LogLevel::warn, "avi odml skip-index on, hdrl bytes:", hdrlEnd);
+      bAviNoOdml = true;
+      LOGFLF(LogLevel::warn, "avi odml direct-idx1 on, hdrl bytes:", hdrlEnd);
     }
     return false;
   }
@@ -620,6 +626,7 @@ void IOParseFF::closeCustomAvio() {
   mdat1End = 0;
   aviClipPos = 0;
   bAviNoSeekOpen = false;
+  bAviNoOdml = false;
   wrapPos = 0;
 }
 
