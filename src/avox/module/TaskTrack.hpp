@@ -34,6 +34,9 @@ class TaskTrack {
   void removeTrack(std::thread::id tid);
   bool haveId(std::thread::id tid);
 
+  // 退出收尾钩子(TrackMgr::stopAll 派发): 停各自线程树, 默认空=无线程型对象
+  virtual void stop() {}
+
   std::thread::id creatorTid;         // 创建自身的线程，记录暂不用
   std::thread::id selfTid;            // 自身主线程（根，独立不入 tids）
   std::vector<std::thread::id> tids;  // 子线程集合
@@ -60,6 +63,9 @@ class TrackMgr {
   TaskTrack* current();
   // 当前线程所属 track 的 tag（多实例如 "MP0"，单实例/无归属返回空）
   std::string currentTag();
+
+  // 退出收尾: 快照后锁外逐个 stop —— stop 收尾中会 addTrack/unbindTid 抢 mtx, 持锁 join 必死锁
+  void stopAll();
 
  private:
   friend class TaskTrack;

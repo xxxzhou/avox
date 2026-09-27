@@ -151,4 +151,18 @@ void TrackMgr::refreshTags() {
   }
 }
 
+void TrackMgr::stopAll() {
+  // 快照后锁外停: stop 内部的 join 期间线程会走 addTrack/unbindTid 抢 mtx
+  std::vector<TaskTrack*> snap;
+  {
+    std::lock_guard<std::mutex> lock(mtx);
+    snap = tracks;
+  }
+  for (auto* t : snap) {
+    if (t) {
+      t->stop();
+    }
+  }
+}
+
 }

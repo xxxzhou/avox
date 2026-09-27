@@ -35,6 +35,8 @@ class MediaPlayer : public IMediaPlayer,
   // TaskTrack：自身即大对象实例
   virtual TaskTrack* asTaskTrack() override { return this; }
   virtual const char* getTrackName() override;
+  // 退出收尾(TaskTrack::stop 派发)
+  void stop() override;
 
  protected:
   // 埋点

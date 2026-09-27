@@ -886,6 +886,14 @@ void MediaPlayer::close() {
   mpCommands.enqueueWait(stopCmd);
 }
 
+// 退出收尾(TaskTrack::stop 派发, AvoxManager::clean 静态析构前调):
+// close 先清队列丢掉排队的慢命令(慢源 cmdOpen 等), stopTask 的 join
+// 等线程退循环后的尾部 cmdClose 收完
+void MediaPlayer::stop() {
+  close();
+  stopTask();
+}
+
 void MediaPlayer::seek(int64_t pos) {
   seekPts = pos;
   bSeeking = true;

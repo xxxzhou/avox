@@ -159,6 +159,9 @@ void AvoxManager::clean() {
   }
   gLogOb.store(nullptr);
   bCLog = false;
+  // 静态析构前停 TrackMgr 登记的播放管线: Windows DllMain 到此线程已被
+  // ExitProcess 杀光(join 瞬回), mac 无此收割, 不停则 exit 后线程踩已析构单例
+  TrackMgr::get().stopAll();
   // DllMain DETACH 时机, 静态析构尚未开始, ZL 等单例仍存活:
   // 逆序跑各模块清理(与 initFuncs 对称), 让模块在单例析构前主动收尾
   for (auto it = Get().cleanFuncs.rbegin(); it != Get().cleanFuncs.rend(); ++it) {
