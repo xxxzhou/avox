@@ -489,18 +489,46 @@ bool IOParseFF::prescanHttpBoxes() {
   if (n < 8) {
     return false;
   }
-  // RIFF/AVI 申报虚报族(迅雷类虚拟盘): open 期 avi_load_index 会从申报
-  // movi_end 把 GB 级尾区逐块爬完(夜巡实测 14.5s 静默)。申报范围外只有
-  // 爬找会读, 记剪尾线并置 open 窗口内跳过索引加载的开关
+  // RIFF/AVI 慢开两族(迅雷类虚拟盘): 都在 open 期做全量索引加载, http 下
+  // 被逐段重连拖成 6-15s 静默——①申报虚报(夜巡321: 1.07GB vs 1.39GB)时
+  // avi_load_index 从申报 movi_end 逐块爬找 idx1 把 GB 级尾区走网爬完, 记
+  // 剪尾线止损; ②ODML indx 主索引(夜巡383: 布局健康)时 read_odml_index 逐
+  // ix## 叶索引 ~32MB 步进跨全文件追读。两路的索引加载都吃 seekable 门,
+  // 置 open 窗口内跳索引开关, 索引由读包自建, seek 不受累
   if (n >= 12 && AV_RL32(win.data()) == AV_RL32("RIFF") &&
       AV_RL32(win.data() + 8) == AV_RL32("AVI ")) {
     const int64_t declared = (int64_t)AV_RL32(win.data() + 4) + 8;
     const int64_t real = avio_size(httpPb);
+    // hdrl 区(movi 之前)含 indx 即 ODML; 窗尽/坏块即止, 大头 hdrl 放行照旧
+    int64_t hdrlEnd = n;
+    bool bOdml = false;
+    for (int64_t p = 12; p + 12 <= n;) {
+      const uint32_t sz = AV_RL32(win.data() + p + 4);
+      if (AV_RL32(win.data() + p) == AV_RL32("LIST") &&
+          AV_RL32(win.data() + p + 8) == AV_RL32("movi")) {
+        hdrlEnd = p;
+        break;
+      }
+      if (sz < 8 || p + 8 + (int64_t)sz > n) {
+        break;
+      }
+      p += 8 + sz + (sz & 1);
+    }
+    for (int64_t p = 12; p + 8 <= hdrlEnd; ++p) {
+      if (AV_RL32(win.data() + p) == AV_RL32("indx") &&
+          AV_RL32(win.data() + p + 4) >= 24) {
+        bOdml = true;
+        break;
+      }
+    }
     if (declared >= 1024 * 1024 && real > declared + kAviTailClipMinGap) {
       aviClipPos = declared + kAviTailClipSlack;
       bAviNoSeekOpen = true;
       LOGFLF(LogLevel::warn, "avi tail clip on, declared:", declared,
              " real:", real);
+    } else if (bOdml) {
+      bAviNoSeekOpen = true;
+      LOGFLF(LogLevel::warn, "avi odml skip-index on, hdrl bytes:", hdrlEnd);
     }
     return false;
   }
