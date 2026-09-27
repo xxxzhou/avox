@@ -6,6 +6,11 @@
 
 namespace avox {
 
+namespace {
+// 帧入口大跳门限: 重排乱序/爆发戳都是帧级小跳(实测 ≤100ms 级), 超过即判 seek 重入
+constexpr int64_t kFrameJumpMs = 1000;
+}  // namespace
+
 VideoTrack::VideoTrack() {
   // 硬解下队列过大易花屏(帧资源大, 超出解码队列时索引可能已被释放)
   frameQueue.setMaxSize(10);
@@ -107,9 +112,21 @@ void VideoTrack::restampFramePts(int64_t& pts) {
   if (pts == AVOX_NOVALID_PTS) {
     return;
   }
-  if (lastInPts != AVOX_NOVALID_PTS &&
-      pts < lastInPts + std::max<int64_t>(1, nominalFrameMs / 2)) {
-    pts = lastInPts + nominalFrameMs;
+  if (lastInPts != AVOX_NOVALID_PTS) {
+    const int64_t delta = pts - lastInPts;
+    // seek 重入: 大跳(两个方向)远超任何重排/爆发戳, 直接以本帧为准重开格。
+    // 缺此判据时后向 seek 会被当成倒跳: 旧位置残留帧的 pts 大于目标位, 逃过
+    // seekDiscardPts(只丢目标位之前的帧)进入队列并顶高 lastInPts, 之后新位置
+    // 的帧全被续格前推到旧时间轴——实测 seek 200s→20s 后帧 pts 停在 213s 而
+    // 包 pts 已到 33s, 画面与音轨各走一条时间轴(前向 seek 的残留帧 pts 小于
+    // 目标位会被丢弃, 故只有后向拖中招)
+    if (delta > kFrameJumpMs || delta < -kFrameJumpMs) {
+      lastInPts = pts;
+      return;
+    }
+    if (pts < lastInPts + std::max<int64_t>(1, nominalFrameMs / 2)) {
+      pts = lastInPts + nominalFrameMs;
+    }
   }
   lastInPts = pts;
 }
