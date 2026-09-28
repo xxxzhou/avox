@@ -92,6 +92,15 @@ ISurfaceRender* TranscodeRecorder::getSurfaceRender() {
   return surfaceRender.get();
 }
 
+// 源收尾唯一入口: 编码线程与开源失败路径都可能调, 幂等(第二次是 no-op)
+void TranscodeRecorder::teardownSource() {
+  if (source) {
+    source->close();
+    source.reset();
+    ioSource = nullptr;  // 随源失效(此前只在 close() 里置空, 读侧会拿到悬空指针)
+  }
+}
+
 IAudioRender* TranscodeRecorder::getAudioRender() { return audioRender.get(); }
 
 bool TranscodeRecorder::open(const char* url, const char* file) {
@@ -140,10 +149,26 @@ bool TranscodeRecorder::open(const char* url, const char* file) {
   source->addObserver(this);
   // 启动编码线程
   startTask();
-  // 打开源
-  if (!source->open()) {
+  // 打开源: 整个窗口(网络源可达数十秒)编码线程不得收尾删源 —— 源失败路径的
+  // onError 会置 AMediaSource::bIoEnd, 编码线程据此按 ioComplete 退出并在收尾块
+  // source.close()(内含 ioSource.reset())删掉本线程仍在用的对象 → 释放后使用
+  // (2026-09-28 抽帧 0xC0000374 根因)。守卫要到本线程用完 source 才撤。
+  bSourceOpening.store(true);
+  const bool bOpened = source->open();
+  if (!bOpened) {
     LOGFLF(LogLevel::error, "failed to open source:", url);
+    bSourceOpening.store(false);
     stopTask();
+    // 窗口内编码线程被挡, 源收尾落在本线程: join 之后无并发读者
+    teardownSource();
+    setRecState(RecorderState::failed);
+    return false;
+  }
+  // 开源期间被 close/取消: 不再启动消费(否则新线程在已关队列上空转)
+  if (bStopPending.load()) {
+    bSourceOpening.store(false);
+    stopTask();
+    teardownSource();
     setRecState(RecorderState::failed);
     return false;
   }
@@ -151,6 +176,7 @@ bool TranscodeRecorder::open(const char* url, const char* file) {
   setRecState(RecorderState::opening);
   LOGFLF(LogLevel::info, "transcode recorder opening, input:", url,
          " output:", outputFile);
+  bSourceOpening.store(false);
   return true;
 }
 
@@ -507,9 +533,8 @@ void TranscodeRecorder::onRunTask() {
         aFrameQueue.clear();
       }
       // 排空/清队后统一关源(join全部生产者), 之后不再有入队
-      if (source) {
-        source->close();
-        source.reset();
+      if (!bSourceOpening.load()) {
+        teardownSource();
       }
       // 兜底再排一次: ioComplete判定与解码flush尾帧入队有竞态, 关源后补收
       if (bDrainPhase.load()) {
@@ -520,9 +545,8 @@ void TranscodeRecorder::onRunTask() {
     }
     sleepTask(true);
   }
-  if (source) {
-    source->close();
-    source.reset();
+  if (!bSourceOpening.load()) {
+    teardownSource();
   }
   if (muxer) {
     muxer->close();

@@ -73,6 +73,9 @@ class TranscodeRecorder : public IRecorder,
   // close收尾: close线程只表达意图, 排空(EOF后编完残帧)/丢弃由编码线程裁决(source仅它可读)
   std::atomic<bool> bStopPending{false};    // close已请求, 待编码线程收尾
   std::atomic<bool> bDrainPhase{false};     // 收尾排空中(running已false), process放行残帧
+  // 开源窗口(调用者线程在 source->open() 内): 期间编码线程不得收尾删源, 否则
+  // 删掉调用者仍在用的对象(2026-09-28 抽帧 0xC0000374 根因)
+  std::atomic<bool> bSourceOpening{false};
   //
   ACodecId aCodecid = ACodecId::aac;
   // 默认 H.264: 硬编兼容性远好于 h265(低端安卓/老设备 hevc 编码器常缺失), 兼容性敏感的转码录不赌设备能力
@@ -125,6 +128,8 @@ class TranscodeRecorder : public IRecorder,
 
  private:
   void setRecState(RecorderState newState);
+  // 源收尾唯一入口(编码线程与开源失败路径都可能调, 幂等)
+  void teardownSource();
   void processVideo(VideoFramePtr frame);
   void processAudio(AudioFramePtr frame);
   // 更新并节流派发进度(音视频都在时避免回调翻倍)
