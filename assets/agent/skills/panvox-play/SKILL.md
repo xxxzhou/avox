@@ -27,7 +27,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 - 崩溃: Release 目录(`app\build\windows\x64\runner\Release\`) `AVOX_*.dmp`(app 自带 handler, mtime≈崩溃时刻) → `python tools/analyze_dump.py <dmp>`; 疑冻结看 `%APPDATA%\panvox\freeze\`。排 crash 需带符号引擎: `AVOX_BUILD_TYPE=RelWithDebInfo python build_windows.py`(avox 仓) + `tools\deploy_runtime.ps1 -EngineConfig RelWithDebInfo`(部署文档 §5)。
 
 **Mac**(ssh mac): shim 无 -Log, 靠终端捕获 + os_log。
-- **用户实际启动位是 `~/Applications/panvox.app`**(非 build products), 引擎静态链进 libpanvox_native.dylib(无独立 avox dylib); 换引擎 `bash tools/deploy_macos_shim_app.sh`(部署文档 §3.3)后核对启动位 dylib 已刷新(`strings <dylib> | grep <修复特征串>` 最实)。
+- **用户实际启动位是 `~/Applications/panvox.app`**(非 build products), 引擎静态链进 libpanvox_native.dylib(无独立 avox dylib); 换引擎优先 `bash tools/deploy_macos_runtime.sh Release`(部署文档 §3.3, 它才编 `keyring.cpp`), 换完 `nm -gU <dylib> | grep pvx_keyring_get` 须有 1 个; **误用 `deploy_macos_shim_app.sh` 会漏 `_pvx_keyring_get` ⇒ TVDB 凭据变空**(单机只换引擎可用它但须事后校验 keyring 符号)。核对启动位 dylib 已刷新用 `strings <dylib> | grep <修复特征串>` 最实。
 - **Finder/launchd 启动引擎 stdout 全丢**(os_log 也常无条目、无自有日志文件): 必须终端带重定向重启 `nohup ~/Applications/panvox.app/Contents/MacOS/panvox >/tmp/panvox-run.log 2>&1`。
 - **0927 实测此法可能走不通**: 直启沙盒 app 死在 `_libsecinit_appsandbox`(SIGTRAP, 非 app 崩溃), `log show --predicate 'process == "panvox"'` 也无条目 → 绕法: 经 LaunchServices 启动(`open -a`, 传 env 用 `open --env`), 或**降级到引擎级复现**(§5 avox_cli/vsynctest, 对「解码/渲染时序」类病等价且更可控)。
 - **xcodebuild 在本机沙箱下会被拦**(`CreateBuildDescription failed` / `Unable to write manifest.json` / `Operation not permitted`, 卡在写 `~/Library/Developer/Xcode/DerivedData/.../info.plist` 与 SWBBuildService): **解法 = 前台执行 + 关沙箱**(0927 实证: `xcodebuild -project avox.xcodeproj -configuration Release -target ALL_BUILD build`); **放后台跑时即使带关沙箱旗标也不生效**。改 `TMPDIR`、`-derivedDataPath` 均**无效**。兜底 = 手写 clang++ 链接命令直接产可执行(清单见 avox-macos-playmatrix-runner skill 附录), 或 `cmake -S . -B build/macos/avox -DAVOX_ENABLE_CLI=ON` 重配走 ninja(`avox_cli` 默认关, 见 src/CMakeLists.txt)。
@@ -89,6 +89,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 - `[FF][mlp] Stream parameters not seen` 刷屏 + 位置 18 倍慢放 → 已修 96e205b+f58bc94
 - 全片每秒周期跳帧(TrueHD 碎片轨) → 已修 c3f92b0
 - **顶部细条彩带闪烁 → 片源病, 非引擎(换源才能根治)**
+- **点播放/拖进度条后整 UI 冻死(低 CPU+无 .ips+`sample` 全采样锁同一栈) → 锁序反转死锁, Apple 专属(macOS/iOS) → 已修 466a928**: IOSAudioRender 同把 `mtx` 护缓冲+CoreAudio 句柄, onClose/pause/setVolume 持锁调 AudioOutputUnitStop/Start/SetParameter 等 HAL 锁, 实时 `renderCallback` 持 HAL 锁抢 `mtx` → AB-BA; `renderCallback` 改 `try_lock` + CoreAudio 调用全移锁外。判据/二进制验收见本文「锁序反转死锁」条。
 
 **网络环境(本机代理/TUN, 非引擎病)** —— 修法在引擎外, 故全文留本文常驻
 - IPTV/m3u 列表与国内流普遍慢、超时、周期 buffering, 而 NAS/局域网源全正常 → 先查本机 TUN 接管: `route print` 见 Meta Tunnel/Wintun + `tasklist` 见 verge-mihomo(Clash Verge)= 全机流量过代理。**对照法: `curl` 默认路由 vs `curl --interface <物理网卡IP>` 直连**(0923 实锤 CCTV1 列表 TUN 19s→直连 1s; 0926 复测首响 3.2s vs 1.2s); 修法 = Clash 给国内直播域名加 DIRECT 规则或关 TUN, 不动引擎。**绑定源地址法在部分环境只是绕路成功, 直连腿 000 时先核对绑定语义再下结论**。
