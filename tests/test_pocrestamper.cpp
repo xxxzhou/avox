@@ -2,8 +2,9 @@
 // fixture 为真实片源前 16 个样本(avoxt 台妹子/91tims 系列, h264 720p30):
 // POC 序 0,2,4,6,10,8,18,14,12,16,20,22,32,26,24,28 —— 解码序倒挂实证;
 // 每包截断到 NAL 头后 76B 并修正 avcc 长度前缀(slice 头解析只需头部字节)
-// 期望表: armed 阶段原值(s0~s4), s5(POC 倒挂帧)激活后按显示格平移
-// (µs 精度格: fps=30 → 33333µs/帧, 激活后值=dispUnits*33333/2/1000 取整)
+// 期望表: 本 fixture 的 SPS 声明 num_reorder_frames>0, 故首帧即 VUI 预激活,
+// 全程按显示格平移(µs 精度格: fps=30 → 33333µs/帧, 值=dispUnits*33333/2/1000)
+// 注意 s4 的 POC=10 显示位是 5 而非 4 → 166(解码序原值 132 是修复前的接缝错位)
 #include <doctest.h>
 
 #include <cstdint>
@@ -76,8 +77,8 @@ TEST_CASE("PocRestamper: 丢ctts的B帧流按POC重建显示时间戳") {
   PocRestamper rst;
   rst.setup(VCodecId::h264, 30.0);
   Storage st = buildFixture(0, 0, 33);
-  // 期望: s0~s4 armed 原值; s5(POC 10→8 倒挂)激活, 之后按显示格
-  static const int64_t kExpect[] = {0, 33, 66, 99, 132, 133, 299, 233,
+  // 期望: 首帧即 VUI 预激活, 全程按显示格(s4 的 POC=10 → 显示位 5 → 166)
+  static const int64_t kExpect[] = {0, 33, 66, 99, 166, 133, 299, 233,
                                     199, 266, 333, 366, 533, 433, 399, 466};
   bool bActivated = false;
   for (int32_t i = 0; i < (int32_t)st.packets.size(); ++i) {
@@ -105,7 +106,7 @@ TEST_CASE("PocRestamper: 正常容器(pts!=dts)永久旁路零改写") {
   }
 }
 
-TEST_CASE("PocRestamper: 无重排的pts==dts流零触碰") {
+TEST_CASE("PocRestamper: pts==dts 单调流——VUI 声明重排时预激活但零改写") {
   PocRestamper rst;
   rst.setup(VCodecId::h264, 30.0);
   // 只喂 POC 单调的 s0~s3(0,2,4,6), 永不见倒挂
@@ -115,7 +116,9 @@ TEST_CASE("PocRestamper: 无重排的pts==dts流零触碰") {
     CHECK_EQ(st.packets[i].pts, i * 33);
     CHECK_EQ(st.packets[i].dts, i * 33);
   }
-  CHECK_FALSE(rst.active());
+  // 本 fixture 的 SPS 声明 num_reorder_frames>0 → VUI 权威预激活(不等倒挂实证)。
+  // 但 pts==dts 且显示位与解码位重合, 时间戳零改写 —— 恒等性由上面的 CHECK 保证
+  CHECK(rst.active());
 }
 
 TEST_CASE("PocRestamper: fps无效旁路") {
@@ -138,7 +141,7 @@ TEST_CASE("PocRestamper: seek回跳自愈重置记账") {
     rst.feed(st.packets[i]);
   }
   // 模拟 seek 重入: 从头再喂, dts 回跳远超 2 帧, 记账重置后表现一致
-  static const int64_t kExpect8[] = {0, 33, 66, 99, 132, 133, 299, 233};
+  static const int64_t kExpect8[] = {0, 33, 66, 99, 166, 133, 299, 233};
   Storage st2 = buildFixture(0, 0, 33);
   for (int32_t i = 0; i < 8; ++i) {
     rst.feed(st2.packets[i]);

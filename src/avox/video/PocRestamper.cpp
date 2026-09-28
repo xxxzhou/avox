@@ -101,8 +101,8 @@ bool PocRestamper::processPacketNals(AvoxPacket& packet, bool& bIdr) {
           // VUI 权威声明有重排帧 → 流必然乱序显示, pts==dts 即 ctts 缺失。
           // 据此首帧即预激活, 消掉「等 POC 倒挂实证」期间的接缝错位(激活前已
           // 下发的参考帧保持解码序戳, 显示位实测错后 3 格而非 1ms 级)。
-          // 无此声明则维持原样, 仍等倒挂实证; 有 ctts 的正常流下一帧 pts!=dts
-          // 即被 bypass 闸拦下, 首帧 dispUnits=0 恒等不改写
+          // 无此声明则维持原样, 仍等倒挂实证; 有 ctts 的正常流在 feed() 入口
+          // 首帧 pts!=dts 即被 bypass 闸拦下, 不激活也不改写
           if (sps->vui_parameters_present_flag &&
               sps->vui_seq_parameters.bitstream_restriction_flag &&
               sps->vui_seq_parameters.num_reorder_frames > 0) {
@@ -214,8 +214,12 @@ bool PocRestamper::feed(AvoxPacket& packet) {
   if (bAnchor && bSaneDts && packet.dts < lastDts - frameDurMs * kSeekRewindFrames) {
     reset();
   }
-  // 容器本就有显示时间戳(pts!=dts): 不是丢 ctts 的流, 永久旁路
-  if (bAnchor && bSanePts && packet.pts != packet.dts) {
+  // 容器本就有显示时间戳(pts!=dts): 不是丢 ctts 的流, 永久旁路。
+  // 此处不待 bAnchor: 锚定发生在 processPacketNals() 内部, 若要求已锚定则首包
+  // 永远轮不到本闸 —— 而 VUI 预激活会在同一包的 NAL 遍历里把 mode 置成 active,
+  // 于是正常 ctts 流首帧虚假激活, 还打一条 "poc restamp active" 误导日志
+  // (排查判据正是 grep 这行, 会假阳性)。首包 pts!=dts 已足以判定容器带 ctts
+  if (bSanePts && packet.pts != packet.dts) {
     if (mode == Mode::active) {
       log(LogLevel::warn, "poc restamp: container pts!=dts, stop restamp");
     }

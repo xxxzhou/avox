@@ -18,9 +18,9 @@ class H265Parse;
 //       ms 整数格对 29.97 这类非整帧率每帧欠 ~0.4ms 会累积成周期丢帧), 等效把
 //       丢掉的 ctts 注回时间轴。dts 不动, 解码两条车道(VT 按 max(pts-dts)
 //       推重排深度 / FFmpeg 按 pts 重排)自然恢复
-// 恒等性: armed 只记账不改写, 正常流(pts!=dts 或 POC 单调)全程零触碰;
-//       VUI 权威声明 num_reorder_frames>0 的流首帧即预激活(接缝归零, 首帧
-//       dispUnits=0 恒等不改写), 无此声明则仍等 POC 倒挂实证
+// 恒等性: armed 只记账不改写; 正常流(pts!=dts)在 feed() 入口首帧即永久旁路,
+//       全程零触碰; pts==dts 且 VUI 权威声明 num_reorder_frames>0 的流首帧即
+//       预激活(接缝归零, 首帧 dispUnits=0 恒等不改写), 无此声明则仍等 POC 倒挂实证
 // 绝对基准: 显示格原点(pts0/fullPoc0)常态只锚首帧(轴绝对均匀); 另在 IRAP 上
 //       校验本轴与容器时间, 偏差超 1s 即判定 seek 落点并重锚回容器时钟——IRAP
 //       解码位次与显示位次重合, 其 dts 即该帧显示时刻。缺此校验时 seek 后帧
