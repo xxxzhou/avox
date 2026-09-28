@@ -21,6 +21,8 @@ private:
   AVPacketPtr packet = nullptr;
   // 连续非致命写失败计数: 只记首帧避免脏流刷屏, 成功时清零
   int32_t nonFatalDropCount = 0;
+  // 放掉输出上下文与流指针(失败态留着会与 onClose 的 av_write_trailer 打架)
+  void releaseOutput();
 
 protected:
   virtual bool onInit() override;

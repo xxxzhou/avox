@@ -126,6 +126,7 @@ bool IOMuxerFF::onInit() {
     if (ret < 0) {
       av_dict_free(&dict);
       AVOX_FFMEPG_LOG(ret, "avio_open2 failed");
+      releaseOutput();  // 失败态不留给 onClose: 写 trailer 会跳 0 崩溃
       return false;
     }
   }
@@ -135,6 +136,7 @@ bool IOMuxerFF::onInit() {
     // 中断初始化,不需要一直试了
     bInitFailed = true;
     AVOX_FFMEPG_LOG(ret, "avformat_write_header failed");
+    releaseOutput();
     return false;
   }
   LOGFLF(LogLevel::info, "success,url:", url);
@@ -190,7 +192,7 @@ void IOMuxerFF::onPushPacket(const AvoxPacket& buffer) {
                      " msg:", errBuf, " buffer size:", buffer.data.size,
                      " pts:", buffer.pts, " video:", bVideo, " audio:", bAudio);
       onError(aerr, errBuf);
-      fmtCtx.reset();
+      releaseOutput();
     } else {
       // 非致命错误(如DTS非单调EINVAL)只丢该帧: 保fmtCtx活以便onClose能写moov, 文件不致整盘作废
       if (nonFatalDropCount == 0) {
@@ -207,12 +209,23 @@ void IOMuxerFF::onPushPacket(const AvoxPacket& buffer) {
   }
 }
 
+void IOMuxerFF::releaseOutput() {
+  // 释放器连 pb 句柄一起关(freefobj<AVFormatContext>); 流指针一并清防重试悬垂
+  videoStream = nullptr;
+  audioStream = nullptr;
+  fmtCtx.reset();
+}
+
 void IOMuxerFF::onClose() {
   if (!fmtCtx) {
     return;
   }
-  av_write_trailer(fmtCtx.get());
-  fmtCtx.reset();
+  // 未写过 header 的上下文 interleave_packet 还是 NULL, 写 trailer 会跳 0 崩溃
+  // (2026-09-28 AVOX_*.dmp); 失败态已在 onInit 释放, 这里再钉一道闸
+  if (bInitStreams) {
+    av_write_trailer(fmtCtx.get());
+  }
+  releaseOutput();
 }
 
 }
