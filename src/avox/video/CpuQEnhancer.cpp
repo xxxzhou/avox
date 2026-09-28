@@ -115,11 +115,14 @@ bool CpuQEnhancer::loadModel() {
       false;
 #endif
 #if defined(__APPLE__)
-  // CoreML 拒收动态 shape 整图: 按源钉维(batch/height/width), 私有会话随
-  // 增强器销毁(分辨率变了下次 open 重建)。
+  // CoreML 拒收动态 shape 整图: 按源钉维(batch/height/width)。钉维会话按
+  // shape 特化不能入全局 cache(跨分辨率互踩), 本器独占持有、随增强器析构
+  // (分辨率变了下次 open 重建)。
   std::vector<std::pair<std::string, int64_t>> dims = {
       {"batch", 1}, {"height", inferH}, {"width", inferW}};
-  onnxSession = user.sessionShaped(OnnxModel::QualitySpanX4, bGpuInfer, 0, 8, dims);
+  ownedSession.reset(user.createShaped(onnxModelPath(OnnxModel::QualitySpanX4),
+                                       bGpuInfer, 0, 8, dims));
+  onnxSession = ownedSession.get();
 #else
   onnxSession = user.session(OnnxModel::QualitySpanX4, bGpuInfer, 0, 8);
 #endif

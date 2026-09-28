@@ -97,11 +97,11 @@ extern "C" AVOX_PLUGIN_API int32_t avox_onnx_ep_query() {
   }
   return dmlApi ? 1 : 0;
 #elif defined(AVOX_ONNX_COREML)
-  // 真追加一次探测: 符号链期恒在, 追加被拒(纯 CPU drop/拒动态 shape)即 0
-  Ort::SessionOptions probe;
-  return OrtSessionOptionsAppendExecutionProvider_CoreML(probe, 0) == nullptr
-             ? 1
-             : 0;
+  // 编译期判定: 本插件编出 CoreML 分支即官方 osx 运行时(自带该 EP)。
+  // 不可真追加探测 —— 无 Ort::Env 时 ORT 无默认 Logger, append 一打日志
+  // 就抛(ep_query 先于任何 Env 调用会 abort 进程); GetExecutionProviderApi
+  // ("CoreML") 实测也查不到(非注册名), 恒误报 0。
+  return 1;
 #else
   return 0;
 #endif

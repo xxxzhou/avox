@@ -44,6 +44,7 @@ class CpuQEnhancer {
  private:
   std::unique_ptr<IOVEngine> ovEngine;
   IONNXSession* onnxSession = nullptr;  // OnnxSessionCache 借用, 不 delete
+  std::unique_ptr<IONNXSession> ownedSession;  // Apple 钉维会话: 本器独占(不入全局 cache)
   bool useOpenVino = false;
   bool modelLoaded = false;
   std::string inputName, outputName;

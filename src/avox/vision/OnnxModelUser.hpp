@@ -80,6 +80,23 @@ class OnnxModelUser {
     }
     return acquirePrivate(path, useGPU, deviceId, numThreads);
   }
+  // 新建调用方独占的钉维会话(不入 privateOwned, 调用方负责 delete)。
+  // 供持有期自管的消费方(CpuQEnhancer)用 —— Private 桶会随本对象析构。
+  IONNXSession* createShaped(const std::string& path, bool useGPU, int deviceId,
+                             int numThreads,
+                             const std::vector<std::pair<std::string, int64_t>>& dims) {
+    IONNXSession* s = AvoxManager::Get().onnxSessionHub.create("onnx");
+    if (!s) {
+      lastModelError = "onnxSessionHub 不可用 (avox_onnx 未加载?)";
+      return nullptr;
+    }
+    if (!s->loadModelShaped(path, useGPU, deviceId, numThreads, dims)) {
+      lastModelError = "loadModelShaped 失败: " + path;
+      delete s;
+      return nullptr;
+    }
+    return s;
+  }
   // 钉维入口: 恒 Private (CoreML 需按 shape 特化会话, 分辨率间不可共享)
   IONNXSession* sessionShaped(OnnxModel m, bool useGPU, int deviceId,
                               int numThreads,
