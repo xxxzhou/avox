@@ -5,6 +5,11 @@
 #include <dml_provider_factory.h>
 #define AVOX_ONNX_DML 1
 #endif
+// Apple CoreML(ANE/GPU/CPU 自动分派): 官方 osx 运行时自带此 EP(全局符号直链)
+#if defined(__APPLE__) && __has_include(<coreml_provider_factory.h>)
+#include <coreml_provider_factory.h>
+#define AVOX_ONNX_COREML 1
+#endif
 #include <iostream>
 #include <algorithm>
 
@@ -36,6 +41,17 @@ static bool appendDmlIfAvailable(Ort::SessionOptions& options, int deviceId) {
 #endif
 }
 
+// Apple CoreML 追加: flags=0 即 MLComputeUnitsAll(ANE/GPU/CPU 按算子自动);
+// 纯 CPU drop 运行时无此符号(链期即断), 追加被拒(动态 shape 等)返回落 CPU。
+static bool appendCoreMlIfAvailable(Ort::SessionOptions& options) {
+#if defined(AVOX_ONNX_COREML)
+  return OrtSessionOptionsAppendExecutionProvider_CoreML(options, 0) == nullptr;
+#else
+  (void)options;
+  return false;
+#endif
+}
+
 static void appendCuda(Ort::SessionOptions& options, int deviceId) {
   OrtCUDAProviderOptions cudaOptions;
   cudaOptions.device_id = deviceId;
@@ -47,19 +63,29 @@ static void appendCuda(Ort::SessionOptions& options, int deviceId) {
   options.AppendExecutionProvider_CUDA(cudaOptions);
 }
 
-// 追加 GPU EP; 返回 true = IO 驻显存(仅 CUDA, DML/CPU 的 IO 仍在 CPU 内存)。
+// 追加 GPU EP; 返回 true = IO 驻显存(仅 CUDA, DML/CoreML/CPU 的 IO 仍在 CPU 内存)。
 static bool appendGpuExecutionProvider(Ort::SessionOptions& options,
                                        int deviceId) {
   if (appendDmlIfAvailable(options, deviceId)) {
     LOGFLF(LogLevel::info, "onnx EP=DML device=", deviceId);
     return false;
   }
+#if defined(AVOX_ONNX_COREML)
+  if (appendCoreMlIfAvailable(options)) {
+    LOGFLF(LogLevel::info, "onnx EP=CoreML device=", deviceId);
+    return false;
+  }
+  LOGFLF(LogLevel::info, "onnx EP=CPU (CoreML 追加被拒)");
+  return false;
+#else
+  // 官方 osx 运行时无 CUDA EP, AppendExecutionProvider_CUDA 会抛, Apple 不走此支
   appendCuda(options, deviceId);
   LOGFLF(LogLevel::info, "onnx EP=CUDA device=", deviceId);
   return true;
+#endif
 }
 
-// 供 shim pvx_enhance_ep_query 免引 ORT 头探测: 运行时是否带 DML EP(1=有)。
+// 供 shim pvx_enhance_ep_query 免引 ORT 头探测: 运行时是否带 GPU EP(1=有)。
 extern "C" AVOX_PLUGIN_API int32_t avox_onnx_ep_query() {
 #if defined(AVOX_ONNX_DML)
   const void* dmlApi = nullptr;
@@ -70,6 +96,12 @@ extern "C" AVOX_PLUGIN_API int32_t avox_onnx_ep_query() {
     return 0;
   }
   return dmlApi ? 1 : 0;
+#elif defined(AVOX_ONNX_COREML)
+  // 真追加一次探测: 符号链期恒在, 追加被拒(纯 CPU drop/拒动态 shape)即 0
+  Ort::SessionOptions probe;
+  return OrtSessionOptionsAppendExecutionProvider_CoreML(probe, 0) == nullptr
+             ? 1
+             : 0;
 #else
   return 0;
 #endif
@@ -97,6 +129,7 @@ static bool loadModelFromMemoryInternal(std::unique_ptr<Ort::Env>& env,
                                          bool useGPU,
                                          int deviceId,
                                          int numThreads,
+                                         const std::vector<std::pair<std::string, int64_t>>* dimOverrides,
                                          std::unordered_map<std::string, std::vector<int64_t>>& inputShapes,
                                          std::unordered_map<std::string, std::vector<int64_t>>& outputShapes,
                                          std::vector<std::string>& inputNames,
@@ -108,6 +141,14 @@ static bool loadModelFromMemoryInternal(std::unique_ptr<Ort::Env>& env,
     sessionOptions.SetIntraOpNumThreads(numThreads);
     sessionOptions.SetGraphOptimizationLevel(
         GraphOptimizationLevel::ORT_ENABLE_ALL);
+
+    // 钉自由维度须在 session 创建前: CoreML 对动态 shape 整图拒收
+    if (dimOverrides) {
+      for (const auto& [name, value] : *dimOverrides) {
+        Ort::GetApi().AddFreeDimensionOverrideByName(
+            static_cast<OrtSessionOptions*>(sessionOptions), name.c_str(), value);
+      }
+    }
 
     // EP 追加: Windows 优先 DirectML(DX12, A/N/I 显卡通吃, 失败/缺失落 CUDA),
     // DML/CPU 的输入输出仍在 CPU 内存(EP 内部搬运), 仅 CUDA 需 device memoryInfo。
@@ -163,6 +204,7 @@ static bool loadModelFromPathInternal(std::unique_ptr<Ort::Env>& env,
                                        bool useGPU,
                                        int deviceId,
                                        int numThreads,
+                                       const std::vector<std::pair<std::string, int64_t>>* dimOverrides,
                                        std::unordered_map<std::string, std::vector<int64_t>>& inputShapes,
                                        std::unordered_map<std::string, std::vector<int64_t>>& outputShapes,
                                        std::vector<std::string>& inputNames,
@@ -174,6 +216,13 @@ static bool loadModelFromPathInternal(std::unique_ptr<Ort::Env>& env,
     sessionOptions.SetIntraOpNumThreads(numThreads);
     sessionOptions.SetGraphOptimizationLevel(
         GraphOptimizationLevel::ORT_ENABLE_ALL);
+
+    if (dimOverrides) {
+      for (const auto& [name, value] : *dimOverrides) {
+        Ort::GetApi().AddFreeDimensionOverrideByName(
+            static_cast<OrtSessionOptions*>(sessionOptions), name.c_str(), value);
+      }
+    }
 
     const bool bGpuIo = useGPU && appendGpuExecutionProvider(sessionOptions, deviceId);
 
@@ -236,7 +285,7 @@ bool ONNXSession::loadModel(const std::string& assetPath,
     LOGFLF(LogLevel::info,"load asset:",assetPath);
     if (loadModelFromMemoryInternal(env, session, memoryInfo,
                                     modelData.data(), modelData.size(),
-                                    useGPU, deviceId, numThreads,
+                                    useGPU, deviceId, numThreads, nullptr,
                                     inputShapes, outputShapes,
                                     inputNames, outputNames)) {
       return true;
@@ -246,7 +295,7 @@ bool ONNXSession::loadModel(const std::string& assetPath,
   // 2. Fallback: 作为文件路径加载
   LOGFLF(LogLevel::info,"load asset:",assetPath);
   if (loadModelFromPathInternal(env, session, memoryInfo,
-                                assetPath, useGPU, deviceId, numThreads,
+                                assetPath, useGPU, deviceId, numThreads, nullptr,
                                 inputShapes, outputShapes,
                                 inputNames, outputNames)) {
     return true;
@@ -257,7 +306,7 @@ bool ONNXSession::loadModel(const std::string& assetPath,
     LOGFLF(LogLevel::info, "GPU mode failed, retrying with CPU...");
     unloadModel();
     if (loadModelFromPathInternal(env, session, memoryInfo,
-                                  assetPath, false, deviceId, numThreads,
+                                  assetPath, false, deviceId, numThreads, nullptr,
                                   inputShapes, outputShapes,
                                   inputNames, outputNames)) {
       LOGFLF(LogLevel::info, "Switched to CPU mode successfully");
@@ -265,6 +314,35 @@ bool ONNXSession::loadModel(const std::string& assetPath,
     }
   }
 
+  unloadModel();
+  return false;
+}
+
+bool ONNXSession::loadModelShaped(
+    const std::string& assetPath, bool useGPU, int deviceId, int numThreads,
+    const std::vector<std::pair<std::string, int64_t>>& dimOverrides) {
+  unloadModel();
+  for (const auto& [n, v] : dimOverrides) {
+    LOGFLF(LogLevel::info, "dim override: ", n, "=", v);
+  }
+  // 钉维专用: 跳过 asset 内存路径(钉维服务大模型文件型加载), 失败直接落 CPU 重试
+  if (loadModelFromPathInternal(env, session, memoryInfo,
+                                assetPath, useGPU, deviceId, numThreads, &dimOverrides,
+                                inputShapes, outputShapes,
+                                inputNames, outputNames)) {
+    return true;
+  }
+  if (useGPU) {
+    LOGFLF(LogLevel::info, "GPU shaped mode failed, retrying with CPU...");
+    unloadModel();
+    if (loadModelFromPathInternal(env, session, memoryInfo,
+                                  assetPath, false, deviceId, numThreads, &dimOverrides,
+                                  inputShapes, outputShapes,
+                                  inputNames, outputNames)) {
+      LOGFLF(LogLevel::info, "Switched to CPU mode successfully");
+      return true;
+    }
+  }
   unloadModel();
   return false;
 }

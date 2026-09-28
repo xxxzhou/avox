@@ -29,6 +29,13 @@ class ONNXSession : public IONNXSession {
                  int deviceId = 0,
                  int numThreads = 4) override;
 
+  // 加载模型并钉死自由维度 (CoreML 需静态 shape; 见 IONNXSession 注)
+  bool loadModelShaped(const std::string& assetPath,
+                       bool useGPU,
+                       int deviceId,
+                       int numThreads,
+                       const std::vector<std::pair<std::string, int64_t>>& dimOverrides) override;
+
   void unloadModel() override;
   bool isLoaded() const override { return session != nullptr; }
 

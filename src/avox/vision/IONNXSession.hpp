@@ -54,6 +54,18 @@ class IONNXSession {
   virtual bool runShaped(const std::vector<std::tuple<std::string, const float*, std::vector<int64_t>>>& inputs,
                          const std::vector<std::string>& outputNames,
                          std::vector<std::vector<float>>& outputs) = 0;
+
+  // 加载模型并钉死自由维度(符号维名→值)。CoreML EP 对动态 shape 整图拒收,
+  // 钉死后才接(画质增强 mac 腿); 默认实现忽略维度, 旧实现不受影响。
+  // 注意: 追加在接口末尾 —— 插件是 dlopen 的 C++ 对象, 前缀 vtable 必须稳定。
+  virtual bool loadModelShaped(const std::string& modelPath,
+                               bool useGPU,
+                               int deviceId,
+                               int numThreads,
+                               const std::vector<std::pair<std::string, int64_t>>& dimOverrides) {
+    (void)dimOverrides;
+    return loadModel(modelPath, useGPU, deviceId, numThreads);
+  }
 };
 
 }

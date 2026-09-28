@@ -2,6 +2,8 @@
 
 #include "avox/Avox.hpp"  // getModelFilePath
 
+#include <filesystem>
+
 namespace avox {
 
 std::string onnxModelPath(OnnxModel m) {
@@ -29,6 +31,14 @@ std::string onnxModelPath(OnnxModel m) {
     case OnnxModel::TransDec:
       return getModelFilePath("translation/opus-mt-ja-zh") + "/decoder_model.onnx";
     case OnnxModel::QualitySpanX4:
+#ifdef __APPLE__
+      // CoreML 拒收 DML 改写版的 rank-6 中间张量(Reshape+Transpose 模拟
+      // DepthToSpace), mac 走未改写原版 + 按源钉维; 原版未下载则退回改写版
+      // (CoreML 拒收落 CPU, 慢速但正确)。
+      if (std::filesystem::exists(getModelFilePath("quality/span-x4-coreml.onnx"))) {
+        return getModelFilePath("quality/span-x4-coreml.onnx");
+      }
+#endif
       return getModelFilePath("quality/span-x4.onnx");
     case OnnxModel::Wav2ArkitCpu:
       // 权重在 wav2arkit_cpu.onnx.data (external-data, ORT 同目录自动加载); 两文件需一起部署

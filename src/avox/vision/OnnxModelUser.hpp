@@ -42,6 +42,23 @@ class OnnxModelUser {
     privateOwned.emplace_back(s);
     return s;
   }
+  // Private+钉维: 钉维会话按 shape 特化, 不入全局 cache (跨分辨率互踩)
+  IONNXSession* acquirePrivateShaped(
+      const std::string& path, bool useGPU, int deviceId, int numThreads,
+      const std::vector<std::pair<std::string, int64_t>>& dims) {
+    IONNXSession* s = AvoxManager::Get().onnxSessionHub.create("onnx");
+    if (!s) {
+      lastModelError = "onnxSessionHub 不可用 (avox_onnx 未加载?)";
+      return nullptr;
+    }
+    if (!s->loadModelShaped(path, useGPU, deviceId, numThreads, dims)) {
+      lastModelError = "loadModelShaped 失败: " + path;
+      delete s;
+      return nullptr;
+    }
+    privateOwned.emplace_back(s);
+    return s;
+  }
 
  protected:
   std::string lastModelError;  // Private 模式 acquire 失败时记原因
@@ -62,6 +79,12 @@ class OnnxModelUser {
       return AvoxManager::Get().onnxSessionCache.acquire(path, useGPU, deviceId, numThreads);
     }
     return acquirePrivate(path, useGPU, deviceId, numThreads);
+  }
+  // 钉维入口: 恒 Private (CoreML 需按 shape 特化会话, 分辨率间不可共享)
+  IONNXSession* sessionShaped(OnnxModel m, bool useGPU, int deviceId,
+                              int numThreads,
+                              const std::vector<std::pair<std::string, int64_t>>& dims) {
+    return acquirePrivateShaped(onnxModelPath(m), useGPU, deviceId, numThreads, dims);
   }
 };
 
