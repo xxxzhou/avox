@@ -195,7 +195,16 @@ OSStatus IOSAudioRender::renderCallback(void* inRefCon,
                                          UInt32 inNumberFrames,
                                          AudioBufferList* ioData) {
   IOSAudioRender* self = static_cast<IOSAudioRender*>(inRefCon);
-  std::unique_lock<std::mutex> lock(self->mtx);
+  // 实时线程绝不阻塞: 拿不到锁就出静音, 持锁等待会与 onClose/pause 的停流互等死锁
+  std::unique_lock<std::mutex> lock(self->mtx, std::try_to_lock);
+  if (!lock.owns_lock()) {
+    if (ioData) {
+      for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
+        memset(ioData->mBuffers[i].mData, 0, ioData->mBuffers[i].mDataByteSize);
+      }
+    }
+    return noErr;
+  }
 
   if (!self->audioUnit || !ioData) {
     return noErr;
@@ -311,15 +320,19 @@ bool IOSAudioRender::full() {
 }
 
 void IOSAudioRender::pause(bool pause) {
-  std::unique_lock<std::mutex> lock(mtx);
-  if (!audioUnit) {
+  AudioComponentInstance unit = nullptr;
+  {
+    std::unique_lock<std::mutex> lock(mtx);
+    unit = audioUnit;
+  }
+  if (!unit) {
     return;
   }
 
   if (pause) {
-    AudioOutputUnitStop(audioUnit);
+    AudioOutputUnitStop(unit);
   } else {
-    AudioOutputUnitStart(audioUnit);
+    AudioOutputUnitStart(unit);
   }
 }
 
@@ -333,12 +346,18 @@ void IOSAudioRender::flush() {
 }
 
 void IOSAudioRender::onClose() {
-  std::unique_lock<std::mutex> lock(mtx);
-  if (audioUnit) {
-    AudioOutputUnitStop(audioUnit);
-    AudioUnitUninitialize(audioUnit);
-    AudioComponentInstanceDispose(audioUnit);
+  AudioComponentInstance unit = nullptr;
+  {
+    // 锁内只摘句柄: 持锁调 AudioOutputUnitStop 会等实时回调让路, 而回调在等这把锁
+    std::unique_lock<std::mutex> lock(mtx);
+    unit = audioUnit;
     audioUnit = nullptr;
+    ringBuffer.clear();
+  }
+  if (unit) {
+    AudioOutputUnitStop(unit);
+    AudioUnitUninitialize(unit);
+    AudioComponentInstanceDispose(unit);
   }
 
 #if TARGET_OS_IPHONE
@@ -346,7 +365,6 @@ void IOSAudioRender::onClose() {
   [session setActive:NO error:nil];
 #endif
 
-  ringBuffer.clear();
   log(LogLevel::info, "iOS AudioUnit render close");
 }
 
@@ -355,12 +373,18 @@ void IOSAudioRender::speed(double speed) {
 }
 
 void IOSAudioRender::setVolume(float cvolume) {
-  std::unique_lock<std::mutex> lock(mtx);
-  volume = std::max(0.0f, std::min(1.0f, cvolume));
-
-  if (audioUnit) {
-    AudioUnitSetParameter(audioUnit, kHALOutputParam_Volume,
-                          kAudioUnitScope_Global, 0, volume, 0);
+  AudioComponentInstance unit = nullptr;
+  float v = 0.0f;
+  {
+    std::unique_lock<std::mutex> lock(mtx);
+    volume = std::max(0.0f, std::min(1.0f, cvolume));
+    v = volume;
+    unit = audioUnit;
+  }
+  // AudioUnitSetParameter 同样进 HAL: 持锁调它会与实时回调互等
+  if (unit) {
+    AudioUnitSetParameter(unit, kHALOutputParam_Volume,
+                          kAudioUnitScope_Global, 0, v, 0);
   }
 }
 
