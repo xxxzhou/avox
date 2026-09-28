@@ -5,6 +5,7 @@
 #include "../AvoxCodec.h"
 #include "../audio/AudioDecoder.hpp"
 #include "../module/AvoxManager.hpp"
+#include "../module/ModuleMgr.hpp"
 #include "../module/OptionKey.hpp"
 #include "../player/AVTrack.hpp"
 #include "../video/VideoDecoder.hpp"
@@ -45,6 +46,15 @@ bool AMediaSource::open() {
     return false;
   }
   RawSource::open();
+  // smb://自动路由(口径同 MediaPlayer): 插件注册即用, 不要求业务显式
+  // setIoPlan——录制/抽帧(IRecorder)腿原来只在 ffmpeg 里找协议, smb://
+  // 直接 Protocol not found, 与播放腿行为分裂(缩图恒空即此症)
+  if (ioPlan != IoPlan::smb && uri.rfind("smb://", 0) == 0) {
+    ModuleMgr::Get().ensureStarted();
+    if (AvoxManager::Get().ioSources.hasObjectId(IoPlan::smb)) {
+      ioPlan = IoPlan::smb;
+    }
+  }
   bool bFind = AvoxManager::Get().ioSources.hasObjectId(ioPlan);
   if (!bFind) {
     return false;
