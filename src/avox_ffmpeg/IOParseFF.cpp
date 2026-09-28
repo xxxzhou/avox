@@ -588,6 +588,10 @@ bool IOParseFF::prescanHttpBoxes() {
     const int64_t nextOff = off + size;
     if (type == AV_RL32("moov")) {
       sawMoov = true;
+    } else if (type == AV_RL32("moof")) {
+      // fMP4 分片: 头扫描要枚举全部分片(moof 序), 谎报早退只索引到第一片,
+      // 播完首片即假 EOF(928 夜巡 871/芽芽实锤: 229s 片 ~10s 处止)
+      return false;
     } else if (type == AV_RL32("mdat") && sawMoov) {
       if (fileSize < 0) {
         fileSize = avio_size(httpPb);
@@ -623,6 +627,7 @@ void IOParseFF::closeCustomAvio() {
     avio_closep(&httpPb);
   }
   bLieSize = false;
+  bAtEof.store(false);  // 关源即离尾: 防 close 后完成门闸读到陈旧 true
   mdat1End = 0;
   aviClipPos = 0;
   bAviNoSeekOpen = false;
@@ -1136,7 +1141,7 @@ void IOParseFF::onRunTask() {
   // 已经解析配置信息，如SPS,PPS后,开始读取IO数据
   AVPacketPtr bsfPkt = getUniquePtr(av_packet_alloc());
   AVPacketPtr adtsPkt = getUniquePtr(av_packet_alloc());
-  bool bEof = false;
+  bAtEof.store(false);  // 本读会话起点(承原局部 bEof 的新会话清零语义)
   while (running()) {
     // 检查暂停
     if (pauseing()) {
@@ -1145,12 +1150,12 @@ void IOParseFF::onRunTask() {
       sleepTask(false, 10);
       continue;
     }
-    if (bEof) {
+    if (bAtEof.load()) {
       // EOF 停放: 不 break(拆线程)。尾包可能还有几十秒数据没被消费, 且之后很可能
       // seek —— 线程一退, seek 只挪了 demuxer 位置却无人再读, 管道从此静止。
       // 这里等 seekTo 复位(bEofReset)或 running() 变假(close), 不再调 av_read_frame
       if (bEofReset.exchange(false)) {
-        bEof = false;
+        bAtEof.store(false);
         continue;
       }
       sleepTask(false, 10);
@@ -1174,7 +1179,7 @@ void IOParseFF::onRunTask() {
       pkt = getUniquePtr(av_packet_alloc());
       if ((ret = av_read_frame(fmtCtx.get(), pkt.get())) < 0) {
         if (ret == AVERROR_EOF) {
-          bEof = true;
+          bAtEof.store(true);
           if (!bEofNotified.exchange(true)) {
             dispatch(&IAVSourceOb::onComplete);
           }
@@ -1600,6 +1605,7 @@ bool IOParseFF::seekTo(int64_t pos) {
   // 读线程若已 EOF 停放: 复位让它从新位置继续读(否则 seek 无人读, 管道静止)
   if (bSeek) {
     bEofNotified.store(false);
+    bAtEof.store(false);  // 新 seek 重新定性, 解除 EOF 兜底(发窗内读线程尚未醒)
     bEofReset.store(true);
     // 门闸: 落点校验已在 stash 尾备好关键视频包则解除; 未校验/未见关键包
     // 照旧武装, 由读循环丢到首个 KEY 包(见 bWaitKeyframe 成员注释)

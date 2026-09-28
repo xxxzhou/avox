@@ -1028,6 +1028,20 @@ void MediaPlayer::renderFrame(AVTrack* track, bool bGetFrame) {
     // IO 已结束, 剩的只是尾包在解码/渲染管线里播放(音频尾包可长达数秒), 不是真卡顿.
     return;
   }
+  // EOF 通知是一次性闩: 尾包清掉 bIOComplete 后无人重报, 队列放尽也永不收尾
+  // (空转/恒 buffering; 尾段 seek 与播到尾命中 EOF 均已复现)。源级 EOF 兜底
+  if (ioSource && ioSource->atEof() && !bSeeking &&
+      audioStatus.queueSize == 0 && videoStatus.queueSize == 0 &&
+      audioStatus.frameSize == 0 && videoStatus.frameSize == 0) {
+    if (state != PlayerState::completed) {
+      recordRingBuffer();
+    }
+    auto completeCmd = createCommand<MPCommandType::Complete>();
+    mpCommands.enqueueWaitBackMatch(completeCmd, [](const MPCommandPtr& cmd) {
+      return cmd->type != MPCommandType::Complete;
+    });
+    return;
+  }
   if (state == PlayerState::playing) {
     // 记录播放器队列状态,这时一般是音频或是视频队列有个空了
     recordRingBuffer();

@@ -138,6 +138,9 @@ class AVOX_EXPORT AVSource : public BaseSource,
   // 精确seek音频丢弃目标位(AVOX_NOVALID_PTS=未武装): cmdSeek武装, IO线程
   // processPacket丢目标位前音频包, 首个>=目标位的包自解除
   std::atomic<int64_t> preciseSeekPts{AVOX_NOVALID_PTS};
+  // 读循环 EOF 停放标志(原 IOParseFF 局部 bEof 升格): 源在尾=true, 被 seek
+  // 重新定性或读会话重开时清(见 IOParseFF onRunTask/seekTo/reset)
+  std::atomic<bool> bAtEof{false};
   // I帧(PTS, SIZE)历史, 用于检测HLS分片重叠的重复GOP
   IFramesHistory iFrameHistory;
   // 基准时间,单位毫秒
@@ -217,6 +220,9 @@ class AVOX_EXPORT AVSource : public BaseSource,
   void setPreciseSeekPts(int64_t pts) { preciseSeekPts = pts; }
   // 获取丢包率 (仅 RTSP/RTP 等 UDP 协议有效, 默认返回 0)
   virtual float getLossRate(TrackType type) { return 0.0f; }
+  // 点播源是否已在尾(EOF 停放中, 未经新 seek)。IO 的 EOF 通知是一次性闩,
+  // 尾包在途会清 bIOComplete 且无人重报——播放器完成门闸靠它兜底(928 复现案)
+  bool atEof() const { return bAtEof.load(); }
 
  public:
   void processPacket(AvoxPacket& packet);
