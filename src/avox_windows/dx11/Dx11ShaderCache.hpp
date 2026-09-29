@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <chrono>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -49,8 +50,11 @@ class Dx11ShaderCache {
     ID3DBlob* blob = nullptr;
     ID3DBlob* err = nullptr;
     // 与各调用点原先的参数保持一致(flags 0 = 默认优化级别)
+    auto t0 = std::chrono::steady_clock::now();
     HRESULT hr = D3DCompile(source, strlen(source), nullptr, nullptr, nullptr,
                             entry, target, 0, 0, &blob, &err);
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                  std::chrono::steady_clock::now() - t0).count();
     if (FAILED(hr)) {
       if (blob) {
         blob->Release();
@@ -67,6 +71,8 @@ class Dx11ShaderCache {
       err->Release();
     }
     st.cache.emplace(key, blob);
+    fprintf(stderr, "Dx11ShaderCache D3DCompile %s %lldms\n", key.c_str(),
+            (long long)ms);
     return blob;
   }
 

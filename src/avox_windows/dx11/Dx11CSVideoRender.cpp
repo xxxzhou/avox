@@ -2,6 +2,9 @@
 
 #include "Dx11CSVideoRender.hpp"
 
+#include <cstdlib>
+#include <string>
+
 #include "Dx11ShaderCache.hpp"
 #include "Dx11Window.hpp"
 #include "avox/module/AvoxManager.hpp"
@@ -15,7 +18,10 @@
 
 namespace avox {
 
-static const char* yuvToRgbaShader = R"(
+// YUV->RGBA 计算着色器: 基础/DV 两变体由同一份头+体拼装。DV 整形数学让 FXC
+// 冷编译从 ~100ms 涨到 ~1.5s(9/29 实测), 拆出后非 DV 内容首开不付这笔;
+// DV 变体在首帧 DV 内容时惰性编译(selectShader), 嵌入分支经 %%DV_BRANCH%% 注入
+static const char* kShaderHead = R"(
 Texture2D yTex: register(t0);
 Texture2D uvTex: register(t1);
 RWTexture2D<float4> outTex: register(u0);
@@ -52,15 +58,16 @@ float4 yuv2Rgb(float y, float u, float v, float a) {
     return float4(clamp(rgb.rgb, 0.0f, 1.0f), a);
 }
 
+float3 pqToLinear(float3 n);
+float3 linearToPq(float3 lin);
+)";
+
+// DV 变体附加段(整形链语义对齐 libplacebo/V5, 输出 PQ BT.2020)
+static const char* kShaderDv = R"(
 // 列主序 3x3(vec4 列)应用, 等价 GLSL M*v, 避开 HLSL 行列约定
 float3 dvApplyCols(float3 v, float4 c0, float4 c1, float4 c2) {
     return float3(dot(c0.xyz, v), dot(c1.xyz, v), dot(c2.xyz, v));
 }
-
-float3 pqToLinear(float3 n);
-float3 linearToPq(float3 lin);
-
-// ---------- DV(Dolby Vision) 整形: 语义对齐 libplacebo/V5, 输出 PQ BT.2020 ----------
 
 float dvPivotAt(int idx) { return dvPivots[idx >> 2][idx & 3]; }
 float dvPolyAt(int idx)  { return dvPoly[idx >> 2][idx & 3]; }
@@ -112,7 +119,10 @@ float3 dvProcess(float3 yuv) {
     float3 lin = pqToLinear(rgb);
     return linearToPq(dvApplyCols(lin, dvLm[0], dvLm[1], dvLm[2]));
 }
+)";
 
+// 两变体共用的体: HDR 处理 + 采样 + 入口(DV 分支经 %%DV_BRANCH%% 注入)
+static const char* kShaderBody = R"(
 // ---- HDR 处理: 与 glsl/yuv2rgbaV5.comp 同源 ----
 
 // PQ EOTF (SMPTE ST2084): 编码值 -> 线性光, 1.0 = 10000 nits
@@ -202,9 +212,7 @@ float4 p010Point(uint2 pix, float a) {
     float y = yTex.Load(int3(pix, 0)).r * k;
     float2 uvRaw = uvTex.Load(int3(pix.x / 2, pix.y / 2, 0)).rg;
     // DV 链吃原始 PQ 信号(不做 limited 展开, 偏移在 DV 矩阵里), 其余走原路
-    if (doviEnable == 1) {
-        return float4(saturate(processColor(dvProcess(float3(y, uvRaw.x * k, uvRaw.y * k)))), a);
-    }
+%%DV_BRANCH%%
     float u = uvRaw.x * k - 0.5;
     float v = uvRaw.y * k - 0.5;
     // BT.2020 tv-range 展开(Y 64..940, UV 512 居中) 后矩阵
@@ -253,6 +261,29 @@ void main(uint2 DTid : SV_DispatchThreadID)
     outTex[int2(DTid.x*2+1,DTid.y*2+1)] = rgba4;
 }
 )";
+
+// DV 分支注入文本(p010Point 内; 基础变体注入空串)
+static const char* kDvBranch = R"(    if (doviEnable == 1) {
+        return float4(saturate(processColor(dvProcess(float3(y, uvRaw.x * k, uvRaw.y * k)))), a);
+    }
+)";
+
+static std::string buildShaderSource(bool withDv) {
+  std::string s =
+      std::string(kShaderHead) + (withDv ? kShaderDv : "") + kShaderBody;
+  const std::string marker = "%%DV_BRANCH%%";
+  auto p = s.find(marker);
+  if (p != std::string::npos) {
+    s.replace(p, marker.size(), withDv ? kDvBranch : "");
+  }
+  return s;
+}
+
+static const std::string& shaderSource(bool withDv) {
+  static const std::string baseSrc = buildShaderSource(false);
+  static const std::string dvSrc = buildShaderSource(true);
+  return withDv ? dvSrc : baseSrc;
+}
 
 Dx11CSVideoRender::Dx11CSVideoRender() { renderType = RenderType::D3D11; }
 
@@ -304,6 +335,9 @@ void Dx11CSVideoRender::releaseGraph() {
   if (computeShader) {
     computeShader.Reset();
   }
+  dvShader.Reset();
+  boundShader = nullptr;
+  bDvProgramTried = false;
   // 释放回读资源,映射指针一并失效
   if (bStagingMapped && d3dcontext) {
     d3dcontext->Unmap(stagingTexture.Get(), 0);
@@ -358,7 +392,8 @@ void Dx11CSVideoRender::createProgram() {
   // D3DCompile; blob 所有权在缓存, 这里(以及任何调用点)都不要 Release
   ID3DBlob* errorBlob = nullptr;
   ID3DBlob* shaderBlob =
-      Dx11ShaderCache::get(yuvToRgbaShader, "main", "cs_5_0", &errorBlob);
+      Dx11ShaderCache::get(shaderSource(false).c_str(), "main", "cs_5_0",
+                           &errorBlob);
   if (!shaderBlob) {
     if (errorBlob) {
       log(LogLevel::warn,
@@ -367,14 +402,18 @@ void Dx11CSVideoRender::createProgram() {
     }
     return;
   }
-  // 创建计算着色器(设备相关, 每 device 一份)
+  // 创建计算着色器(设备相关, 每 device 一份; 首建含驱动侧 JIT, 计时以分辨慢源)
+  auto tCreate = std::chrono::steady_clock::now();
   HRESULT hr = device->CreateComputeShader(shaderBlob->GetBufferPointer(),
                                            shaderBlob->GetBufferSize(), nullptr,
                                            &computeShader);
+  auto msCreate = std::chrono::duration_cast<std::chrono::milliseconds>(
+                      std::chrono::steady_clock::now() - tCreate).count();
+  fprintf(stderr, "Dx11Graph CreateComputeShader %lldms\n", (long long)msCreate);
   if (FAILED(hr)) {
     return;
   }
-  // 创建常量缓冲区(96B: 8 标量 + colorMat, 与 cbuffer 布局对齐)
+  // 创建常量缓冲区(ColorYuvUBO 全布局, 与 HLSL cbuffer 对齐)
   constBuf = std::make_unique<Dx11Constant>();
   constBuf->setBufferSize(sizeof(constData));
   constBuf->cpuData = (uint8_t*)&constData;
@@ -422,6 +461,11 @@ void Dx11CSVideoRender::createProgram() {
   d3dcontext->CSSetConstantBuffers(0, 1, constBuf->buffer.GetAddressOf());
   // 设置计算着色器资源
   d3dcontext->CSSetShader(computeShader.Get(), nullptr, 0);
+  boundShader = computeShader.Get();
+  // 测试钩子: 置 AVOX_DX11_DV_SHADER=1 则建图时预编译 DV 变体(验编译/计时), 缺省惰性
+  if (getenv("AVOX_DX11_DV_SHADER") != nullptr) {
+    ensureDvProgram();
+  }
   // 设置输入纹理
   ID3D11ShaderResourceView* srvArray[2] = {yView.Get(), uvView.Get()};
   d3dcontext->CSSetShaderResources(0, 2, srvArray);
@@ -430,6 +474,47 @@ void Dx11CSVideoRender::createProgram() {
   d3dcontext->CSSetUnorderedAccessViews(0, 1, uavArray, nullptr);
   // constBuf 刚重建, 至少要上传一次, 否则 CS 的 inputSize 是旧值
   bParamsDirty = true;
+}
+
+bool Dx11CSVideoRender::ensureDvProgram() {
+  if (dvShader) {
+    return true;
+  }
+  if (bDvProgramTried || !device || !d3dcontext) {
+    return false;
+  }
+  bDvProgramTried = true;
+  ID3DBlob* errorBlob = nullptr;
+  ID3DBlob* shaderBlob = Dx11ShaderCache::get(shaderSource(true).c_str(), "main",
+                                              "cs_5_0", &errorBlob);
+  if (!shaderBlob) {
+    if (errorBlob) {
+      log(LogLevel::warn, "Dx11Graph DV D3DCompile error: ",
+          (char*)errorBlob->GetBufferPointer());
+      errorBlob->Release();
+    }
+    return false;
+  }
+  auto tCreate = std::chrono::steady_clock::now();
+  HRESULT hr = device->CreateComputeShader(shaderBlob->GetBufferPointer(),
+                                           shaderBlob->GetBufferSize(), nullptr,
+                                           &dvShader);
+  auto msCreate = std::chrono::duration_cast<std::chrono::milliseconds>(
+                      std::chrono::steady_clock::now() - tCreate).count();
+  fprintf(stderr, "Dx11Graph DV CreateComputeShader %lldms\n",
+          (long long)msCreate);
+  if (FAILED(hr)) {
+    dvShader.Reset();
+    return false;
+  }
+  return true;
+}
+
+ID3D11ComputeShader* Dx11CSVideoRender::selectShader() {
+  if (!doviMeta.valid) {
+    return computeShader.Get();
+  }
+  return ensureDvProgram() ? dvShader.Get() : computeShader.Get();
 }
 
 void Dx11CSVideoRender::renderToTexture(const GpuFrame& gpuFrame) {
@@ -467,6 +552,12 @@ void Dx11CSVideoRender::renderToTexture(const GpuFrame& gpuFrame) {
   } else {
     // 将 yuvTexture 的数据复制给 inTexture
     d3dcontext->CopyResource(inTexture.Get(), yuvTexture);
+  }
+  // DV 内容换程: 变体着色器变了才重绑(DV 变体在此首帧惰性编译)
+  ID3D11ComputeShader* want = selectShader();
+  if (want && want != boundShader) {
+    d3dcontext->CSSetShader(want, nullptr, 0);
+    boundShader = want;
   }
   // 执行计算着色器
   uint32_t groupX = divUp(imageWidth / 2, 16);

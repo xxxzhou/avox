@@ -16,8 +16,12 @@ class Dx11CSVideoRender : public VideoRender, public Dx11Context {
   virtual ~Dx11CSVideoRender() {};
 
  protected:
-  // YUV 2 RGBA8 shader
+  // YUV 2 RGBA8 shader(基础变体)
   MComPtr<ID3D11ComputeShader> computeShader = nullptr;
+  // DV 变体: 首个 DV 帧惰性编译(冷编译 ~1.5s, 非 DV 内容零成本)
+  MComPtr<ID3D11ComputeShader> dvShader = nullptr;
+  ID3D11ComputeShader* boundShader = nullptr;
+  bool bDvProgramTried = false;
   // 计算着色器资源
   // std::unique_ptr<Dx11Texture> outTexture = nullptr;
   // 输出共享纹理
@@ -73,6 +77,9 @@ class Dx11CSVideoRender : public VideoRender, public Dx11Context {
  public:
   void createProgram();
   void renderToTexture(const GpuFrame& gpuFrame);
+  // DV 变体按需编译; 返回本帧应绑定的着色器(DV 未就绪回退基础)
+  bool ensureDvProgram();
+  ID3D11ComputeShader* selectShader();
   // staging拷贝+Map+零拷发布到stagingBuffer,失败返回false
   bool mapStagingFrame();
 };
