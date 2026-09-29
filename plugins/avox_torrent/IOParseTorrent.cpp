@@ -1,6 +1,7 @@
 #include "IOParseTorrent.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 
 #include "avox/codec/H26XHelper.hpp"
@@ -26,7 +27,13 @@ void IOParseTorrent::applyTorrentOptions() {
     return option->getType(k) != ArgType::Null;
   };
   if (has("torrent.fileIndex")) {
-    engineCfg.fileIndex = (int32_t)option->getInt("torrent.fileIndex");
+    // shim 经 setString 下发数字选项, 宽容读取与 IOParseDisc 的 disc.title 同款
+    if (option->getType("torrent.fileIndex") == ArgType::String) {
+      engineCfg.fileIndex =
+          std::atoi(option->getString("torrent.fileIndex"));
+    } else {
+      engineCfg.fileIndex = (int32_t)option->getInt("torrent.fileIndex");
+    }
     LOGFLF(LogLevel::info, "[torrent io] opt fileIndex:", engineCfg.fileIndex);
   }
   if (has("torrent.cacheDir")) {
