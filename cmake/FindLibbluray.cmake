@@ -41,8 +41,16 @@ else()
 endif()
 
 set(Libbluray_DIR "")
+# $ENV{LIBBLURAY_DIR} 优先按「最终安装目录」精确命中(include/libbluray/bluray.h),
+# 命中不再拼平台段; 未命中才退回下面的根目录+平台段搜索
+if(EXISTS "$ENV{LIBBLURAY_DIR}/include/libbluray/bluray.h")
+    set(Libbluray_DIR "$ENV{LIBBLURAY_DIR}")
+endif()
 foreach(dir_name ${Libbluray_PLATFORM_DIR_NAMES})
     foreach(search_path ${Libbluray_SEARCH_PATHS})
+        if(Libbluray_DIR)
+            break()
+        endif()
         if(EXISTS "${search_path}/${dir_name}/include/libbluray/bluray.h")
             set(Libbluray_DIR "${search_path}/${dir_name}")
             break()
