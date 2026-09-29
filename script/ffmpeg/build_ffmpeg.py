@@ -43,6 +43,8 @@ import sys
 #   同批清理 2 个无效名: parser mp3(正确名 mpegaudio, 已在列表)、protocol rtsp(9.0 无此协议,
 #   rtsp 是 demuxer)。改脚本不影响已部署库, 必须重编; 步骤与白名单缺口见 doc/build/FFmpeg构建.md
 #
+# 2026-09-29 sup demuxer(四平台同步): 外挂 .sup(PGS 裸流)字幕容器, native LGPL(libavformat/supdec.c)。
+#
 # 环境变量:
 #   MSYS2_INSTALL_DIR  MSYS2 根目录 (默认 C:\msys64)
 #   FFMPEG_PREFIX      安装树绝对路径 (默认 ../build/windows/ffmpeg-<flavor>)
@@ -170,7 +172,7 @@ MINIMUM_DEMUXERS = ("mov,matroska,flv,live_flv,mpegts,hls,avi,asf,aac,mp3,ogg,wa
                     "flac,ape,amr,dsf,")  # 常用扩展: 无损音乐/录音/DSD 裸文件
 # 2026-09-25 补充(四平台同步): 外挂字幕容器 + 常见音频容器/裸流, 配合上面新增的解码器
 MINIMUM_DEMUXERS += ("srt,ass,webvtt,microdvd,sami,subviewer,subviewer1,realtext,pjs,mpl2,"
-                     "jacosub,vplayer,stl,vobsub,"
+                     "jacosub,vplayer,stl,vobsub,sup,"
                      "aiff,caf,w64,au,tta,wv,shorten,tak,mpc,mpc8,dts,eac3,xwma,"
                      "ivf,swf,image2,image2pipe,rawvideo,concat,")
 MINIMUM_MUXERS = "mp4,mov,flv,mpegts,matroska,adts"
