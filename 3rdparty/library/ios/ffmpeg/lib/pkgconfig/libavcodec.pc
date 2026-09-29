@@ -9,6 +9,6 @@ Version: 63.1.101
 Requires: libswresample >= 7.1.101, libavutil >= 61.1.101
 Requires.private: 
 Conflicts:
-Libs: -L${libdir}  -lavcodec -lm -lz -pthread -framework VideoToolbox -framework CoreFoundation -framework CoreMedia -framework CoreVideo
+Libs: -L${libdir}  -lavcodec -lm -pthread -lz -framework VideoToolbox -framework CoreFoundation -framework CoreMedia -framework CoreVideo
 Libs.private: 
 Cflags: -I${includedir}
