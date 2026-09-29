@@ -30,3 +30,13 @@ set_target_properties(playtest PROPERTIES XCODE_ATTRIBUTE_DEAD_CODE_STRIPPING "N
 
 avox_output(playtest)
 avox_check_no_openssl(playtest)
+
+# 动态插件可见性(2026-09-29 实证): 引擎按「可执行文件旁 plugins/」解析(dladdr→静态链
+# 时即主可执行文件), .app 内可执行在 Contents/MacOS → 建链接指回 install 的 plugins/,
+# 否则动态插件全静默缺失(createRemoteSource 返回 null); 另导出引擎符号供插件
+# dlopen(RTLD_NOW) 解析(含仅被插件引用的类, 如 BaseSource::disableAudio)
+add_custom_command(TARGET playtest POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E create_symlink "../../../plugins"
+          "$<TARGET_FILE_DIR:playtest>/plugins"
+  COMMENT "playtest: link bundle plugins -> install plugins")
+target_link_options(playtest PRIVATE "-Wl,-export_dynamic")
