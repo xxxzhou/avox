@@ -40,7 +40,31 @@ shutil.copy2(os.path.join(out, 'libbluray-2.lib'), os.path.join(out, 'libbluray.
 产物三件: bin/libbluray-2.dll(运行期, DEP_DLLS 拷进 plugins/), lib/libbluray.lib(MSVC
 名字绑定导入库), include/。FindLibbluray.cmake 按 include/libbluray/bluray.h 探测。
 
-## 四. 已知坑
+## 四. 其他平台(2026-09-29 四平台批)
+
+同一源树(1.3.4), 统一 `--disable-shared --enable-static --disable-bdjava-jar
+--disable-examples --without-libxml2 --without-freetype --without-fontconfig`,
+产物落 avox_library/3rdparty/library/<平台>/libbluray/{include,lib}:
+
+| 平台 | 宿主 | CC/CFLAGS | configure host | 产物位 |
+|---|---|---|---|---|
+| android arm64 | Windows+NDK26 clang.exe | `--target=aarch64-linux-android24 --sysroot=<ndk>/sysroot -O2 -fPIC` | `--host=aarch64-linux-android --build=x86_64-w64-mingw32` | android/libbluray/arm64-v8a |
+| macOS arm64 | mac 原生 clang | 无(原生) | (默认) | darwin/libbluray |
+| iOS 真机 | mac `xcrun -sdk iphoneos clang` | `-arch arm64 -miphoneos-version-min=13.0 -O2` | `--host=arm-apple-darwin` | ios/libbluray |
+| iOS 模拟器 | mac `xcrun -sdk iphonesimulator clang` | `-arch arm64 -mios-simulator-version-min=13.0 -O2` | 同上 | ios-sim/libbluray(构建时设 `LIBBLURAY_DIR` 指此目录) |
+| Linux x86_64 | WSL 原生 gcc | 无(原生) | (默认) | linux/libbluray |
+
+- 跨平台复用 configure 的诀窍: 源树在 Windows 侧 `make dist` 出自包含
+  tarball(libbluray-1.3.4.tar.bz2), 各机解包即 configure——免 per 机 autotools bootstrap。
+- iOS 必带本仓补丁: src/file/mount_darwin.c 用 `TARGET_OS_IPHONE` 围掉
+  DiskArbitration 段(iOS SDK 无此框架; 挂载枚举对文件路径直读无用)。
+  补丁收在 libbluray 源仓本地分支 avox-disc-1.3.4。
+- Android/Apple/Linux 全静态链进 libavox_disc.so/.dylib(无运行期 bluray 依赖,
+  readelf NEEDED 不出现 libbluray = 验收过); Windows 走 dll+导入库(§三)。
+- Android 加载同 avox_remote/avox_ass 的 setPluginsDir 模式(plugins/CMakeLists.txt
+  ANDROID 段已加 avox_disc)。
+
+## 五. 已知坑
 
 - configure 报 "Package 'libxml-2.0' not found" = 漏了 --without-libxml2
 - MSVC 链接报 lnk2019 bluray 符号 = 用了 MinGW 的 .dll.a 当导入库, 走第三步生成 .lib

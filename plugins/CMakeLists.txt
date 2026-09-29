@@ -21,6 +21,9 @@ if(ANDROID)
   # 构建脚本 script/smb2|ass/build_android.py), so 由宿主 setPluginsDir 指向
   # jniLibs 动态加载(与 webrtc 同模式)
   list(APPEND PLUGINS_DYNAMIC avox_remote avox_ass)
+  # avox_disc: libbluray 静态链(aarch64 预编译在库仓 android/libbluray/arm64-v8a),
+  # 加载同 remote/ass 的 setPluginsDir 模式
+  list(APPEND PLUGINS_DYNAMIC avox_disc)
 endif()
 if(WIN32)
   # DeckLink(Blackmagic)采集卡, 仅Windows
