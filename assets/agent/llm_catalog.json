@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated": "2026-09-28",
+  "updated": "2026-09-30",
   "_说明": "Panvox AI 字幕翻译厂商目录 (llm_settings.dart 联网热更新源)。字段: label/apiUrl/apiPath/keyUrl/models[{id,name,free,note,default}]。default:true = 该厂商默认推荐模型 (须有图片理解能力), 客户端选厂商时预选, 每厂商至多一个。更新本文件推送到 main 后, 客户端 10 分钟内自动生效 (启动与打开配置对话框时拉取)。收费档排在免费档前。厂商顺序=用户定稿 2026-09-28 (国际厂在前)。",
   "vendors": [
     {
@@ -76,27 +76,6 @@
       "models": [
         { "id": "kimi-k2.6", "name": "Kimi-K2.6", "free": false, "note": "旗舰" },
         { "id": "kimi-k2.5", "name": "Kimi-K2.5", "free": false, "note": "多模态" }
-      ]
-    },
-    {
-      "label": "阿里百炼 Qwen",
-      "apiUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-      "apiPath": "/chat/completions",
-      "keyUrl": "https://bailian.console.aliyun.com/?apiKey=1",
-      "models": [
-        { "id": "qwen-max", "name": "Qwen-Max", "free": false, "note": "旗舰" },
-        { "id": "qwen-plus", "name": "Qwen-Plus", "free": false, "note": "均衡" },
-        { "id": "qwen-turbo", "name": "Qwen-Turbo", "free": false, "note": "低价" }
-      ]
-    },
-    {
-      "label": "火山方舟 豆包",
-      "apiUrl": "https://ark.cn-beijing.volces.com/api/v3",
-      "apiPath": "/chat/completions",
-      "keyUrl": "https://console.volcengine.com/ark",
-      "models": [
-        { "id": "doubao-seed-1.6", "name": "Doubao-Seed-1.6", "free": false, "note": "旗舰" },
-        { "id": "doubao-1.5-pro-32k", "name": "Doubao-Pro-32k", "free": false, "note": "低价" }
       ]
     }
   ]
