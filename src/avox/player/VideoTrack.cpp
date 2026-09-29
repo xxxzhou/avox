@@ -96,9 +96,14 @@ void VideoTrack::onPacket(PacketBufPtr packet) { pullPacket(packet); }
 void VideoTrack::onHdrMeta(const HdrMeta& hdrMeta) {
   // 峰值相关(L1/CLL/mastering)变化才转发: DV 场景切换静态三元组不变、仅 L1 变,
   // 一次闸会吞掉动态膝点; 上游 updateHdrMeta 已按同字段去重, 此处防重复派发
-  if (bHdrMetaSent && lastHdrMeta.l1MaxNits == hdrMeta.l1MaxNits &&
-      lastHdrMeta.maxCLL == hdrMeta.maxCLL &&
-      lastHdrMeta.maxLuminance == hdrMeta.maxLuminance) {
+  const bool bHold = bHdrMetaSent &&
+                     lastHdrMeta.l1MaxNits == hdrMeta.l1MaxNits &&
+                     lastHdrMeta.maxCLL == hdrMeta.maxCLL &&
+                     lastHdrMeta.maxLuminance == hdrMeta.maxLuminance;
+  // 探针走 stderr: playtest 环境 logTask 启动后不再排水, 引擎 info 日志不可见
+  fprintf(stderr, "[hdr] track l1max=%.1f cll=%u fwd=%d\n",
+          (double)hdrMeta.l1MaxNits, hdrMeta.maxCLL, (int)!bHold);
+  if (bHold) {
     return;
   }
   lastHdrMeta = hdrMeta;

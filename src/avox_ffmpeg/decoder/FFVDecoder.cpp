@@ -241,11 +241,18 @@ static void parseHdrSideData(AVFrameSideData* sd, HdrMeta& meta) {
     meta.valid = true;
   } else if (sd->type == AV_FRAME_DATA_DOVI_METADATA &&
              sd->size >= sizeof(AVDOVIMetadata)) {
-    // DV RPU color 块 L1: 12bit PQ 码(0..4095), 每场景变化由 updateHdrMeta diff 下发
-    auto* color = av_dovi_get_color((AVDOVIMetadata*)sd->data);
-    meta.l1MaxNits = pqToNits(color->source_max_pq / 4095.0f);
-    meta.l1MinNits = pqToNits(color->source_min_pq / 4095.0f);
-    meta.valid = true;
+    // L1(逐帧亮度, 12bit PQ)在扩展块 level=1; color->source_max_pq 是静态源信息恒不变
+    // (不用 av_dovi_find_level: 该符号不在本构建 avutil 导出表, 走头内联扫描)
+    auto* dovi = (AVDOVIMetadata*)sd->data;
+    for (int32_t i = 0; i < dovi->num_ext_blocks; i++) {
+      auto* ext = av_dovi_get_ext(dovi, i);
+      if (ext->level == 1) {
+        meta.l1MaxNits = pqToNits(ext->l1.max_pq / 4095.0f);
+        meta.l1MinNits = pqToNits(ext->l1.min_pq / 4095.0f);
+        meta.valid = true;
+        break;
+      }
+    }
   }
 }
 

@@ -39,8 +39,12 @@ void VkYUV2RGBALayer::setHdrMeta(const HdrMeta& meta) {
     return;
   }
   uboData.maxLuminance = (float)hdrPeakNits(meta);
-  // updateUBO 只写 CPU 暂存, 真正上传在 onPreFrame 且需 bParametChange 置位,
-  // 否则晚于建图的元数据静默失效
+  // 探针走 stderr: playtest 环境 logTask 启动后不再排水, 引擎 info 日志不可见
+  fprintf(stderr, "[yuv2rgba] setHdrMeta peak=%.1f l1max=%.1f cll=%u\n",
+          (double)uboData.maxLuminance, (double)meta.l1MaxNits, meta.maxCLL);
+  // updateUBO 写 CPU 暂存, 真正上传在 onPreFrame(需 bParametChange); 漏暂存则
+  // 晚到的元数据静默失效——onPreFrame 上传的是暂存副本, 不是本结构
+  updateUBO(&uboData);
   bParametChange = true;
 }
 
@@ -62,6 +66,7 @@ void VkYUV2RGBALayer::setDoviMeta(const DoviMeta& meta) {
           (int)meta.comp[1].numPivots, (int)meta.comp[2].numPivots);
   doviMeta = meta;
   packDoviUbo(uboData, doviMeta);
+  updateUBO(&uboData);
   bParametChange = true;
 }
 
