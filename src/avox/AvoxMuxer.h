@@ -11,7 +11,8 @@ namespace avox {
   XX(ffmpeg, 2, "ffmpeg")         \
   XX(torrent, 3, "torrent")       \
   XX(smb, 4, "smb")               \
-  XX(dav, 5, "dav")
+  XX(dav, 5, "dav")               \
+  XX(disc, 6, "disc")
 
 // 传统标准网络流解析
 enum class IoPlan {

@@ -1514,6 +1514,24 @@ void MediaPlayer::cmdOpen(OpenCommandPtr cmd) {
       AvoxManager::Get().ioSources.hasObjectId(IoPlan::smb)) {
     useIO = IoPlan::smb;
   }
+  // .iso 蓝光镜像自动路由: avox_disc 插件已注册时接管; BDMV 结构校验/加密闸/
+  // 标题选择(选项键 disc.title)在腿内, DVD(VIDEO_TS)/数据盘在腿内报 noSupport。
+  // 只影响本次open, 不改动selectIO
+  {
+    bool bIsoUrl = url.size() > 4;
+    if (bIsoUrl) {
+      for (int i = 0; i < 4 && bIsoUrl; ++i) {
+        char c = url[url.size() - 4 + i];
+        if (std::tolower(c) != ".iso"[i]) {
+          bIsoUrl = false;
+        }
+      }
+    }
+    if (bIsoUrl && useIO != IoPlan::disc &&
+        AvoxManager::Get().ioSources.hasObjectId(IoPlan::disc)) {
+      useIO = IoPlan::disc;
+    }
+  }
   // dav://davs:// 自动路由(a05-T2): avox_remote 插件已注册时自有 range IO 源
   // 接管(统一预读窗口/断链重试挂点), 无需业务显式 setIoPlan
   if ((url.rfind("dav://", 0) == 0 || url.rfind("davs://", 0) == 0) &&

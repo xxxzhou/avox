@@ -156,6 +156,16 @@ if(AVOX_ENABLE_TORRENT)
   endif()
 endif()
 
+# 查找 libbluray(avox_disc 插件依赖: 头文件+导入库+运行期dll, 预编译产物在库仓)
+# 源项目独立维护: D:/Work/github/libbluray, 配方见 plugins/avox_disc/REBUILD.md
+if(AVOX_ENABLE_DISC)
+  find_package(Libbluray QUIET)
+  if(NOT Libbluray_FOUND)
+    set(AVOX_ENABLE_DISC OFF)
+    message(STATUS "libbluray 未找到, 关闭 avox_disc(见 D:/Work/github/libbluray)")
+  endif()
+endif()
+
 # OpenSSL / BoringSSL 统一查找
 # - Agent(httplib): WebRTC 启用且找到时优先复用其自带的 BoringSSL，否则回退 OpenSSL 3.0.0+
 #   复用 BoringSSL 可避免 avox.dll 内 BoringSSL(webrtc 静态链入) 与 OpenSSL(动态链入) 的 SSL_* 符号撞车
