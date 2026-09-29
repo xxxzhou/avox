@@ -412,11 +412,16 @@ ssh mac        # 已配免密
 
 **建议：只在 P1-P3 全绿后再做**，避免动软解腿引入回归。
 
-### P5｜三平台回归 + 报告
+### P5｜三平台回归 + 报告（2026-09-30 部分收口）
 
-含 Windows。产出回归报告，并修订 **panvox 仓**（不是 avox 仓）的
-`docs/adr-0009-hdr-strategy.md` §4 —— 该文档目前对硬解腿能否拿到 DV 元数据的
-描述与现状不符。
+- **全量离线回归**(03:1x, avox a18603b): **73 PASS / 4 FAIL**, 四个 FAIL 全是
+  dav-*(listCode=-8, 本地 WebDAV 服务的既有挂, 与 09-25 时代「49P+4dav」同族),
+  引擎侧零新增失败; 报告 `avox-test/out/scheduled/p5_full_offline_20260930.md`
+- **B 场阈值单源化已落地**(avox-test a57e7ee): THRESH_DELTA 4.0→3.0, 依据四平台
+  腿组合实测效果带 3.46~4.05 / 噪声 ±0.1; win-hard B 场由此 FAIL→PASS
+- **adr-0009 §4 修订已落**(panvox 5ecea3c): 追记三宣布「无 dovi 痕迹」前提作废
+- 剩: mac panvox.app 装机位 ditto(绕开 mac 上另一代理) + Android 真机轮(P3-3.3);
+  soak 孤儿 ~05:32 自灭后补尾段(05:32→06:35)
 
 ---
 
