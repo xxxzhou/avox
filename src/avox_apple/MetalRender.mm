@@ -230,8 +230,10 @@ NSString *const nv12trgbBody = AVOX_SHADER_STRING(
       float3 sig = clamp(yuv, float3(0.0), float3(1.0));
       sig = float3(dvReshapeComp(dv, 0, sig, sig.r), dvReshapeComp(dv, 1, sig, sig.g),
                    dvReshapeComp(dv, 2, sig, sig.b));
-      float3 rgb = dv.dvNl[0].xyz * sig.x + dv.dvNl[1].xyz * sig.y +
-                   dv.dvNl[2].xyz * sig.z + dv.dvNlOff.xyz;
+      // 偏移=输入侧中性值(limited 黑位+chroma 0.5): 先减再进矩阵(同 GLSL/DX11 腿)
+      float3 sigc = sig - dv.dvNlOff.xyz;
+      float3 rgb = dv.dvNl[0].xyz * sigc.x + dv.dvNl[1].xyz * sigc.y +
+                   dv.dvNl[2].xyz * sigc.z;
       float3 lin = pqToLinear(rgb);
       float3 outv = dv.dvLm[0].xyz * lin.x + dv.dvLm[1].xyz * lin.y +
                     dv.dvLm[2].xyz * lin.z;

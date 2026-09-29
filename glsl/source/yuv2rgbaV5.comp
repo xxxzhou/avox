@@ -154,12 +154,14 @@ float dvReshapeComp(int c, vec3 sig, float s) {
 }
 
 // DV 全链: reshape → ycc_to_rgb(PQ域) → PQ线性 → LMS合成阵 → 回编码 PQ BT.2020
+// 偏移=输入侧中性值(limited 黑位+chroma 0.5): 先减再进矩阵
+// (FFmpeg「input offset of neutral value」语义, 对齐 libplacebo black[] 处理)
 vec3 dvProcess(vec3 yuv) {
 	vec3 sig = clamp(yuv, vec3(0.0), vec3(1.0));
 	sig = vec3(dvReshapeComp(0, sig, sig.r), dvReshapeComp(1, sig, sig.g),
 	           dvReshapeComp(2, sig, sig.b));
 	mat3 nl = mat3(ubo.dvNl[0].xyz, ubo.dvNl[1].xyz, ubo.dvNl[2].xyz);
-	vec3 rgb = nl * sig + ubo.dvNlOff.xyz;
+	vec3 rgb = nl * (sig - ubo.dvNlOff.xyz);
 	vec3 lin = pqToLinear(rgb);
 	mat3 lm = mat3(ubo.dvLm[0].xyz, ubo.dvLm[1].xyz, ubo.dvLm[2].xyz);
 	return linearToPq(lm * lin);

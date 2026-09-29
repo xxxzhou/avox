@@ -111,11 +111,12 @@ float dvReshapeComp(int c, float3 sig, float s) {
 }
 
 // DV 全链: reshape → ycc_to_rgb(PQ域) → PQ线性 → LMS合成阵 → 回编码 PQ BT.2020
+// 偏移=输入侧中性值(limited 黑位+chroma 0.5): 先减再进矩阵(同 GLSL/Metal 腿)
 float3 dvProcess(float3 yuv) {
     float3 sig = clamp(yuv, float3(0.0, 0.0, 0.0), float3(1.0, 1.0, 1.0));
     sig = float3(dvReshapeComp(0, sig, sig.r), dvReshapeComp(1, sig, sig.g),
                  dvReshapeComp(2, sig, sig.b));
-    float3 rgb = dvApplyCols(sig, dvNl[0], dvNl[1], dvNl[2]) + dvNlOff.xyz;
+    float3 rgb = dvApplyCols(sig - dvNlOff.xyz, dvNl[0], dvNl[1], dvNl[2]);
     float3 lin = pqToLinear(rgb);
     return linearToPq(dvApplyCols(lin, dvLm[0], dvLm[1], dvLm[2]));
 }
