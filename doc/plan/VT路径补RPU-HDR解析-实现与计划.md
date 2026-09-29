@@ -386,13 +386,15 @@ ssh mac        # 已配免密
   的豁免口径自此作废
 - 待办(产品侧, 非 runner): panvox.app 装机位 ditto(先退在跑实例)属 P5 收尾
 
-### P3｜Android 接入
+### P3｜Android 接入（3.1/3.2 已核查 2026-09-30, 3.3 待构建+真机）
 
-| 步骤 | 说明 |
-|---|---|
-| 3.1 | 同 2.1/2.2，查 `src/avox_android/AndVDecoder.cpp` 是否 override `decoderImp` |
-| 3.2 | **先核导出表**：用户说 avcodec 是今天用 ffmpeg9 新编的，需确认 `libavcodec.so` 是否仍走 `libavcodec.v` 白名单（若是，vendor 路线依然必需，本次已做） |
-| 3.3 | 构建：`python build_android.py`（NDK 26.1.10909125，见 `build_common.py:29`） |
+- 3.1 ✅: `AndVDecoder : public VideoDecoder` 只 override `onPreDecoder`, 无
+  `decoderImp` override → MetaExtractor **自动接入**(与 Win/mac 同款), 零引擎改动
+- 3.2 ✅: `3rdparty/library/android/ffmpeg/lib/libavcodec.so`(2026-09-29 ffmpeg9 重编)
+  内 **ff_dovi_rpu_parse 符号不存在**(未导出) → vendor 路线(dovi_rpu_wrap)被证实
+  必需且已就位
+- 3.3 待做: `python build_android.py`(NDK 26.1) + 真机 dv-l1 跑测(需 adb 设备在场,
+  判据同 P2: 探针对 3079/7 档 + 差分 A 场≈0/B 场超阈或阈下同族)
 
 ### P4｜（可选）软解腿反向复用去重
 
