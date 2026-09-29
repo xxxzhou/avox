@@ -27,6 +27,8 @@ void VideoTrack::setTrackDesc(const VTrackDesc& trackDesc) {
   setTrackId(trackDesc.trackId);
   codecId = trackDesc.codecId;
   srcDesc = trackDesc.desc;
+  // 容器 DOVI conf: 透传给解码器侧的元数据提取器(硬解腿自扫 RPU 时用)
+  dvProfile = trackDesc.dvProfile;
   // 如果没有fps，默认25
   if (srcDesc.fps == 0) {
     srcDesc.fps = 25;

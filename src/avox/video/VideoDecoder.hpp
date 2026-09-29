@@ -7,6 +7,7 @@
 #include "../player/AVDecoder.hpp"
 #include "../player/Player.hpp"
 #include "../source/PacketBuf.hpp"
+#include "MetaExtractor.hpp"
 #include "VideoFrame.hpp"
 
 namespace avox {
@@ -30,6 +31,10 @@ class AVOX_EXPORT VideoDecoder : public AVDecoder, public Observer<IVideoDecoder
   // 添加针对配置帧的解析,有些解码器需要长宽等信息
   std::unique_ptr<H264Parse> h264Parse = nullptr;
   std::unique_ptr<H265Parse> h265Parse = nullptr;
+  // 解码器无关的 HDR/DV 元数据提取(硬解腿不走 ffmpeg 的 side data, 须自扫码流)
+  std::unique_ptr<MetaExtractor> metaExtractor = nullptr;
+  // 容器 DOVI conf 的 profile(0=非DV)
+  int32_t dvProfile = 0;
   DecoderParams params = {};
   VCodecTh codecTH = VCodecTh::cpu;
   // 是否有B帧，有些解码器需要自己处理B帧
@@ -56,6 +61,8 @@ class AVOX_EXPORT VideoDecoder : public AVDecoder, public Observer<IVideoDecoder
   VCodecTh getCodecTh() { return codecTH; }
 
  public:
+  // 容器 DOVI conf(0=非DV): 建解码器前由 VDecoderTask 从 VideoTrack 透传
+  void setDvProfile(int32_t profile);
   bool setContext(const VCodecDesc& codecDesc, const VideoDesc& srcDesc);
   ConfigAddType pushConfig(const AvoxPacket& data);
   ConfigAddType pushConfig(const PacketBuf& data);

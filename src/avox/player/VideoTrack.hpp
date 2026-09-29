@@ -35,6 +35,8 @@ class VideoTrack : public TAVTrack<VideoFramePtr>,
 
   VCodecId codecId = VCodecId::none;
   VideoDesc srcDesc = {};
+  // 容器 DOVI conf 的 profile(0=非DV): 供元数据提取器初始化 DV 上下文
+  int32_t dvProfile = 0;
 
   // 统一字幕视图(可空): 挂渲染对象/开轨通道由 MediaPlayer 驱动
   SubtitleView* subtitleView = nullptr;
@@ -62,6 +64,7 @@ class VideoTrack : public TAVTrack<VideoFramePtr>,
   RingBuffer<VideoFramePtr>& getFrameQueue() { return frameQueue; }
   VCodecId getCodecId() { return codecId; }
   VideoDesc getDesc() { return srcDesc; }
+  int32_t getDvProfile() { return dvProfile; }
 
   // IVideoDecoderOb
  public:

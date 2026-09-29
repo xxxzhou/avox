@@ -64,9 +64,14 @@ float3 linearToPq(float3 lin);
 
 // DV 变体附加段(整形链语义对齐 libplacebo/V5, 输出 PQ BT.2020)
 static const char* kShaderDv = R"(
-// 列主序 3x3(vec4 列)应用, 等价 GLSL M*v, 避开 HLSL 行列约定
+// UBO 的 dvNl/dvLm 是列主序(dvNl[c][r] = M[r][c], 与 GLSL mat3(列构造)×v = M×v
+// 对齐): M×v 的第 r 个分量 = 第 r 行 (c0[r],c1[r],c2[r]) 与 v 的点积。
+// 旧实现 dot(c_r, v) 算成了 Mᵀ×v —— 色度行/列互换, G 通道被 U 系数(m01≈0)吞掉,
+// 实测硬解 DV 画面变品红(255,0,255), 亮度均值被误读为"整体变暗"。
 float3 dvApplyCols(float3 v, float4 c0, float4 c1, float4 c2) {
-    return float3(dot(c0.xyz, v), dot(c1.xyz, v), dot(c2.xyz, v));
+    return float3(dot(float3(c0[0], c1[0], c2[0]), v),
+                  dot(float3(c0[1], c1[1], c2[1]), v),
+                  dot(float3(c0[2], c1[2], c2[2]), v));
 }
 
 float dvPivotAt(int idx) { return dvPivots[idx >> 2][idx & 3]; }

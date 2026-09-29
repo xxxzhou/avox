@@ -88,6 +88,7 @@ bool VDecoderTask::start(class VideoTrack* context) {
     }
     cand->linkOption(trackContext->getMediaPlayer());
     cand->setObserver(trackContext);
+    cand->setDvProfile(trackContext->getDvProfile());
     if (!cand->setContext(decodes[idx].desc, srcDesc)) {
       LOGFLF(LogLevel::warn, "decoder ", decodes[idx].desc.name,
              " not support, try fallback");
@@ -222,6 +223,7 @@ void VDecoderTask::onRunTask() {
       if (cand) {
         cand->linkOption(trackContext->getMediaPlayer());
         cand->setObserver(trackContext);
+        cand->setDvProfile(trackContext->getDvProfile());
         bOk = cand->setContext(next.first, srcDesc);
       }
       if (!bOk) {

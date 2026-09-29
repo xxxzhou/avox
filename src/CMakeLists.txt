@@ -32,6 +32,57 @@ add_sub_path(avox/player AVOX_HEADER AVOX_SOURCE)
 add_sub_path(avox/subtitle AVOX_HEADER AVOX_SOURCE)
 add_sub_path(avox/video AVOX_HEADER AVOX_SOURCE)
 add_sub_path(avox/codec AVOX_HEADER AVOX_SOURCE)
+
+# Dolby Vision RPU 解析器: FFmpeg 的 ff_dovi_* 不在发布二进制的导出表里
+# (Windows 手筛导出 / Unix libavcodec.v 白名单), 故 vendor 源码编进 libavox。
+  # 这批是 C 源码, add_sub_path 只收 *.cpp/*.mm, 需单独列出。README 见 codec/dovi/。
+  #
+  # ⚠️ include 路径只能挂**本目录扩展名**的文件, 不能用 include_directories() 全局追加:
+  # 本目录自带 libavutil/internal.h 的极简 shim, 全局追加会让它盖掉真正的
+  # libavutil/internal.h, 全库编译崩(实测 7000+ error)。
+  # 也不能用源文件级 INCLUDE_DIRECTORIES/COMPILE_OPTIONS 挂到 avox 主树文件上:
+  # VS 生成器下那会把该文件的 <AdditionalIncludeDirectories> 变成**替换**语义,
+  # 顶掉 toolset 默认 <IncludePath>(含 WinSDK ucrt/shared/um), 症状是 <ctime> 报
+  # clock_t 不是全局命名空间成员(实测 MetaExtractor.cpp 中招)。
+  # ⇒ 解法: 引内部头的代码一律留在本目录(dovi_rpu_wrap.cpp), 主树只调它的
+  #   C 风格门面 dovi_rpu_wrap.h。
+if(AVOX_ENABLE_FFMPEG)
+  set(AVOX_DOVI_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/avox/codec/dovi")
+  list(APPEND AVOX_SOURCE
+    ${AVOX_DOVI_VENDOR_DIR}/libavcodec/dovi_rpudec.c
+    ${AVOX_DOVI_VENDOR_DIR}/libavcodec/dovi_rpu.c
+    ${AVOX_DOVI_VENDOR_DIR}/libavcodec/golomb.c
+    ${AVOX_DOVI_VENDOR_DIR}/dovi_rpu_wrap.cpp)
+  list(APPEND AVOX_HEADER
+    ${AVOX_DOVI_VENDOR_DIR}/dovi_rpu_wrap.h
+    ${AVOX_DOVI_VENDOR_DIR}/libavcodec/dovi_rpu.h
+    ${AVOX_DOVI_VENDOR_DIR}/libavcodec/golomb.h
+    ${AVOX_DOVI_VENDOR_DIR}/libavcodec/get_bits.h
+    ${AVOX_DOVI_VENDOR_DIR}/libavcodec/bitstream.h
+    ${AVOX_DOVI_VENDOR_DIR}/libavcodec/mathops.h
+    ${AVOX_DOVI_VENDOR_DIR}/libavcodec/vlc.h
+    ${AVOX_DOVI_VENDOR_DIR}/libavutil/internal.h
+    ${AVOX_DOVI_VENDOR_DIR}/libavutil/attributes_internal.h)
+  # 版本化 SDK 目录下 libavcodec/ 与 libavutil/ 是独立子目录, vendor 头里写的是
+  # "libavutil/xxx.h" / "avcodec.h" 形式, 故须把两级都加入搜索路径。
+  # 顺序: vendor 目录在前(提供自己的 shim), SDK 在后。
+  set(AVOX_DOVI_VENDOR_INCLUDES
+       "${AVOX_DOVI_VENDOR_DIR}"
+       "${AVOX_DOVI_VENDOR_DIR}/libavcodec")
+  foreach(_d ${FFMPEG_INCLUDE_DIRS})
+    list(APPEND AVOX_DOVI_VENDOR_INCLUDES "${_d}/libavcodec" "${_d}/libavutil" "${_d}")
+  endforeach()
+  set_source_files_properties(
+    ${AVOX_DOVI_VENDOR_DIR}/libavcodec/dovi_rpudec.c
+    ${AVOX_DOVI_VENDOR_DIR}/libavcodec/dovi_rpu.c
+    ${AVOX_DOVI_VENDOR_DIR}/libavcodec/golomb.c
+    PROPERTIES
+      LANGUAGE C
+      INCLUDE_DIRECTORIES "${AVOX_DOVI_VENDOR_INCLUDES}")
+  set_source_files_properties(
+    ${AVOX_DOVI_VENDOR_DIR}/dovi_rpu_wrap.cpp
+    PROPERTIES INCLUDE_DIRECTORIES "${AVOX_DOVI_VENDOR_INCLUDES}")
+endif()
 add_sub_path(avox/layer AVOX_HEADER AVOX_SOURCE)
 add_sub_path(avox/muxer AVOX_HEADER AVOX_SOURCE)
 add_sub_path(avox/source AVOX_HEADER AVOX_SOURCE)

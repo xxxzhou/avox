@@ -92,6 +92,7 @@ enum class H264NAL : uint8_t {
   XX(NAL_FD_NUT, 38, "FD_NUT")                 \
   XX(NAL_SEI_PREFIX, 39, "SEI_PREFIX")         \
   XX(NAL_SEI_SUFFIX, 40, "SEI_SUFFIX")         \
+  XX(NAL_DOVI_RPU, 62, "DOVI_RPU")             \
   XX(NAL_UNSPEC63, 63, "UNSPEC63")
 
 enum class H265NAL : uint8_t {

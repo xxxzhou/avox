@@ -8,6 +8,22 @@ namespace avox {
 VideoDecoder::VideoDecoder() {
   h264Parse = std::make_unique<H264Parse>();
   h265Parse = std::make_unique<H265Parse>();
+  // 元数据提取器: 回调经本类的 Observer 派发给 IVideoDecoderOb
+  MetaExtractor::Callbacks cb;
+  cb.onHdrMeta = [this](const HdrMeta& meta) {
+    dispatch(&IVideoDecoderOb::onHdrMeta, meta);
+  };
+  cb.onDoviMeta = [this](const DoviMeta& meta) {
+    dispatch(&IVideoDecoderOb::onDoviMeta, meta);
+  };
+  metaExtractor = std::make_unique<MetaExtractor>(std::move(cb));
+}
+
+void VideoDecoder::setDvProfile(int32_t profile) {
+  dvProfile = profile;
+  if (metaExtractor) {
+    metaExtractor->setDvProfile(profile);
+  }
 }
 
 bool VideoDecoder::setContext(const VCodecDesc& vcodecDesc,
@@ -16,6 +32,12 @@ bool VideoDecoder::setContext(const VCodecDesc& vcodecDesc,
   srcDesc = srcDesc_;
   codecId = codecDesc.vcodecId;
   bCheckAcc = false;
+  // 元数据提取器按本轨的编码/容器 DV 信息初始化
+  if (metaExtractor) {
+    metaExtractor->setCodec(codecId);
+    metaExtractor->setDvProfile(dvProfile);
+    metaExtractor->reset();
+  }
   // 看看是否有必要启动线程
   return onVaild();
 }
@@ -158,6 +180,12 @@ DecodeResult VideoDecoder::decoder(avox::PacketBufPtr packet) {
 }
 
 DecodeResult VideoDecoder::decoderImp(AvoxPacket& vdata) {
+  // 元数据旁路扫描: HDR SEI / DV RPU 与解码器无关, 硬解腿也必须在此自提
+  // (ffmpeg 硬解不给帧挂 DOVI/HDR side data)。在格式转换前扫, 用原始包。
+  if (metaExtractor) {
+    metaExtractor->setAvcc(bvcc);
+    metaExtractor->extract(vdata);
+  }
   // ffmpeg只要extradata与包格式对应就行,不需要转vcc/annexb
   // MAC平台原生解码需要avcc/hvcc,如果是annexb,需要转换
   if (bMustVcc && !bvcc) {
