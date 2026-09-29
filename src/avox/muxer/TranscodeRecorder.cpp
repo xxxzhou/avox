@@ -142,6 +142,17 @@ bool TranscodeRecorder::open(const char* url, const char* file) {
     bAudioCopy = false;
   }
   source->setTransMode(transMode);
+  // 音频直拷前置判定注入: 目标容器容不下源音频编码(rmvb 的 cook 进 mp4/mov 无
+  // tag)时让源层直接改走转码, 不等封装层写头失败 —— 那条路 muxer 只是静默停摆,
+  // 录制器拿不到终态事件, 任务会永久停在 0%(2026-09-29 画质增强案)。
+  // 容器能力问 muxer 实现层(它才认识 ffmpeg 的容器 tag 表)。
+  if (bAudioCopy) {
+    const MuxerType type = muxerType;
+    const std::string out = outputFile;
+    source->setAudioCopySupported([type, out](ACodecId codecId) {
+      return MediaMuxer::canStoreAudio(type, out.c_str(), codecId);
+    });
+  }
   bool bDiscardVideo = (vCodecId == VCodecId::none);
   bool bDiscardAudio = (aCodecid == ACodecId::none);
   source->disableVideo(bDiscardVideo);
@@ -340,7 +351,9 @@ void TranscodeRecorder::onReady() {
     LOGFLF(LogLevel::info, "set video desc:", vdesc);
   }
   if (!aTracks.empty()) {
-    if (bAudioCopy) {
+    // 直拷与否以源层裁决为准: 目标容器容不下该编码时源层已回退转码(见 open 注入
+    // 的 audioCopySupported), 这里必须跟着接解码后的 PCM 走转码分支
+    if (bAudioCopy && source->isAudioCopy()) {
       // 音频直拷: 绕过RawMuxer编码/重采样接线, 容器轨desc(带源编码aac)
       // 原样进封装(IOMuxerFF输出流编码取自inDesc); 不解码,
       // fdk等兼容性问题整段绕开

@@ -28,6 +28,11 @@ protected:
   virtual bool onInit() override;
   virtual void onPushPacket(const AvoxPacket& packet) override;
   virtual void onClose() override;
+
+public:
+  // 目标容器能否容纳该音频编码: 按容器 tag 表判定(与 onInit 的格式选择同一套
+  // 规则), 供录制器在开跑前决定音频直拷还是转码
+  virtual bool canStoreAudio(const char* outUrl, ACodecId codecId) override;
 };
 
 }

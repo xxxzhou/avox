@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 #include "../AvoxMuxer.h"
 #include "../audio/AudioDecoder.hpp"
 #include "../module/JsonOption.hpp"
@@ -55,6 +57,10 @@ class AMediaSource : public RawSource,
   TransMode transMode = TransMode::TranscodeAll;
   bool bVideoCopy = false;
   bool bAudioCopy = false;
+  // 音频直拷前置判定(录制器注入, open 前设置): 返回 false = 目标容器容不下该
+  // 编码(如 rmvb 的 cook 进 mp4/mov) → 本轨按转码走(建解码器), 不直拷。
+  // 未注入 = 不设限
+  std::function<bool(ACodecId)> audioCopySupported;
 
   // IRawSource
  public:
@@ -70,6 +76,11 @@ class AMediaSource : public RawSource,
   void setHardDecode(bool bHard);
   // 轨道处理方式(open前设置; none丢轨仍由 disableVideo/disableAudio 控制)
   void setTransMode(TransMode mode);
+  // 音频直拷前置判定注入(open前设置; 语义见成员注释)
+  void setAudioCopySupported(std::function<bool(ACodecId)> supported);
+  // 音频实际是否直拷(onReady 后有效): 容器容不下该编码时源层已自行回退转码,
+  // 录制器据此决定把源音频包原样进封装还是接解码后的 PCM
+  bool isAudioCopy() const { return bAudioCopy; }
   // 设置IO方案(open前设置,默认ffmpeg)
   void setIoPlan(IoPlan plan);
   // 获取内部的ioSource,在open后可用

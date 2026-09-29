@@ -87,6 +87,19 @@ class IOMuxer : public IMuxerContext, public RunTask {
   virtual bool onInit() = 0;
   virtual void onPushPacket(const AvoxPacket& packet) = 0;
   virtual void onClose() = 0;
+
+ public:
+  // 目标容器能否容纳该音频编码(音频直拷前置判定, 录制器 open 期问一次)。
+  // 默认 true = 不设限(不确定不阻断); ffmpeg 实现按容器 codec_tag 表判定, 把
+  // 「容器容不下该编码」(rmvb 的 cook 进 mp4/mov 无 tag)在开跑前就拦下, 让上游
+  // 改走音频转码 —— 否则要等 avformat_write_header 才失败, 且失败后录制器拿不到
+  // 终态事件, 任务永久 0%(2026-09-29 画质增强案)。
+  // 追加在虚表末尾: 不挪动既有条目, 未重编的 IOMuxer 子类(avox_zlmediakit)不受影响
+  virtual bool canStoreAudio(const char* outUrl, ACodecId codecId) {
+    (void)outUrl;
+    (void)codecId;
+    return true;
+  }
 };
 
 }

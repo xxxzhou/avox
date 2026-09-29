@@ -92,6 +92,24 @@ void MediaMuxer::ready() {
   setRecState(RecorderState::recording);
 }
 
+bool MediaMuxer::canStoreAudio(MuxerType type, const char* outUrl,
+                              ACodecId codecId) {
+  auto& reg = AvoxManager::Get().muxers;
+  if (!reg.hasObjectId(type)) {
+    return true;
+  }
+  const auto& muxerClass = reg.initFunc(type);
+  if (!muxerClass.initFunc) {
+    return true;
+  }
+  // 只借实例问一句: 不 open(不起写线程), 析构即还
+  std::unique_ptr<IOMuxer> probe(muxerClass.initFunc());
+  if (!probe) {
+    return true;
+  }
+  return probe->canStoreAudio(outUrl, codecId);
+}
+
 void MediaMuxer::onProgress(int64_t ptsMs) {
   progress.currentTimeMs = ptsMs;
   // 节流:每100ms派发一次

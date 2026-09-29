@@ -73,6 +73,10 @@ class MediaMuxer : public IMediaMuxer, public Observer<IRecorderOb> {
   virtual void setInVideoDesc(const VTrackDesc& desc);
   virtual void setInAudioDesc(const ATrackDesc& desc);
   void ready();
+  // 目标容器能否容纳该音频编码(音频直拷前置判定): 借注册表新建一个同型 muxer
+  // 实例问一次(不 open/不起线程); 判定归实现层(ffmpeg 按容器 codec_tag 表)。
+  // 未注册该型或实现层未覆盖 = true(不设限)
+  static bool canStoreAudio(MuxerType type, const char* outUrl, ACodecId codecId);
   void pushPacket(const AvoxPacket& packet);
   // 设置总时长(ms),用于onProgress的totalTimeMs
   void setDuration(int64_t durationMs) { progress.totalTimeMs = durationMs; }

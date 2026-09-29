@@ -106,6 +106,11 @@ void AMediaSource::setTransMode(TransMode mode) {
   bAudioCopy = (mode == TransMode::AudioCopy);
 }
 
+void AMediaSource::setAudioCopySupported(
+    std::function<bool(ACodecId)> supported) {
+  audioCopySupported = std::move(supported);
+}
+
 void AMediaSource::onReady() {
   if (!ioSource) {
     return;
@@ -134,6 +139,26 @@ void AMediaSource::onReady() {
   if (!aTracks.empty()) {
     const auto& aTrack = aTracks[0];
     LOGFLF(LogLevel::info, "audio desc:", aTrack);
+    // 直拷前置判定(容器容不下该编码就改走转码): 判定必须落在本函数 —— 源音频
+    // 编码只有 ioSource 就绪后才可知, 而直拷/转码的岔路(建不建解码器)在这里就
+    // 要定下, 再往后 muxer 已经在等着 desc 了。容器能力由录制器注入的判定问
+    // muxer 实现层(rmvb 的 cook 进 mp4/mov 无 tag: 直拷必在写头失败, 且失败后
+    // 录制器拿不到终态 → 任务永久 0%, 2026-09-29 画质增强案)。
+    if (bAudioCopy && audioCopySupported &&
+        !audioCopySupported(aTrack.codecId)) {
+      if (AvoxManager::Get().aDecoders.hasObjectId(aTrack.codecId)) {
+        LOGFLF(LogLevel::warn,
+               "audio copy unsupported by container, fallback transcode, codec:",
+               aTrack.codecId);
+        bAudioCopy = false;
+      } else {
+        // 容器容不下、本端又没有该编码解码器: 无从转码。保持直拷让封装层报错,
+        // 不静默丢轨(丢轨是产品决策, 不在源层做)
+        LOGFLF(LogLevel::warn,
+               "audio copy unsupported by container and no decoder, keep copy, codec:",
+               aTrack.codecId);
+      }
+    }
     if (bAudioCopy) {
       LOGFLF(LogLevel::info, "audio copy mode, decoder off");
       // 同视频copy: 手动补轨描述凑齐checkTrackReady握手

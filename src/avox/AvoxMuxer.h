@@ -121,7 +121,9 @@ class IMediaMuxer {
 enum class TransMode : int32_t {
   TranscodeAll = 0,  // 视频转码 + 音频转码(默认, 存量行为不变)
   AudioCopy    = 1,  // 视频转码 + 音频直拷: 源音频包不解码不重编直接进封装
-                     // (pts 同轴; 目标容器不可容该编码时自动回退转码)
+                     // (pts 同轴; 目标容器不可容该编码时自动回退转码 —— 判定在
+                     //  AMediaSource::onReady 经注入的 audioCopySupported 问
+                     //  muxer 实现层 IOMuxer::canStoreAudio, 该轨改走转码)
   VideoCopy    = 2   // 视频直拷 + 音频转码(转封装+改音频等场景)
 };
 
