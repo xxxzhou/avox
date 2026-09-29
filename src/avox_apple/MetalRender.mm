@@ -17,13 +17,14 @@
 
 namespace avox {
 
-// 与 shader 内 FragParams 同布局(20B), 每帧经 setFragmentBytes 下发
+// 与 shader 内 FragParams 同布局(24B), 每帧经 setFragmentBytes 下发
 struct MetalFragParams {
   int hdrMode;
   int tenBit;
   int transfer;
   float peakNits;
   float sdrWhiteNits;
+  int doviEnable;
 };
 
 // 顶点数据
@@ -64,6 +65,7 @@ NSString *const nv12trgbBody = AVOX_SHADER_STRING(
       int transfer;
       float peakNits;
       float sdrWhiteNits;
+      int doviEnable;
     };
 
     vertex VertexOut vertexShader(const VertexIn in [[stage_in]]) {
@@ -969,6 +971,7 @@ void MetalRender::renderCVPixelBuffer(CVImageBufferRef imageBuffer) {
     params.transfer = (int)cs.transfer;
     params.peakNits = (float)hdrPeakNits(hdrMeta);
     params.sdrWhiteNits = 100.0f;
+    params.doviEnable = doviUbo.doviEnable;
     [commandEncoder setFragmentBytes:&params length:sizeof(params) atIndex:0];
     // 颜色矩阵(行优先 16 浮点): 替换 shader 旧硬编码 BT.601, 尊重 cs.standard/range
     [commandEncoder setFragmentBytes:colorMatData length:sizeof(colorMatData) atIndex:1];
