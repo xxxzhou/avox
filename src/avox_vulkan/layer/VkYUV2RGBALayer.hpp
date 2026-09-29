@@ -16,6 +16,8 @@ class VkYUV2RGBALayer : public VkLayer, public IYUVLayer {
   void setHdrMeta(const HdrMeta& meta);
   // HDR 输出模式(forceHDR 跳过 tone map), 运行时重传 UBO, 不重建 graph
   void setHdrMode(HdrMode mode);
+  // DV RPU 整形数据(曲线+矩阵), 重建 UBO 的 DV 区, 不重建 graph
+  void setDoviMeta(const DoviMeta& meta);
 
  protected:
   virtual void onUpdateParamet() override;
@@ -26,6 +28,7 @@ class VkYUV2RGBALayer : public VkLayer, public IYUVLayer {
  protected:
   ColorSpaceDesc cs{YuvStandard::bt601, YuvRange::full};
   HdrMode hdrMode = HdrMode::follow;
+  DoviMeta doviMeta = {};
   ColorYuvUBO uboData{};
 };
 

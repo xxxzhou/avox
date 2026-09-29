@@ -1,6 +1,9 @@
 #include "FFVDecoder.hpp"
 
+#include <libavutil/dovi_meta.h>
 #include <libavutil/mastering_display_metadata.h>
+
+#include <cmath>
 
 #include "avox/codec/H26XHelper.hpp"
 #include "avox/player/MediaPlayer.hpp"
@@ -190,7 +193,19 @@ void FFVDecoder::onClose() {
   }
 }
 
-// 解析单条 HDR side data (ST2086 mastering / CLL) 进 meta
+// ST 2084 PQ 码值(0..1)逆 EOTF 换亮度 nits(0..10000)
+static float pqToNits(float v) {
+  if (v <= 0.0f) {
+    return 0.0f;
+  }
+  const float m1 = 2610.0f / 16384.0f, m2 = 2523.0f / 4096.0f * 128.0f;
+  const float c1 = 3424.0f / 4096.0f, c2 = 2413.0f / 4096.0f * 32.0f,
+              c3 = 2392.0f / 4096.0f * 32.0f;
+  const float p = std::pow(v, 1.0f / m2);
+  return 10000.0f * std::pow(std::max(p - c1, 0.0f) / (c2 - c3 * p), 1.0f / m1);
+}
+
+// 解析单条 HDR side data (ST2086 mastering / CLL / DV RPU L1) 进 meta
 static void parseHdrSideData(AVFrameSideData* sd, HdrMeta& meta) {
   if (sd->type == AV_FRAME_DATA_MASTERING_DISPLAY_METADATA &&
       sd->size >= sizeof(AVMasteringDisplayMetadata)) {
@@ -224,7 +239,56 @@ static void parseHdrSideData(AVFrameSideData* sd, HdrMeta& meta) {
     meta.maxCLL = cl->MaxCLL;
     meta.maxFALL = cl->MaxFALL;
     meta.valid = true;
+  } else if (sd->type == AV_FRAME_DATA_DOVI_METADATA &&
+             sd->size >= sizeof(AVDOVIMetadata)) {
+    // DV RPU color 块 L1: 12bit PQ 码(0..4095), 每场景变化由 updateHdrMeta diff 下发
+    auto* color = av_dovi_get_color((AVDOVIMetadata*)sd->data);
+    meta.l1MaxNits = pqToNits(color->source_max_pq / 4095.0f);
+    meta.l1MinNits = pqToNits(color->source_min_pq / 4095.0f);
+    meta.valid = true;
   }
+}
+
+// DOVI_METADATA 全量整形数据 → DoviMeta(pivot 除 2^bl-1, 系数除 2^coef_log2_denom)
+static void fillDoviMeta(const AVFrameSideData* sd, DoviMeta& dm) {
+  auto* dovi = (const AVDOVIMetadata*)sd->data;
+  auto* header = av_dovi_get_header(dovi);
+  auto* mapping = av_dovi_get_mapping(dovi);
+  auto* color = av_dovi_get_color(dovi);
+  const float pivotNorm = 1.0f / (float)((1 << header->bl_bit_depth) - 1);
+  const float coefNorm = 1.0f / (float)(1 << (header->coef_log2_denom & 31));
+  for (int32_t c = 0; c < 3; c++) {
+    auto& src = mapping->curves[c];
+    auto& dst = dm.comp[c];
+    dst.numPivots = src.num_pivots;
+    for (int32_t i = 0; i < src.num_pivots && i < 9; i++) {
+      dst.pivots[i] = (float)src.pivots[i] * pivotNorm;
+    }
+    for (int32_t i = 0; i < src.num_pivots - 1 && i < 8; i++) {
+      if (src.mapping_idc[i] == AV_DOVI_MAPPING_POLYNOMIAL) {
+        for (int32_t k = 0; k < 3; k++) {
+          dst.polyCoef[i][k] = (float)((double)src.poly_coef[i][k] * coefNorm);
+        }
+      } else {
+        dst.mmrOrder[i] = src.mmr_order[i];
+        dst.mmrConstant[i] = (float)((double)src.mmr_constant[i] * coefNorm);
+        for (int32_t j = 0; j < src.mmr_order[i]; j++) {
+          for (int32_t k = 0; k < 7; k++) {
+            dst.mmrCoef[i][j][k] =
+                (float)((double)src.mmr_coef[i][j][k] * coefNorm);
+          }
+        }
+      }
+    }
+  }
+  for (int32_t i = 0; i < 3; i++) {
+    dm.nonlinearOffset[i] = (float)av_q2d(color->ycc_to_rgb_offset[i]);
+  }
+  for (int32_t i = 0; i < 9; i++) {
+    dm.nonlinear[i] = (float)av_q2d(color->ycc_to_rgb_matrix[i]);
+    dm.linear[i] = (float)av_q2d(color->rgb_to_lms_matrix[i]);
+  }
+  dm.valid = true;
 }
 
 // SEI RBSP 反仿真(去 00 00 03 的 03)后提取 137(mdcv)/144(clli) 固定宽
@@ -333,14 +397,17 @@ void FFVDecoder::updateHdrMeta(const HdrMeta& meta) {
   if (!meta.valid) {
     return;
   }
+  // L1 参与比较: DV 场景切换静态三元组不变、仅 L1 变, 不比则动态膝点失联
   if (meta.maxCLL == hdrMeta.maxCLL &&
       meta.maxLuminance == hdrMeta.maxLuminance &&
-      meta.maxFALL == hdrMeta.maxFALL) {
+      meta.maxFALL == hdrMeta.maxFALL &&
+      meta.l1MaxNits == hdrMeta.l1MaxNits) {
     return;
   }
   hdrMeta = meta;
-  LOGFLF(LogLevel::info, "[hdrmeta] sei maxLum:", meta.maxLuminance,
-         " cll:", meta.maxCLL, " fall:", meta.maxFALL);
+  LOGFLF(LogLevel::info, "[hdrmeta] maxLum:", meta.maxLuminance,
+         " cll:", meta.maxCLL, " fall:", meta.maxFALL,
+         " l1max:", meta.l1MaxNits, " l1min:", meta.l1MinNits);
   dispatch(&IVideoDecoderOb::onHdrMeta, meta);
 }
 
@@ -373,19 +440,41 @@ void FFVDecoder::onFrame(AVFrame* avFrame, bool bDrop) {
   // 两处都查: 上下文有取上下文, 否则退回帧级。
   HdrMeta meta = {};
   bool fromCtx = false;
+  bool bDovi = false;
   if (codecCtx && codecCtx->nb_decoded_side_data > 0) {
     for (int32_t i = 0; i < codecCtx->nb_decoded_side_data; ++i) {
       parseHdrSideData(codecCtx->decoded_side_data[i], meta);
     }
     fromCtx = meta.valid;
   }
-  if (!fromCtx) {
-    for (int32_t i = 0; i < avFrame->nb_side_data; ++i) {
-      parseHdrSideData(avFrame->side_data[i], meta);
+  // 帧级恒扫 DOVI(L1 动态, ffmpeg 恒挂帧级, 静态收进 ctx 也不进帧);
+  // 其余帧级 static 条目仅在 ctx 无静态时兜底解析
+  AVFrameSideData* doviSd = nullptr;
+  for (int32_t i = 0; i < avFrame->nb_side_data; ++i) {
+    auto* sd = avFrame->side_data[i];
+    if (sd->type == AV_FRAME_DATA_DOVI_METADATA) {
+      parseHdrSideData(sd, meta);
+      doviSd = sd;
+      bDovi = true;
+    } else if (!fromCtx) {
+      parseHdrSideData(sd, meta);
     }
   }
+  // 无 RPU 帧沿用上次 L1: RPU 每帧应有, 缺帧不回跳静态膝点(防抖)
+  if (!bDovi) {
+    meta.l1MaxNits = hdrMeta.l1MaxNits;
+    meta.l1MinNits = hdrMeta.l1MinNits;
+  }
   updateHdrMeta(meta);
-  updateHdrMeta(meta);
+  // DV 整形数据: 场景变化(memcmp)才派发, 供渲染腿重建整形 UBO
+  if (doviSd != nullptr && doviSd->size >= sizeof(AVDOVIMetadata)) {
+    DoviMeta dm = {};
+    fillDoviMeta(doviSd, dm);
+    if (memcmp(&dm, &lastDovi, sizeof(DoviMeta)) != 0) {
+      lastDovi = dm;
+      dispatch(&IVideoDecoderOb::onDoviMeta, dm);
+    }
+  }
   dispatch(&IVideoDecoderOb::onDecode, frame);
   // log(LogLevel::info, "ffmpeg decoder frame pts:", frame.pts);
   // if (avFrame->pict_type == AV_PICTURE_TYPE_I) {

@@ -28,6 +28,8 @@ class AVOX_EXPORT SurfaceRenderNative : public SurfaceRenderVk {
   // setHdrMeta 不在 ISurfaceRender 接口(无虚基), 遮蔽+双路转发;
   // 调用方持具体类型(WindowRender)
   void setHdrMeta(const HdrMeta& meta);
+  // DV RPU 整形数据, 同为遮蔽+双路转发
+  void setDoviMeta(const DoviMeta& meta);
   void setHdrMode(HdrMode mode) override;
   // screenShot: Vulkan时走vkVideoRender，非Vulkan时走pVideoRender
   virtual bool screenShot(IImageBuffer* imageBuffer) override;

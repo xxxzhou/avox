@@ -109,6 +109,8 @@ class AVOX_EXPORT VideoRender : public OptionLink {
   // 当前帧编码所用色彩空间(YUVFrame→RGBA 快照须与之一致)
   ColorSpaceDesc colorSpace = {};
   virtual void setHdrMeta(const HdrMeta& meta) {};
+  // DV RPU 整形数据(曲线+矩阵); VK 腿在层内消费, 平台腿 C 批后接入
+  virtual void setDoviMeta(const DoviMeta& meta) {};
   virtual void setHdrMode(HdrMode mode) {};
   // CPU输入帧的解码格式(cpuIn时有效)
   YuvType cpuFrameYuvType() { return yuvFrame.format.type; }

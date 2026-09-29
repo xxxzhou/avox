@@ -20,24 +20,97 @@ Texture2D yTex: register(t0);
 Texture2D uvTex: register(t1);
 RWTexture2D<float4> outTex: register(u0);
 
+// 常量区与 ColorYuvUBO 同布局(96B 头 + DV 区 2848B), 数组为 vec4 展平
 cbuffer CBParameters : register(b0)
 {
-    uint2 inputSize;     // 输出RGBA尺寸
-    uint  yuvType;       // 0=nv12 1=p010
+    int   width;         // 输出RGBA宽
+    int   height;        // 输出RGBA高
+    int   yuvType;       // 0=nv12 1=p010
     int   transfer;      // YuvTransfer 声明序: 0=gamma 1=linear 2=pq 3=hlg
-    int   hdrMode;       // HdrMode 声明序: 0=follow 1=forceSDR 2=forceHDR
+    float4x4 colorMat;   // offset 16: YUV(limited)->RGB, setColorSpace 注入
     float maxLuminance;  // 内容峰值亮度 nits
     float sdrWhiteNits;  // SDR 白点 nits
-    float _pad;
-    // YUV(limited, [0,1], UV 未居中) -> RGB: setColorSpace 注入, 含标准系数 +
-    // limited 量程展开, 行优先 16 浮点, 与 Vulkan yuv2rgbaV1.comp 同源
-    float4x4 colorMat;
+    int   hdrMode;       // HdrMode 声明序: 0=follow 1=forceSDR 2=forceHDR
+    int   _pad;
+    int   doviEnable;    // 1=走 DV 整形链
+    int   _dv0;
+    int   _dv1;
+    int   _dv2;
+    float4 dvPivots[7];
+    float4 dvPoly[18];
+    float4 dvMmr[132];
+    int4   dvIdc[6];
+    float4 dvNumPivots;
+    float4 dvNl[3];
+    float4 dvNlOff;
+    float4 dvLm[3];
 };
 
 // YUV 转 RGB: 用 setColorSpace 注入的矩阵(标准 + limited 量程), 与 Vulkan V1/V5 同源
 float4 yuv2Rgb(float y, float u, float v, float a) {
     float4 rgb = mul(float4(y, u, v, 1.0f), colorMat);
     return float4(clamp(rgb.rgb, 0.0f, 1.0f), a);
+}
+
+// 列主序 3x3(vec4 列)应用, 等价 GLSL M*v, 避开 HLSL 行列约定
+float3 dvApplyCols(float3 v, float4 c0, float4 c1, float4 c2) {
+    return float3(dot(c0.xyz, v), dot(c1.xyz, v), dot(c2.xyz, v));
+}
+
+float3 pqToLinear(float3 n);
+float3 linearToPq(float3 lin);
+
+// ---------- DV(Dolby Vision) 整形: 语义对齐 libplacebo/V5, 输出 PQ BT.2020 ----------
+
+float dvPivotAt(int idx) { return dvPivots[idx >> 2][idx & 3]; }
+float dvPolyAt(int idx)  { return dvPoly[idx >> 2][idx & 3]; }
+float dvMmrAt(int idx)   { return dvMmr[idx >> 2][idx & 3]; }
+int   dvIdcAt(int idx)  { return dvIdc[idx >> 2][idx & 3]; }
+
+float dvReshapeComp(int c, float3 sig, float s) {
+    int base = c * 8;
+    int sel = -1;
+    for (int i = 0; i < 8; i++) {
+        if (dvIdcAt(base + i) == 0) break;
+        if (i == 7 || s < dvPivotAt(c * 9 + i + 1)) { sel = i; break; }
+    }
+    if (sel < 0) {
+        return s;
+    }
+    int idc = dvIdcAt(base + sel);
+    if (idc == 1) {
+        int pf = (base + sel) * 3;
+        return (dvPolyAt(pf + 2) * s + dvPolyAt(pf + 1)) * s + dvPolyAt(pf);
+    }
+    int order = idc - 16;
+    int p = (base + sel) * 22;
+    int np = (int)dvNumPivots[c];
+    float acc = dvMmrAt(p);
+    float4 sigX = float4(sig.x * sig.y, sig.x * sig.z, sig.y * sig.z,
+                         sig.x * sig.y * sig.z);
+    acc += dot(float3(dvMmrAt(p + 1), dvMmrAt(p + 2), dvMmrAt(p + 3)), sig);
+    acc += dot(float4(dvMmrAt(p + 4), dvMmrAt(p + 5), dvMmrAt(p + 6), dvMmrAt(p + 7)), sigX);
+    if (order >= 2) {
+        float3 sig2 = sig * sig;
+        float4 sigX2 = sigX * sigX;
+        acc += dot(float3(dvMmrAt(p + 8), dvMmrAt(p + 9), dvMmrAt(p + 10)), sig2);
+        acc += dot(float4(dvMmrAt(p + 11), dvMmrAt(p + 12), dvMmrAt(p + 13), dvMmrAt(p + 14)), sigX2);
+        if (order >= 3) {
+            acc += dot(float3(dvMmrAt(p + 15), dvMmrAt(p + 16), dvMmrAt(p + 17)), sig2 * sig);
+            acc += dot(float4(dvMmrAt(p + 18), dvMmrAt(p + 19), dvMmrAt(p + 20), dvMmrAt(p + 21)), sigX2 * sigX);
+        }
+    }
+    return clamp(acc, dvPivotAt(c * 9), dvPivotAt(c * 9 + np - 1));
+}
+
+// DV 全链: reshape → ycc_to_rgb(PQ域) → PQ线性 → LMS合成阵 → 回编码 PQ BT.2020
+float3 dvProcess(float3 yuv) {
+    float3 sig = clamp(yuv, float3(0.0, 0.0, 0.0), float3(1.0, 1.0, 1.0));
+    sig = float3(dvReshapeComp(0, sig, sig.r), dvReshapeComp(1, sig, sig.g),
+                 dvReshapeComp(2, sig, sig.b));
+    float3 rgb = dvApplyCols(sig, dvNl[0], dvNl[1], dvNl[2]) + dvNlOff.xyz;
+    float3 lin = pqToLinear(rgb);
+    return linearToPq(dvApplyCols(lin, dvLm[0], dvLm[1], dvLm[2]));
 }
 
 // ---- HDR 处理: 与 glsl/yuv2rgbaV5.comp 同源 ----
@@ -52,6 +125,18 @@ float3 pqToLinear(float3 n) {
     float3 p = pow(clamp(n, float3(0.0, 0.0, 0.0), float3(1.0, 1.0, 1.0)), 1.0 / m2);
     float3 num = max(p - c1, float3(0.0, 0.0, 0.0));
     return pow(num / (c2 - c3 * p), 1.0 / m1);
+}
+
+// PQ OETF (ST2084 逆过程): 线性光 -> 编码值(DV 链尾回编码用)
+float3 linearToPq(float3 lin) {
+    const float m1 = 0.1593017578125;
+    const float m2 = 78.84375;
+    const float c1 = 0.8359375;
+    const float c2 = 18.8515625;
+    const float c3 = 18.6875;
+    float3 p = pow(max(lin, float3(0.0, 0.0, 0.0)), m1);
+    float3 e = (c1 + c2 * p) / (1.0f + c3 * p);
+    return pow(e, m2);
 }
 
 // HLG 解码(BT.2100): OETF^-1 得场景线性, 再逆 OOTF(1.2, 1000nit 参考屏)
@@ -116,6 +201,10 @@ float4 p010Point(uint2 pix, float a) {
     float k = 65535.0 / 64.0 / 1023.0;  // R16_UNORM 值 -> 10bit 归一
     float y = yTex.Load(int3(pix, 0)).r * k;
     float2 uvRaw = uvTex.Load(int3(pix.x / 2, pix.y / 2, 0)).rg;
+    // DV 链吃原始 PQ 信号(不做 limited 展开, 偏移在 DV 矩阵里), 其余走原路
+    if (doviEnable == 1) {
+        return float4(saturate(processColor(dvProcess(float3(y, uvRaw.x * k, uvRaw.y * k)))), a);
+    }
     float u = uvRaw.x * k - 0.5;
     float v = uvRaw.y * k - 0.5;
     // BT.2020 tv-range 展开(Y 64..940, UV 512 居中) 后矩阵
@@ -131,7 +220,7 @@ float4 p010Point(uint2 pix, float a) {
 [numthreads(16, 16, 1)]
 void main(uint2 DTid : SV_DispatchThreadID)
 {
-    uint2 size = inputSize;
+    uint2 size = uint2(width, height);
     if(DTid.x >= size.x/2 || DTid.y >= size.y/2){
         return;
     }
@@ -247,6 +336,12 @@ void Dx11CSVideoRender::setHdrMeta(const HdrMeta& meta) {
   bParamsDirty = true;
 }
 
+void Dx11CSVideoRender::setDoviMeta(const DoviMeta& meta) {
+  doviMeta = meta;
+  packDoviUbo(constData, doviMeta);
+  bParamsDirty = true;
+}
+
 void Dx11CSVideoRender::setHdrMode(HdrMode mode) {
   if (mode == hdrMode) {
     return;
@@ -282,7 +377,7 @@ void Dx11CSVideoRender::createProgram() {
   // 创建常量缓冲区(96B: 8 标量 + colorMat, 与 cbuffer 布局对齐)
   constBuf = std::make_unique<Dx11Constant>();
   constBuf->setBufferSize(sizeof(constData));
-  constBuf->cpuData = (uint8_t*)constData;
+  constBuf->cpuData = (uint8_t*)&constData;
   constBuf->initResource(device);
   // 创建输出计算着色器资源
   // outTexture = std::make_unique<Dx11Texture>();
@@ -349,20 +444,17 @@ void Dx11CSVideoRender::renderToTexture(const GpuFrame& gpuFrame) {
   // 常量参数(尺寸/格式/transfer/hdrMode/峰值)变化才上传
   if (bParamsDirty) {
     bParamsDirty = false;
-    float peakNits = (float)hdrPeakNits(hdrMeta);
-    float sdrWhite = 100.0f;
-    constData[0] = imageWidth;
-    constData[1] = imageHeight;
-    constData[2] = (yuvDesc.Format == DXGI_FORMAT_P010) ? 1u : 0u;
-    constData[3] = (uint32_t)cs.transfer;
-    constData[4] = (uint32_t)hdrMode;
-    memcpy(&constData[5], &peakNits, sizeof(float));
-    memcpy(&constData[6], &sdrWhite, sizeof(float));
-    constData[7] = 0u;
+    constData.width = (int32_t)imageWidth;
+    constData.height = (int32_t)imageHeight;
+    constData.yuvType = (yuvDesc.Format == DXGI_FORMAT_P010) ? 1 : 0;
+    constData.transfer = (int32_t)cs.transfer;
+    constData.maxLuminance = (float)hdrPeakNits(hdrMeta);
+    constData.sdrWhiteNits = 100.0f;
+    constData.hdrMode = (int32_t)hdrMode;
     // 颜色矩阵: buildYuvToRgb 已含标准系数 + limited 量程展开, 行优先 16 浮点,
     // 与 float4x4 列主序一致, mul(vec4, colorMat) 结果等同于 Vulkan V1/V5
     Mat4x4f mat = buildYuvToRgb(cs);
-    memcpy(&constData[8], &mat, 16 * sizeof(float));
+    memcpy(&constData.colorMat, &mat, 16 * sizeof(float));
     constBuf->updateResource(d3dcontext.Get());
   }
   if (desc.ArraySize > 1) {

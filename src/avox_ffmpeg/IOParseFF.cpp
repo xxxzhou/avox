@@ -2,6 +2,7 @@
 
 #include "PgsDecoder.hpp"
 
+#include <libavutil/dovi_meta.h>
 #include <libavutil/intreadwrite.h>
 #include <libavutil/log.h>
 
@@ -1045,6 +1046,17 @@ void IOParseFF::onRunTask() {
       vdesc.desc.fps = ffFps(st);
       vdesc.desc.type = ffYuvType((AVPixelFormat)st->codecpar->format);
       vdesc.desc.colorSpace = ffColorSpace(st->codecpar);
+      // 容器级 DOVI conf(dvcc/dvcC): DV profile 入档(P-41 延伸)。
+      // 9.x 流侧数据收进 codecpar->coded_side_data(av_stream_get_side_data 已除名)
+      for (int32_t k = 0; k < st->codecpar->nb_coded_side_data; k++) {
+        const AVPacketSideData& sd = st->codecpar->coded_side_data[k];
+        if (sd.type == AV_PKT_DATA_DOVI_CONF &&
+            sd.size >= (int)sizeof(AVDOVIDecoderConfigurationRecord)) {
+          vdesc.dvProfile =
+              ((const AVDOVIDecoderConfigurationRecord*)sd.data)->dv_profile;
+          break;
+        }
+      }
       addVideoDesc(vdesc);
     } else if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO &&
                !bDisableAudio) {

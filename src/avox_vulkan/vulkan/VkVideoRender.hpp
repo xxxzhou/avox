@@ -166,6 +166,8 @@ class VkVideoRender : public VideoRender, public IVOutputLayerOb {
   void setColorSpace(const ColorSpaceDesc& c) override;
   // HDR 静态元数据(峰值亮度), 运行时重传, 不重建 graph
   void setHdrMeta(const HdrMeta& meta) override;
+  // DV RPU 整形数据(曲线+矩阵), 运行时重传, 不重建 graph
+  void setDoviMeta(const DoviMeta& meta) override;
   // HDR 输出模式(forceHDR 跳过 tone map), 运行时重传, 不重建 graph
   void setHdrMode(HdrMode mode) override;
 #ifdef AVOX_ENABLE_FREETYPE

@@ -92,10 +92,14 @@ void VideoTrack::onVideoDesc() {
 void VideoTrack::onPacket(PacketBufPtr packet) { pullPacket(packet); }
 
 void VideoTrack::onHdrMeta(const HdrMeta& hdrMeta) {
-  // 静态元数据只发一次, 驱动 tone map 峰值亮度
-  if (bHdrMetaSent) {
+  // 峰值相关(L1/CLL/mastering)变化才转发: DV 场景切换静态三元组不变、仅 L1 变,
+  // 一次闸会吞掉动态膝点; 上游 updateHdrMeta 已按同字段去重, 此处防重复派发
+  if (bHdrMetaSent && lastHdrMeta.l1MaxNits == hdrMeta.l1MaxNits &&
+      lastHdrMeta.maxCLL == hdrMeta.maxCLL &&
+      lastHdrMeta.maxLuminance == hdrMeta.maxLuminance) {
     return;
   }
+  lastHdrMeta = hdrMeta;
   bHdrMetaSent = true;
   windowRender->setHdrMeta(hdrMeta);
   // 宿主观察面: 流级媒体属性, 供HDR标识/显示模式切换/setHdrMode决策
@@ -103,6 +107,11 @@ void VideoTrack::onHdrMeta(const HdrMeta& hdrMeta) {
     mediaPlayer->Observer<IMediaPlayerOb>::dispatch(&IMediaPlayerOb::onHdrMeta,
                                                     hdrMeta);
   }
+}
+
+void VideoTrack::onDoviMeta(const DoviMeta& doviMeta) {
+  // 上游已按 memcmp 去重(场景粒度), 直接双路转发
+  windowRender->setDoviMeta(doviMeta);
 }
 
 // B帧重排输出会把包级改写过的pts按乱序吐出(best_effort_timestamp取自

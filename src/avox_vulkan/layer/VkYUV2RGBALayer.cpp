@@ -53,6 +53,12 @@ void VkYUV2RGBALayer::setHdrMode(HdrMode mode) {
   bParametChange = true;
 }
 
+void VkYUV2RGBALayer::setDoviMeta(const DoviMeta& meta) {
+  doviMeta = meta;
+  packDoviUbo(uboData, doviMeta);
+  bParametChange = true;
+}
+
 void VkYUV2RGBALayer::onInitLayer() {
   YuvType yuvType = paramet;
   // nv12/yuv420P/yuy2P

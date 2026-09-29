@@ -143,6 +143,99 @@ NSString *const nv12trgbBody = AVOX_SHADER_STRING(
       return rgb;
     }
 
+    // ---------- DV(Dolby Vision) 整形: 语义对齐 libplacebo/V5, 输出 PQ BT.2020 ----------
+    // 与 ColorYuvUBO offset 96 起同布局(buffer 2, 场景级 setFragmentBytes)
+    struct DoviParams {
+      int doviEnable;
+      int pad0;
+      int pad1;
+      int pad2;
+      float4 dvPivots[7];
+      float4 dvPoly[18];
+      float4 dvMmr[132];
+      int4 dvIdc[6];
+      float4 dvNumPivots;
+      float4 dvNl[3];
+      float4 dvNlOff;
+      float4 dvLm[3];
+    };
+
+    float3 linearToPq(float3 lin) {
+      const float m1 = 0.1593017578125;
+      const float m2 = 78.84375;
+      const float c1 = 0.8359375;
+      const float c2 = 18.8515625;
+      const float c3 = 18.6875;
+      float3 p = pow(max(lin, float3(0.0)), float3(m1));
+      float3 e = (float3(c1) + float3(c2) * p) / (float3(1.0) + float3(c3) * p);
+      return pow(e, float3(m2));
+    }
+
+    float dvPivotAt(constant DoviParams& dv, int idx) {
+      return dv.dvPivots[idx >> 2][idx & 3];
+    }
+    float dvPolyAt(constant DoviParams& dv, int idx) {
+      return dv.dvPoly[idx >> 2][idx & 3];
+    }
+    float dvMmrAt(constant DoviParams& dv, int idx) {
+      return dv.dvMmr[idx >> 2][idx & 3];
+    }
+    int dvIdcAt(constant DoviParams& dv, int idx) {
+      return dv.dvIdc[idx >> 2][idx & 3];
+    }
+
+    float dvReshapeComp(constant DoviParams& dv, int c, float3 sig, float s) {
+      int base = c * 8;
+      int sel = -1;
+      for (int i = 0; i < 8; i++) {
+        if (dvIdcAt(dv, base + i) == 0) break;
+        if (i == 7 || s < dvPivotAt(dv, c * 9 + i + 1)) { sel = i; break; }
+      }
+      if (sel < 0) {
+        return s;
+      }
+      int idc = dvIdcAt(dv, base + sel);
+      if (idc == 1) {
+        int pf = (base + sel) * 3;
+        return (dvPolyAt(dv, pf + 2) * s + dvPolyAt(dv, pf + 1)) * s +
+               dvPolyAt(dv, pf);
+      }
+      int order = idc - 16;
+      int p = (base + sel) * 22;
+      int np = (int)dv.dvNumPivots[c];
+      float acc = dvMmrAt(dv, p);
+      float4 sigX = float4(sig.x * sig.y, sig.x * sig.z, sig.y * sig.z,
+                           sig.x * sig.y * sig.z);
+      acc += dot(float3(dvMmrAt(dv, p + 1), dvMmrAt(dv, p + 2), dvMmrAt(dv, p + 3)), sig);
+      acc += dot(float4(dvMmrAt(dv, p + 4), dvMmrAt(dv, p + 5), dvMmrAt(dv, p + 6),
+                        dvMmrAt(dv, p + 7)), sigX);
+      if (order >= 2) {
+        float3 sig2 = sig * sig;
+        float4 sigX2 = sigX * sigX;
+        acc += dot(float3(dvMmrAt(dv, p + 8), dvMmrAt(dv, p + 9), dvMmrAt(dv, p + 10)), sig2);
+        acc += dot(float4(dvMmrAt(dv, p + 11), dvMmrAt(dv, p + 12), dvMmrAt(dv, p + 13),
+                          dvMmrAt(dv, p + 14)), sigX2);
+        if (order >= 3) {
+          acc += dot(float3(dvMmrAt(dv, p + 15), dvMmrAt(dv, p + 16), dvMmrAt(dv, p + 17)), sig2 * sig);
+          acc += dot(float4(dvMmrAt(dv, p + 18), dvMmrAt(dv, p + 19), dvMmrAt(dv, p + 20),
+                            dvMmrAt(dv, p + 21)), sigX2 * sigX);
+        }
+      }
+      return clamp(acc, dvPivotAt(dv, c * 9), dvPivotAt(dv, c * 9 + np - 1));
+    }
+
+    float3 dvProcess(constant DoviParams& dv, float3 yuv) {
+      float3 sig = clamp(yuv, float3(0.0), float3(1.0));
+      sig = float3(dvReshapeComp(dv, 0, sig, sig.r), dvReshapeComp(dv, 1, sig, sig.g),
+                   dvReshapeComp(dv, 2, sig, sig.b));
+      float3 rgb = dv.dvNl[0].xyz * sig.x + dv.dvNl[1].xyz * sig.y +
+                   dv.dvNl[2].xyz * sig.z + dv.dvNlOff.xyz;
+      float3 lin = pqToLinear(rgb);
+      float3 outv = dv.dvLm[0].xyz * lin.x + dv.dvLm[1].xyz * lin.y +
+                    dv.dvLm[2].xyz * lin.z;
+      return linearToPq(outv);
+    }
+
     fragment float4 fragmentShader(VertexOut in [[stage_in]],
                                    texture2d<float> yTexture [[texture(0)]],
                                    texture2d<float> uvTexture [[texture(1)]],
@@ -152,11 +245,18 @@ NSString *const nv12trgbBody = AVOX_SHADER_STRING(
                                    // 修饰数组参数("buffer attribute cannot be
                                    // applied to types", 2677 列实证), 改指针
                                    // 形式; shader 内 colorMat[i] 访问不变
-                                   constant float* colorMat [[buffer(1)]]) {
+                                   constant float* colorMat [[buffer(1)]],
+                                   constant DoviParams& dovi [[buffer(2)]]) {
       float y = yTexture.sample(sampler, in.texCoord).r;
       float2 uv = uvTexture.sample(sampler, in.texCoord).rg;
       float3 rgb;
-      if (params.tenBit == 1) {
+      if (params.doviEnable == 1) {
+        // DV 链吃原始 PQ 信号(10bit 先归一), 不做 limited 展开(偏移在 DV 矩阵里)
+        float k = 65535.0 / 64.0 / 1023.0;
+        float3 sig = (params.tenBit == 1) ? (float3(y, uv.x, uv.y) * k)
+                                          : float3(y, uv.x, uv.y);
+        rgb = dvProcess(dovi, sig);
+      } else if (params.tenBit == 1) {
         float k = 65535.0 / 64.0 / 1023.0;
         float yy = (y * k - 64.0 / 1023.0) / (876.0 / 1023.0);
         float uu = (uv.x * k - 0.5) * (876.0 / 896.0);
@@ -693,6 +793,11 @@ void MetalRender::setHdrMeta(const HdrMeta &meta) {
   hdrMeta = meta;
 }
 
+void MetalRender::setDoviMeta(const DoviMeta &meta) {
+  doviMeta = meta;
+  packDoviUbo(doviUbo, doviMeta);
+}
+
 void MetalRender::setHdrMode(HdrMode mode) { hdrMode = mode; }
 
 // ---- vsync 相位对齐(AVOX_VSYNC_ALIGN=0 关) ----
@@ -867,6 +972,12 @@ void MetalRender::renderCVPixelBuffer(CVImageBufferRef imageBuffer) {
     [commandEncoder setFragmentBytes:&params length:sizeof(params) atIndex:0];
     // 颜色矩阵(行优先 16 浮点): 替换 shader 旧硬编码 BT.601, 尊重 cs.standard/range
     [commandEncoder setFragmentBytes:colorMatData length:sizeof(colorMatData) atIndex:1];
+    // DV 整形区(场景级, buffer 2): 有效才下发, 无 DV 时 shader 分支不进
+    if (doviUbo.doviEnable == 1) {
+      [commandEncoder setFragmentBytes:&doviUbo.doviEnable
+                                length:sizeof(doviUbo) - offsetof(ColorYuvUBO, doviEnable)
+                                atIndex:2];
+    }
     // 设置纹理
     [commandEncoder setFragmentTexture:yTexture atIndex:0];
     [commandEncoder setFragmentTexture:uvTexture atIndex:1];

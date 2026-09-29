@@ -115,6 +115,8 @@ struct VTrackDesc {
   VCodecId codecId = VCodecId::none;
   // 视频信息
   VideoDesc desc = {};
+  // Dolby Vision profile(容器 DOVI conf, 0=非DV): 媒体信息入档/展示用
+  int32_t dvProfile = 0;
 };
 
 struct ATrackDesc {

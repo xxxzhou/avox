@@ -1,4 +1,5 @@
 #include "avox/video/VideoRender.hpp"
+#include "avox/video/ColorSpace.hpp"
 #include <CoreVideo/CoreVideo.h>
 #include <Metal/Metal.h>
 #include <QuartzCore/QuartzCore.h>
@@ -61,11 +62,15 @@ public:
   ColorSpaceDesc cs;
   HdrMeta hdrMeta;
   HdrMode hdrMode = HdrMode::follow;
+  // DV 整形数据: 场景级, setDoviMeta 时打包, 有效则逐帧经 buffer 2 下发
+  DoviMeta doviMeta;
+  ColorYuvUBO doviUbo{};
   // 颜色矩阵: buildYuvToRgb 已含标准系数+limited 量程展开, 行优先 16 浮点,
   // 逐帧经 setFragmentBytes(buffer 1)下发, 替换 shader 内硬编码的 BT.601
   float colorMatData[16] = {};
   virtual void setColorSpace(const ColorSpaceDesc& c) override;
   virtual void setHdrMeta(const HdrMeta& meta) override;
+  virtual void setDoviMeta(const DoviMeta& meta) override;
   virtual void setHdrMode(HdrMode mode) override;
 
 private:

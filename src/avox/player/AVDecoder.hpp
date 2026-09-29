@@ -30,6 +30,8 @@ class IVideoDecoderOb {
   virtual void onVideoComplete() {}
   // HDR 静态元数据(side data 解出, 值变化才回调)
   virtual void onHdrMeta(const HdrMeta& hdrMeta) {}
+  // DV RPU 整形数据(曲线+矩阵, 场景变化才回调)
+  virtual void onDoviMeta(const DoviMeta& doviMeta) {}
 };
 
 // IAudioEncoder解码后的回调

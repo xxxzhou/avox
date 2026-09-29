@@ -2,6 +2,7 @@
 
 #include "../dx12/Dx12Helper.hpp"
 #include "Dx11Resource.hpp"
+#include "avox/video/ColorSpace.hpp"
 #include "avox/video/VideoBuffer.hpp"
 #include "avox/video/VideoRender.hpp"
 
@@ -36,8 +37,10 @@ class Dx11CSVideoRender : public VideoRender, public Dx11Context {
   ColorSpaceDesc cs{YuvStandard::bt601, YuvRange::full};
   HdrMeta hdrMeta = {};
   HdrMode hdrMode = HdrMode::follow;
+  DoviMeta doviMeta = {};
   bool bParamsDirty = true;
-  uint32_t constData[24] = {};  // 8 标量(32B) + colorMat(64B) = 96B, 与 cbuffer 对齐
+  // 常量区与 glsl ColorYuvUBO 同布局(96B 头 + DV 区), cbuffer 声明对齐
+  ColorYuvUBO constData{};
   // CPU NV12直取(bOutCpuYuv时): 复用staging纹理,映射指针零拷发布
   // Unmap顺延到下一帧回读,消费者须在当帧窗口内使用
   MComPtr<ID3D11Texture2D> stagingTexture = nullptr;
@@ -56,6 +59,7 @@ class Dx11CSVideoRender : public VideoRender, public Dx11Context {
   // 颜色/HDR 参数(VideoRender 虚接口), 触发常量脏标记
   virtual void setColorSpace(const ColorSpaceDesc& c) override;
   virtual void setHdrMeta(const HdrMeta& meta) override;
+  virtual void setDoviMeta(const DoviMeta& meta) override;
   virtual void setHdrMode(HdrMode mode) override;
   // bOutCpuYuv时把当前NV12帧staging回读,渲染线程内按需调用,一帧最多一次
   virtual bool getCpuFrameBuffer(IImageBuffer** buffer, YuvType& yuvType,

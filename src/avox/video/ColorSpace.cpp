@@ -103,6 +103,9 @@ Mat4x4f buildYuvToRgb(const ColorSpaceDesc& cs) {
 }
 
 uint32_t hdrPeakNits(const HdrMeta& meta) {
+  if (meta.l1MaxNits > 0) {
+    return (uint32_t)(meta.l1MaxNits + 0.5f);
+  }
   if (meta.maxCLL > 0) {
     return meta.maxCLL;
   }
@@ -110,6 +113,75 @@ uint32_t hdrPeakNits(const HdrMeta& meta) {
     return meta.maxLuminance;
   }
   return 1000;
+}
+
+// DV 区打包: 曲线/矩阵 vec4 展平; linear 预乘固定 LMS2RGB(BT.2020 HPE 无串扰),
+// 语义对齐 libplacebo(reshape→ycc_to_rgb→PQ线性→LMS→回编码 PQ BT.2020)
+void packDoviUbo(ColorYuvUBO& ubo, const DoviMeta& meta) {
+  ubo.doviEnable = meta.valid ? 1 : 0;
+  if (!meta.valid) {
+    return;
+  }
+  auto setF = [](DoviUboVec4* arr, int32_t flat, float val) {
+    arr[flat >> 2].v[flat & 3] = val;
+  };
+  auto setI = [](DoviUboIVec4* arr, int32_t flat, int32_t val) {
+    arr[flat >> 2].v[flat & 3] = val;
+  };
+  for (int32_t c = 0; c < 3; c++) {
+    auto& src = meta.comp[c];
+    ubo.dvNumPivots.v[c] = (float)src.numPivots;
+    for (int32_t k = 0; k < 9; k++) {
+      setF(ubo.dvPivots, c * 9 + k, src.pivots[k]);
+    }
+    for (int32_t piece = 0; piece < 8; piece++) {
+      const int32_t flat = c * 8 + piece;
+      if (src.numPivots < 2 || piece >= src.numPivots - 1) {
+        setI(ubo.dvIdc, flat, 0);
+        continue;
+      }
+      if (src.mmrOrder[piece] > 0) {
+        setI(ubo.dvIdc, flat, 0x10 + src.mmrOrder[piece]);
+        setF(ubo.dvMmr, flat * 22, src.mmrConstant[piece]);
+        for (int32_t j = 0; j < src.mmrOrder[piece]; j++) {
+          for (int32_t k = 0; k < 7; k++) {
+            setF(ubo.dvMmr, flat * 22 + 1 + j * 7 + k,
+                 src.mmrCoef[piece][j][k]);
+          }
+        }
+      } else {
+        setI(ubo.dvIdc, flat, 1);
+        for (int32_t k = 0; k < 3; k++) {
+          setF(ubo.dvPoly, flat * 3 + k, src.polyCoef[piece][k]);
+        }
+      }
+    }
+  }
+  static const float kLms2Rgb[3][3] = {
+      {3.06441879f, -2.16597676f, 0.10155818f},
+      {-0.65612108f, 1.78554118f, -0.12943749f},
+      {0.01736321f, -0.04725154f, 1.03004253f},
+  };
+  float combined[9] = {};
+  for (int32_t r = 0; r < 3; r++) {
+    for (int32_t c = 0; c < 3; c++) {
+      for (int32_t k = 0; k < 3; k++) {
+        combined[r * 3 + c] += kLms2Rgb[r][k] * meta.linear[k * 3 + c];
+      }
+    }
+  }
+  for (int32_t col = 0; col < 3; col++) {
+    for (int32_t row = 0; row < 3; row++) {
+      ubo.dvNl[col].v[row] = meta.nonlinear[row * 3 + col];
+      ubo.dvLm[col].v[row] = combined[row * 3 + col];
+    }
+    ubo.dvNl[col].v[3] = 0.0f;
+    ubo.dvLm[col].v[3] = 0.0f;
+  }
+  for (int32_t i = 0; i < 3; i++) {
+    ubo.dvNlOff.v[i] = meta.nonlinearOffset[i];
+  }
+  ubo.dvNlOff.v[3] = 0.0f;
 }
 
 }

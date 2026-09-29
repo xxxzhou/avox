@@ -43,8 +43,9 @@ class VideoTrack : public TAVTrack<VideoFramePtr>,
   VCodecTh codecTh = VCodecTh::cpu;
   // 是否是硬解码
   bool bHardDecode = false;
-  // HDR 静态元数据只发一次(首帧前后携带)
+  // HDR 元数据去重(峰值相关字段变化才转发, DV 场景切换会多次)
   bool bHdrMetaSent = false;
+  HdrMeta lastHdrMeta = {};
 
   int32_t maxDropCount = 5;
   int64_t dropDuration = 100;
@@ -70,6 +71,7 @@ class VideoTrack : public TAVTrack<VideoFramePtr>,
   virtual void onPacket(PacketBufPtr packet) override;
   virtual void onDecode(const YUVFrame& frame) override;
   virtual void onHdrMeta(const HdrMeta& hdrMeta) override;
+  virtual void onDoviMeta(const DoviMeta& doviMeta) override;
   virtual void onDecodeGpu(const GpuFrame& frame) override;
   virtual void onVideoComplete() override;
 

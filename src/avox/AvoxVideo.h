@@ -75,7 +75,30 @@ struct HdrMeta {
   uint32_t maxFALL = 0;       // nits, 帧平均光强
   float primaries[6] = {};    // RGB 三基色 xy(0..1), 行优先
   float whitePoint[2] = {};   // 白点 xy(0..1)
+  // DV RPU L1 亮度(帧侧 DOVI_METADATA, 12bit PQ 码换 nits): 每场景变化随
+  // onHdrMeta 下发, 峰值选取优先于静态标记(P5 常无 ST2086/CLL, 是唯一亮度源)
+  float l1MaxNits = 0;
+  float l1MinNits = 0;
   bool valid = false;
+};
+
+// DV RPU 整形数据(场景级, 已换算 float): 三组件曲线 + IPT 两矩阵, 语义对齐
+// libplacebo pl_dovi_metadata; 链路 = reshape → nonlinear(PQ前) → PQ线性 →
+// linear(PQ后) → 固定 LMS2RGB → 重编码 PQ BT.2020。变化随 onDoviMeta 下发
+struct DoviMeta {
+  bool valid = false;
+  float nonlinearOffset[3] = {};  // ycc_to_rgb_offset
+  float nonlinear[9] = {};        // ycc_to_rgb 行优先(PQ 线性化前)
+  float linear[9] = {};           // rgb_to_lms 行优先(PQ 线性化后, 层侧并预乘 LMS2RGB)
+  struct Comp {
+    uint8_t numPivots = 0;        // 0=该组件无整形
+    float pivots[9] = {};         // 已按 BL 位深归一 [0,1]
+    float polyCoef[8][3] = {};    // x^0,x^1,x^2(已除 2^coef_log2_denom)
+    uint8_t mmrOrder[8] = {};     // 1..3, 非 mmr 段为 0
+    float mmrConstant[8] = {};
+    float mmrCoef[8][3][7] = {};
+  };
+  Comp comp[3];
 };
 
 struct VideoDesc {

@@ -6,8 +6,8 @@
 layout (local_size_x = 16, local_size_y = 16) in;
 layout (binding = 0, r16ui) uniform readonly uimage2D inTex;
 layout (binding = 1, rgba8) uniform image2D outTex;
-// std140: 与 ColorYuvUBO(96B) 对齐 — transfer 占 offset 12(旧 shader 的隐式 padding),
-// mat4 落 offset 16, HDR 参数追加 offset 80(仅本 shader 声明)
+// std140: 与 ColorYuvUBO(2848B) 对齐 — transfer 占 offset 12(旧 shader 的隐式 padding),
+// mat4 落 offset 16, HDR 参数追加 offset 80; DV 整形区 offset 96(仅本 shader 声明)
 layout (std140, binding = 2) uniform UBO
 {
 	int width;
@@ -19,6 +19,18 @@ layout (std140, binding = 2) uniform UBO
 	float sdrWhiteNits; // SDR 白点 nits
 	int hdrMode;        // 0=follow 1=forceSDR 2=forceHDR
 	int _pad;
+	int doviEnable;     // 1=走 DV 整形链
+	int _dv0;
+	int _dv1;
+	int _dv2;
+	vec4 dvPivots[7];   // 3comp×9 pivot(归一化), flat=c*9+k
+	vec4 dvPoly[18];    // 3comp×8段×3系数, flat=(c*8+p)*3+k
+	vec4 dvMmr[132];    // 3comp×8段×(1const+3阶×7), flat=(c*8+p)*22+n
+	ivec4 dvIdc[6];     // 24段: 0=无效 1=poly 0x10+order=mmr
+	vec4 dvNumPivots;   // xyz=comp0/1/2 numPivots
+	vec4 dvNl[3];       // ycc_to_rgb 列主序(PQ 前)
+	vec4 dvNlOff;       // ycc_to_rgb_offset
+	vec4 dvLm[3];       // 预乘 LMS2RGB×rgb_to_lms 列主序(PQ 后)
 } ubo;
 
 // ---------- 读函数: 内存布局 -> 归一化 [0,1], 与色彩处理无关 ----------
@@ -85,6 +97,74 @@ vec3 linearToBt709(vec3 c) {
 	return mix(lo, hi, step(vec3(0.018), c));
 }
 
+// PQ OETF (ST2084 逆过程): 线性光 -> 编码值(DV 链尾回编码用)
+vec3 linearToPq(vec3 lin) {
+	const float m1 = 0.1593017578125;
+	const float m2 = 78.84375;
+	const float c1 = 0.8359375;
+	const float c2 = 18.8515625;
+	const float c3 = 18.6875;
+	vec3 p = pow(max(lin, vec3(0.0)), vec3(m1));
+	vec3 e = (vec3(c1) + vec3(c2) * p) / (vec3(1.0) + vec3(c3) * p);
+	return pow(e, vec3(m2));
+}
+
+// ---------- DV(Dolby Vision) 整形: 语义对齐 libplacebo, 输出 PQ BT.2020 ----------
+
+float dvPivot(int idx) { return ubo.dvPivots[idx >> 2][idx & 3]; }
+float dvPoly(int idx)  { return ubo.dvPoly[idx >> 2][idx & 3]; }
+float dvMmr(int idx)   { return ubo.dvMmr[idx >> 2][idx & 3]; }
+int   dvIdc(int idx)   { return ubo.dvIdc[idx >> 2][idx & 3]; }
+
+// 单组件曲线: pivot 段选 → poly Horner(原始信号, 无段内归一) / mmr 交叉项展开
+float dvReshapeComp(int c, vec3 sig, float s) {
+	int base = c * 8;
+	int sel = -1;
+	for (int i = 0; i < 8; i++) {
+		if (dvIdc(base + i) == 0) break;
+		if (i == 7 || s < dvPivot(c * 9 + i + 1)) { sel = i; break; }
+	}
+	if (sel < 0) {
+		return s;
+	}
+	int idc = dvIdc(base + sel);
+	if (idc == 1) {
+		int pf = (base + sel) * 3;
+		return (dvPoly(pf + 2) * s + dvPoly(pf + 1)) * s + dvPoly(pf);
+	}
+	int order = idc - 16;
+	int p = (base + sel) * 22;
+	int np = int(ubo.dvNumPivots[c]);
+	float acc = dvMmr(p);
+	vec4 sigX = vec4(sig.x * sig.y, sig.x * sig.z, sig.y * sig.z,
+	                 sig.x * sig.y * sig.z);
+	acc += dot(vec3(dvMmr(p + 1), dvMmr(p + 2), dvMmr(p + 3)), sig);
+	acc += dot(vec4(dvMmr(p + 4), dvMmr(p + 5), dvMmr(p + 6), dvMmr(p + 7)), sigX);
+	if (order >= 2) {
+		vec3 sig2 = sig * sig;
+		vec4 sigX2 = sigX * sigX;
+		acc += dot(vec3(dvMmr(p + 8), dvMmr(p + 9), dvMmr(p + 10)), sig2);
+		acc += dot(vec4(dvMmr(p + 11), dvMmr(p + 12), dvMmr(p + 13), dvMmr(p + 14)), sigX2);
+		if (order >= 3) {
+			acc += dot(vec3(dvMmr(p + 15), dvMmr(p + 16), dvMmr(p + 17)), sig2 * sig);
+			acc += dot(vec4(dvMmr(p + 18), dvMmr(p + 19), dvMmr(p + 20), dvMmr(p + 21)), sigX2 * sigX);
+		}
+	}
+	return clamp(acc, dvPivot(c * 9), dvPivot(c * 9 + np - 1));
+}
+
+// DV 全链: reshape → ycc_to_rgb(PQ域) → PQ线性 → LMS合成阵 → 回编码 PQ BT.2020
+vec3 dvProcess(vec3 yuv) {
+	vec3 sig = clamp(yuv, vec3(0.0), vec3(1.0));
+	sig = vec3(dvReshapeComp(0, sig, sig.r), dvReshapeComp(1, sig, sig.g),
+	           dvReshapeComp(2, sig, sig.b));
+	mat3 nl = mat3(ubo.dvNl[0].xyz, ubo.dvNl[1].xyz, ubo.dvNl[2].xyz);
+	vec3 rgb = nl * sig + ubo.dvNlOff.xyz;
+	vec3 lin = pqToLinear(rgb);
+	mat3 lm = mat3(ubo.dvLm[0].xyz, ubo.dvLm[1].xyz, ubo.dvLm[2].xyz);
+	return linearToPq(lm * lin);
+}
+
 // 色彩处理总入口: forceHDR 跳过全部处理(PQ 编码值直通); 否则仅 PQ/HLG 做变换,
 // SDR 原样透传(零改动)。forceSDR 与 follow 在此等价(恒 tone map)
 vec3 processColor(vec3 rgb) {
@@ -144,15 +224,20 @@ void yuv420p10(){
 	float u = read10bitUV(uPos);
 	float v = read10bitUV(vPos);
 
-	vec4 rgba1 = vec4(y1, u, v, 1.0) * ubo.colorMat;
-	vec4 rgba2 = vec4(y2, u, v, 1.0) * ubo.colorMat;
-	vec4 rgba3 = vec4(y3, u, v, 1.0) * ubo.colorMat;
-	vec4 rgba4 = vec4(y4, u, v, 1.0) * ubo.colorMat;
+	// DV 流走整形链(替换 colorMat), 输出已是 PQ BT.2020, processColor 照常消费
+	vec3 rgb1 = ubo.doviEnable == 1 ? dvProcess(vec3(y1, u, v))
+	                                : (vec4(y1, u, v, 1.0) * ubo.colorMat).rgb;
+	vec3 rgb2 = ubo.doviEnable == 1 ? dvProcess(vec3(y2, u, v))
+	                                : (vec4(y2, u, v, 1.0) * ubo.colorMat).rgb;
+	vec3 rgb3 = ubo.doviEnable == 1 ? dvProcess(vec3(y3, u, v))
+	                                : (vec4(y3, u, v, 1.0) * ubo.colorMat).rgb;
+	vec3 rgb4 = ubo.doviEnable == 1 ? dvProcess(vec3(y4, u, v))
+	                                : (vec4(y4, u, v, 1.0) * ubo.colorMat).rgb;
 	// 仅 HDR 流走色彩处理, SDR 直通(processColor 内部按 transfer 分支)
-	rgba1.rgb = processColor(rgba1.rgb);
-	rgba2.rgb = processColor(rgba2.rgb);
-	rgba3.rgb = processColor(rgba3.rgb);
-	rgba4.rgb = processColor(rgba4.rgb);
+	vec4 rgba1 = vec4(processColor(rgb1), 1.0);
+	vec4 rgba2 = vec4(processColor(rgb2), 1.0);
+	vec4 rgba3 = vec4(processColor(rgb3), 1.0);
+	vec4 rgba4 = vec4(processColor(rgb4), 1.0);
 
 	imageStore(outTex, ivec2(uv.x*2, uv.y*2), rgba1);
 	imageStore(outTex, ivec2(uv.x*2+1, uv.y*2), rgba2);

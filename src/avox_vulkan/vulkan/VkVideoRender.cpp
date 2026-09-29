@@ -132,18 +132,26 @@ void VkVideoRender::setColorSpace(const ColorSpaceDesc& c) {
   }
 }
 
-// HDR 静态元数据: 峰值亮度变化才重传
+// HDR 元数据: 峰值相关(含 DV L1)变化才重传
 void VkVideoRender::setHdrMeta(const HdrMeta& meta) {
   if (hdrMeta.valid == meta.valid && hdrMeta.maxCLL == meta.maxCLL &&
-      hdrMeta.maxLuminance == meta.maxLuminance) {
+      hdrMeta.maxLuminance == meta.maxLuminance &&
+      hdrMeta.l1MaxNits == meta.l1MaxNits) {
     return;
   }
   LOGFLF(LogLevel::info, "hdr meta maxLum:", meta.maxLuminance,
          " minLum:", meta.minLuminance, " cll:", meta.maxCLL,
-         " fall:", meta.maxFALL);
+         " fall:", meta.maxFALL, " l1max:", meta.l1MaxNits);
   hdrMeta = meta;
   if (yuv2RGBA) {
     yuv2RGBA->get()->setHdrMeta(meta);
+  }
+}
+
+// DV RPU 整形数据: 层内重建 DV UBO 区, 场景粒度无Own diff(上游 memcmp 去重)
+void VkVideoRender::setDoviMeta(const DoviMeta& meta) {
+  if (yuv2RGBA) {
+    yuv2RGBA->get()->setDoviMeta(meta);
   }
 }
 
