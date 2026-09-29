@@ -118,6 +118,9 @@ MINIMUM_DECODERS += ("vp8,vp9,av1,theora,mjpeg,mjpegb,dvvideo,prores,"
                      "alac,ape,aac_latm,"                           # 无损音乐/TS LATM
                      "pcm_dvd,pcm_bluray,dsd_lsbf,dsd_msbf,"        # 原盘LPCM/DSD
                      "pgssub,")                                     # PGS 位图字幕(a01-T4; PgsDecoder 走 pgssubdec)
+# DV RPU 解码=引擎帧侧 DOVI 元数据(L1/L2)唯一来源; 9/29 实证 --disable-everything
+# 下 hevc 的 select 不会把它带进商用 DLL(全 DLL 无 dovi_rpudec, RPU NAL 被静默丢弃)
+MINIMUM_DECODERS += ("dovi_rpudec,",)
 # 2026-09-25 补充(四平台同步): P0 字幕 + P1 常用老格式/摄像机/监控/国标/缩图,
 #   全部为原生 LGPL 组件; 组件名已逐个 configure 实测 CONFIG_*_DECODER=1
 #   (口径与完整缺口清单见 doc/build/FFmpeg构建.md §4; P2 的 adpcm_*/pcm_* 全家暂不收)
