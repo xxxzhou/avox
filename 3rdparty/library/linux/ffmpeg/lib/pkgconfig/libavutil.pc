@@ -1,0 +1,14 @@
+prefix=/home/zhouxin/github/ffmpeg/out-linux-x64
+exec_prefix=${prefix}
+libdir=/home/zhouxin/github/ffmpeg/out-linux-x64/lib
+includedir=/home/zhouxin/github/ffmpeg/out-linux-x64/include
+
+Name: libavutil
+Description: FFmpeg utility library
+Version: 61.1.101
+Requires: 
+Requires.private: 
+Conflicts:
+Libs: -L${libdir}  -lavutil 
+Libs.private: -lva-drm -lva -lva-x11 -lva -lm -lz -lssl -lcrypto -lva -latomic -pthread -lX11
+Cflags: -I${includedir}

@@ -1,0 +1,14 @@
+prefix=/d/Work/github/ffmpeg/out-android-arm64
+exec_prefix=${prefix}
+libdir=/d/Work/github/ffmpeg/out-android-arm64/lib
+includedir=/d/Work/github/ffmpeg/out-android-arm64/include
+
+Name: libavutil
+Description: FFmpeg utility library
+Version: 61.1.101
+Requires: 
+Requires.private: 
+Conflicts:
+Libs: -L${libdir}  -lavutil 
+Libs.private: -lm -lz -latomic -landroid -lmediandk -pthread
+Cflags: -I${includedir}

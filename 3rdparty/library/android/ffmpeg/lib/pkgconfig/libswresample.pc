@@ -1,0 +1,14 @@
+prefix=/d/Work/github/ffmpeg/out-android-arm64
+exec_prefix=${prefix}
+libdir=/d/Work/github/ffmpeg/out-android-arm64/lib
+includedir=/d/Work/github/ffmpeg/out-android-arm64/include
+
+Name: libswresample
+Description: FFmpeg audio resampling library
+Version: 7.1.101
+Requires: 
+Requires.private: libavutil >= 61.1.101
+Conflicts:
+Libs: -L${libdir}  -lswresample 
+Libs.private: -lm -latomic
+Cflags: -I${includedir}

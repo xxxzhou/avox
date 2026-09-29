@@ -1,0 +1,14 @@
+prefix=/home/zhouxin/github/ffmpeg/out-linux-x64
+exec_prefix=${prefix}
+libdir=/home/zhouxin/github/ffmpeg/out-linux-x64/lib
+includedir=/home/zhouxin/github/ffmpeg/out-linux-x64/include
+
+Name: libavformat
+Description: FFmpeg container format library
+Version: 63.1.101
+Requires: 
+Requires.private: libavcodec >= 63.1.101, libswresample >= 7.1.101, libavutil >= 61.1.101
+Conflicts:
+Libs: -L${libdir}  -lavformat 
+Libs.private: -lm -latomic -lz -lssl -lcrypto
+Cflags: -I${includedir}

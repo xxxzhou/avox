@@ -1,0 +1,14 @@
+prefix=/home/zhouxin/github/ffmpeg/out-linux-x64
+exec_prefix=${prefix}
+libdir=/home/zhouxin/github/ffmpeg/out-linux-x64/lib
+includedir=/home/zhouxin/github/ffmpeg/out-linux-x64/include
+
+Name: libswresample
+Description: FFmpeg audio resampling library
+Version: 7.1.101
+Requires: 
+Requires.private: libavutil >= 61.1.101
+Conflicts:
+Libs: -L${libdir}  -lswresample 
+Libs.private: -lm -latomic
+Cflags: -I${includedir}
