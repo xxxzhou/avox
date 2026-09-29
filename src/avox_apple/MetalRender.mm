@@ -416,7 +416,10 @@ void MetalRender::renderGpuFrame(const GpuFrame &frame) {
 // IOSurface-backed NV12 pb(Y 按 stride 收紧, U/V 交织)后走硬解同款绘制。
 // 每帧新建 pb 对齐 VT 出帧节奏, 复用同 pb 会与未完帧的 GPU 读并发写
 void MetalRender::renderCpuFrame(const YUVFrame &frame) {
-  if (frame.format.type != YuvType::yuv420P || !frame.data[0]) {
+  // 10bit 平面(yuv420P10)收 P010 pb 走既有 bTenBit 采样; 只收 8bit 会让
+  // DV/HDR10 软解帧静默全丢, 离屏抓帧恒黑(dv-l1gate mac 实证)
+  const bool b10 = frame.format.type == YuvType::yuv420P10;
+  if ((frame.format.type != YuvType::yuv420P && !b10) || !frame.data[0]) {
     static std::once_flag once;
     std::call_once(once, [&frame] {
       LOGFLF(LogLevel::warn, "metal cpu frame yuv type not support:",
@@ -442,7 +445,9 @@ void MetalRender::renderCpuFrame(const YUVFrame &frame) {
   CVPixelBufferRef pb = nullptr;
   CVReturn status = CVPixelBufferCreate(
       kCFAllocatorDefault, width, height,
-      kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, pbAttrs, &pb);
+      b10 ? kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
+          : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+      pbAttrs, &pb);
   CFRelease(pbAttrs);
   if (status != kCVReturnSuccess || !pb) {
     LOGFLF(LogLevel::warn, "cpu frame pixelbuffer create failed:",
@@ -458,19 +463,48 @@ void MetalRender::renderCpuFrame(const YUVFrame &frame) {
   uint8_t *dstUV = (uint8_t *)CVPixelBufferGetBaseAddressOfPlane(pb, 1);
   const size_t dstYPitch = CVPixelBufferGetBytesPerRowOfPlane(pb, 0);
   const size_t dstUVPitch = CVPixelBufferGetBytesPerRowOfPlane(pb, 1);
-  for (int32_t r = 0; r < height; ++r) {
-    memcpy(dstY + (size_t)r * dstYPitch,
-           frame.data[0] + (size_t)r * frame.stride[0], width);
-  }
-  const int32_t cw = width / 2;
-  const int32_t ch = height / 2;
-  for (int32_t r = 0; r < ch; ++r) {
-    const uint8_t *u = frame.data[1] + (size_t)r * frame.stride[1];
-    const uint8_t *v = frame.data[2] + (size_t)r * frame.stride[2];
-    uint8_t *d = dstUV + (size_t)r * dstUVPitch;
-    for (int32_t c = 0; c < cw; ++c) {
-      d[2 * c] = u[c];
-      d[2 * c + 1] = v[c];
+  if (b10) {
+    // 420P10(LE, 值在低位)→P010(值在高位)逐样 <<6; stride 均按字节
+    uint16_t *dstY16 = (uint16_t *)dstY;
+    uint16_t *dstUV16 = (uint16_t *)dstUV;
+    const size_t dstYW = dstYPitch / 2;
+    const size_t dstUVW = dstUVPitch / 2;
+    for (int32_t r = 0; r < height; ++r) {
+      const uint16_t *src = (const uint16_t *)(frame.data[0] +
+                                               (size_t)r * frame.stride[0]);
+      uint16_t *d = dstY16 + (size_t)r * dstYW;
+      for (int32_t c = 0; c < width; ++c) {
+        d[c] = (uint16_t)(src[c] << 6);
+      }
+    }
+    const int32_t cw = width / 2;
+    const int32_t ch = height / 2;
+    for (int32_t r = 0; r < ch; ++r) {
+      const uint16_t *u =
+          (const uint16_t *)(frame.data[1] + (size_t)r * frame.stride[1]);
+      const uint16_t *v =
+          (const uint16_t *)(frame.data[2] + (size_t)r * frame.stride[2]);
+      uint16_t *d = dstUV16 + (size_t)r * dstUVW;
+      for (int32_t c = 0; c < cw; ++c) {
+        d[2 * c] = (uint16_t)(u[c] << 6);
+        d[2 * c + 1] = (uint16_t)(v[c] << 6);
+      }
+    }
+  } else {
+    for (int32_t r = 0; r < height; ++r) {
+      memcpy(dstY + (size_t)r * dstYPitch,
+             frame.data[0] + (size_t)r * frame.stride[0], width);
+    }
+    const int32_t cw = width / 2;
+    const int32_t ch = height / 2;
+    for (int32_t r = 0; r < ch; ++r) {
+      const uint8_t *u = frame.data[1] + (size_t)r * frame.stride[1];
+      const uint8_t *v = frame.data[2] + (size_t)r * frame.stride[2];
+      uint8_t *d = dstUV + (size_t)r * dstUVPitch;
+      for (int32_t c = 0; c < cw; ++c) {
+        d[2 * c] = u[c];
+        d[2 * c + 1] = v[c];
+      }
     }
   }
   CVPixelBufferUnlockBaseAddress(pb, 0);
