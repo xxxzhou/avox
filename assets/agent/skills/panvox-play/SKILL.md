@@ -26,7 +26,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 - **一键真实链路复现**(杀实例后): runner/Release 目录 `PANVOX_AUTOPLAY=<url> ./panvox.exe > 日志 2>&1 &` —— shim stderr + Dart print + 引擎 log 全落一个文件, 免手点走 app 真实开片链路(硬解/GPU 合成/窗口直渲全真)。
 - 崩溃: Release 目录(`app\build\windows\x64\runner\Release\`) `AVOX_*.dmp`(app 自带 handler, mtime≈崩溃时刻) → `python tools/analyze_dump.py <dmp>`; 疑冻结看 `%APPDATA%\panvox\freeze\`。排 crash 需带符号引擎: `AVOX_BUILD_TYPE=RelWithDebInfo python build_windows.py`(avox 仓) + `tools\deploy_runtime.ps1 -EngineConfig RelWithDebInfo`(部署文档 §5)。
 
-**Mac**(ssh mac): shim 无 -Log, 靠终端捕获 + os_log。
+**Mac**(ssh mac): **-Log 已补(9/29, panvox 2f11d8e 三端一份)**: `open ~/Applications/panvox.app --args -Log` → `~/Documents/panvox/logs/panvox-log-<ts>.log`([dart]/[info]..[debug] 前缀同 Win; 旧构建无此开关)。
 - **用户实际启动位是 `~/Applications/panvox.app`**(非 build products), 引擎静态链进 libpanvox_native.dylib(无独立 avox dylib); 换引擎优先 `bash tools/deploy_macos_runtime.sh Release`(部署文档 §3.3, 它才编 `keyring.cpp`), 换完 `nm -gU <dylib> | grep pvx_keyring_get` 须有 1 个; **误用 `deploy_macos_shim_app.sh` 会漏 `_pvx_keyring_get` ⇒ TVDB 凭据变空**(单机只换引擎可用它但须事后校验 keyring 符号)。核对启动位 dylib 已刷新用 `strings <dylib> | grep <修复特征串>` 最实。
 - **Finder/launchd 启动引擎 stdout 全丢**(os_log 也常无条目、无自有日志文件): 必须终端带重定向重启 `nohup ~/Applications/panvox.app/Contents/MacOS/panvox >/tmp/panvox-run.log 2>&1`。
 - **0927 实测此法可能走不通**: 直启沙盒 app 死在 `_libsecinit_appsandbox`(SIGTRAP, 非 app 崩溃), `log show --predicate 'process == "panvox"'` 也无条目 → 绕法: 经 LaunchServices 启动(`open -a`, 传 env 用 `open --env`), 或**降级到引擎级复现**(§5 avox_cli/vsynctest, 对「解码/渲染时序」类病等价且更可控)。
