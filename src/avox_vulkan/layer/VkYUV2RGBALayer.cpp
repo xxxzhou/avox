@@ -1,5 +1,7 @@
 #include "VkYUV2RGBALayer.hpp"
 
+#include <cstdio>
+
 #include "VkPipeGraph.hpp"
 namespace avox {
 
@@ -54,6 +56,10 @@ void VkYUV2RGBALayer::setHdrMode(HdrMode mode) {
 }
 
 void VkYUV2RGBALayer::setDoviMeta(const DoviMeta& meta) {
+  // 探针走 stderr: playtest 环境 logTask 启动后不再排水, 引擎 info 日志不可见
+  fprintf(stderr, "[yuv2rgba] setDoviMeta valid=%d pivots=%d/%d/%d\n",
+          (int)meta.valid, (int)meta.comp[0].numPivots,
+          (int)meta.comp[1].numPivots, (int)meta.comp[2].numPivots);
   doviMeta = meta;
   packDoviUbo(uboData, doviMeta);
   bParametChange = true;
@@ -74,6 +80,8 @@ void VkYUV2RGBALayer::onInitLayer() {
     // V5 通吃 10bit(含 p010 上传归一化): transfer 为运行时 UBO 分支, SDR 直通零改动
     path = "glsl/yuv2rgbaV5.comp.spv";
   }
+  fprintf(stderr, "[yuv2rgba] onInitLayer variant=%s yuvType=%d\n",
+          path.c_str(), (int)yuvType);
   shader->loadShaderModule(path);
   assert(shader->shaderStage.module != VK_NULL_HANDLE);
   // 带P/SP的格式由r8转rgba8

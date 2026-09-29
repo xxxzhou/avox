@@ -83,7 +83,7 @@ void SurfaceRenderNative::setHdrMeta(const HdrMeta& meta) {
 
 void SurfaceRenderNative::setDoviMeta(const DoviMeta& meta) {
   SurfaceRenderVk::setDoviMeta(meta);
-  // 平台腿(dx11/egl/metal)整形体 C 批后接入, 基类默认无操作
+  // 平台腿 dx11/metal 已接线(905b45a), EGL 后置; 基类默认无操作
   if (pVideoRender) {
     pVideoRender->setDoviMeta(meta);
   }

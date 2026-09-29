@@ -1,5 +1,7 @@
 #include "VideoTrack.hpp"
 
+#include <cstdio>
+
 #include "../module/AvoxManager.hpp"
 #include "../video/VideoDecoder.hpp"
 #include "MediaPlayer.hpp"
@@ -110,6 +112,11 @@ void VideoTrack::onHdrMeta(const HdrMeta& hdrMeta) {
 }
 
 void VideoTrack::onDoviMeta(const DoviMeta& doviMeta) {
+  // 探针走 stderr: playtest 环境 logTask 启动后不再排水, 引擎 info 日志不可见
+  fprintf(stderr, "[dovi] dispatch valid=%d pivots=%d/%d/%d\n",
+          (int)doviMeta.valid, (int)doviMeta.comp[0].numPivots,
+          (int)doviMeta.comp[1].numPivots,
+          (int)doviMeta.comp[2].numPivots);
   // 上游已按 memcmp 去重(场景粒度), 直接双路转发
   windowRender->setDoviMeta(doviMeta);
 }

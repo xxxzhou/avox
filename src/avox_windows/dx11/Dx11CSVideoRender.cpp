@@ -371,6 +371,10 @@ void Dx11CSVideoRender::setHdrMeta(const HdrMeta& meta) {
 }
 
 void Dx11CSVideoRender::setDoviMeta(const DoviMeta& meta) {
+  // 探针走 stderr: playtest 环境 logTask 启动后不再排水, 引擎 info 日志不可见
+  fprintf(stderr, "[dx11cs] setDoviMeta valid=%d pivots=%d/%d/%d\n",
+          (int)meta.valid, (int)meta.comp[0].numPivots,
+          (int)meta.comp[1].numPivots, (int)meta.comp[2].numPivots);
   doviMeta = meta;
   packDoviUbo(constData, doviMeta);
   bParamsDirty = true;
