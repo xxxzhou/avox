@@ -372,6 +372,20 @@ ssh mac        # 已配免密
 | 2.5 | 去 avox-test 的 `flatOk` 豁免（`PlayCases.hpp:242` 定义 / `:726` 使用处），把 `dv-shot-*` 改成硬断言 |
 | 2.6 | 跑 `dv-l1gate` / `dv-l1base` / `dv-l1var`，判据 `dv_p8_scene_diff.py --expect-l1-change` |
 
+### 5.1 ✅ P2｜mac 接入（2026-09-30 完成, 零引擎改动）
+
+- 2.1 核查: `IOSVDecoder : public VideoDecoder` 只 override `onPreDecoder`, **不 override
+  `decoderImp` → MetaExtractor 自动接入**(与 Windows Dx11VDecoder 同款)
+- mac 仓同步到 f0002e6 + avox-test df7fe45; `build_mac.py` 全量绿; runner 目标名是
+  `playtest`(产物 playtest.app, 旧的 `macplaytest` 是遗留名, build_runner 要用 --target playtest)
+- **VT 硬解腿三用例 3/3 PASS**(dec=hard decoder=ios hw=1), 探针同参考档
+  (1000.6/0.0003nit, 场景切换 249.7/399.7), 静态 SEI(base) 同样拿全
+- 差分判据(帧拉回 Windows 跑, mac 无 numpy): **A 场 +0.25 PASS / B 场 +3.46**,
+  与 Windows 硬解腿(+0.19/+3.46)逐位一致 —— L1 膝点 Metal/DX11 两腿确定性一致;
+  B 场阈下同为已记录定标债。avox-test eec3ea4 时代「VT 硬解不产 DOVI 元数据」
+  的豁免口径自此作废
+- 待办(产品侧, 非 runner): panvox.app 装机位 ditto(先退在跑实例)属 P5 收尾
+
 ### P3｜Android 接入
 
 | 步骤 | 说明 |
