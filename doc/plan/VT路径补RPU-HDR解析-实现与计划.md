@@ -1,8 +1,8 @@
 # VT 路径补 RPU/HDR 解析 —— 实现与后续计划（交接文档）
 
-> 状态: **P1 已完成并构建通过**, P2/P3 待做
-> 最后更新: 2026-09-29 23:57
-> 涉及仓库: `avox`(已改) + `avox-test`(待改)
+> 状态: **P1 已完成(含 Windows 硬解端到端验证 + dx11 DV 转置 bug 修复, 已提交 e9d9d54)**, P2/P3 待做
+> 最后更新: 2026-09-30 01:35
+> 涉及仓库: `avox`(e9d9d54) + `avox-test`(df7fe45, dv-l1 三用例已切硬解)
 > 约束: **只改 avox + avox-test**; **不动 FFmpeg 仓**(`/d/Work/github/ffmpeg`)
 
 ---
@@ -161,38 +161,40 @@ DecodeResult VideoDecoder::decoderImp(AvoxPacket& vdata) {
 **决定性证据**：链接零 `LNK2019` ⇒ `ff_dovi_rpu_parse` / `ff_dovi_ctx_unref` 的引用
 由 vendor 的 `.c` 满足了（否则会像中途那轮一样报「无法解析的外部符号」）。
 
-### 2.2 ⚠️ 尚未做的验证：硬解腿端到端
+### 2.2 ✅ 硬解腿端到端验证（2026-09-30 完成, avox e9d9d54）
 
-**这是 P1 的收尾项，也是 P2/P3 的前置**。
+**结论: 硬解腿元数据自提全链打通; 顺带实锤并修掉 dx11cs DV 分支的矩阵转置 bug。**
 
-素材：`avox-test/assets/video/test_h265_dv_l1gate_640x360.mkv`（30 个 RPU）
-参考值：`source_max_pq = 3079` / `source_min_pq = 7`（FFmpeg 官方路径已逐位对齐）
+| 验证项 | 结果 |
+|---|---|
+| 探针(限次 stderr 桩, playtest 引擎日志不可见故走 stderr) | `[hdrmeta] rpu parsed hasL1=1 l1max=1000.6 l1min=0.0003 hasMap=1` = **3079/7 那一档** ✓ |
+| L1 场景切换派发 | A 1000.6 → B 249.7(l1gate) / 399.7(l1var), 渲染端 UBO peak 同步 1001→250 ✓ |
+| 静态 SEI(l1base 无 RPU) | `maxLum=1000 cll=1000 fall=400` ✓ |
+| 双腿 DoviMeta 逐字段对质 | 完全一致(bl=10/cld=23/piv/poly/nl/lof/lin 全同) ✓ |
+| A 场内置对照差分 | 修复前 **-100.04** → 修复后 **+0.19 PASS** ✓ |
+| B 场 L1 门差分 | **+3.46 阈下**(阈 4.0)——与已记录双平台欠账(+4.05贴阈/+3.46阈下, avox-test eec3ea4)同族, 软解腿同日也仅 +4.05; 属 `dv_p8_scene_diff.py` 阈值定标债(THRESH_DELTA 定标于引擎膝点调整前), **非硬解腿缺陷**, 待批C单源化 |
 
-需要做的：
+**⭐ dx11cs DV 矩阵转置 bug（本次最重要的引擎发现, 已修）**
 
-1. **加探针**。`MetaExtractor.cpp` 里**目前没有任何日志/探针**，无法从日志判断是否命中。
-   建议加一行（`AVOX_DEBUG` 或 LogLevel::info 守卫）：
+`Dx11CSVideoRender` 的 DV 分支 `dvApplyCols(v, c0,c1,c2)` 把 UBO 的**列主序**
+`dvNl/dvLm`(packDoviUbo 按 `dvNl[c][r]=M[r][c]` 打包, 服务 GLSL `mat3(列构造)×v`)
+按 `dot(c_r, v)` 应用 = **Mᵀ×v**。ycc_to_rgb 强非对称 ⇒ 中性色度下
+G 通道吃到 m01≈0 直接归零, 画面变**品红 (255,0,255)**——亮度均值被误读为
+「整体变暗-100」, 排查时极易走错方向(先验: 逐帧 RGB 采样而非 L 均值)。
+修法: 按**行**取点积 `dot(float3(c0[r],c1[r],c2[r]), v)`。09-29 的
+「三腿逐块吻合」验证是同链自洽对比, 转置在对比两侧自消, 故未暴露。
 
-   ```cpp
-   // 在 scanNalus 派发回调处
-   LOGFLF(LogLevel::info, "[dovi] dispatch valid=", (int)dovi.valid,
-          " l1max=", hdr.l1MaxNits, " l1min=", hdr.l1MinNits,
-          " hdr=", (int)hdr.valid);
-   ```
+排查链路沉淀: 帧格式(P010 GPU 纹理→dx11cs 先转 RGBA→VK 合成) → UBO dump
+(状态全对) → 输入纹理 staging 回读(码值干净) → 输出 RT 回读 → **逐帧 RGB
+采样**(G=0 一眼定谳)。软解腿不走此路径(CPU 帧直接进 VK yuv2rgbaV5)。
 
-2. **跑硬解腿**。`PlayCase::hardDecode` 默认 `true`（`PlayCases.hpp:161`），但
-   DV 三个用例**刻意设成 `false` 走软解**：
+### 2.3 P1 收尾的既成事实
 
-   | 用例 | 行号 | 当前 |
-   |---|---|---|
-   | `dv-l1gate` | `PlayCases.hpp:502` | `hardDecode = false` |
-   | `dv-l1base` | `PlayCases.hpp:516` | `hardDecode = false` |
-   | `dv-l1var` | `PlayCases.hpp:535` | `hardDecode = false` |
-
-   要验硬解需新开用例或改这三个标志（改前先确认软解腿仍绿，避免混淆归因）。
-
-3. **判据**：探针命中 + `l1max` 与参考值一致（3079/7 那一档）+ `onHdrMeta` 也来
-   （MDCV/CLLI 两条 SEI）。
+- avox-test `dv-l1gate/l1base/l1var` 已切 `hardDecode=true`(df7fe45), 软解基线当日 3/3 PASS 后翻转
+- 产物已部署 panvox(avox.dll 六份全刷, md5 `ebe165a1...` 一致)
+- 一次性对质 dump(dovidump/texdump/outdump/pixdump)已按纪律全部回收;
+  保留 MetaExtractor 限次探针 + VideoTrack 既有桩
+- `NUL.obj` 构建残留已删; `build_common.py -G` 缺陷仍未修(见 §3 坑 1, 待拍板)
 
 ---
 
