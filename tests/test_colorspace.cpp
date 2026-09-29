@@ -92,12 +92,14 @@ TEST_CASE("hdrPeakNits: CLL 优先, 退 mastering, 再退默认") {
   CHECK(hdrPeakNits(meta) == 1000);  // CLL 覆盖 mastering
 }
 
-TEST_CASE("UBO 布局: transfer 槽位与 96B 尺寸 (3a 定稿契约)") {
-  // offset 12 的 transfer 不得挤动 colorMat(offset 16), 追加区 offset 80 起
-  CHECK(sizeof(ColorYuvUBO) == 96);
+TEST_CASE("UBO 布局: transfer 槽位与头 96B+DV 区尺寸 (3a 定稿契约)") {
+  // offset 12 的 transfer 不得挤动 colorMat(offset 16), 追加区 offset 80 起;
+  // 批C(905b45a)在 96B 头后追加 DV 整形区(offset 96 起, 共 2752B)
+  CHECK(sizeof(ColorYuvUBO) == 2848);
   CHECK(offsetof(ColorYuvUBO, colorMat) == 16);
   CHECK(offsetof(ColorYuvUBO, maxLuminance) == 80);
   CHECK(offsetof(ColorYuvUBO, transfer) == 12);
+  CHECK(offsetof(ColorYuvUBO, doviEnable) == 96);
   // 枚举序即 UBO int 值, shader 按 2=pq 3=hlg 分支
   CHECK((int32_t)YuvTransfer::gamma == 0);
   CHECK((int32_t)YuvTransfer::linear == 1);
