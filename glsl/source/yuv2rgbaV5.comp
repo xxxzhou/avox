@@ -4,7 +4,11 @@
 // 读函数与色彩尾段分离: 接入新格式(如 p010)只加读函数, 色彩尾段共用
 
 layout (local_size_x = 16, local_size_y = 16) in;
-layout (binding = 0, r16ui) uniform readonly uimage2D inTex;
+// 输入是 10bit 平面字流(u16/字)的 RGBA8 字节视图: 每 texel=4字节=2个字, 字节序
+// 与 r16 视图完全一致, 仅换容器。r16ui 存储图在部分移动驱动上 imageLoad 恒零
+// (Adreno 740 实测: 特性位 storage/sampled/transferDst 齐全仍读零), rgba8 是
+// Vulkan 强制支持格式且引擎各管线在用, 通吃性最好
+layout (binding = 0, rgba8) uniform readonly image2D inTex;
 layout (binding = 1, rgba8) uniform image2D outTex;
 // std140: 与 ColorYuvUBO(2848B) 对齐 — transfer 占 offset 12(旧 shader 的隐式 padding),
 // mat4 落 offset 16, HDR 参数追加 offset 80; DV 整形区 offset 96(仅本 shader 声明)
@@ -35,9 +39,17 @@ layout (std140, binding = 2) uniform UBO
 
 // ---------- 读函数: 内存布局 -> 归一化 [0,1], 与色彩处理无关 ----------
 
-// yuv420p10: 平面格式, 10-bit 小端, 低 10 位有效
+// 10bit 平面字流: 平面格式, 10-bit 低对齐, 字节序与 r16 视图一致。
+// 字节视图寻址: 字索引 wi -> texel (wi>>1), 低/高字取 texel 前/后两字节;
+// 字行宽 = 帧宽(打包契约: Y/U/V 按 width 线性紧排), 2 个字行拼 1 个 texel 行
 float read10bit(ivec2 pos) {
-	return float(imageLoad(inTex, pos).r & 1023u) / 1023.f;
+	int w = imageSize(outTex).x;
+	int wi = pos.y * w + pos.x;
+	ivec2 tp = ivec2((wi >> 1) % w, (wi >> 1) / w);
+	vec4 b4 = imageLoad(inTex, tp) * 255.0;
+	uint w16 = ((wi & 1) == 0) ? (uint(b4.r + 0.5) | (uint(b4.g + 0.5) << 8))
+	                           : (uint(b4.b + 0.5) | (uint(b4.a + 0.5) << 8));
+	return float(w16 & 1023u) / 1023.f;
 }
 
 // UV 值(归一化 [0,1], 含 +0.5 偏移), 不再减 0.5(折进 colorMat 偏移列)
@@ -188,8 +200,8 @@ vec3 processColor(vec3 rgb) {
 	return rgb;
 }
 
-// yuv420p10: 数据在内存中紧密排列: Y平面(width*height) + U平面(w/2*h/2) + V平面(w/2*h/2)
-// 输入图像宽度=width, 高度=height*1.5 (以R16像素为单位), 一个线程处理 2x2 四个点
+// yuv420p10: 数据在内存中紧密排列: Y平面(width*height 字) + U平面(w/2*h/2) + V平面(w/2*h/2)
+// 字行宽=帧宽, 输入图为该字流的 RGBA8 字节视图(高 = 字行数/2 向上取整), 一个线程处理 2x2 四个点
 void yuv420p10(){
     ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
     ivec2 outSize = imageSize(outTex);

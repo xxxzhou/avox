@@ -1,5 +1,7 @@
 #include "VkInputLayer.hpp"
 
+#include <cstring>
+
 #include "VkPipeGraph.hpp"
 #include "../share/VkSharedRender.hpp"
 #ifdef __ANDROID__
@@ -49,6 +51,25 @@ void VkInputLayer::onInitGraph() {
       {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT}};
   layout->addSetLayout(items);
   layout->generateLayout();
+}
+
+void VkInputLayer::onInitLayer() {
+  VkLayer::onInitLayer();
+  bByteView = false;
+  if (inFormats.empty() || inFormats[0].imageType != ImageType::r16) {
+    return;
+  }
+  // 10bit 平面字流(u16/字, 字行宽=帧宽)按 RGBA8 字节视图建输出图: 每 texel
+  // 装 2 个字, 行数减半向上取整(奇数字行数的尾半行为填充, 字流全域仍被覆盖)。
+  // 字节流与 r16 视图完全一致, shader 侧拆字节; 解码/装箱契约与外部格式不动
+  bByteView = true;
+  cpuDataBytes = getImageSize(inFormats[0]);
+  int32_t wordRows = cpuDataBytes / (inFormats[0].width * 2);
+  outFormats[0].imageType = ImageType::rgba8;
+  outFormats[0].height = (wordRows + 1) / 2;
+  LOGFLF(LogLevel::info, "10bit byte-view: words ", inFormats[0].width, "x",
+         wordRows, " -> rgba8 ", outFormats[0].width, "x",
+         outFormats[0].height);
 }
 
 void VkInputLayer::onInitVkBuffer() {
@@ -102,11 +123,20 @@ void VkInputLayer::onInitVkBuffer() {
     size = inBufferX->getBufferSize();
   }
   assert(size > 0);
+  // 字节视图下文本图是 RGBA8(640x270...), 拷贝要覆盖整图 → 缓冲按图尺寸算,
+  // 奇数字行数时比真实数据多出的尾半行留作填充(字流不会读到这里)
+  if (bByteView) {
+    size = (int32_t)(outFormats[0].width * outFormats[0].height * 4);
+  }
   inBuffer = std::make_unique<VkWrapBuffer>();
   inBuffer->setVkContext(vkPipeGraph);
   inBuffer->initResoure(BufferUsage::store, size,
                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                        cpuBuffer->getPointer());
+                        bByteView ? nullptr : cpuBuffer->getPointer());
+  if (bByteView) {
+    // 初始零填充: 首帧上传前画面为黑而非残留显存; 尾半行永远无人读
+    memset(inBuffer->getCpuData(), 0, size);
+  }
 #ifdef WIN32
   winImage->bindD3D(vkPipeGraph->getD3D11Device(), inFormats[0]);
 #endif
@@ -211,7 +241,10 @@ void VkInputLayer::onCommand() {
                 outTexs[0]->width, outTexs[0]->height,
                 inBuffer->getBufferSize(), inFormats[0].rowPitch);
       }
-      bufferToImage(cmd, inBuffer.get(), outTexs[0].get(), inFormats[0].rowPitch);
+      // 字节视图: 缓冲与图是同一字节流紧排(图行=2 个源字行), 传 0 走紧密拷贝;
+      // 按 inFormats.rowPitch(字距)折像素尺寸会算成半行(rowPitch/4=320)致垂直压缩
+      bufferToImage(cmd, inBuffer.get(), outTexs[0].get(),
+                    bByteView ? 0 : inFormats[0].rowPitch);
     }
   }
   // External D3D11-Vulkan shared image: no need to restore layout
@@ -235,7 +268,12 @@ bool VkInputLayer::onFrame() {
   winImage->signalFence();
 #endif
   if (inBuffer && bDateUpdate) {
-    inBuffer->upload(cpuBuffer->getPointer());
+    if (bByteView) {
+      // 缓冲含(可能的)尾半行填充, 只搬真实数据, 不越读 CPU 缓冲
+      inBuffer->upload(cpuBuffer->getPointer(), cpuDataBytes);
+    } else {
+      inBuffer->upload(cpuBuffer->getPointer());
+    }
     bDateUpdate = false;
     return true;
   }

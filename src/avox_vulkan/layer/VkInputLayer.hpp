@@ -43,6 +43,11 @@ class VkInputLayer : public VInputLayer, public VkLayer {
   std::unique_ptr<VkSharedImage> sharedImage = nullptr;
   bool bVkInterop = false;
   bool bPendingRelease = false;
+  // 10bit 平面(r16)输入改喂 RGBA8 字节视图(每 texel=2 个 u16 字, 高 0.75×帧高);
+  // r16ui 存储图在部分移动驱动上 imageLoad 恒零(Adreno 实测特性位齐全仍读零)
+  bool bByteView = false;
+  // 打包数据真实字节数: 奇数字行数时缓冲尾半行是填充, 上传只搬真实数据
+  int32_t cpuDataBytes = 0;
 
  public:
   VkInputLayer(/* args */);
@@ -71,6 +76,7 @@ class VkInputLayer : public VInputLayer, public VkLayer {
   // VkLayer
  protected:
   virtual void onInitGraph() override;
+  virtual void onInitLayer() override;
   virtual void onInitVkBuffer() override;
   virtual void onInitPipe() override;
   virtual void onCommand() override;

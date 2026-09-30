@@ -98,9 +98,11 @@ void VkYUV2RGBALayer::onInitLayer() {
     sizeX = divUp(outFormats[0].width, 2 * groupX);
     sizeY = divUp(outFormats[0].height, 2 * groupY);
   } else if (paramet == YuvType::yuv420P10 || paramet == YuvType::p010) {
-    // yuv420P10/p010是平面格式,使用r16,高度是1.5倍
-    inFormats[0].imageType = ImageType::r16;
-    outFormats[0].height = inFormats[0].height * 2 / 3;
+    // 输入侧: 输入层把 10bit 平面字流(u16/字)转成 RGBA8 字节视图(每 texel=2
+    // 个字, 高 0.75×帧高), shader V5 拆字节还原; 输出高 = 输入高*4/3 整型还原
+    // (字行数 = 3h/2, texel 行数 = ceil(3h/4), 对 h%4∈{0,2} 均精确还原)
+    inFormats[0].imageType = ImageType::rgba8;
+    outFormats[0].height = inFormats[0].height * 4 / 3;
     // 一个线程处理四个点
     sizeX = divUp(outFormats[0].width, 2 * groupX);
     sizeY = divUp(outFormats[0].height, 2 * groupY);

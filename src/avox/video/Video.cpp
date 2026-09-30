@@ -304,7 +304,7 @@ bool image2YUVFrame(IImageBuffer* buffer, YUVFrame& yuvFrame, YuvType yuvType) {
   }
   yuvFrame.data[0] = buffer->getPointer();
   int32_t ysize = rowPitch * yuvFrame.format.height;
-  if (yuvType == YuvType::yuv420P10) {
+  if (yuvType == YuvType::yuv420P10 || yuvType == YuvType::p010) {
     // yuv420P10: 每像素2字节, UV是Y的一半宽高
     int32_t uvPitch = rowPitch / 2;
     int32_t uvHeight = yuvFrame.format.height / 2;
@@ -313,8 +313,14 @@ bool image2YUVFrame(IImageBuffer* buffer, YUVFrame& yuvFrame, YuvType yuvType) {
     yuvFrame.data[2] = yuvFrame.data[1] + uvSize;
     yuvFrame.stride[1] = uvPitch;
     yuvFrame.stride[2] = uvPitch;
-  } else if (yuvType == YuvType::nv12 || yuvType == YuvType::p010) {
-    // NV12/P010: UV交错起始=Y面末尾, 行距与Y一致(P010按字节同为rowPitch)
+    // p010 缓冲经 copyPlaneYUV2TightlyBuffer 装箱后恒为归一化(低对齐)平面紧排
+    // 布局, 字节与 yuv420P10 同构: 视图改标类型, 否则下游按半平面 p010 语义
+    // 二次走归一化装箱 → >>6 再来一次致数据塌缩(真机实证 1023→15)
+    if (yuvType == YuvType::p010) {
+      yuvFrame.format.type = YuvType::yuv420P10;
+    }
+  } else if (yuvType == YuvType::nv12) {
+    // NV12: UV交错起始=Y面末尾, 行距与Y一致
     yuvFrame.data[1] = yuvFrame.data[0] + ysize;
     yuvFrame.stride[1] = rowPitch;
   } else if (yuvType == YuvType::yuv420P || yuvType == YuvType::yuv422P) {
