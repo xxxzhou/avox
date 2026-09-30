@@ -1004,7 +1004,8 @@ void IOParseFF::onRunTask() {
                          ffFps(st) <= 0;
       } else if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
         bNeedFullProbe = st->codecpar->sample_rate <= 0 ||
-                         st->codecpar->ch_layout.nb_channels <= 0;
+                         st->codecpar->ch_layout.nb_channels <= 0 ||
+                         st->codecpar->format == AV_SAMPLE_FMT_NONE;
       }
     }
     if (bNeedFullProbe) {
@@ -1016,6 +1017,10 @@ void IOParseFF::onRunTask() {
         dispatch(&IAVSourceOb::onError, ffIoError(ret), "open input failed");
         return;
       }
+      // 高码率片源(85Mbps级)1MB探测窗只盖~0.1s内容, 采样格式等参数解不出,
+      // 重探给足预算(本地文件顺序读几十ms级)
+      fmtCtx->probesize = 32 * 1024 * 1024;         // 32MB
+      fmtCtx->max_analyze_duration = 8000000;       // 8s(微秒)
       if ((ret = avformat_find_stream_info(fmtCtx.get(), nullptr)) < 0) {
         AVOX_FFMEPG_LOG(ret, "avformat_find_stream_info fallback failed");
         dispatch(&IAVSourceOb::onError, ffIoError(ret), "open stream failed");

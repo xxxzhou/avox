@@ -406,7 +406,11 @@ void VDecoderTask::onRunTask() {
       continue;
     }
     if ((int32_t)result < 0) {
-      // 解码器配置失败
+      // 解码器配置失败: 放开包队列再退, 否则满队列 enqueueWait 永久反压 demux,
+      // 音频包也断供全管线冻死(高码率+TrueHD实证); 设计意图视频死音频续播
+      auto& pktQueue = trackContext->getPacketQueue();
+      pktQueue.setClose(true);
+      pktQueue.clear();
       trackContext->onDecodeError(result);
       return;
     }

@@ -160,11 +160,19 @@ void ADecoderTask::onRunTask() {
       check.reset();
     }
     if (!bOpenDecode && check.timeout()) {
+      // 打不开的音轨要能死: 关闭+排干包队列, 否则满队列 enqueueWait 永久反压
+      // demux, 视频包断供开流挂死(高码率视频+参数未解TrueHD实证)
+      auto& pktQueue = trackContext->getPacketQueue();
+      pktQueue.setClose(true);
+      pktQueue.clear();
       trackContext->onDecodeError(DecodeResult::timeout);
       return;
     }
     if ((int32_t)result < 0) {
-      // 解码器配置失败
+      // 解码器配置失败, 同样放开包队列再退(残包会反压demux)
+      auto& pktQueue = trackContext->getPacketQueue();
+      pktQueue.setClose(true);
+      pktQueue.clear();
       trackContext->onDecodeError(result);
       return;
     }
