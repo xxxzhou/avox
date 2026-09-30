@@ -87,6 +87,10 @@ protected:
   // PGS 解码器(首个 PGS 流在轨扫描期即建): 以流索引喂包门控
   std::unique_ptr<PgsDecoder> pgsDec = nullptr;
   int32_t pgsStreamId = -1;  // PGS 解码器对应的 ffmpeg 流索引(非局部轨号)
+  // 视频帧尺寸(首个非封面图视频流, 轨扫描期存档): PGS 图形平面按合成画布
+  // (帧按基准降采样, >1080p 恒 1920x1080)重采样, 见 PgsDecoder::setCanvasSize
+  int32_t videoFrameW = 0;
+  int32_t videoFrameH = 0;
   // pgsDec/pgsStreamId 互斥: IO 线程(扫描期建/循环喂) vs 选轨线程重定向
   std::mutex pgsMtx;
 

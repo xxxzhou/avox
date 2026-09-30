@@ -11,8 +11,8 @@ struct AVCodecContext;
 namespace avox {
 
 // PGS(HDMV 蓝光位图字幕)解码器(计划 ASS字幕渲染计划.md §3.6):
-// FFmpeg pgssub 解码器 → 位图矩形 + 调色板查表 → RGBA(premultiplied)联合
-// bbox 画布 → 复用 IAssOverlay 的通用 canvas 通道上屏(不经 libass, 无文字
+// FFmpeg pgssub 解码器 → 位图矩形 + 调色板查表 → RGBA(premultiplied)全帧
+// 画布 → 复用 IAssOverlay 的通用 canvas 通道上屏(不经 libass, 无文字
 // 可排)。解码只在选中该轨时由 IO 线程喂包, 成本近零、零新增三方库。
 class PgsDecoder {
  public:
@@ -21,6 +21,10 @@ class PgsDecoder {
 
   // 用流参数初始化 pgssub 解码器(codecpar 提供宽高与 extradata)
   bool open(const AVCodecParameters* par);
+
+  // 合成画布尺寸(图形平面 → 字幕合成画布的缩放目标, 见 feed 说明)。未下发
+  // 或为 0 时按图形平面原尺寸出画布(平面==画布的蓝光惯例, 等价 1:1)
+  void setCanvasSize(int32_t width, int32_t height);
 
   // seek 后重置解码状态与画布
   void flush();
@@ -40,6 +44,9 @@ class PgsDecoder {
 
  private:
   AVCodecContext* ctx_ = nullptr;
+  // 合成画布尺寸(缩放目标; 0=按图形平面原尺寸出画布)
+  int32_t canvasWidth = 0;
+  int32_t canvasHeight = 0;
   // 双缓冲画布(整帧坐标系)
   std::vector<uint8_t> buf_[2];
   AssCanvas canvas_[2] = {};

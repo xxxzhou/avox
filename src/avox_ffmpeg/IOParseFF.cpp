@@ -15,6 +15,7 @@
 #include "avox/codec/H26XHelper.hpp"
 #include "avox/module/AvoxManager.hpp"
 #include "avox/module/LogHelper.hpp"
+#include "avox/subtitle/SubtitleCanvas.hpp"
 
 namespace avox {
 
@@ -186,6 +187,11 @@ bool IOParseFF::parseStream(int32_t streamId, AVCodecParameters* codecpar) {
           pgsDec.reset();
           LOGFLF(LogLevel::warn, "pgs decoder open failed");
         } else {
+          // 画布目标尺寸: 图形平面按合成画布(帧按基准降采样)重采样, UHD BD
+          // 的 1080p 平面恰 1:1 直入, 见 setCanvasSize
+          int32_t canvasW = 0, canvasH = 0;
+          subtitleCanvasSize(videoFrameW, videoFrameH, &canvasW, &canvasH);
+          pgsDec->setCanvasSize(canvasW, canvasH);
           pgsStreamId = streamId;
           LOGFLF(LogLevel::info, "pgs decoder ready, stream:", streamId);
         }
@@ -344,6 +350,9 @@ void IOParseFF::onSelectedSubtitle(int32_t localIndex) {
     LOGFLF(LogLevel::warn, "pgs decoder switch open failed, stream:", streamId);
     return;
   }
+  int32_t canvasW = 0, canvasH = 0;
+  subtitleCanvasSize(videoFrameW, videoFrameH, &canvasW, &canvasH);
+  dec->setCanvasSize(canvasW, canvasH);
   pgsDec = std::move(dec);
   pgsStreamId = streamId;
   LOGFLF(LogLevel::info, "pgs decoder switched to stream:", streamId);
@@ -1040,6 +1049,12 @@ void IOParseFF::onRunTask() {
     // avcc/annexb 判定
     if (st->disposition & AV_DISPOSITION_ATTACHED_PIC) {
       continue;
+    }
+    // PGS 图形平面按视频帧放大(UHD BD)的目标尺寸: 首个视频流建档
+    if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && videoFrameW <= 0 &&
+        st->codecpar->width > 0 && st->codecpar->height > 0) {
+      videoFrameW = st->codecpar->width;
+      videoFrameH = st->codecpar->height;
     }
     if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && !bDisableVideo) {
       VTrackDesc vdesc = {};
