@@ -1,7 +1,5 @@
 #pragma once
 
-#include <memory>
-
 #include "AvoxMuxer.h"
 #include "AvoxSource.h"
 
@@ -279,7 +277,9 @@ class IMediaPlayer {
   // 获取开始时间,注意如果有跳变的PTS,可能从跳变的PTS开始
   virtual int64_t getStartTime() = 0;
 
-  // 需要状态在ready之后才能调用(建议IMediaPlayerOb里的onReady回调里调用)
+  // 源信息(需状态ready后): 仅 onReady 回调窗口内、同一线程调用, 需要的数据在
+  // 窗口内取出/拷贝(含 desc/subtitleDesc 的字符串), 指针不得保存或跨线程传递
+  // ——窗口外该指针随时可能被 close/换片释放
   virtual ISourceInfo* getSourceInfo() = 0;
   // 获取码率Kb/s,bAvg表示平均还是实时
   virtual double getRate(TrackType type, bool bAvg) = 0;
@@ -287,11 +287,6 @@ class IMediaPlayer {
   virtual float getLossRate(TrackType type) = 0;
   // 获取实时帧率
   virtual double getFps() = 0;
-
-  // 生命周期安全版getSourceInfo: shared_ptr引用计数托管, 播放器并发close/
-  // 换片拆源时对象不会中途释放。getSourceInfo裸指针在异步close下存在UAF
-  // 窗口(9/25真机crash), 跨线程枚举轨道一律用本接口
-  virtual std::shared_ptr<ISourceInfo> getSourceInfoSafe() { return nullptr; }
 };
 
 // 针对外挂IRawSource的简单播放器,没有音视频相关队列与同步

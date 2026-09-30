@@ -205,8 +205,9 @@ class IAudioManager {
   virtual void refreshDevices() {};
 };
 
-// 源信息，包含是否有音频与视频，及音频与视频的track信息
-// 请在相应player里的onReady回调里调用,这时这个对象是一定在的
+// 源信息：音/视频/字幕轨列表, 仅 open 期填充, ready 后只读(换片=整个对象替换);
+// 取用契约见 IMediaPlayer::getSourceInfo(仅 onReady 窗口内, 需留存的当场拷贝)。
+// 字幕轨=容器内封声明; 运行期动态加的字幕(外挂/ASR)不在本对象, 见 ISubtitle 契约
 class ISourceInfo {
  public:
   virtual ~ISourceInfo() = default;
