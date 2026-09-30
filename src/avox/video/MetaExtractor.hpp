@@ -51,8 +51,10 @@ class MetaExtractor {
  private:
   // NAL 拆分 + 逐 NAL 扫描(SEI / RPU)
   void scanNalus(const AvoxPacket& packet);
-  // SEI RBSP → 137(mdcv)/144(clli)
+  // SEI RBSP → 137(mdcv)/144(clli)/4(t35→HDR10+ L1)
   void parseSei(const uint8_t* rbsp, int32_t size, HdrMeta& meta);
+  // T.35 user data → HDR10+(ST2094-10 App4) L1 还原, 命中写 meta 返回 true
+  bool parseHdr10plusL1(const uint8_t* d, int32_t size, HdrMeta& meta);
   // RPU(RBSP) → DoviMeta / L1 亮度, 写入 hdrMeta/doviMeta
   void parseRpu(const uint8_t* rbsp, int32_t size, HdrMeta& hdr, DoviMeta& dovi);
 

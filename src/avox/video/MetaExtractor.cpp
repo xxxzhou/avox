@@ -21,6 +21,22 @@ constexpr uint8_t kNalDoviRpu = 62;
 // SEI payload type: 137=mastering display colour volume, 144=content light level
 constexpr uint32_t kSeiMdcv = 137;
 constexpr uint32_t kSeiClli = 144;
+// SEI payload type 4 = user_data_registered_itu_t_t35(h264/h265 同值)
+constexpr uint32_t kSeiT35 = 4;
+// ST2094-10(HDR10+) T.35 头 7B 定长: country + provider(be16) + oriented(be16)
+// + app_id + version。provider 0x003C 是三星注册码, HDR10+ 社区工具(hdr10plus_tool)
+// 与 ffmpeg(itut35.c)都按 provider==0x3C && oriented==1 && app_id==4 分发
+constexpr uint8_t kT35CountryUs = 0xB5;
+constexpr uint16_t kT35ProviderHdr10plus = 0x003C;
+constexpr uint16_t kT35OrientedCode = 0x0001;
+constexpr uint8_t kSt2094App4Id = 4;
+constexpr uint8_t kSt2094App4Version = 1;
+constexpr int32_t kT35St2094HeaderSize = 7;
+// 窗口数域 u(2), 合法 1..3; 多窗时第 2..n 窗的处理窗描述各 153bit, L1 只取帧级
+constexpr uint32_t kSt2094MaxWindows = 3;
+constexpr int32_t kSt2094WindowBits = 153;
+// ST2094-10 L1 17bit 码 = ST2084 PQ 信号 × 100000(工具校验上限 100000)
+constexpr float kSt2094L1Scale = 100000.0f;
 // DV RPU 首字节 NAL prefix(ff_dovi_rpu_parse 自己校验并跳过)
 constexpr uint8_t kRpuNalPrefix = 25;
 // RPU 整形曲线段类型: 0=多项式, 其余为 MMR
@@ -53,6 +69,26 @@ int32_t unescapeRbsp(const uint8_t* src, int32_t size, std::vector<uint8_t>& dst
   }
   return out;
 }
+
+// MSB-first 位读器(ST2094-10 位域流): 越界置 over 由调用方判败, 返回 0 兜底
+struct BitRd {
+  const uint8_t* d;
+  int32_t size;      // 字节数
+  int32_t pos = 0;   // 位游标
+  bool over = false;
+  uint32_t u(int32_t n) {
+    uint32_t v = 0;
+    for (int32_t i = 0; i < n; i++) {
+      if (pos >= size * 8) {
+        over = true;
+        return 0;
+      }
+      v = (v << 1) | (uint32_t)((d[pos >> 3] >> (7 - (pos & 7))) & 1);
+      pos++;
+    }
+    return v;
+  }
+};
 
 }  // namespace
 
@@ -130,16 +166,19 @@ void MetaExtractor::scanNalus(const AvoxPacket& packet) {
     // dovi 无更新, 保持 hdr.l1 不动(hdr 已由 SEI 填静态)
   }
   if (bHdrHit && hdr.valid) {
-    // L1 参与比较: DV 场景切换静态三元组不变、仅 L1 变, 不比则动态膝点失联
+    // L1 参与比较: DV 场景切换静态三元组不变、仅 L1 变, 不比则动态膝点失联;
+    // HDR10+ 场景切换同此(avg/max 联动)
     if (hdr.maxCLL != lastHdr.maxCLL || hdr.maxLuminance != lastHdr.maxLuminance ||
         hdr.maxFALL != lastHdr.maxFALL || hdr.l1MaxNits != lastHdr.l1MaxNits ||
+        hdr.l1AvgNits != lastHdr.l1AvgNits ||
         hdr.l1MinNits != lastHdr.l1MinNits) {
       lastHdr = hdr;
       // 探针走 stderr: 同 VideoTrack 桩(引擎 info 日志在 playtest 不可见)
       fprintf(stderr,
-              "[hdrmeta] maxLum=%u cll=%u fall=%u l1max=%.1f l1min=%.4f\n",
+              "[hdrmeta] maxLum=%u cll=%u fall=%u l1max=%.1f l1avg=%.1f "
+              "l1min=%.4f\n",
               hdr.maxLuminance, hdr.maxCLL, hdr.maxFALL, (double)hdr.l1MaxNits,
-              (double)hdr.l1MinNits);
+              (double)hdr.l1AvgNits, (double)hdr.l1MinNits);
       if (cb.onHdrMeta) {
         cb.onHdrMeta(hdr);
       }
@@ -205,9 +244,85 @@ void MetaExtractor::parseSei(const uint8_t* rbsp, int32_t size, HdrMeta& meta) {
       meta.maxCLL = rd16(0);
       meta.maxFALL = rd16(2);
       meta.valid = true;
+    } else if (type == kSeiT35 && paySize >= kT35St2094HeaderSize) {
+      // T.35 载荷首字节 = country code; 非 ST2094-10 签名由内部自滤
+      parseHdr10plusL1(rbsp + i, (int32_t)paySize, meta);
     }
     i += (int32_t)paySize;
   }
+}
+
+// T.35 user data → HDR10+(SMPTE ST 2094-10 Application 4) L1 还原。
+// 位语法(载荷已反仿真, MSB first, 与 hdr10plus_tool/ffmpeg itut35.c 同源):
+//   num_windows u(2) [多窗时每窗 153bit 处理窗描述]
+//   targeted_display_max_luminance u(27) actual_peak_flag u(1)
+//     [flag=1 时: rows u(5) cols u(5) + rows*cols×u(4), v1 流必无, 防御性跳过]
+//   逐窗 L1: maxscl 3×u(17) average u(17) num_dist u(4) 每项 u(7)+u(17)
+//            fraction_bright_pixels u(10)
+//   [其后再是 mastering 标志/逐窗膝点贝塞尔/色饱和映射, L1 不需要, 不读]
+// 还原口径: l1Max=各窗 maxscl 峰值, l1Avg=窗0 average, l1Min 恒 0(流内无逐帧
+// 最小信号); 17bit 码 = PQ 信号×100000, pqToNits 与 DV L1 同式。
+bool MetaExtractor::parseHdr10plusL1(const uint8_t* d, int32_t size,
+                                     HdrMeta& meta) {
+  if (size < kT35St2094HeaderSize || d[0] != kT35CountryUs) {
+    return false;
+  }
+  const uint16_t provider = (uint16_t)((d[1] << 8) | d[2]);
+  const uint16_t oriented = (uint16_t)((d[3] << 8) | d[4]);
+  if (provider != kT35ProviderHdr10plus || oriented != kT35OrientedCode ||
+      d[5] != kSt2094App4Id || d[6] != kSt2094App4Version) {
+    return false;
+  }
+  BitRd br{d + kT35St2094HeaderSize, size - kT35St2094HeaderSize};
+  const uint32_t numWindows = br.u(2);
+  if (br.over || numWindows < 1 || numWindows > kSt2094MaxWindows) {
+    return false;
+  }
+  // 位游标直跳处理窗描述段; 越界由后续 u() 的 over 兜住
+  br.pos += (int32_t)(numWindows - 1) * kSt2094WindowBits;
+  br.u(27);  // targeted_system_display_maximum_luminance(profile A 必 0)
+  if (br.u(1) != 0) {
+    const uint32_t rows = br.u(5);
+    const uint32_t cols = br.u(5);
+    if (br.over) {
+      return false;
+    }
+    for (uint32_t k = 0; k < rows * cols && !br.over; k++) {
+      br.u(4);
+    }
+  }
+  if (br.over) {
+    return false;
+  }
+  uint32_t maxScl = 0;
+  uint32_t avgMaxrgb = 0;
+  for (uint32_t w = 0; w < numWindows; w++) {
+    for (int32_t c = 0; c < 3; c++) {
+      const uint32_t v = br.u(17);
+      if (v > maxScl) {
+        maxScl = v;
+      }
+    }
+    if (w == 0) {
+      avgMaxrgb = br.u(17);
+    } else {
+      br.u(17);
+    }
+    const uint32_t nDist = br.u(4);
+    for (uint32_t k = 0; k < nDist && !br.over; k++) {
+      br.u(7);   // percentage
+      br.u(17);  // percentile
+    }
+    br.u(10);  // fraction_bright_pixels
+    if (br.over) {
+      return false;
+    }
+  }
+  meta.l1MaxNits = pqToNits((float)maxScl / kSt2094L1Scale);
+  meta.l1AvgNits = pqToNits((float)avgMaxrgb / kSt2094L1Scale);
+  meta.l1MinNits = 0.0f;
+  meta.valid = true;
+  return true;
 }
 
 void MetaExtractor::parseRpu(const uint8_t* rbsp, int32_t size, HdrMeta& hdr,

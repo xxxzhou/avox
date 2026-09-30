@@ -76,8 +76,11 @@ struct HdrMeta {
   float primaries[6] = {};    // RGB 三基色 xy(0..1), 行优先
   float whitePoint[2] = {};   // 白点 xy(0..1)
   // DV RPU L1 亮度(帧侧 DOVI_METADATA, 12bit PQ 码换 nits): 每场景变化随
-  // onHdrMeta 下发, 峰值选取优先于静态标记(P5 常无 ST2086/CLL, 是唯一亮度源)
+  // onHdrMeta 下发, 峰值选取优先于静态标记(P5 常无 ST2086/CLL, 是唯一亮度源)。
+  // HDR10+(ST2094-10 App4, T.35)命中时: max=逐窗 maxscl 峰值, avg=窗0 平均,
+  // min 恒 0(流内无逐帧最小信号)
   float l1MaxNits = 0;
+  float l1AvgNits = 0;
   float l1MinNits = 0;
   bool valid = false;
 };
