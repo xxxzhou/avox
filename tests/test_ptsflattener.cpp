@@ -1,5 +1,5 @@
 // PtsFlattener 单元测试: 老容器簇状畸形时间戳的摊平
-// 数据源为真机采集: build/fzz-probe/pkts.log (E:\备份\方子传CD1.rmvb,
+// 数据源为真机采集: build/pkt-probe/pkts.log (本地 RMVB 片源,
 // rv40 声明 24fps 真实约 15fps, 簇内 1ms / 簇基量化在 83ms 栅格)
 // 下面嵌入的是该日志前 120 个视频包 pts(倒跳点在第 348 包, 未含), 末尾另有一条
 // 读全量日志的用例, 本机有素材时自动跑更大范围
@@ -217,9 +217,9 @@ TEST_CASE("PtsFlattener: 逐包不丢不重") {
 }
 
 TEST_CASE("PtsFlattener: 全量真机日志(素材在位时跑)") {
-  // 该用例读 fzz-probe 目录下的 pkts.log; 换机器时路径不存在则跳过
-  const char* paths[] = {"pkts.log", "../fzz-probe/pkts.log",
-                         "build/fzz-probe/pkts.log"};
+  // 该用例读 pkt-probe 目录下的 pkts.log; 换机器时路径不存在则跳过
+  const char* paths[] = {"pkts.log", "../pkt-probe/pkts.log",
+                         "build/pkt-probe/pkts.log"};
   std::vector<int64_t> in;
   for (auto path : paths) {
     std::ifstream lf(path);

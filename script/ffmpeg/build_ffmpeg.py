@@ -155,7 +155,7 @@ MINIMUM_ENCODERS = "h264_mf,hevc_mf,aac"   # 商业渠道; h264_mf/hevc_mf 为�
 # 注: 没有 mp3 parser —— mp3 音频帧解析走 mpegaudio(已在列表); 写 mp3 会被静默忽略
 MINIMUM_PARSERS = ("h264,hevc,aac,opus,ac3,mpegaudio,mpegvideo,mpeg4video,vc1"
                    ",vp8,vp9,av1,vorbis,flac,dca,aac_latm,amr,mjpeg")
-# mpegvideo parser 必须与 mpegps/mpegvideo demuxer 同步启用(2026-09-24 风月宝鉴.mpg
+# mpegvideo parser 必须与 mpegps/mpegvideo demuxer 同步启用(2026-09-24 某mpg片源
 # 全片花屏根因): MPEG-PS/裸ES 视频流 need_parsing, 无 parser 时 PES 块不重组整帧
 # 直进解码器 → mpeg1/2 全片 ac-tex damaged 花屏, 且中间块 pts 缺失(NOPTS)连锁污染
 # 上层时间戳; 官方全量构建均含此 parser, 白名单老媒体扩展曾只补 mpeg4video/vc1。

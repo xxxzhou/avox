@@ -75,7 +75,7 @@ protected:
   std::atomic<bool> bEofReset{false};     // seekTo 成功后置位: 叫醒停放的读线程
   std::atomic<bool> bEofNotified{false};  // onComplete 每次 EOF 只报一次
   // seek 后等关键帧门闸: RM 等脏索引封装的 avformat_seek_file 落点不可靠,
-  // 解码器从 P/B 帧起步缺参考 → 花屏散块(方子传CD1 断点续播必现)。seek 成功
+  // 解码器从 P/B 帧起步缺参考 → 花屏散块(RM 真机片源断点续播必现)。seek 成功
   // 置位, 读循环丢视频包直到首个 KEY 包; 500 包防呆防不打 KEY 标志的封装
   std::atomic<bool> bWaitKeyframe{false};
   int32_t waitKeyframeDrops = 0;  // IO 线程专用计数

@@ -1444,7 +1444,7 @@ bool IOParseFF::seekTo(int64_t pos) {
   // 上轮 seek 预读包若有残留(IO 线程停放未消费到), 先清再装填本轮校验结果
   clearSeekStash();
   // 落点校验只在本地文件做: RM/AVI 等老容器索引损坏时 avformat_seek_file
-  // 落点不可信(方子传CD1 实测续播 seek 落回片头), 而纯 ffmpeg 同上下文重试
+  // 落点不可信(RM 真机片源实测续播 seek 落回片头), 而纯 ffmpeg 同上下文重试
   // 即落准(seekprobe12) —— 校验不过就换变体重试; 网络流保持原行为不动
   bool bVerifyLanding =
       bIoAcked && st == SeekType::normal && sourceMode == AVSourceMode::local;
