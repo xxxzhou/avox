@@ -4,6 +4,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <functional>
 #include <thread>
 
@@ -36,6 +37,58 @@ void parallelFor(int32_t rows, const std::function<void(int32_t, int32_t)>& fn) 
 
 inline uint8_t clamp255(float v) {
   return (uint8_t)std::min(255.0f, std::max(0.0f, v));
+}
+
+// 后置锐化(RCAS, 同 glsl/fsr_rcas.comp 的对比度自适应式, 去掉实时路的 5x 调试
+// 乘子): 平坦/噪声区 lobe 自适应收敛, 不在无细节处放大噪声。原地处理 ——
+// 每线程先把本段+上下 halo 行快照到本地再回写, 邻行读快照, 线程间零重叠。
+void rcasSharpenY(uint8_t* y, int32_t w, int32_t h, float strength) {
+  if (strength <= 0.0f || w < 3 || h < 3) return;
+  // 上限取官方值 0.1875: 4*lobe+1 >= 0.25, 分母恒正不会爆放大
+  const float kLimit = 0.1875f;
+  const float kEps = 1e-3f;
+  const float s = std::min(strength, 1.0f);
+  parallelFor(h, [&](int32_t y0, int32_t y1) {
+    const int32_t sy0 = std::max(y0 - 1, 0);
+    const int32_t rows = std::min(y1 + 1, h) - sy0;
+    std::vector<uint8_t> snap((size_t)rows * w);
+    for (int32_t i = 0; i < rows; ++i) {
+      std::memcpy(snap.data() + (size_t)i * w, y + (size_t)(sy0 + i) * w, w);
+    }
+    for (int32_t yy = y0; yy < y1; ++yy) {
+      const int32_t base = yy - sy0;
+      const uint8_t* up = snap.data() + (size_t)std::max(base - 1, 0) * w;
+      const uint8_t* cur = snap.data() + (size_t)base * w;
+      const uint8_t* dn = snap.data() + (size_t)std::min(base + 1, rows - 1) * w;
+      uint8_t* out = y + (size_t)yy * w;
+      for (int32_t x = 0; x < w; ++x) {
+        const int32_t xm = x > 0 ? x - 1 : 0;
+        const int32_t xp = x < w - 1 ? x + 1 : w - 1;
+        const float b = (float)up[x], d = (float)cur[xm], e = (float)cur[x],
+                    f = (float)cur[xp], hh = (float)dn[x];
+        // 噪声检测: 环均与中心的偏差 / 局部动态范围
+        const float mn5 =
+            std::min(std::min(std::min(b, d), std::min(e, f)), hh);
+        const float mx5 =
+            std::max(std::max(std::max(b, d), std::max(e, f)), hh);
+        float nz = 1.0f;
+        if (mx5 - mn5 > kEps) {
+          const float dev = std::fabs(0.25f * (b + d + f + hh) - e);
+          nz -= 0.5f * std::min(dev / (mx5 - mn5), 1.0f);
+        }
+        // 峰值限制命中量: 负=可锐化, 0=峰值/平坦区不动
+        const float mn4 = std::min(std::min(b, d), std::min(f, hh));
+        const float mx4 = std::max(std::max(b, d), std::max(f, hh));
+        const float hitMin = std::min(mn4, e) / (4.0f * mx4 + kEps);
+        const float hitMax =
+            (255.0f - std::max(mx4, e)) / (4.0f * mn4 - 1020.0f - kEps);
+        float lobe = std::min(std::max(std::max(-hitMin, hitMax), -kLimit), 0.0f);
+        lobe *= s * nz;
+        const float rcpL = 1.0f / std::max(4.0f * lobe + 1.0f, kEps);
+        out[x] = clamp255((lobe * (b + d + f + hh) + e) * rcpL);
+      }
+    }
+  });
 }
 
 bool g_serialPack = false;  // [dbg] 竞态排查: true=串行执行转换
@@ -91,7 +144,8 @@ bool CpuQEnhancer::init(const QualityEnhanceParamet& p, int32_t sw,
     return false;
   }
   LOGFLF(LogLevel::info, "CpuQEnhancer ready, infer=", inferW, "x", inferH,
-         " out=", outW, "x", outH, " useOpenVino=", useOpenVino ? 1 : 0);
+         " out=", outW, "x", outH, " sharpen=", paramet.sharpenStrength,
+         " useOpenVino=", useOpenVino ? 1 : 0);
   return true;
 }
 
@@ -215,6 +269,8 @@ void CpuQEnhancer::unpackToYuv(YUVFrame& out) {
       }
     }
   });
+  // 超分输出天然偏软, 编码前补一刀 Y 面锐化(模型推理后、转 yuv 前的最后一道)
+  rcasSharpenY(yuvBuf.data(), w, h, paramet.sharpenStrength);
   int32_t uw = w / 2, uh = h / 2;
   parallelFor(uh, [&](int32_t y0, int32_t y1) {
     for (int32_t uvY = y0; uvY < y1; ++uvY) {

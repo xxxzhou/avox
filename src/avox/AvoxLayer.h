@@ -266,9 +266,13 @@ struct QualityEnhanceParamet {
   QualityModel model = QualityModel::SpanX4;
   QualityOutputMode outputMode = QualityOutputMode::Upscale2x;
   int32_t skipFrames = 5;  // 抽帧间隔 (0=每帧都处理, N=每N帧处理一次, 默认5)
+  // 后置锐化强度: 0=关, 0~1 线性(1=满强度)。超分模型输出天然偏软, 离线
+  // 转码在编码前补一刀 RCAS; 只做 Y 面(4:2:0 色度锐化无收益且易出色边)
+  float sharpenStrength = 0.0f;
   bool operator==(const QualityEnhanceParamet& r) const {
     return model == r.model && outputMode == r.outputMode &&
-           skipFrames == r.skipFrames;
+           skipFrames == r.skipFrames &&
+           sharpenStrength == r.sharpenStrength;
   }
   bool operator!=(const QualityEnhanceParamet& r) const {
     return !(*this == r);
