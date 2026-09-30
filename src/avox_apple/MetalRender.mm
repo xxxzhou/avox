@@ -98,14 +98,13 @@ NSString *const nv12trgbBody = AVOX_SHADER_STRING(
       return scene * pow(float3(max(ys, 1e-6)), float3(0.2));
     }
 
+    // BT.2390 观感取向: 锚(sdrWhite)下近似线性透传, 超锚按内容峰值软压(与 VK/DX11 腿同源)
     float3 toneMap(float3 lin, float peakNits, float sdrWhite) {
-      float xScale = 10000.0 / sdrWhite;
-      float3 x = max(lin * xScale, float3(0.0));
-      float3 a = (x * (x * 2.51 + 0.03)) / (x * (x * 2.43 + 0.59) + 0.14);
-      float peakX = max(peakNits, sdrWhite) / sdrWhite;
-      float peak =
-          (peakX * (2.51 * peakX + 0.03)) / (peakX * (2.43 * peakX + 0.59) + 0.14);
-      return clamp(a / peak, float3(0.0), float3(1.0));
+      float dstN = max(sdrWhite, 1.0);
+      float white = max(peakNits, dstN) / dstN;   // 白点(锚归一)
+      float3 d = max(lin * 10000.0 / dstN, float3(0.0));
+      float3 t = d * (1.0 + d / (white * white)) / (1.0 + d);
+      return clamp(t, float3(0.0), float3(1.0));
     }
 
     float3 bt2020ToBt709(float3 c) {

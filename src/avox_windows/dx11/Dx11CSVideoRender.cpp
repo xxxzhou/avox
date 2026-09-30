@@ -166,14 +166,14 @@ float3 hlgToLinear(float3 e) {
     return scene * pow(max(ys, 1e-6), 0.2);
 }
 
-// tone map: 线性光(10000nit 归一) -> 显示线性 [0,1] (ACES 近似 Narkowicz)
+// tone map: 线性光(10000nit 归一) -> 显示线性 [0,1]
+// BT.2390 观感取向: 锚(sdrWhite)下近似线性透传, 超锚按内容峰值软压(Reinhard 扩展)
 float3 toneMap(float3 lin) {
-    float xScale = 10000.0 / sdrWhiteNits;
-    float3 x = max(lin * xScale, float3(0.0, 0.0, 0.0));
-    float3 a = (x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14);
-    float peakX = max(maxLuminance, sdrWhiteNits) / sdrWhiteNits;
-    float peak = (peakX * (2.51 * peakX + 0.03)) / (peakX * (2.43 * peakX + 0.59) + 0.14);
-    return clamp(a / peak, float3(0.0, 0.0, 0.0), float3(1.0, 1.0, 1.0));
+    float dstN = max(sdrWhiteNits, 1.0);
+    float white = max(maxLuminance, dstN) / dstN;   // 白点(锚归一)
+    float3 d = max(lin * 10000.0 / dstN, float3(0.0, 0.0, 0.0));
+    float3 t = d * (1.0 + d / (white * white)) / (1.0 + d);
+    return clamp(t, float3(0.0, 0.0, 0.0), float3(1.0, 1.0, 1.0));
 }
 
 // BT.2020 -> BT.709 线性域 primaries 转换, 越界分量截断
