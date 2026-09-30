@@ -111,6 +111,11 @@ AVOX_EXPORT int32_t checkHvccHeader(const uint8_t* extradata, int32_t size);
 // H26x里的图像format对应的YuvType
 AVOX_EXPORT YuvType getYuvType(int32_t format);
 
+// 位深修正: chroma_format_idc 只带抽样格式不带位深, 4:2:0 且双分量位深一致>8
+// 时升 p010。不修则 10bit 流被按 8bit 请求解码输出而静默截断
+// (HDR 锚点/hi10p/10bit 车道; 2026-09-30 Android 锚点假红根因之一)
+AVOX_EXPORT void applyBitDepthToYuvType(DecoderParams& params);
+
 AVOX_EXPORT vec2i getSize(const H264SpsSyntax& sps);
 AVOX_EXPORT double getFpsFromSps(const H264SpsSyntax& sps);
 // annexb配置载荷(SPS/PPS[/VPS])提取视频尺寸: 裸流/私有协议源无容器desc可用,

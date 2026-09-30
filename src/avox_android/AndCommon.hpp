@@ -93,6 +93,22 @@ extern AndSurfaceTexture jmSurfaceTexture;
 extern AndSurface jmSurface;
 extern AndSurfaceTextureOb jmSurfaceTextureOb;
 
+// MediaCodec 颜色格式常量 (OMX_IVCommon / NDK MediaFormat 口径)。
+// 放头文件: andYuvType/getYuvType 映射契约在 AndCommon.cpp 与 AndVDecoder.cpp
+// 两处消费, 常量只许一份定义。
+// https://www.androidos.net.cn/android/9.0.0_r8/xref/frameworks/native/headers/media_plugin/media/openmax/OMX_IVCommon.h
+#define COLOR_FormatYUV420Planar 0x13
+#define COLOR_FormatYUV422Planar 0x14
+// 与SemiPlanar共享值
+#define COLOR_FormatNV12 0x15
+#define COLOR_FormatYUV420SemiPlanar 0x15
+// YUV422灵活格式
+#define COLOR_FormatYUV422Flexible 0x7F422888
+// YUYV打包格式
+#define COLOR_FormatYUYV 0x59595559
+// P010 (10bit semi-planar, NV12 的 16bit 容器形态)
+#define COLOR_FormatYUVP010 0x36
+
 YuvType andYuvType(int32_t androidFormat);
 int32_t getYuvType(YuvType yuvType);
 

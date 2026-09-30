@@ -62,6 +62,15 @@ YuvType getYuvType(int32_t format) {
   return YuvType::other;
 }
 
+void applyBitDepthToYuvType(DecoderParams& params) {
+  // chroma_format_idc 丢位深: 4:2:0 10bit 的正确类型是 p010, 保留 yuv420P
+  // 会让解码输出请求按 8bit 走(FFVDecoder pix_fmt / AndVDecoder color format)
+  if (params.yuvType == YuvType::yuv420P && params.yBitDepth > 8 &&
+      params.uvBitDepth == params.yBitDepth) {
+    params.yuvType = YuvType::p010;
+  }
+}
+
 const char* getNalName(H264NAL nal) {
   switch (nal) {
 #define XX(name, value, str) \

@@ -118,6 +118,7 @@ bool VideoDecoder::parseConfigs() {
       }
       params.yBitDepth = sps->bit_depth_luma_minus8 + 8;
       params.uvBitDepth = sps->bit_depth_chroma_minus8 + 8;
+      applyBitDepthToYuvType(params);
       return true;
     }
   } else if (codecId == VCodecId::h265) {
@@ -146,6 +147,7 @@ bool VideoDecoder::parseConfigs() {
       // 位深处理
       params.yBitDepth = sps->bit_depth_luma_minus8 + 8;
       params.uvBitDepth = sps->bit_depth_chroma_minus8 + 8;
+      applyBitDepthToYuvType(params);
       // 从VUI参数获取帧率
       if (sps->vui_parameters_present_flag &&
           sps->vui.vui_timing_info_present_flag) {

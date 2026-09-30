@@ -50,6 +50,8 @@ protected:
   virtual void setColorSpace(const ColorSpaceDesc& c) override;
   virtual void setHdrMeta(const HdrMeta& meta) override;
   virtual void setHdrMode(HdrMode mode) override;
+  // EGL 腿暂不消费 DV 整形(OES 域限制), 只留探针观测元数据到达链路
+  virtual void setDoviMeta(const DoviMeta& meta) override;
 
 public:
   virtual IRenderContext *getGpuContext() override;

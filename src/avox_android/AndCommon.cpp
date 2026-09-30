@@ -12,19 +12,7 @@
 
 namespace avox {
 
-// https://www.androidos.net.cn/android/9.0.0_r8/xref/frameworks/native/headers/media_plugin/media/openmax/OMX_IVCommon.h
-// Android原生定义 (对应NDK r25b)
-#define COLOR_FormatYUV420Planar 0x13
-#define COLOR_FormatYUV420SemiPlanar 0x15
-// 与SemiPlanar共享值
-#define COLOR_FormatNV12 0x15
-#define COLOR_FormatYUVP010 0x36
-// 灵活YUV422格式
-#define COLOR_FormatYUV422Flexible 0x7F422888
-// YUYV打包格式
-#define COLOR_FormatYUYV 0x59595559
-// YUV422平面格式
-#define COLOR_FormatYUV422Planar 0x14
+// MediaCodec 颜色格式常量已上移 AndCommon.hpp (映射契约两处消费, 常量只一份)
 
 AndAudioTrack jmAudioTrack = {};
 AndAudioRecord jmAudioRecord = {};
@@ -53,7 +41,9 @@ YuvType andYuvType(int32_t androidFormat) {
     case COLOR_FormatYUV422Flexible:  // 0x7F422888
       return YuvType::yuv422P;
     case COLOR_FormatYUVP010:  // 0x36
-      return YuvType::uyvy422_10B;
+      // P010 = NV12 的 16bit 容器 10bit 形态(半平面), 不是 422 打包;
+      // 误映射会让交付帧按 uyvy422_10B 布局解析 → 花屏/绿屏
+      return YuvType::p010;
     default:
       return YuvType::other;
   }
@@ -68,7 +58,7 @@ int32_t getYuvType(YuvType yuvType) {
       return COLOR_FormatYUV420SemiPlanar;  // 0x15
     case YuvType::yuv422P:
       return COLOR_FormatYUV422Flexible;  // 0x7F422888
-    case YuvType::uyvy422_10B:
+    case YuvType::p010:
       return COLOR_FormatYUVP010;  // 0x36
     default:
       return COLOR_FormatNV12;

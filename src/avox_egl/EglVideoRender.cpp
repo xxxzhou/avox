@@ -254,6 +254,10 @@ IRenderContext* EglVideoRender::getGpuContext() { return this; }
 
 // 颜色/HDR参数: 每帧渲染时直接读取成员, 无需脏标记
 void EglVideoRender::setColorSpace(const ColorSpaceDesc& c) {
+  // 探针走 stderr(与 [hdr]/[yuv2rgba] 同口径): 渲染腿 transfer 链的取证点,
+  // 锚点/差分直通形态时先看这行是否到位、值是否为流侧语义
+  fprintf(stderr, "[egl] setColorSpace std=%d range=%d transfer=%d\n",
+          (int)c.standard, (int)c.range, (int)c.transfer);
   if (c.standard == cs.standard && c.range == cs.range &&
       c.transfer == cs.transfer) {
     return;
@@ -262,10 +266,21 @@ void EglVideoRender::setColorSpace(const ColorSpaceDesc& c) {
 }
 
 void EglVideoRender::setHdrMeta(const HdrMeta& meta) {
+  // 探针走 stderr: HDR10/DV 的 peak 链取证点(锚点与差分判据都消费它)
+  fprintf(stderr, "[egl] setHdrMeta valid=%d peak=%u l1max=%.1f\n",
+          (int)meta.valid, hdrPeakNits(meta), (double)meta.l1MaxNits);
   if (!meta.valid) {
     return;
   }
   hdrMeta = meta;
+}
+
+void EglVideoRender::setDoviMeta(const DoviMeta& meta) {
+  // 探针走 stderr: DV 整形链目前 EGL 腿未消费(OES 采样后 YCbCr 域已丢失,
+  // reshape 无法在 RGB 上做), 先立观测点确认元数据到达链路
+  fprintf(stderr, "[egl] setDoviMeta valid=%d pivots=%d/%d/%d\n",
+          (int)meta.valid, (int)meta.comp[0].numPivots,
+          (int)meta.comp[1].numPivots, (int)meta.comp[2].numPivots);
 }
 
 void EglVideoRender::setHdrMode(HdrMode mode) { hdrMode = mode; }
@@ -419,32 +434,70 @@ bool EglVideoRender::fetchFrame(ImageBuffer* imageBuffer) {
     LOGFLF(LogLevel::warn, "imageFormat is invalid");
     return false;
   }
-  // imageBuffer->setImageFormat(format);
 #ifndef WIN32
+  // 取证探针: 函数入口即打印(早退路径也要可见), 判定抓图分流与状态
+  fprintf(stderr,
+          "[egl] fetch: win=%d program=%u fbo=%u oesImg=%u transfer=%d "
+          "hdrMode=%d attrT=%d attrH=%d\n",
+          (int)(surface != nullptr), glProgram, fboId,
+          (frameRCtx ? frameRCtx->getImage() : 0u), (int)cs.transfer,
+          (int)hdrMode, transferAttr, hdrModeAttr);
+  // 窗口模式进本函数时 useProgram 已 swap 且把 draw surface 切去了 preSurface,
+  // back buffer 内容随交换不再可靠 —— 自持 makeCurrent 用当前 program 往常驻
+  // FBO 重画一遍再读, 与显示链解耦(对齐 Dx11CSVideoRender::fetchFrame 读
+  // outTexture 的独立取证模式); OES 纹理在 onFrameRelease(true) 后本帧内有效
+  const bool bWindow = (surface != nullptr);
+  if (bWindow) {
+    if (!makeCurrent()) {
+      LOGFLF(LogLevel::warn, "fetchFrame makeCurrent failed");
+      return false;
+    }
+  }
   // 保存当前的FBO绑定状态
   GLint prevFBO = 0;
   glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFBO);
-  if (surface) {
-    // 渲染到 Native Window：读取默认帧缓冲区
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-  } else {
-    // 渲染到 FBO：读取 FBO 的颜色附件
-    glBindFramebuffer(GL_FRAMEBUFFER, fboId);
-  }
+  // 统一读 FBO: 窗口模式重画后读, 非窗口模式(与 Vulkan 交互)画的本来就是它
+  glBindFramebuffer(GL_FRAMEBUFFER, fboId);
   // 检查帧缓冲区完整性
   GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
   if (status != GL_FRAMEBUFFER_COMPLETE) {
     LOGFLF(LogLevel::warn, "Framebuffer is not complete:", status);
     glBindFramebuffer(GL_FRAMEBUFFER, prevFBO);  // 恢复之前的FBO
+    if (bWindow) {
+      unMakeCurrent();
+    }
     return false;
   }
-  GLint viewport[4];
-  glGetIntegerv(GL_VIEWPORT, viewport);
-  format.width = viewport[2];
-  format.height = viewport[3];
+  if (bWindow && glProgram > 0 && frameRCtx && frameRCtx->getImage() > 0) {
+    // 复刻 useProgram 的画法(同 program/同几何/同 HDR uniform), 仅目标换成
+    // FBO: 取证图与显示腿同帧同参, letterbox 视口也按显示语义复刻
+    vec4i viewRect = {0, 0, imageFormat.width, imageFormat.height};
+    if (!bFullScreen && aspect > 0.0f) {
+      viewRect = getViewRect(imageFormat.width, imageFormat.height, aspect);
+    }
+    glViewport(viewRect.x, viewRect.y, viewRect.z, viewRect.w);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_EXTERNAL_OES, frameRCtx->getImage());
+    glUseProgram(glProgram);
+    glUniform1i(extAttr, 0);
+    glUniform1i(hdrModeAttr, (int)hdrMode);
+    glUniform1i(transferAttr, (int)cs.transfer);
+    glUniform1f(peakNitsAttr, (float)hdrPeakNits(hdrMeta));
+    glUniform1f(sdrWhiteAttr, 100.0f);
+    glEnableVertexAttribArray(posAttr);
+    glVertexAttribPointer(posAttr, 2, GL_FLOAT, false, 0, (void*)(verts));
+    glEnableVertexAttribArray(uvAttr);
+    glVertexAttribPointer(uvAttr, 2, GL_FLOAT, false, 0, (void*)(uvs));
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glDisableVertexAttribArray(posAttr);
+    glDisableVertexAttribArray(uvAttr);
+    glBindTexture(GL_TEXTURE_EXTERNAL_OES, 0);
+  }
   imageBuffer->setImageFormat(format);
   // 从当前绑定的帧缓冲区读取数据
-  glReadPixels(viewport[0], viewport[1], viewport[2], viewport[3], GL_RGBA,
+  glReadPixels(0, 0, format.width, format.height, GL_RGBA,
                GL_UNSIGNED_BYTE, imageBuffer->getPointer());
   // PNG的Y与opengl是反的,需要上下翻转,rgba
   int rowSize = format.width * 4;
@@ -463,10 +516,18 @@ bool EglVideoRender::fetchFrame(ImageBuffer* imageBuffer) {
   if (error != GL_NO_ERROR) {
     LOGFLF(LogLevel::warn, "glReadPixels failed with error:", error);
     glBindFramebuffer(GL_FRAMEBUFFER, prevFBO);  // 恢复之前的FBO
+    if (bWindow) {
+      unMakeCurrent();
+    }
     return false;
   }
   // 恢复之前的FBO绑定状态
   glBindFramebuffer(GL_FRAMEBUFFER, prevFBO);
+  if (bWindow) {
+    // 与进函数时对称(useProgram 每帧画完也 unMakeCurrent): 下一帧
+    // useProgram 的 surface 分支自己会 makeCurrent 重建, 无残留状态
+    unMakeCurrent();
+  }
 #endif
   return true;
 }

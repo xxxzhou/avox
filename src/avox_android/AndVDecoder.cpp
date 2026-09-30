@@ -228,7 +228,17 @@ DecodeResult AndVDecoder::onPreDecoder() {
   // 原生NV12直出, 避免vendor YV12转换且与yuvout车道的nv12契约一致; APK路径不变
   bool bHaveJni = AvoxManager::Get().getEnv() != nullptr;
   int32_t colorFmt = bHaveJni ? getYuvType(params.yuvType) : 0x15;
+  if (!bHaveJni && params.yuvType == YuvType::p010) {
+    // 10bit 流(byte-buffer): 按 vendor P010(0x36) 请求。钉成 0x15 会把 10bit
+    // 交付降成 8bit NV12 → 下游 HDR/DV 消费链(VK V5 变体按输入格式选)整个
+    // 失活, HDR 锚点直通/DV 差分恒 0 (2026-09-30 锚点假红根因链最后一环)。
+    // vendor 不支持时 configure 失败, 上游回落 FFmpeg 软解(p010 原生交付)。
+    colorFmt = COLOR_FormatYUVP010;
+  }
   AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_COLOR_FORMAT, colorFmt);
+  // 取证探针: 请求的输出色彩格式与流格式(交付降级时对读)
+  fprintf(stderr, "[andvdec] request colorFmt=0x%x streamYuvType=%d jni=%d\n",
+          colorFmt, (int)params.yuvType, (int)bHaveJni);
   bOpenglRender = false;
   // 输出窗口的渲染模式，检查是否支持opengl 纹理输入
   eglSize.width = params.width;
@@ -305,6 +315,12 @@ void AndVDecoder::updateYuvFormat() {
     // c2 flexible回报不出标准枚举, 按请求的420P对待 (QC2 byte-buffer输出YV12布局)
     yuvFormat.type = YuvType::yuv420P;
   }
+  // 取证探针: 实际回报的输出格式(与 request 探针对读, 降级在此可见)
+  fprintf(stderr,
+          "[andvdec] output colorFmt=0x%x -> yuvType=%d %dx%d stride=%d "
+          "slice=%d\n",
+          localColorFMT, (int)yuvFormat.type, yuvFormat.width,
+          yuvFormat.height, stride, sliceHeight);
 }
 
 DecodeResult AndVDecoder::decode(const AvoxPacket& packet) {
@@ -409,7 +425,11 @@ DecodeResult AndVDecoder::decode(const AvoxPacket& packet) {
       frame.data[0] = out ? out + info.offset : nullptr;
       frame.stride[0] = stride > 0 ? stride : yuvFormat.width;
       int32_t sliceH = sliceHeight > 0 ? sliceHeight : yuvFormat.height;
-      if (yuvFormat.type == YuvType::nv12) {
+      if (yuvFormat.type == YuvType::nv12 ||
+          yuvFormat.type == YuvType::p010) {
+        // 半平面(半平面10bit的p010即NV12的16bit容器形态): Y面 + UV交织单面,
+        // 行距同为字节口径(p010 stride=width*2); 落 420P 平面分支会把 UV
+        // 拆成两个独立平面 → 布局解析错乱画面烂掉 (2026-09-30 真机实证)
         frame.data[1] = frame.data[0] + (uint64_t)frame.stride[0] * sliceH;
         frame.stride[1] = frame.stride[0];
       } else {
@@ -428,6 +448,21 @@ DecodeResult AndVDecoder::decode(const AvoxPacket& packet) {
       }
       // 加入队列
       dispatch(&IVideoDecoderOb::onDecode, frame);
+      // 取证探针(只打一次): dump P010 原始字样, 验证 vendor 真实布局与
+      // 假设(Y 行距1280B, UV 起点在 stride*sliceH, 高 10 位对齐)是否一致。
+      // 锚点素材期望: y[0]=0x0000(黑条), y[639]=0xffc0(白条), uv=0x8000(512)
+      static int32_t sP010Probe = 0;
+      if (yuvFormat.type == YuvType::p010 && out && sP010Probe++ < 1 &&
+          bufsize > (int32_t)(1280 * 450)) {
+        auto* w0 = (const uint16_t*)(out + info.offset);
+        auto* ymid = (const uint16_t*)(out + info.offset + 1280 * 180);
+        auto* uv = (const uint16_t*)(out + info.offset + (uint64_t)1280 * 360 +
+                                     1280 * 90);
+        fprintf(stderr,
+                "[andvdec] p010 y0=%04x y639=%04x ymid0=%04x ymid639=%04x "
+                "uv0=%04x uv1=%04x uv2=%04x\n",
+                w0[0], w0[639], ymid[0], ymid[639], uv[0], uv[1], uv[2]);
+      }
       // CPU在这直接释放mediaCodec缓冲区中相应的资源
       AMediaCodec_releaseOutputBuffer(mediaCodec, bufidx, false);
     }

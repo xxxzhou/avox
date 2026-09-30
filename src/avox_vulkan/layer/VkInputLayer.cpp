@@ -61,6 +61,14 @@ void VkInputLayer::onInitVkBuffer() {
          " height:", imageFormat.height,
          " image type:", getImageTypeStr(imageFormat.imageType));
   int32_t size = getImageSize(inFormats[0]);
+  // 取证探针(限4次): 10bit 输入的行高/行距/缓冲尺寸是否按 ×1.5 扩展
+  // (r16 540 行才装得下 Y+UV; 若 height=360 则 UV 区零填充=绿屏)
+  static int32_t sFmtProbe = 0;
+  if (sFmtProbe++ < 4) {
+    fprintf(stderr, "[vkin] fmt %dx%d type=%d rowPitch=%d size=%d\n",
+            imageFormat.width, imageFormat.height, (int)imageType,
+            inFormats[0].rowPitch, size);
+  }
   if (bUsePipe) {
     std::string path = "";
     if (imageType == ImageType::rgb8) {
@@ -196,6 +204,13 @@ void VkInputLayer::onCommand() {
       copyImage(cmd, vkImage, outTexs[0]->image, outFormats[0].width,
                 outFormats[0].height);
     } else if (bCpuInput) {
+      // 取证探针(限4次): 拷贝目标纹理高度必须 ≥540(r16 含 UV 区), 360 则 UV 零填充
+      static int32_t sCopyProbe = 0;
+      if (sCopyProbe++ < 4) {
+        fprintf(stderr, "[vkin] copy tex %ux%u bufSize=%d rowPitch=%d\n",
+                outTexs[0]->width, outTexs[0]->height,
+                inBuffer->getBufferSize(), inFormats[0].rowPitch);
+      }
       bufferToImage(cmd, inBuffer.get(), outTexs[0].get(), inFormats[0].rowPitch);
     }
   }

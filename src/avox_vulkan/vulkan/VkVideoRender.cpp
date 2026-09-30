@@ -767,6 +767,9 @@ void VkVideoRender::renderCpuFrame(IImageBuffer* buffer) {
 }
 
 bool VkVideoRender::fetchFrame(ImageBuffer* imageBuffer) {
+  // 取证探针: 判定抓图分流(vulkan 腿 vs 平台腿), 与 [egl] fetch 对读
+  fprintf(stderr, "[vk] fetchFrame: outputLayer=%d\n",
+          (int)(outputLayer != nullptr));
   if (!outputLayer) {
     return false;
   }
