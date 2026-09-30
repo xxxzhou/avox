@@ -803,6 +803,9 @@ void MetalRender::closeTextureCache() {
 
 // 颜色/HDR参数: 每帧渲染时直接读取成员, 无需脏标记
 void MetalRender::setColorSpace(const ColorSpaceDesc &c) {
+  // 基类存档, checkShot CPU兜底转换取用(照 Dx11CSVideoRender 同款; 本腿
+  // GPU 腿通常自画, 兜底仅在 fetchFrame 失败时触发, 漏则按默认 {bt601, full} 转)
+  VideoRender::setColorSpace(c);
   if (c.standard == cs.standard && c.range == cs.range &&
       c.transfer == cs.transfer) {
     return;

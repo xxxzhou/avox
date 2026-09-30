@@ -258,6 +258,9 @@ void EglVideoRender::setColorSpace(const ColorSpaceDesc& c) {
   // 锚点/差分直通形态时先看这行是否到位、值是否为流侧语义
   fprintf(stderr, "[egl] setColorSpace std=%d range=%d transfer=%d\n",
           (int)c.standard, (int)c.range, (int)c.transfer);
+  // 基类存档, checkShot CPU兜底转换取用(本腿 GPU 腿拒 CPU 输入, Android
+  // 截图恒走该兜底; 漏这行则兜底恒按默认 {bt601, full} 转, 见 VideoRender.hpp)
+  VideoRender::setColorSpace(c);
   if (c.standard == cs.standard && c.range == cs.range &&
       c.transfer == cs.transfer) {
     return;
