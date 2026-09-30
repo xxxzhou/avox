@@ -81,6 +81,9 @@ class Window : public Observer<IWindowOb> {
   // HDR 直通输出(块3): 显示器支持 HDR 时把交换链切 PQ 色彩空间,
   // forceHDR 内容原样上屏; SDR 显示器恒 no-op 返回 false。默认不支持
   virtual bool setHdrPassthrough(bool bPassthrough) { return false; };
+  // HDR 静态元数据(ST2086)下发: 直通交换链据此向系统/屏声明内容亮度,
+  // 缺省 no-op(不支持元数据的腿忽略)
+  virtual void setHdrMeta(const HdrMeta &meta) { (void)meta; };
 
  public:
   const char* getTitle() const { return wdTitle.c_str(); }

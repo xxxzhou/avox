@@ -44,6 +44,7 @@ private:
   // HDR 直通输出(块3): 显示器能力探测 + 交换链 PQ 色彩空间状态
   bool bHdrDisplay = false;
   bool bHdrActive = false;
+  HdrMeta hdrMeta;
 
  protected:
   virtual void onInitWin() override;
@@ -56,6 +57,8 @@ private:
   virtual void renderContext(IRenderContext* context) override;
   // HDR 直通输出: 显示器支持时切 10bit+PQ 交换链 (Window 虚接口)
   virtual bool setHdrPassthrough(bool bPassthrough) override;
+  // ST2086 元数据: 直通时经 SetHDRMetaData 声明内容亮度, 供系统/屏映射
+  virtual void setHdrMeta(const HdrMeta &meta) override;
 
  public:
   virtual ID3D11Device *getDevice() override;
@@ -66,6 +69,8 @@ private:
   void initShader();
   void initBuffers(DXGI_FORMAT fmt = DXGI_FORMAT_R8G8B8A8_UNORM);
   void detectHdrDisplay();
+  bool applyHdrSwapchainState();
+  void updateHdrMetaData();
   void renderWindow();
   LRESULT handleMessage(UINT msg, WPARAM wparam, LPARAM lparam);
   

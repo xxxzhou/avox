@@ -46,6 +46,8 @@ class AVOX_EXPORT WindowRender : public SurfaceRenderNative,
  public:
   WindowRender();
   virtual ~WindowRender();
+  // 转发渲染链 + 窗口(直通交换链据 ST2086 向系统/屏声明内容亮度)
+  void setHdrMeta(const HdrMeta &meta);
 
  protected:
   std::unique_ptr<Window> window = nullptr;

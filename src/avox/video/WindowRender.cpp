@@ -1,6 +1,10 @@
 #include "WindowRender.hpp"
 
 #include <algorithm>
+#include <chrono>
+#ifdef WIN32
+#include <windows.h>
+#endif
 
 #ifdef AVOX_ENABLE_FREETYPE
 #include "avox_freetype/FontRender.hpp"
@@ -62,6 +66,13 @@ void WindowRender::setHdrMode(HdrMode mode) {
   // SDR 显示器 no-op。离屏无窗口(交换链)自然跳过
   if (window) {
     window->setHdrPassthrough(mode == HdrMode::forceHDR);
+  }
+}
+
+void WindowRender::setHdrMeta(const HdrMeta &meta) {
+  SurfaceRenderNative::setHdrMeta(meta);
+  if (window) {
+    window->setHdrMeta(meta);
   }
 }
 
@@ -250,6 +261,12 @@ void WindowRender::pause(bool bPause) {
 }
 
 void WindowRender::onRunTask() {
+#ifdef WIN32
+  // Windows 默认定时器粒度 15.6ms 把下面 sleep_for(帧间隔-2ms) 量化成 3格/2格
+  // 交替: 拍长双峰 47/32ms(23.976fps 实测), 每帧停留时长抖动呈持续微抖;
+  // 1ms 粒度后拍长锁定内容帧节拍(41.7ms 单峰, 98.6%), 与在线播放器观感对齐
+  timeBeginPeriod(1);
+#endif
   // 窗口渲染线程，把videoRender的结果渲染到窗口
   // 无窗口也是要渲染的
   // 下帧应该渲染的绝对时间(tick)
@@ -339,6 +356,24 @@ void WindowRender::onRunTask() {
       // 由 syncVideo 的 quick 门吸收, 节拍永不低于内容速率
       std::this_thread::sleep_for(std::chrono::milliseconds(
           sleepMs > 3 ? sleepMs - 2 : 1));
+#ifdef WIN32
+      // 尾段自旋到下帧预期时刻: 1ms 定时器粒度残余 ±0.7ms 噪声会让提交相位
+      // 在 vsync 重排临界点乱闪(60.00Hz 屏播 23.976, 实测 std 706us→目标<200);
+      // 自旋段 ≤2ms, PC 空闲核代价可忽略
+      {
+        int64_t targetUs = nextFrameTime / 10;
+        for (;;) {
+          int64_t nowUs =
+              std::chrono::duration_cast<std::chrono::microseconds>(
+                  std::chrono::steady_clock::now().time_since_epoch())
+                  .count();
+          if (nowUs >= targetUs) {
+            break;
+          }
+          std::this_thread::yield();
+        }
+      }
+#endif
 #if defined(__ANDROID__) || (defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
     } else {
       // 兜底短睡仅移动端(Android/iOS): 追帧/余量<5ms 全速自旋会在手机钉满
@@ -353,6 +388,9 @@ void WindowRender::onRunTask() {
   if (vkVideoRender) {
     vkVideoRender->closeResource();
   }
+#ifdef WIN32
+  timeEndPeriod(1);
+#endif
 }
 
 void WindowRender::onRenderWindow() {

@@ -64,7 +64,10 @@ void Dx11Window::onChangeSize() {
   // 避免重新创建设备导致 "Only one flip model swap chain can be associate with
   // an HWND" 错误
   if (bInitDevice && swapChain) {
-    initBuffers();
+    // 直通态必须保住 10bit: 无参 initBuffers 会把交换链降回 8bit
+    initBuffers(bHdrActive ? DXGI_FORMAT_R10G10B10A2_UNORM
+                           : DXGI_FORMAT_R8G8B8A8_UNORM);
+    applyHdrSwapchainState();  // ResizeBuffers 会重置色彩空间, 直通态必须重挂
   } else {
     // 首次初始化设备
     initDevice();
@@ -185,6 +188,7 @@ void Dx11Window::renderWindow() {
 void Dx11Window::initDevice() {
   bInitDevice = false;
   bInitShader = false;
+  bHdrActive = false;  // 重建设备=新交换链, 旧直通态不复存在; 宿主补发可自愈
 
   HRESULT hr = S_OK;
   UINT createDeviceFlags = 0;
@@ -270,6 +274,9 @@ bool Dx11Window::setHdrPassthrough(bool bPassthrough) {
     return false;
   }
   if (bHdrActive == bPassthrough) {
+    if (bPassthrough) {
+      applyHdrSwapchainState();  // 重入兜底: 重建路径可能已重置色彩空间
+    }
     return true;
   }
   if (!bPassthrough && !bHdrDisplay) {
@@ -279,27 +286,90 @@ bool Dx11Window::setHdrPassthrough(bool bPassthrough) {
     LOGFLF(LogLevel::info, "hdr passthrough ignored, display not hdr capable");
     return false;
   }
-  MComPtr<IDXGISwapChain3> sc3 = nullptr;
-  if (FAILED(swapChain->QueryInterface(IID_PPV_ARGS(&sc3))) || !sc3) {
-    LOGFLF(LogLevel::warn, "no IDXGISwapChain3, hdr passthrough unsupported");
-    return false;
-  }
   // PQ 直通需要 10bit 交换链; 切回时恢复 8bit
   initBuffers(bPassthrough ? DXGI_FORMAT_R10G10B10A2_UNORM
                            : DXGI_FORMAT_R8G8B8A8_UNORM);
-  HRESULT hr = sc3->SetColorSpace1(
-      bPassthrough ? DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P709
-                   : DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709);
-  if (FAILED(hr)) {
-    AVOX_WIN_LOG(hr, "SetColorSpace1 failed");
+  bHdrActive = bPassthrough;
+  if (!applyHdrSwapchainState()) {
     if (bPassthrough) {
+      bHdrActive = false;
       initBuffers();  // 回退 SDR 链
+      applyHdrSwapchainState();
     }
     return false;
   }
-  bHdrActive = bPassthrough;
   LOGFLF(LogLevel::info, "hdr passthrough swapchain:", bPassthrough);
   return true;
+}
+
+// 重挂交换链色彩空间: ResizeBuffers/重建会把它重置回默认, PQ 码被当 sRGB
+// 呈现即发灰。直通态顺带补 ST.2086 元数据。
+bool Dx11Window::applyHdrSwapchainState() {
+  if (!swapChain || !bInitDevice) {
+    return false;
+  }
+  MComPtr<IDXGISwapChain3> sc3 = nullptr;
+  if (FAILED(swapChain->QueryInterface(IID_PPV_ARGS(&sc3))) || !sc3) {
+    LOGFLF(LogLevel::warn, "no IDXGISwapChain3, hdr colorspace unsupported");
+    return false;
+  }
+  HRESULT hr = sc3->SetColorSpace1(
+      bHdrActive ? DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P709
+                 : DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709);
+  if (FAILED(hr)) {
+    AVOX_WIN_LOG(hr, "SetColorSpace1 failed");
+    return false;
+  }
+  if (bHdrActive) {
+    updateHdrMetaData();
+  }
+  return true;
+}
+
+// ST2086 转 DXGI_HDR_METADATA_HDR10: 基色/白点单位 1/50000, 四亮度字段
+// 单位 1/10000 nits(HdrMeta.minLuminance 原生即此单位, 其余为 nits 乘 1e4)。
+// 无亮度标记不冒充(系统按默认映射); 基色缺按 BT.2020/D65 兜底。
+void Dx11Window::updateHdrMetaData() {
+  if (!bHdrActive || !swapChain) {
+    return;
+  }
+  if (hdrMeta.maxCLL == 0 && hdrMeta.maxLuminance == 0) {
+    return;
+  }
+  MComPtr<IDXGISwapChain4> sc4 = nullptr;
+  if (FAILED(swapChain->QueryInterface(IID_PPV_ARGS(&sc4))) || !sc4) {
+    LOGFLF(LogLevel::warn, "no IDXGISwapChain4, hdr metadata unsupported");
+    return;
+  }
+  static const float k2020[6] = {0.708f, 0.292f, 0.170f, 0.797f, 0.131f, 0.046f};
+  static const float kD65[2] = {0.3127f, 0.3290f};
+  const bool hasPri = hdrMeta.primaries[0] > 0 || hdrMeta.primaries[1] > 0;
+  const float *pri = hasPri ? hdrMeta.primaries : k2020;
+  const float *wp = hdrMeta.whitePoint[0] > 0 ? hdrMeta.whitePoint : kD65;
+  DXGI_HDR_METADATA_HDR10 m = {};
+  m.RedPrimary[0] = (UINT16)(pri[0] * 50000.0f);
+  m.RedPrimary[1] = (UINT16)(pri[1] * 50000.0f);
+  m.GreenPrimary[0] = (UINT16)(pri[2] * 50000.0f);
+  m.GreenPrimary[1] = (UINT16)(pri[3] * 50000.0f);
+  m.BluePrimary[0] = (UINT16)(pri[4] * 50000.0f);
+  m.BluePrimary[1] = (UINT16)(pri[5] * 50000.0f);
+  m.WhitePoint[0] = (UINT16)(wp[0] * 50000.0f);
+  m.WhitePoint[1] = (UINT16)(wp[1] * 50000.0f);
+  m.MaxMasteringLuminance = (UINT)(hdrMeta.maxLuminance * 10000.0f);
+  m.MinMasteringLuminance = (UINT)hdrMeta.minLuminance;
+  m.MaxContentLightLevel = (UINT)(hdrMeta.maxCLL * 10000.0f);
+  m.MaxFrameAverageLightLevel = (UINT)(hdrMeta.maxFALL * 10000.0f);
+  HRESULT hr = sc4->SetHDRMetaData(DXGI_HDR_METADATA_TYPE_HDR10, sizeof(m), &m);
+  if (FAILED(hr)) {
+    AVOX_WIN_LOG(hr, "SetHDRMetaData failed");
+  }
+}
+
+void Dx11Window::setHdrMeta(const HdrMeta &meta) {
+  hdrMeta = meta;
+  if (bHdrActive) {
+    updateHdrMetaData();
+  }
 }
 
 void Dx11Window::initShader() {
