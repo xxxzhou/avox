@@ -76,7 +76,10 @@ class AVOX_EXPORT TextRasterizer {
  public:
   // 渲染文本到内部画布。返回内容序号: 0=无内容(调用方清层), 内容变化时递增,
   // 文本/帧尺寸/样式版本都没变则返回上次的序号(调用方零上传)。
-  int32_t render(const char* text, int32_t frameW, int32_t frameH);
+  // edgeFuse: 画布将被拉伸上屏时置 true(>1080p 基准画布)——覆盖度过 S 曲线
+  // 收窄边缘过渡带(rasterDisc 式边缘写中间值), 抵消拉伸拉宽; 1:1 画布传 false。
+  int32_t render(const char* text, int32_t frameW, int32_t frameH,
+                 bool edgeFuse = false);
 
   // 灌样式(权威副本 + 版本号): 版本号参与 render 缓存判定(样式变了必重绘)
   void setStyle(const TextCanvasStyle& s, int32_t seq) {
@@ -107,6 +110,7 @@ class AVOX_EXPORT TextRasterizer {
   int32_t lastStyleSeq = 0;
   int32_t lastFrameW = 0;
   int32_t lastFrameH = 0;
+  bool lastFuse = false;
 };
 
 }

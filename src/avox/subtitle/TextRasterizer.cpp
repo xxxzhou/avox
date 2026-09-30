@@ -27,14 +27,14 @@ static void splitLines(const std::string& text,
 }
 
 int32_t TextRasterizer::render(const char* text, int32_t frameW,
-                               int32_t frameH) {
+                               int32_t frameH, bool edgeFuse) {
   if (!text || text[0] == '\0' || frameW <= 0 || frameH <= 0) {
     lastReturned = 0;
     return 0;
   }
   // 文本/帧尺寸/样式版本都没变: 内容没变, 序号不变(调用方零上传)
   if (lastText == text && frameW == lastFrameW && frameH == lastFrameH &&
-      styleSeq == lastStyleSeq) {
+      styleSeq == lastStyleSeq && edgeFuse == lastFuse) {
     return lastReturned;
   }
   // opacity=0 即无内容(层清空即可); 作废文本缓存, 恢复 opacity 后强制重绘
@@ -47,6 +47,7 @@ int32_t TextRasterizer::render(const char* text, int32_t frameW,
   lastFrameW = frameW;
   lastFrameH = frameH;
   lastStyleSeq = styleSeq;
+  lastFuse = edgeFuse;
 
   auto& fontCache = FontCache::instance();
   // 字号随帧高 DPI 缩放, 全局 scale 在 CPU 侧吃进字号(重栅格化, 清晰)
@@ -106,8 +107,6 @@ int32_t TextRasterizer::render(const char* text, int32_t frameW,
 
   // RGBA8 premultiplied, max-blend(与旧 R8 canvas 语义一致)
   canvas.assign((size_t)totalW * totalH * 4, 0);
-  canvasW = totalW;
-  canvasH = totalH;
   int32_t curY = 0;
   for (auto& ln : lines) {
     int32_t curX = (totalW - ln.width) / 2;
@@ -139,6 +138,34 @@ int32_t TextRasterizer::render(const char* text, int32_t frameW,
     }
     curY += style.vSpace + ln.height;
   }
+  if (edgeFuse) {
+    // 边缘融合(画布将被上屏拉伸时): 覆盖度过 S 曲线 —— rasterDisc 式"边缘带
+    // 写中间值"且中间值映射更陡, 把拉伸会拉宽的过渡带预先收窄。premultiplied
+    // 的 rgb 按 a 的缩放比同步跟随防偏色; 0/255 两端不动, strength=0 退化直通。
+    constexpr float kFuseContrast = 0.6f;
+    uint8_t fuseLut[256];
+    for (int32_t v = 0; v < 256; ++v) {
+      const float t = (float)v / 255.f;
+      const float s = t * t * (3.f - 2.f * t);  // smoothstep
+      fuseLut[v] = (uint8_t)(((t + (s - t) * kFuseContrast) * 255.f) + 0.5f);
+    }
+    for (size_t i = 0; i < canvas.size(); i += 4) {
+      uint8_t* px = &canvas[i];
+      const int32_t a = px[3];
+      if (a == 0 || a == 255) {
+        continue;
+      }
+      const int32_t af = fuseLut[a];
+      // 预乘不变量: rgb 与 a 同比例缩放(color = rgb/a 保持)
+      const int32_t scale = (af * 255 + a / 2) / a;
+      px[0] = (uint8_t)std::min(255, px[0] * scale / 255);
+      px[1] = (uint8_t)std::min(255, px[1] * scale / 255);
+      px[2] = (uint8_t)std::min(255, px[2] * scale / 255);
+      px[3] = (uint8_t)af;
+    }
+  }
+  canvasW = totalW;
+  canvasH = totalH;
 
   // 排版落点(align/margin/anchor/offset 合成, 帧内钳制): 见 TextRasterizer.hpp
   computeTextPos(style, frameW, frameH, totalW, totalH, &canvasX, &canvasY);

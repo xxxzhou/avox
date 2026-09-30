@@ -28,21 +28,23 @@ struct CanvasBlendParamet {
 };
 
 // ASS/PGS 字幕画布层(计划 ASS字幕渲染计划.md §3.4):
-// 视频 rgba8 帧 + 内部 rgba8 canvas(=帧尺寸) 经 canvasBlend.comp 做
-// premultiplied source-over。画布内容按 bbox 裁剪上传(子矩形拷贝),
-// 静止段零上传; 无字幕帧 opacity=0 走 shader 直通。
+// 视频 rgba8 帧 + 内部 rgba8 canvas 经 canvasBlend.comp 做 premultiplied
+// source-over。canvas = 合成画布尺寸(>1080p 恒 1920x1080 基准, ≤1080p 与帧
+// 1:1, 见 subtitleCanvasSize), 铺满全帧的拉伸由 sampler 归一化映射完成
+// (与旧 VkFontLayer 同机制)。画布内容按 bbox 裁剪上传, 静止段零上传;
+// 无字幕帧 opacity=0 走 shader 直通。
 class VkCanvasLayer : public VkLayer, public ICanvasLayer {
   AVOX_LAYER_GETNAME(VkCanvasLayer)
 
  private:
   CanvasBlendParamet vkParamet = {};
 
-  // 整帧尺寸的 CPU 画布(rgba8): 换内容时先清上一帧 bbox 再 blit 新 bbox,
+  // 画布尺寸的 CPU 画布(rgba8): 换内容时先清上一帧 bbox 再 blit 新 bbox,
   // GPU 侧只采样当前 UBO 矩形, 矩形外残留永不可见
   std::vector<uint8_t> canvasData;
-  int32_t frameW = 0;
-  int32_t frameH = 0;
-  // 当前内容 bbox(整帧坐标), hasContent=false 时 shader 直通
+  int32_t canvasW = 0;
+  int32_t canvasH = 0;
+  // 当前内容 bbox(画布坐标), hasContent=false 时 shader 直通
   int32_t rectX = 0, rectY = 0, rectW = 0, rectH = 0;
   bool hasContent = false;
   bool bNeedUpdate = false;

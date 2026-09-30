@@ -179,6 +179,10 @@ class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
   // 画布坐标系(storage)尺寸
   int32_t storageW = 0;
   int32_t storageH = 0;
+  // 合成画布尺寸(帧按基准降采样, >1080p 恒 1920x1080): 三路内容按此产出,
+  // 铺满全帧由画布层 sampler 拉伸(见 subtitleCanvasSize)
+  int32_t canvasW = 0;
+  int32_t canvasH = 0;
   SubtitleSlots slots;
   std::function<void()> trackResetCb;  // 轨槽被顶掉时通知播放器复位 IO 侧
 

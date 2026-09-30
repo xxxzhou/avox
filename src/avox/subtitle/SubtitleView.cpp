@@ -99,6 +99,7 @@ void SubtitleView::setStorageSize(int32_t width, int32_t height) {
   if (width > 0 && height > 0) {
     storageW = width;
     storageH = height;
+    subtitleCanvasSize(width, height, &canvasW, &canvasH);
   }
 }
 
@@ -364,7 +365,7 @@ bool SubtitleView::openTrackChannel() {
     LOGFLF(LogLevel::info, "subtitle view: no libass plugin, track off");
     return false;
   }
-  if (!created->init(storageW, storageH)) {
+  if (!created->init(canvasW, canvasH)) {
     delete created;
     return false;
   }
@@ -381,8 +382,8 @@ bool SubtitleView::openTrackChannel() {
     return true;
   }
   overlay = created;
-  LOGFLF(LogLevel::info, "subtitle view: track channel open storage:",
-         storageW, "x", storageH);
+  LOGFLF(LogLevel::info, "subtitle view: track channel open canvas:",
+         canvasW, "x", canvasH);
   return true;
 }
 
@@ -433,7 +434,7 @@ bool SubtitleView::loadTextTrack() {
   if (!overlay) {
     return false;
   }
-  // 合成最小 ASS 剧本(PlayRes=storage + Default 底部居中, 同插件外挂
+  // 合成最小 ASS 剧本(PlayRes=合成画布 + Default 底部居中, 同插件外挂
   // srt 路径口径): 内封文本包(mov_text/SRT)采样转对白行后喂 libass
   char head[512];
   std::snprintf(head, sizeof(head),
@@ -443,7 +444,7 @@ bool SubtitleView::loadTextTrack() {
                 "Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
                 "Style: Default,sans-serif,54,&H00FFFFFF,&H00000000,&H00000000,"
                 "0,0,1,2,0,2,60,60,40,1\n",
-                storageW > 0 ? storageW : 1920, storageH > 0 ? storageH : 1080);
+                canvasW > 0 ? canvasW : 1920, canvasH > 0 ? canvasH : 1080);
   bool ok = overlay->loadTrack(head, (int32_t)std::strlen(head));
   chunks.clear();
   lastSeq = -1;
@@ -717,7 +718,7 @@ void SubtitleView::renderTrack(int64_t ptsMs) {
 }
 
 void SubtitleView::renderText(int64_t ptsMs) {
-  if (storageW <= 0 || storageH <= 0) {
+  if (canvasW <= 0 || canvasH <= 0) {
     (void)ptsMs;
     return;
   }
@@ -758,8 +759,10 @@ void SubtitleView::renderText(int64_t ptsMs) {
     snap.opacity = opacity;
     rasterizer.setStyle(snap, styleSeq);
   }
-  // 文本 → RGBA bbox canvas → 统一混合层(内容变化才上传)
-  const int32_t seq = rasterizer.render(text, storageW, storageH);
+  // 文本 → RGBA bbox canvas → 统一混合层(内容变化才上传; 按合成画布分辨率
+  // 光栅化, 铺满全帧由层拉伸; 画布被拉伸时 2x 超采样收边缘, MSAA 式)
+  const int32_t seq =
+      rasterizer.render(text, canvasW, canvasH, storageH > canvasH);
   if (seq == 0) {
     if (lastSeq != 0) {
       canvasLayer->clearCanvas();

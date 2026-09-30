@@ -19,11 +19,13 @@ namespace avox {
 
 // ASS/PGS overlay 画布: RGBA8 位图裁剪到联合 bounding box
 struct AssCanvas {
-  const uint8_t* rgba = nullptr;  // RGBA8 行主序; rgba[0] 对应视频帧 (x, y); 无字幕为 nullptr
+  // RGBA8 行主序; rgba[0] 对应合成画布 (x, y)(>1080p 恒 1920x1080 基准, 见
+  // subtitleCanvasSize, 铺满全帧由画布层 sampler 拉伸); 无字幕为 nullptr
+  const uint8_t* rgba = nullptr;
   int32_t width = 0;              // 像素
   int32_t height = 0;             // 像素
   int32_t stride = 0;             // 每行字节数
-  int32_t x = 0;                  // canvas 左上角相对视频帧的偏移
+  int32_t x = 0;                  // canvas 左上角相对合成画布的偏移
   int32_t y = 0;
   int64_t ptsMs = 0;              // 本画布内容对应的播放时间
   int32_t seq = 0;                // 递增序号: 消费方据此判变更(seq 变 = 重新上传)
@@ -37,7 +39,8 @@ class IAssOverlay {
  public:
   virtual ~IAssOverlay() = default;
 
-  // 能力探测 + 初始化。storage 分辨率 = 视频帧分辨率(libass 排版坐标系, \pos 等按此换算)。
+  // 能力探测 + 初始化。storage 分辨率 = 合成画布分辨率(libass 排版坐标系, \pos
+  // 等按此换算; 调用方传 subtitleCanvasSize 的产出)。
   // 返回 false = libass 不可用/内部失败, 调用方降级(等价无插件)。
   virtual bool init(int32_t storageWidth, int32_t storageHeight) = 0;
   virtual void shutdown() = 0;
