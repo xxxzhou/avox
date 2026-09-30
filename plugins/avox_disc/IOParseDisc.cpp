@@ -303,6 +303,10 @@ void IOParseDisc::onRunTask() {
       vdesc.desc.height = st->codecpar->height;
       vdesc.desc.fps = ffFps(st);
       vdesc.desc.type = ffYuvType((AVPixelFormat)st->codecpar->format);
+      // 色彩空间随流 (矩阵/量程/transfer)——漏填则保持默认 {bt601, full},
+      // limited 帧按 full 展开渲染/快照整体发灰 (gspan 255→219, 色块
+      // cdist 超阈), 见 IOParseFF 同款填充与 avox-test disc-shot-bd 哨兵
+      vdesc.desc.colorSpace = ffColorSpace(st->codecpar);
       addVideoDesc(vdesc);
     } else if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO &&
                !bDisableAudio) {
