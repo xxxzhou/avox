@@ -164,7 +164,7 @@ struct VkSharedHandle {
 - 字节序契约进 `getVkOutputHandle` 头注释: Apple IOSurface fourcc `'BGRA'`
   (其余全 RGBA), 消费端一律按 `IOSurfaceGetPixelFormat` 查询, 禁止硬编码。
 - HDR/10-bit 直通不在本期 (IOSurface 支持 10-bit 像素格式, 但管线是 8-bit
-  BGRA/RGBA), 与 [HDR管线改造计划](HDR管线改造计划.md) 联动另排。
+  BGRA/RGBA), 与 [多平台HDR统一重构方案](多平台HDR统一重构方案.md) 联动另排。
 - win 门禁不受影响: ctest + 离线回归子集均在 win 跑, Apple 改动带平台守卫。
 
 ## 5. 验收定义
