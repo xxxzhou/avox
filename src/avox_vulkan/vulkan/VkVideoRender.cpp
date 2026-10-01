@@ -123,13 +123,8 @@ void VkVideoRender::setColorSpace(const ColorSpaceDesc& c) {
     LOGFLF(LogLevel::info, "colorspace transfer:", (int32_t)c.transfer,
            " (0=gamma 1=linear 2=pq 3=hlg)");
   }
+  // 状态化: 只落成员, 渲染线程 onParametUpdate 收敛下发(层内去重)
   colorSpace = c;
-  if (rgba2YUV) {
-    rgba2YUV->get()->setColorSpace(c);
-  }
-  if (yuv2RGBA) {
-    yuv2RGBA->get()->setColorSpace(c);
-  }
 }
 
 // HDR 元数据: 峰值相关(含 DV L1)变化才重传
@@ -142,29 +137,33 @@ void VkVideoRender::setHdrMeta(const HdrMeta& meta) {
   LOGFLF(LogLevel::info, "hdr meta maxLum:", meta.maxLuminance,
          " minLum:", meta.minLuminance, " cll:", meta.maxCLL,
          " fall:", meta.maxFALL, " l1max:", meta.l1MaxNits);
+  // 状态化: 只落成员, 渲染线程 onParametUpdate 收敛下发(层内去重)
   hdrMeta = meta;
-  if (yuv2RGBA) {
-    yuv2RGBA->get()->setHdrMeta(meta);
-  }
 }
 
-// DV RPU 整形数据: 层内重建 DV UBO 区, 场景粒度无Own diff(上游 memcmp 去重)
+// DV RPU 整形数据: 场景级 UBO 参数, 不涉拓扑——变化只落成员, 渲染线程
+// onParametUpdate 收敛下发(层内 memcmp 去重, 逐帧直推幂等)
 void VkVideoRender::setDoviMeta(const DoviMeta& meta) {
-  if (yuv2RGBA) {
-    yuv2RGBA->get()->setDoviMeta(meta);
+  if (0 == std::memcmp(&doviMeta, &meta, sizeof(DoviMeta))) {
+    return;
   }
+  doviMeta = meta;
 }
 
-// HDR 输出模式: forceHDR 跳过 tone map, 仅变化时下发
+// HDR 输出模式: forceHDR 过界重建拓扑, 非过界仅参数。
+// 状态化(10/1 UAF 案, sess_75d44d7c): setter 只落成员(+过界置重建请求),
+// 不跨线程触节点——节点下发由渲染线程消费(onParametUpdate 收敛 + 重建尾重放)
 void VkVideoRender::setHdrMode(HdrMode mode) {
   if (mode == hdrMode) {
     return;
   }
   LOGFLF(LogLevel::info, "set hdrMode:", (int32_t)mode);
-  hdrMode = mode;
-  if (yuv2RGBA) {
-    yuv2RGBA->get()->setHdrMode(mode);
+  // 直通过界全量重建拓扑: 直通裁可选画质/OSD/字幕/录制支路(16f 线性域与
+  // rgba8 域层互斥), 关直通即回(vk-hdr-lane.md V1)
+  if ((mode == HdrMode::forceHDR) != (hdrMode == HdrMode::forceHDR)) {
+    bResetFlag = true;
   }
+  hdrMode = mode;
 }
 
 #ifdef AVOX_ENABLE_FREETYPE
@@ -495,6 +494,20 @@ void VkVideoRender::onParametUpdate() {
     SharpenParamet sp = {sharpenParamet.offset, sharpenParamet.sharpness};
     sharpenLayer->get()->updateParamet(sp);
   }
+  if (yuv2RGBA) {
+    // 收敛: 宿主侧只落成员, 渲染线程每轮把成员对齐到节点(层内去重幂等);
+    // 直通过界未对齐(重建窗口期改的模式)则置重建, 下帧拓扑跟上
+    yuv2RGBA->get()->setColorSpace(colorSpace);
+    yuv2RGBA->get()->setHdrMeta(hdrMeta);
+    yuv2RGBA->get()->setDoviMeta(doviMeta);
+    yuv2RGBA->get()->setHdrMode(hdrMode);
+  }
+  if (rgba2YUV) {
+    rgba2YUV->get()->setColorSpace(colorSpace);
+  }
+  if ((hdrMode == HdrMode::forceHDR) != (hdrTopologyMode == HdrMode::forceHDR)) {
+    bResetFlag = true;
+  }
 }
 
 bool VkVideoRender::vaildAndInitGraph() {
@@ -516,7 +529,19 @@ bool VkVideoRender::vaildAndInitGraph() {
   if (hdrMeta.valid) {
     yuv2RGBA->get()->setHdrMeta(hdrMeta);
   }
+  // 重建尾重放: hdrMode/doviMeta 也须落到新节点(onInitLayer 按 hdrMode 选
+  // 直通变体+16f 输出; 漏重放=直通变体静默丢失, 10/1 sess_75d44d7c 案)
+  yuv2RGBA->get()->setHdrMode(hdrMode);
+  if (doviMeta.valid) {
+    yuv2RGBA->get()->setDoviMeta(doviMeta);
+  }
+  hdrTopologyMode = hdrMode;
   outputLayer = graph->addNode<VkOutputLayer>();
+  // HDR 直通(vk-hdr-lane.md V1): 裁全部可选画质/OSD/字幕/录制支路, 链最小化
+  // ——16f 线性域与 rgba8 gamma 域层互斥(格式+语义双错); 成员态保留,
+  // 关直通重建即回。字幕/OSD 线性域合成归 V2。
+  const bool bPt = hdrMode == HdrMode::forceHDR;
+  if (!bPt) {
   resizeLayer = graph->addNode<VkResizeLayer>();
   if (bEnableBlend && blendImage) {
     ImageFormat bformat = blendImage->getImageFormat();
@@ -528,7 +553,7 @@ bool VkVideoRender::vaildAndInitGraph() {
       blendLayer->get()->updateParamet(blendParamet);
     }
   }
-  if (lutIndex > 0) {
+  if (lutIndex > 0 && !bPt) {
     lutImage = std::make_unique<ImageBuffer>();
     std::string lutName =
         lutIndex == 1 ? "lookup_amatorka.bmp" : "lookup_miss_etikate.bmp";
@@ -541,24 +566,24 @@ bool VkVideoRender::vaildAndInitGraph() {
     basicAdjustLayer = graph->addNode<VkBasicAdjustLayer>();
     basicAdjustLayer->get()->updateParamet(basicAdjustValue);
   }
-  if (bSharpen) {
+  if (bSharpen && !bPt) {
     sharpenLayer = graph->addNode<VkSharpenLayer>();
     SharpenParamet sp = {sharpenParamet.offset, sharpenParamet.sharpness};
     sharpenLayer->get()->updateParamet(sp);
   }
-  if (bEnableAnime4K) {
+  if (bEnableAnime4K && !bPt) {
     anime4KLayer = graph->addNode<VkAnime4KLayer>();
     anime4KLayer->get()->updateParamet(anime4KParamet);
   }
-  if (bEnableQualityEnhance) {
+  if (bEnableQualityEnhance && !bPt) {
     qualityEnhanceLayer = graph->addNode<VkQEnhanceLayer>();
     qualityEnhanceLayer->get()->updateParamet(qualityEnhanceParamet);
   }
-  if (bEnableFSR) {
+  if (bEnableFSR && !bPt) {
     fsrLayer = graph->addNode<VkFSRLayer>();
     fsrLayer->get()->updateParamet(fsrParamet);
   }
-  if (bEnableVr) {
+  if (bEnableVr && !bPt) {
     vrLayer = graph->addNode<VkVrLayer>();
     int32_t vrOutW = 0;
     int32_t vrOutH = 0;
@@ -580,7 +605,7 @@ bool VkVideoRender::vaildAndInitGraph() {
            vrOutH);
   }
 #ifdef AVOX_ENABLE_FREETYPE
-  if (fontRender->enabled()) {
+  if (fontRender->enabled() && !bPt) {
     fontLayer = graph->addNode<VkFontLayer>();
     fontRender->setFontLayer(fontLayer->get());
   }
@@ -589,10 +614,14 @@ bool VkVideoRender::vaildAndInitGraph() {
     canvasLayer = graph->addNode<VkCanvasLayer>();
     canvasRender->setCanvasLayer(canvasLayer->get());
   }
-  if (geometryRender->enabled()) {
+  if (geometryRender->enabled() && !bPt) {
     geometryLayer = graph->addNode<VkGeometryLayer>();
     geometryLayer->get()->setSource(geometryRender.get());
     geometryRender->setLayer(geometryLayer->get());
+  }
+  } else {
+    // 直通态清画布挂靠: 图重建后旧 canvas 层已销毁, 防悬垂
+    canvasRender->setCanvasLayer(nullptr);
   }
   OutputParamet outputParamet = {};
   outputParamet.bCpu = false;
@@ -611,11 +640,11 @@ bool VkVideoRender::vaildAndInitGraph() {
   } else {
     outNode = inputLayer;
   }
-  if (bEnableVr) {
+  if (bEnableVr && !bPt) {
     // VR投影自带视口尺寸, 替代 resize; 后续画质层作用于透视后的视口图
     // (= 输出端增强, 上采样发软由 FSR/Anime4K 在视口分辨率补偿)
     outNode = outNode->addLine(vrLayer);
-  } else if (bUseNewSize) {
+  } else if (bUseNewSize && !bPt) {
     resizeParamet.bLinear = 1;
     // 优化使用scale
     if (sizeScale != 1.0f) {
@@ -631,50 +660,50 @@ bool VkVideoRender::vaildAndInitGraph() {
     resizeLayer->get()->updateParamet(resizeParamet);
     outNode = outNode->addLine(resizeLayer);
   }
-  if (bEnableAnime4K) {
+  if (bEnableAnime4K && !bPt) {
     LOGFLF(LogLevel::info,
            "enable Anime4K mode:", (int32_t)anime4KParamet.mode);
     outNode = outNode->addLine(anime4KLayer);
   }
-  if (bEnableQualityEnhance) {
+  if (bEnableQualityEnhance && !bPt) {
     LOGFLF(LogLevel::info,
            "enable QualityEnhance mode:", (int32_t)qualityEnhanceParamet.outputMode);
     outNode = outNode->addLine(qualityEnhanceLayer);
   }
-  if (bEnableFSR) {
+  if (bEnableFSR && !bPt) {
     LOGFLF(LogLevel::info,
            "enable FSR scale:", (int32_t)fsrParamet.scale,
            " deblock:", fsrParamet.deblockStrength,
            " rcas:", fsrParamet.enableRCAS);
     outNode = outNode->addLine(fsrLayer);
   }
-  if (bEnableBlend) {
+  if (bEnableBlend && !bPt) {
     outNode = outNode->addLine(blendLayer);
     inputBlendLayer->addLine(blendLayer, 0, 1);
   }
-  if (lutIndex > 0) {
+  if (lutIndex > 0 && !bPt) {
     outNode = outNode->addLine(lutLayer);
   }
-  if (basicAdjustLayer) {
+  if (basicAdjustLayer && !bPt) {
     outNode = outNode->addLine(basicAdjustLayer);
   }
-  if (bSharpen) {
+  if (bSharpen && !bPt) {
     outNode = outNode->addLine(sharpenLayer);
   }
 #ifdef AVOX_ENABLE_FREETYPE
-  if (fontRender->enabled()) {
+  if (fontRender->enabled() && !bPt) {
     outNode = outNode->addLine(fontLayer);
   }
 #endif
   // 字幕画布层在字体(OSD/SRT)之后、几何层之前: ASS/PGS 与 SRT 互斥,
   // 顺序晚于所有画质层, 保证字幕不被超分/增强重采样(计划 §3.4 挂载位)
-  if (canvasLayer) {
+  if (canvasLayer && !bPt) {
     outNode = outNode->addLine(canvasLayer);
   }
-  if (geometryRender->enabled()) {
+  if (geometryRender->enabled() && !bPt) {
     outNode = outNode->addLine(geometryLayer);
   }
-  if (bOutCpuYuv) {
+  if (bOutCpuYuv && !bPt) {
     rgba2YUV = graph->addNode<VkRGBA2YUVLayer>();
     // 输出设定的YUV格式
     rgba2YUV->get()->updateParamet(outYuvType);
@@ -689,7 +718,7 @@ bool VkVideoRender::vaildAndInitGraph() {
   }
   // enableImage: 每帧把处理后的 RGBA 经 GPU 缩放到 imageOutFormat 后零拷贝写入用户 buf
   // 不设 observer (区别于 YUV 的 onCpuData), 用 setOutputBuffer 直投; resetGraph 重建会重新 pin
-  if (bEnableImage && imageOutBuffer) {
+  if (bEnableImage && imageOutBuffer && !bPt) {
     imageResizeLayer = graph->addNode<VkResizeLayer>();
     ReSizeParamet imgResize = {};
     imgResize.bLinear = 1;

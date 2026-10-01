@@ -1,6 +1,7 @@
 #include "VkYUV2RGBALayer.hpp"
 
 #include <cstdio>
+#include <cstring>
 
 #include "VkPipeGraph.hpp"
 namespace avox {
@@ -28,6 +29,10 @@ void VkYUV2RGBALayer::refreshColorMat() {
 }
 
 void VkYUV2RGBALayer::setColorSpace(const ColorSpaceDesc& c) {
+  if (c.standard == cs.standard && c.range == cs.range &&
+      c.transfer == cs.transfer) {
+    return;  // 幂等: 渲染线程每轮收敛直推, 无变化早退
+  }
   cs = c;
   refreshColorMat();
   // 运行时重传 UBO, 不触发 graph 重建
@@ -38,6 +43,12 @@ void VkYUV2RGBALayer::setHdrMeta(const HdrMeta& meta) {
   if (!meta.valid) {
     return;
   }
+  if (lastMeta.valid == meta.valid && lastMeta.maxCLL == meta.maxCLL &&
+      lastMeta.maxLuminance == meta.maxLuminance &&
+      lastMeta.l1MaxNits == meta.l1MaxNits) {
+    return;  // 幂等: 渲染线程每轮收敛直推, 无变化早退
+  }
+  lastMeta = meta;
   uboData.maxLuminance = (float)hdrPeakNits(meta);
   // 探针走 stderr: playtest 环境 logTask 启动后不再排水, 引擎 info 日志不可见
   fprintf(stderr, "[yuv2rgba] setHdrMeta peak=%.1f l1max=%.1f cll=%u\n",
@@ -52,20 +63,19 @@ void VkYUV2RGBALayer::setHdrMode(HdrMode mode) {
   if (mode == hdrMode) {
     return;
   }
-  // 过 forceHDR 界要换直通变体着色器+rgba16f 输出, 重建 graph; 其余仅重传 UBO
-  const bool variantChange =
-      (mode == HdrMode::forceHDR) != (hdrMode == HdrMode::forceHDR);
   LOGFLF(LogLevel::info, "[yuv2rgba] hdrMode:", (int32_t)mode,
          " (0=follow 1=forceSDR 2=forceHDR)");
+  // 不在此 resetGraph: 直通过界的拓扑重建由 VkVideoRender::setHdrMode 置
+  // bResetFlag 驱动(渲染线程消费), 本函数只落模式+UBO(10/1 UAF 案口径)
   hdrMode = mode;
   refreshColorMat();
   bParametChange = true;
-  if (variantChange) {
-    resetGraph();
-  }
 }
 
 void VkYUV2RGBALayer::setDoviMeta(const DoviMeta& meta) {
+  if (0 == std::memcmp(&doviMeta, &meta, sizeof(DoviMeta))) {
+    return;  // 幂等: 渲染线程每轮收敛直推, 无变化早退
+  }
   // 探针走 stderr: playtest 环境 logTask 启动后不再排水, 引擎 info 日志不可见
   fprintf(stderr, "[yuv2rgba] setDoviMeta valid=%d pivots=%d/%d/%d\n",
           (int)meta.valid, (int)meta.comp[0].numPivots,

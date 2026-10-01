@@ -29,6 +29,8 @@ class VkYUV2RGBALayer : public VkLayer, public IYUVLayer {
   ColorSpaceDesc cs{YuvStandard::bt601, YuvRange::full};
   HdrMode hdrMode = HdrMode::follow;
   DoviMeta doviMeta = {};
+  // 已应用快照: 渲染线程逐帧收敛直推, setter 去重早退用
+  HdrMeta lastMeta = {};
   ColorYuvUBO uboData{};
 };
 

@@ -20,6 +20,10 @@ void VkRGBA2YUVLayer::refreshColorMat() {
 }
 
 void VkRGBA2YUVLayer::setColorSpace(const ColorSpaceDesc& c) {
+  if (c.standard == cs.standard && c.range == cs.range &&
+      c.transfer == cs.transfer) {
+    return;  // 幂等: 渲染线程每轮收敛直推, 无变化早退
+  }
   cs = c;
   refreshColorMat();
   // 运行时重传 UBO, 不触发 graph 重建

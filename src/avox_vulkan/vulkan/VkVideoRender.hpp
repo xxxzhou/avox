@@ -107,6 +107,10 @@ class VkVideoRender : public VideoRender, public IVOutputLayerOb {
   HdrMeta hdrMeta = {};
   // HDR 输出模式, 驱动 yuv2RGBA tone map 开关
   HdrMode hdrMode = HdrMode::follow;
+  // 拓扑建成时的模式(直通过界未对齐→置 bResetFlag 重建, hdr-chain-plan V1)
+  HdrMode hdrTopologyMode = HdrMode::follow;
+  // DV RPU 整形数据, 重建尾重放到新 yuv2RGBA 节点
+  DoviMeta doviMeta = {};
 
 #ifdef AVOX_ENABLE_FREETYPE
   std::unique_ptr<FontRender> fontRender = nullptr;
