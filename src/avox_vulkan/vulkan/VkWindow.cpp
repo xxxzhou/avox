@@ -410,33 +410,8 @@ void VkWindow::initVkSurface(ILinuxSurface* x11Surface)
   if (!bfind) {
     LOGFLF(LogLevel::warn, "presentIndex not equal graphicsIndex");
   }
-  // 查找surf支持的显示格式
-  uint32_t formatCount;
-  AVOX_VULKAN_LOG(vkGetPhysicalDeviceSurfaceFormatsKHR(vkPhyDevice, vkSurface,
-                                                      &formatCount, nullptr),
-                 "get surface format failed");
-  std::vector<VkSurfaceFormatKHR> surfFormats(formatCount);
-  AVOX_VULKAN_LOG(vkGetPhysicalDeviceSurfaceFormatsKHR(
-                     vkPhyDevice, vkSurface, &formatCount, surfFormats.data()),
-                 "get surface format failed");
-  if (formatCount == 1 && surfFormats[0].format == VK_FORMAT_UNDEFINED) {
-    format = surfFormats[0];
-    format.format = VK_FORMAT_B8G8R8A8_UNORM;
-  } else {
-    assert(formatCount >= 1);
-    bool bfind = false;
-    for (auto& surf : surfFormats) {
-      if (surf.format == VK_FORMAT_B8G8R8A8_UNORM ||
-          surf.format == VK_FORMAT_R8G8B8A8_UNORM) {
-        format = surf;
-        bfind = true;
-        break;
-      }
-    }
-    if (!bfind) {
-      format = surfFormats[0];
-    }
-  }
+  // 查找surf支持的显示格式(按直通意愿挑选)
+  pickFormat();
   // 得到当前使用的queue
   vkGetDeviceQueue(vkDevice, presentQueueIndex, 0, &presentQueue);
   // cmdPool
@@ -475,6 +450,78 @@ void VkWindow::initVkSurface(ILinuxSurface* x11Surface)
   // 创建窗口用的renderpass
   createRenderPass();
   createSwipChain();
+}
+
+// 枚举 surface 格式并按直通意愿挑选: 直通优先 FP16 + EXTENDED_SRGB_LINEAR
+// (V0 实证: 窗口在 HDR 屏时本机 ICD 不开扩展即枚举可见, vk-hdr-lane.md);
+// 否则维持 8bit SDR 选择, 行为与历史一致
+void VkWindow::pickFormat() {
+  uint32_t formatCount;
+  AVOX_VULKAN_LOG(vkGetPhysicalDeviceSurfaceFormatsKHR(vkPhyDevice, vkSurface,
+                                                      &formatCount, nullptr),
+                 "get surface format failed");
+  std::vector<VkSurfaceFormatKHR> surfFormats(formatCount);
+  AVOX_VULKAN_LOG(vkGetPhysicalDeviceSurfaceFormatsKHR(
+                     vkPhyDevice, vkSurface, &formatCount, surfFormats.data()),
+                 "get surface format failed");
+  if (bHdrPassthrough) {
+    for (auto& surf : surfFormats) {
+      if (surf.format == VK_FORMAT_R16G16B16A16_SFLOAT &&
+          surf.colorSpace == VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT) {
+        format = surf;
+        LOGFLF(LogLevel::info, "hdr surface format: FP16 EXTENDED_SRGB_LINEAR");
+        return;
+      }
+    }
+    if (bHdrActive) {
+      LOGFLF(LogLevel::warn, "hdr format unavailable, fallback 8bit");
+    }
+  }
+  if (formatCount == 1 && surfFormats[0].format == VK_FORMAT_UNDEFINED) {
+    format = surfFormats[0];
+    format.format = VK_FORMAT_B8G8R8A8_UNORM;
+    return;
+  }
+  assert(formatCount >= 1);
+  for (auto& surf : surfFormats) {
+    if (surf.format == VK_FORMAT_B8G8R8A8_UNORM ||
+        surf.format == VK_FORMAT_R8G8B8A8_UNORM) {
+      format = surf;
+      return;
+    }
+  }
+  format = surfFormats[0];
+}
+
+// forceHDR: 交换链切 FP16 + EXTENDED_SRGB_LINEAR(扩展线性, 1.0=SDR 白);
+// 格式不可得(SDR 屏/系统 HDR 关)恒 no-op 返回 false; 关向主动重建回落 8bit
+bool VkWindow::setHdrPassthrough(bool bPassthrough) {
+  if (!swapChain) {
+    return false;
+  }
+  if (bHdrActive == bPassthrough) {
+    return true;
+  }
+  bHdrPassthrough = bPassthrough;
+  VkSurfaceFormatKHR old = format;
+  pickFormat();
+  const bool hdrNow = format.format == VK_FORMAT_R16G16B16A16_SFLOAT;
+  if (hdrNow != bPassthrough) {
+    format = old;
+    LOGFLF(LogLevel::info, "hdr passthrough ignored, hdr format unavailable:",
+           bPassthrough);
+    return false;
+  }
+  if (old.format != format.format || old.colorSpace != format.colorSpace) {
+    // renderpass 挂着旧格式, 换面必须跟着重建(视频路径是 compute+copy, 保持一致)
+    vkDestroyRenderPass(vkDevice, renderPass, nullptr);
+    createRenderPass();
+    reSwapChainBefore();
+    reSwapChainAfter();
+    LOGFLF(LogLevel::info, "hdr passthrough swapchain:", bPassthrough);
+  }
+  bHdrActive = bPassthrough;
+  return true;
 }
 
 void VkWindow::createSwipChain() {

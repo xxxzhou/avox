@@ -108,6 +108,10 @@ void AVTrack::renderFirst() {
   // 当前PTS基准是否需要改变，比如flush,close后需要改变
   if (bResetBase) {
     renderTime = timeStampMS();
+    // 起播/seek后首帧起 1s 保护窗: 渲染链首拍惰性初始化实测拖 100ms+ 且
+    // 簇尾可到 0.56s(DX11设备/CS编译/Vk建图分摊在前几拍), 窗内丢帧门禁用,
+    // 过期帧顺序上屏不跳变
+    warmupUntilMs = renderTime + 1000;
     resetPts();
     bResetBase = false;
   }

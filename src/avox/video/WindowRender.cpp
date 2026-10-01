@@ -61,12 +61,17 @@ void WindowRender::setVulkan(bool bVulkan_) {
 }
 
 void WindowRender::setHdrMode(HdrMode mode) {
-  SurfaceRenderNative::setHdrMode(mode);
-  // forceHDR 且显示器支持 HDR 时, 窗口交换链切 PQ 色彩空间直通上屏;
-  // SDR 显示器 no-op。离屏无窗口(交换链)自然跳过
+  // 直通先于 shader 模式: 呈现面切不上(屏/格式不可得)时降级 follow,
+  // 防 shader 跳过 tone map 落在 SDR 表面(过曝)。SDR 显示器 no-op
+  HdrMode applied = mode;
   if (window) {
-    window->setHdrPassthrough(mode == HdrMode::forceHDR);
+    const bool ok = window->setHdrPassthrough(mode == HdrMode::forceHDR);
+    if (!ok && mode == HdrMode::forceHDR) {
+      applied = HdrMode::follow;
+      LOGFLF(LogLevel::warn, "hdr passthrough refused, downgrade follow");
+    }
   }
+  SurfaceRenderNative::setHdrMode(applied);
 }
 
 void WindowRender::setHdrMeta(const HdrMeta &meta) {

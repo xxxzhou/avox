@@ -81,6 +81,9 @@ class AVTrack : public IPlayerContext, public PtsUpdater {
   // 渲染时间，以PTS对应的系统时间为准
   // 控制PTS与系统计时一致
   int64_t renderTime = 0;
+  // 基准重置后的保护窗截止时刻: 窗内过期帧不丢只快刷,
+  // 吸收起播/seek首拍渲染链惰性初始化(百ms级,簇尾可至0.56s)造成的落后, 避免跳帧
+  int64_t warmupUntilMs = 0;
 
   // 记录主时间
   int64_t mClock = 0;

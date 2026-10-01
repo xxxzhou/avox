@@ -52,11 +52,17 @@ void VkYUV2RGBALayer::setHdrMode(HdrMode mode) {
   if (mode == hdrMode) {
     return;
   }
+  // 过 forceHDR 界要换直通变体着色器+rgba16f 输出, 重建 graph; 其余仅重传 UBO
+  const bool variantChange =
+      (mode == HdrMode::forceHDR) != (hdrMode == HdrMode::forceHDR);
   LOGFLF(LogLevel::info, "[yuv2rgba] hdrMode:", (int32_t)mode,
          " (0=follow 1=forceSDR 2=forceHDR)");
   hdrMode = mode;
   refreshColorMat();
   bParametChange = true;
+  if (variantChange) {
+    resetGraph();
+  }
 }
 
 void VkYUV2RGBALayer::setDoviMeta(const DoviMeta& meta) {
@@ -82,8 +88,14 @@ void VkYUV2RGBALayer::onInitLayer() {
     path = "glsl/yuv2rgbaV3.comp.spv";
   }
   if (yuvType == YuvType::yuv420P10 || yuvType == YuvType::p010) {
-    // V5 通吃 10bit(含 p010 上传归一化): transfer 为运行时 UBO 分支, SDR 直通零改动
-    path = "glsl/yuv2rgbaV5.comp.spv";
+    if (hdrMode == HdrMode::forceHDR) {
+      // 直通变体(vk-hdr-lane.md V1): rgba16f 输出扩展线性域(1.0=SDR 白)
+      path = "glsl/yuv2rgbaHDR.comp.spv";
+      outFormats[0].imageType = ImageType::rgba16f;
+    } else {
+      // V5 通吃 10bit(含 p010 上传归一化): transfer 为运行时 UBO 分支, SDR 直通零改动
+      path = "glsl/yuv2rgbaV5.comp.spv";
+    }
   }
   fprintf(stderr, "[yuv2rgba] onInitLayer variant=%s yuvType=%d\n",
           path.c_str(), (int)yuvType);

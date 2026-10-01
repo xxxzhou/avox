@@ -8,3 +8,4 @@ yuv2rgbaV3.comp
 yuv2rgbaV5.comp
 canvasBlend.comp
 vrProject.comp
+yuv2rgbaHDR.comp

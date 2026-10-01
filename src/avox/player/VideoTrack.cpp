@@ -358,8 +358,10 @@ SyncResult VideoTrack::syncVideo() {
   // delay>0 才丢帧: delay==0 表示视频已落后主时钟、本就该立刻渲染,
   // 此时再丢就等于"每帧都过期" —— 加上刷新周期(~30ms)与阈值(sduration*1.5)
   // 同量级, 判据几乎恒成立, 会造成 ~77% 的帧被丢弃、画面卡顿/停滞。
-  if (!bIFrameMode && delay > 0 && now > renderTime + sduration * 1.5 &&
-      sduration > 0) {
+  // 保护窗内(warmupUntilMs)不丢: 首拍惰性初始化拖出的落后顺序快刷追平,
+  // 不把确定性初始化成本变成用户可见的跳帧(4K HDR 硬解起播簇 0930 实证)
+  if (!bIFrameMode && now > warmupUntilMs && delay > 0 &&
+      now > renderTime + sduration * 1.5 && sduration > 0) {
     int64_t dropPts = 0;
     // GPU数据丢弃需要通知frame好做后续处理
     frameQueue.pop([&](const VideoFramePtr& frame) {

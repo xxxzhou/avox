@@ -1,0 +1,272 @@
+#version 450
+
+// yuv420P10 HDR 直通变体(vk-hdr-lane.md V1): outTex rgba16f 扩展线性域,
+// forceHDR 分支线性化到 1.0=SDR 白(80nit)、BT.2020 原色域不压, 值可>1 由
+// EXTENDED_SRGB_LINEAR 交换链原样上屏; tone map/SDR 路径与 V5 完全一致
+// 读函数与色彩尾段分离: 接入新格式(如 p010)只加读函数, 色彩尾段共用
+
+layout (local_size_x = 16, local_size_y = 16) in;
+// 输入是 10bit 平面字流(u16/字)的 RGBA8 字节视图: 每 texel=4字节=2个字, 字节序
+// 与 r16 视图完全一致, 仅换容器。r16ui 存储图在部分移动驱动上 imageLoad 恒零
+// (Adreno 740 实测: 特性位 storage/sampled/transferDst 齐全仍读零), rgba8 是
+// Vulkan 强制支持格式且引擎各管线在用, 通吃性最好
+layout (binding = 0, rgba8) uniform readonly image2D inTex;
+layout (binding = 1, rgba16f) uniform image2D outTex;
+// std140: 与 ColorYuvUBO(2848B) 对齐 — transfer 占 offset 12(旧 shader 的隐式 padding),
+// mat4 落 offset 16, HDR 参数追加 offset 80; DV 整形区 offset 96(仅本 shader 声明)
+layout (std140, binding = 2) uniform UBO
+{
+	int width;
+	int height;
+	int yuvType;
+	int transfer;       // 0=gamma 1=linear 2=pq 3=hlg
+	mat4 colorMat;      // 行优先 YUV->RGB, UV 的 -0.5 已折进偏移列, 用法 vec4(yuv,1)*colorMat
+	float maxLuminance; // 内容峰值亮度 nits
+	float sdrWhiteNits; // SDR 白点 nits
+	int hdrMode;        // 0=follow 1=forceSDR 2=forceHDR
+	int _pad;
+	int doviEnable;     // 1=走 DV 整形链
+	int _dv0;
+	int _dv1;
+	int _dv2;
+	vec4 dvPivots[7];   // 3comp×9 pivot(归一化), flat=c*9+k
+	vec4 dvPoly[18];    // 3comp×8段×3系数, flat=(c*8+p)*3+k
+	vec4 dvMmr[132];    // 3comp×8段×(1const+3阶×7), flat=(c*8+p)*22+n
+	ivec4 dvIdc[6];     // 24段: 0=无效 1=poly 0x10+order=mmr
+	vec4 dvNumPivots;   // xyz=comp0/1/2 numPivots
+	vec4 dvNl[3];       // ycc_to_rgb 列主序(PQ 前)
+	vec4 dvNlOff;       // ycc_to_rgb_offset
+	vec4 dvLm[3];       // 预乘 LMS2RGB×rgb_to_lms 列主序(PQ 后)
+} ubo;
+
+// ---------- 读函数: 内存布局 -> 归一化 [0,1], 与色彩处理无关 ----------
+
+// 10bit 平面字流: 平面格式, 10-bit 低对齐, 字节序与 r16 视图一致。
+// 字节视图寻址: 字索引 wi -> texel (wi>>1), 低/高字取 texel 前/后两字节;
+// 字行宽 = 帧宽(打包契约: Y/U/V 按 width 线性紧排), 2 个字行拼 1 个 texel 行
+float read10bit(ivec2 pos) {
+	int w = imageSize(outTex).x;
+	int wi = pos.y * w + pos.x;
+	ivec2 tp = ivec2((wi >> 1) % w, (wi >> 1) / w);
+	vec4 b4 = imageLoad(inTex, tp) * 255.0;
+	uint w16 = ((wi & 1) == 0) ? (uint(b4.r + 0.5) | (uint(b4.g + 0.5) << 8))
+	                           : (uint(b4.b + 0.5) | (uint(b4.a + 0.5) << 8));
+	return float(w16 & 1023u) / 1023.f;
+}
+
+// UV 值(归一化 [0,1], 含 +0.5 偏移), 不再减 0.5(折进 colorMat 偏移列)
+float read10bitUV(ivec2 pos) {
+	return read10bit(pos);
+}
+
+// ---------- 色彩尾段: 输入 gamma 域 RGB, 输出 SDR 编码值 ----------
+
+// PQ EOTF (SMPTE ST2084): 编码值 -> 线性光, 1.0 = 10000 nits
+vec3 pqToLinear(vec3 n) {
+	const float m1 = 0.1593017578125;
+	const float m2 = 78.84375;
+	const float c1 = 0.8359375;
+	const float c2 = 18.8515625;
+	const float c3 = 18.6875;
+	vec3 p = pow(clamp(n, vec3(0.0), vec3(1.0)), vec3(1.0 / m2));
+	vec3 num = max(p - c1, vec3(0.0));
+	return pow(num / (c2 - c3 * p), vec3(1.0 / m1));
+}
+
+// HLG 解码(BT.2100): OETF^-1 得场景线性, 再逆 OOTF(1.2, 1000nit 参考屏)
+// 输出线性光 1.0 = 1000 nits
+vec3 hlgToLinear(vec3 e) {
+	vec3 t = clamp(e, vec3(0.0), vec3(1.0));
+	vec3 lo = t * t / 3.0;
+	vec3 hi = (exp((t - 0.55991073) / 0.17883277) + 0.28466892) / 12.0;
+	vec3 scene = mix(lo, hi, step(vec3(0.5), t));
+	float ys = dot(scene, vec3(0.2627, 0.6780, 0.0593));
+	return scene * pow(max(ys, 1e-6), 0.2);
+}
+
+// tone map: 线性光(10000nit 归一) -> 显示线性 [0,1]
+// BT.2390 观感取向: 锚(sdrWhite)下近似线性透传, 超锚按内容峰值软压(Reinhard 扩展)
+vec3 toneMap(vec3 lin) {
+	float dstN = max(ubo.sdrWhiteNits, 1.0);
+	float white = max(ubo.maxLuminance, dstN) / dstN;   // 白点(锚归一)
+	vec3 d = max(lin * 10000.0 / dstN, vec3(0.0));      // 锚归一线性
+	vec3 t = d * (1.0 + d / (white * white)) / (1.0 + d);
+	return clamp(t, vec3(0.0), vec3(1.0));
+}
+
+// BT.2020 -> BT.709 线性域 primaries 转换, 越界分量截断
+vec3 bt2020ToBt709(vec3 c) {
+	// mat3 构造按列, 三列即目标矩阵的三行
+	return max(mat3(
+		1.6605, -0.1246, -0.0182,
+		-0.5876, 1.1329, -0.1006,
+		-0.0728, -0.0083, 1.1187) * c, vec3(0.0));
+}
+
+// 线性光 -> BT.709 OETF 编码(与 SDR 直通路径的 gamma 域一致, 下游特效按 gamma 域消费)
+vec3 linearToBt709(vec3 c) {
+	vec3 lo = c * 4.5;
+	vec3 hi = 1.099 * pow(max(c, vec3(0.0)), vec3(0.45)) - 0.099;
+	return mix(lo, hi, step(vec3(0.018), c));
+}
+
+// PQ OETF (ST2084 逆过程): 线性光 -> 编码值(DV 链尾回编码用)
+vec3 linearToPq(vec3 lin) {
+	const float m1 = 0.1593017578125;
+	const float m2 = 78.84375;
+	const float c1 = 0.8359375;
+	const float c2 = 18.8515625;
+	const float c3 = 18.6875;
+	vec3 p = pow(max(lin, vec3(0.0)), vec3(m1));
+	vec3 e = (vec3(c1) + vec3(c2) * p) / (vec3(1.0) + vec3(c3) * p);
+	return pow(e, vec3(m2));
+}
+
+// ---------- DV(Dolby Vision) 整形: 语义对齐 libplacebo, 输出 PQ BT.2020 ----------
+
+float dvPivot(int idx) { return ubo.dvPivots[idx >> 2][idx & 3]; }
+float dvPoly(int idx)  { return ubo.dvPoly[idx >> 2][idx & 3]; }
+float dvMmr(int idx)   { return ubo.dvMmr[idx >> 2][idx & 3]; }
+int   dvIdc(int idx)   { return ubo.dvIdc[idx >> 2][idx & 3]; }
+
+// 单组件曲线: pivot 段选 → poly Horner(原始信号, 无段内归一) / mmr 交叉项展开
+float dvReshapeComp(int c, vec3 sig, float s) {
+	int base = c * 8;
+	int sel = -1;
+	for (int i = 0; i < 8; i++) {
+		if (dvIdc(base + i) == 0) break;
+		if (i == 7 || s < dvPivot(c * 9 + i + 1)) { sel = i; break; }
+	}
+	if (sel < 0) {
+		return s;
+	}
+	int idc = dvIdc(base + sel);
+	if (idc == 1) {
+		int pf = (base + sel) * 3;
+		return (dvPoly(pf + 2) * s + dvPoly(pf + 1)) * s + dvPoly(pf);
+	}
+	int order = idc - 16;
+	int p = (base + sel) * 22;
+	int np = int(ubo.dvNumPivots[c]);
+	float acc = dvMmr(p);
+	vec4 sigX = vec4(sig.x * sig.y, sig.x * sig.z, sig.y * sig.z,
+	                 sig.x * sig.y * sig.z);
+	acc += dot(vec3(dvMmr(p + 1), dvMmr(p + 2), dvMmr(p + 3)), sig);
+	acc += dot(vec4(dvMmr(p + 4), dvMmr(p + 5), dvMmr(p + 6), dvMmr(p + 7)), sigX);
+	if (order >= 2) {
+		vec3 sig2 = sig * sig;
+		vec4 sigX2 = sigX * sigX;
+		acc += dot(vec3(dvMmr(p + 8), dvMmr(p + 9), dvMmr(p + 10)), sig2);
+		acc += dot(vec4(dvMmr(p + 11), dvMmr(p + 12), dvMmr(p + 13), dvMmr(p + 14)), sigX2);
+		if (order >= 3) {
+			acc += dot(vec3(dvMmr(p + 15), dvMmr(p + 16), dvMmr(p + 17)), sig2 * sig);
+			acc += dot(vec4(dvMmr(p + 18), dvMmr(p + 19), dvMmr(p + 20), dvMmr(p + 21)), sigX2 * sigX);
+		}
+	}
+	return clamp(acc, dvPivot(c * 9), dvPivot(c * 9 + np - 1));
+}
+
+// DV 全链: reshape → ycc_to_rgb(PQ域) → PQ线性 → LMS合成阵 → 回编码 PQ BT.2020
+// 偏移=输入侧中性值(limited 黑位+chroma 0.5): 先减再进矩阵
+// (FFmpeg「input offset of neutral value」语义, 对齐 libplacebo black[] 处理)
+vec3 dvProcess(vec3 yuv) {
+	vec3 sig = clamp(yuv, vec3(0.0), vec3(1.0));
+	sig = vec3(dvReshapeComp(0, sig, sig.r), dvReshapeComp(1, sig, sig.g),
+	           dvReshapeComp(2, sig, sig.b));
+	mat3 nl = mat3(ubo.dvNl[0].xyz, ubo.dvNl[1].xyz, ubo.dvNl[2].xyz);
+	vec3 rgb = nl * (sig - ubo.dvNlOff.xyz);
+	vec3 lin = pqToLinear(rgb);
+	mat3 lm = mat3(ubo.dvLm[0].xyz, ubo.dvLm[1].xyz, ubo.dvLm[2].xyz);
+	return linearToPq(lm * lin);
+}
+
+// 色彩处理总入口: forceHDR=直通到扩展线性域(PQ/HLG 线性化, 2020 原色域,
+// 1.0=SDR 白 80nit, 超白由显示链出光); 否则仅 PQ/HLG 做变换,
+// SDR 原样透传(零改动)。forceSDR 与 follow 在此等价(恒 tone map)
+vec3 processColor(vec3 rgb) {
+	if (ubo.hdrMode == 2) {           // forceHDR: 扩展线性直通, HDR 显示链消费
+		if (ubo.transfer == 2) {      // pq: 10000nit 归一 -> 80nit 归一
+			return pqToLinear(rgb) * 125.0;
+		}
+		if (ubo.transfer == 3) {      // hlg: 1000nit 归一 -> 80nit 归一
+			return hlgToLinear(rgb) * 12.5;
+		}
+		return rgb;
+	}
+	if (ubo.transfer == 2) {          // pq (HDR10)
+		vec3 lin = pqToLinear(rgb);
+		lin = toneMap(lin);
+		lin = bt2020ToBt709(lin);
+		return linearToBt709(lin);
+	}
+	if (ubo.transfer == 3) {          // hlg
+		vec3 lin = hlgToLinear(rgb) * 0.1;  // 1000nit 归一 -> 10000nit 归一
+		lin = toneMap(lin);
+		lin = bt2020ToBt709(lin);
+		return linearToBt709(lin);
+	}
+	return rgb;
+}
+
+// yuv420p10: 数据在内存中紧密排列: Y平面(width*height 字) + U平面(w/2*h/2) + V平面(w/2*h/2)
+// 字行宽=帧宽, 输入图为该字流的 RGBA8 字节视图(高 = 字行数/2 向上取整), 一个线程处理 2x2 四个点
+void yuv420p10(){
+    ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 outSize = imageSize(outTex);
+    if(uv.x >= outSize.x/2 || uv.y >= outSize.y/2){
+        return;
+    }
+	// 输出图像尺寸
+	int width = outSize.x;
+	int height = outSize.y;
+	// UV平面尺寸
+	int uvWidth = width / 2;
+	int uvHeight = height / 2;
+	// Y平面大小(像素数)
+	int yPlaneSize = width * height;
+	// U平面大小(像素数)
+	int uvPlaneSize = uvWidth * uvHeight;
+
+	// U和V的线性索引
+	int uvIndex = uv.y * uvWidth + uv.x;
+	// U和V在整个图像中的线性位置
+	int uLinearPos = yPlaneSize + uvIndex;
+	int vLinearPos = yPlaneSize + uvPlaneSize + uvIndex;
+
+	// 转换为2D坐标 (基于输入图像宽度)
+	ivec2 uPos = ivec2(uLinearPos % width, uLinearPos / width);
+	ivec2 vPos = ivec2(vLinearPos % width, vLinearPos / width);
+
+	// 读取4个Y值 (2x2块)
+	float y1 = read10bit(ivec2(uv.x*2, uv.y*2));
+	float y2 = read10bit(ivec2(uv.x*2+1, uv.y*2));
+	float y3 = read10bit(ivec2(uv.x*2, uv.y*2+1));
+	float y4 = read10bit(ivec2(uv.x*2+1, uv.y*2+1));
+	// 读取U和V
+	float u = read10bitUV(uPos);
+	float v = read10bitUV(vPos);
+
+	// DV 流走整形链(替换 colorMat), 输出已是 PQ BT.2020, processColor 照常消费
+	vec3 rgb1 = ubo.doviEnable == 1 ? dvProcess(vec3(y1, u, v))
+	                                : (vec4(y1, u, v, 1.0) * ubo.colorMat).rgb;
+	vec3 rgb2 = ubo.doviEnable == 1 ? dvProcess(vec3(y2, u, v))
+	                                : (vec4(y2, u, v, 1.0) * ubo.colorMat).rgb;
+	vec3 rgb3 = ubo.doviEnable == 1 ? dvProcess(vec3(y3, u, v))
+	                                : (vec4(y3, u, v, 1.0) * ubo.colorMat).rgb;
+	vec3 rgb4 = ubo.doviEnable == 1 ? dvProcess(vec3(y4, u, v))
+	                                : (vec4(y4, u, v, 1.0) * ubo.colorMat).rgb;
+	// 仅 HDR 流走色彩处理, SDR 直通(processColor 内部按 transfer 分支)
+	vec4 rgba1 = vec4(processColor(rgb1), 1.0);
+	vec4 rgba2 = vec4(processColor(rgb2), 1.0);
+	vec4 rgba3 = vec4(processColor(rgb3), 1.0);
+	vec4 rgba4 = vec4(processColor(rgb4), 1.0);
+
+	imageStore(outTex, ivec2(uv.x*2, uv.y*2), rgba1);
+	imageStore(outTex, ivec2(uv.x*2+1, uv.y*2), rgba2);
+	imageStore(outTex, ivec2(uv.x*2, uv.y*2+1), rgba3);
+	imageStore(outTex, ivec2(uv.x*2+1, uv.y*2+1), rgba4);
+}
+
+void main(){
+	yuv420p10();
+}

@@ -115,7 +115,15 @@ public:
   void initVkSurface(ILinuxSurface* x11Surface);
 #endif
 
+public:
+  // HDR 直通(vk-hdr-lane.md V1): 交换链切 FP16+EXTENDED_SRGB_LINEAR,
+  // 两向主动重建; 格式不可得(SDR 屏/系统 HDR 关)恒 false
+  bool setHdrPassthrough(bool bPassthrough) override;
+
 private:
+  // 按 bHdrPassthrough 挑 surface 格式(直通: FP16+EXTENDED_SRGB_LINEAR)
+  void pickFormat();
+
   void createSwipChain();
 
   void reSwapChainBefore();
@@ -123,5 +131,8 @@ private:
   void reSwapChainAfter();
 
   void createRenderPass();
+
+  bool bHdrActive = false;      // 交换链当前是否处于直通态
+  bool bHdrPassthrough = false; // 直通意愿(重建时保持选型)
 };
 }
