@@ -1,15 +1,14 @@
 #include "VkVideoRender.hpp"
 
+#include <algorithm>
 #include <cstring>
 
-#include <algorithm>
-
+#include "../geometry/VkGeometryLayer.hpp"
 #include "avox/AvoxVideo.h"
 #include "avox/module/AvoxManager.hpp"
 #include "avox/player/MediaPlayer.hpp"
 #include "avox/video/ImageBuffer.hpp"
 #include "avox/video/WindowRender.hpp"
-#include "../geometry/VkGeometryLayer.hpp"
 
 namespace avox {
 
@@ -277,8 +276,9 @@ void VkVideoRender::disableAnime4K() {
 }
 
 void VkVideoRender::enableQualityEnhance(const QualityEnhanceParamet& paramet) {
-  if (bEnableQualityEnhance && 0 == std::memcmp(&paramet, &qualityEnhanceParamet,
-                                                sizeof(QualityEnhanceParamet))) {
+  if (bEnableQualityEnhance &&
+      0 == std::memcmp(&paramet, &qualityEnhanceParamet,
+                       sizeof(QualityEnhanceParamet))) {
     return;
   }
   qualityEnhanceParamet = paramet;
@@ -505,7 +505,8 @@ void VkVideoRender::onParametUpdate() {
   if (rgba2YUV) {
     rgba2YUV->get()->setColorSpace(colorSpace);
   }
-  if ((hdrMode == HdrMode::forceHDR) != (hdrTopologyMode == HdrMode::forceHDR)) {
+  if ((hdrMode == HdrMode::forceHDR) !=
+      (hdrTopologyMode == HdrMode::forceHDR)) {
     bResetFlag = true;
   }
 }
@@ -545,11 +546,11 @@ bool VkVideoRender::vaildAndInitGraph() {
   // 图像处理)在扩展线性域进行, 末端交 FP16 交换链 HDR 呈现。
   // 拓扑条件 = forceHDR 行为态 + 非 CPU-YUV 输入(cpuIn 的软解 YUV 走 yuv2RGBA
   // 的 HDR 变体, 不重复升样; IImageBuffer 的 CPU RGBA 是 SDR 内容, 不升样)。
-  const bool bChainF =
-      hdrMode == HdrMode::forceHDR && !cpuIn && !bRgbaInput;
+  const bool bChainF = hdrMode == HdrMode::forceHDR && !cpuIn && !bRgbaInput;
   if (bChainF) {
     pqUpsampleLayer = graph->addNode<VkPqUpsampleLayer>();
-    LOGFLF(LogLevel::info, "chain-F pq upsample layer enabled (rgba8 PQ -> 16F)");
+    LOGFLF(LogLevel::info,
+           "chain-F pq upsample layer enabled (rgba8 PQ -> 16F)");
   }
   outputLayer = graph->addNode<VkOutputLayer>();
   // HDR 直通(vk-hdr-lane.md V1): 裁全部可选画质/OSD/字幕/录制支路, 链最小化
@@ -557,83 +558,83 @@ bool VkVideoRender::vaildAndInitGraph() {
   // 关直通重建即回。字幕/OSD 线性域合成归 V2。
   const bool bPt = hdrMode == HdrMode::forceHDR;
   if (!bPt) {
-  resizeLayer = graph->addNode<VkResizeLayer>();
-  if (bEnableBlend && blendImage) {
-    ImageFormat bformat = blendImage->getImageFormat();
-    if (bformat.width > 0 && bformat.height) {
-      // 加载水印图片
-      inputBlendLayer = graph->addNode<VkInputLayer>();
-      inputBlendLayer->get()->inputCpuData(blendImage.get(), true);
-      blendLayer = graph->addNode<VkBlendLayer>();
-      blendLayer->get()->updateParamet(blendParamet);
-    }
-  }
-  if (lutIndex > 0 && !bPt) {
-    lutImage = std::make_unique<ImageBuffer>();
-    std::string lutName =
-        lutIndex == 1 ? "lookup_amatorka.bmp" : "lookup_miss_etikate.bmp";
-    loadImageAsset(lutName.c_str(), lutImage.get());
-    lutLayer = graph->addNode<VkLookupLayer>();
-    lutLayer->get()->loadLookUp(lutImage->getPointer(),
-                                lutImage->getBufferSize());
-  }
-  if (bBasicAdjust) {
-    basicAdjustLayer = graph->addNode<VkBasicAdjustLayer>();
-    basicAdjustLayer->get()->updateParamet(basicAdjustValue);
-  }
-  if (bSharpen && !bPt) {
-    sharpenLayer = graph->addNode<VkSharpenLayer>();
-    SharpenParamet sp = {sharpenParamet.offset, sharpenParamet.sharpness};
-    sharpenLayer->get()->updateParamet(sp);
-  }
-  if (bEnableAnime4K && !bPt) {
-    anime4KLayer = graph->addNode<VkAnime4KLayer>();
-    anime4KLayer->get()->updateParamet(anime4KParamet);
-  }
-  if (bEnableQualityEnhance && !bPt) {
-    qualityEnhanceLayer = graph->addNode<VkQEnhanceLayer>();
-    qualityEnhanceLayer->get()->updateParamet(qualityEnhanceParamet);
-  }
-  if (bEnableFSR && !bPt) {
-    fsrLayer = graph->addNode<VkFSRLayer>();
-    fsrLayer->get()->updateParamet(fsrParamet);
-  }
-  if (bEnableVr && !bPt) {
-    vrLayer = graph->addNode<VkVrLayer>();
-    int32_t vrOutW = 0;
-    int32_t vrOutH = 0;
-    {
-      std::lock_guard<std::mutex> lock(vrViewMutex);
-      resolveVrOutSize(bUseNewSize, sizeScale, userWidth, userHeight,
-                       imageFormat.width, imageFormat.height, vrOutW, vrOutH);
-      vrGeom = buildVrGeom(vrParamet, imageFormat.width, imageFormat.height,
-                           vrOutW, vrOutH);
-      if (bVrViewDirty) {
-        vrView = vrViewPending;
-        bVrViewDirty = false;
+    resizeLayer = graph->addNode<VkResizeLayer>();
+    if (bEnableBlend && blendImage) {
+      ImageFormat bformat = blendImage->getImageFormat();
+      if (bformat.width > 0 && bformat.height) {
+        // 加载水印图片
+        inputBlendLayer = graph->addNode<VkInputLayer>();
+        inputBlendLayer->get()->inputCpuData(blendImage.get(), true);
+        blendLayer = graph->addNode<VkBlendLayer>();
+        blendLayer->get()->updateParamet(blendParamet);
       }
-      vrLayer->get()->updateParamet(vrGeom);
-      vrLayer->get()->setViewState(vrView);
     }
-    LOGFLF(LogLevel::info, "enable VR proj:", (int32_t)vrParamet.projection,
-           " layout:", (int32_t)vrParamet.eyeLayout, " out:", vrOutW, "x",
-           vrOutH);
-  }
+    if (lutIndex > 0 && !bPt) {
+      lutImage = std::make_unique<ImageBuffer>();
+      std::string lutName =
+          lutIndex == 1 ? "lookup_amatorka.bmp" : "lookup_miss_etikate.bmp";
+      loadImageAsset(lutName.c_str(), lutImage.get());
+      lutLayer = graph->addNode<VkLookupLayer>();
+      lutLayer->get()->loadLookUp(lutImage->getPointer(),
+                                  lutImage->getBufferSize());
+    }
+    if (bBasicAdjust) {
+      basicAdjustLayer = graph->addNode<VkBasicAdjustLayer>();
+      basicAdjustLayer->get()->updateParamet(basicAdjustValue);
+    }
+    if (bSharpen && !bPt) {
+      sharpenLayer = graph->addNode<VkSharpenLayer>();
+      SharpenParamet sp = {sharpenParamet.offset, sharpenParamet.sharpness};
+      sharpenLayer->get()->updateParamet(sp);
+    }
+    if (bEnableAnime4K && !bPt) {
+      anime4KLayer = graph->addNode<VkAnime4KLayer>();
+      anime4KLayer->get()->updateParamet(anime4KParamet);
+    }
+    if (bEnableQualityEnhance && !bPt) {
+      qualityEnhanceLayer = graph->addNode<VkQEnhanceLayer>();
+      qualityEnhanceLayer->get()->updateParamet(qualityEnhanceParamet);
+    }
+    if (bEnableFSR && !bPt) {
+      fsrLayer = graph->addNode<VkFSRLayer>();
+      fsrLayer->get()->updateParamet(fsrParamet);
+    }
+    if (bEnableVr && !bPt) {
+      vrLayer = graph->addNode<VkVrLayer>();
+      int32_t vrOutW = 0;
+      int32_t vrOutH = 0;
+      {
+        std::lock_guard<std::mutex> lock(vrViewMutex);
+        resolveVrOutSize(bUseNewSize, sizeScale, userWidth, userHeight,
+                         imageFormat.width, imageFormat.height, vrOutW, vrOutH);
+        vrGeom = buildVrGeom(vrParamet, imageFormat.width, imageFormat.height,
+                             vrOutW, vrOutH);
+        if (bVrViewDirty) {
+          vrView = vrViewPending;
+          bVrViewDirty = false;
+        }
+        vrLayer->get()->updateParamet(vrGeom);
+        vrLayer->get()->setViewState(vrView);
+      }
+      LOGFLF(LogLevel::info, "enable VR proj:", (int32_t)vrParamet.projection,
+             " layout:", (int32_t)vrParamet.eyeLayout, " out:", vrOutW, "x",
+             vrOutH);
+    }
 #ifdef AVOX_ENABLE_FREETYPE
-  if (fontRender->enabled() && !bPt) {
-    fontLayer = graph->addNode<VkFontLayer>();
-    fontRender->setFontLayer(fontLayer->get());
-  }
+    if (fontRender->enabled() && !bPt) {
+      fontLayer = graph->addNode<VkFontLayer>();
+      fontRender->setFontLayer(fontLayer->get());
+    }
 #endif
-  if (bEnableCanvas) {
-    canvasLayer = graph->addNode<VkCanvasLayer>();
-    canvasRender->setCanvasLayer(canvasLayer->get());
-  }
-  if (geometryRender->enabled() && !bPt) {
-    geometryLayer = graph->addNode<VkGeometryLayer>();
-    geometryLayer->get()->setSource(geometryRender.get());
-    geometryRender->setLayer(geometryLayer->get());
-  }
+    if (bEnableCanvas) {
+      canvasLayer = graph->addNode<VkCanvasLayer>();
+      canvasRender->setCanvasLayer(canvasLayer->get());
+    }
+    if (geometryRender->enabled() && !bPt) {
+      geometryLayer = graph->addNode<VkGeometryLayer>();
+      geometryLayer->get()->setSource(geometryRender.get());
+      geometryRender->setLayer(geometryLayer->get());
+    }
   } else {
     // 直通态清画布挂靠: 图重建后旧 canvas 层已销毁, 防悬垂
     canvasRender->setCanvasLayer(nullptr);
@@ -685,13 +686,12 @@ bool VkVideoRender::vaildAndInitGraph() {
     outNode = outNode->addLine(anime4KLayer);
   }
   if (bEnableQualityEnhance && !bPt) {
-    LOGFLF(LogLevel::info,
-           "enable QualityEnhance mode:", (int32_t)qualityEnhanceParamet.outputMode);
+    LOGFLF(LogLevel::info, "enable QualityEnhance mode:",
+           (int32_t)qualityEnhanceParamet.outputMode);
     outNode = outNode->addLine(qualityEnhanceLayer);
   }
   if (bEnableFSR && !bPt) {
-    LOGFLF(LogLevel::info,
-           "enable FSR scale:", (int32_t)fsrParamet.scale,
+    LOGFLF(LogLevel::info, "enable FSR scale:", (int32_t)fsrParamet.scale,
            " deblock:", fsrParamet.deblockStrength,
            " rcas:", fsrParamet.enableRCAS);
     outNode = outNode->addLine(fsrLayer);
@@ -735,8 +735,9 @@ bool VkVideoRender::vaildAndInitGraph() {
     rgba2YUV->addLine(yuvOutLayer);
     outNode->addLine(rgba2YUV);
   }
-  // enableImage: 每帧把处理后的 RGBA 经 GPU 缩放到 imageOutFormat 后零拷贝写入用户 buf
-  // 不设 observer (区别于 YUV 的 onCpuData), 用 setOutputBuffer 直投; resetGraph 重建会重新 pin
+  // enableImage: 每帧把处理后的 RGBA 经 GPU 缩放到 imageOutFormat
+  // 后零拷贝写入用户 buf 不设 observer (区别于 YUV 的 onCpuData), 用
+  // setOutputBuffer 直投; resetGraph 重建会重新 pin
   if (bEnableImage && imageOutBuffer && !bPt) {
     imageResizeLayer = graph->addNode<VkResizeLayer>();
     ReSizeParamet imgResize = {};
@@ -951,4 +952,4 @@ bool VkVideoRender::outputGpuFrame(IRenderContext* ctx) {
   return true;
 }
 
-}
+}  // namespace avox
