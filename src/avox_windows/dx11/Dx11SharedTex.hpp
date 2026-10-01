@@ -58,6 +58,12 @@ class Dx11SharedTex : public IDx11Context {
   // fence 的两个设备侧视图, 共用这一个计数取号。
   std::atomic<uint64_t> fenceSignalVal{0};
 
+  // 写方(自身 device)最后一次 signal 的值。inputNt 直读共享纹理时, 读方用它
+  // 作为等待目标, 保证本帧写入已落地再读(DX11 写队列与 Vulkan 读队列互不排序)
+  std::atomic<uint64_t> writerSignalVal{0};
+  // 等 fence 追值用的自动复位事件(懒创建, releaseHandles 关闭)
+  HANDLE frameWaitEvent = nullptr;
+
  protected:
   // 释放所有资源（可被子类重写）
   virtual void release();
@@ -106,6 +112,8 @@ class Dx11SharedTex : public IDx11Context {
   bool canInteropWrite();
   // 通知交互Device的fence
   void signalInteropFence();
+  // 读方同步点: 阻塞至写方最后一次 signal 的 fence 值落地(已追上则零开销返回)
+  void waitWriterFrame();
 
  public:
   void logTex();

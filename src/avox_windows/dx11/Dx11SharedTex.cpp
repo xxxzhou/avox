@@ -35,6 +35,10 @@ void Dx11SharedTex::releaseHandles() {
     CloseHandle(interopFenceHandle);
     interopFenceHandle = nullptr;
   }
+  if (frameWaitEvent) {
+    CloseHandle(frameWaitEvent);
+    frameWaitEvent = nullptr;
+  }
 }
 
 uint64_t Dx11SharedTex::nextFenceSignal(ID3D11Fence* f) {
@@ -306,7 +310,35 @@ void Dx11SharedTex::signalFence() {
   if (!fence || !context4) {
     return;
   }
-  context4->Signal(fence.Get(), nextFenceSignal(fence.Get()));
+  const uint64_t v = nextFenceSignal(fence.Get());
+  context4->Signal(fence.Get(), v);
+  // 记下写方已提交的值: 读方(inputNt 直读共享纹理)据此等待本帧写入落地
+  writerSignalVal.store(v, std::memory_order_release);
+}
+
+// 读方同步点: 阻塞至写方最后一次 signal 的值落地。已追上时零开销直接返回,
+// 因此正常跟得上时不引入额外停顿。超时兜底防止设备异常时卡死渲染线程。
+void Dx11SharedTex::waitWriterFrame() {
+  if (!interopFence) {
+    return;
+  }
+  const uint64_t target = writerSignalVal.load(std::memory_order_acquire);
+  if (target == 0) {
+    return;  // 写方尚未写过任何一帧
+  }
+  if (interopFence->GetCompletedValue() >= target) {
+    return;  // 快路径: GPU 已追上, 无需等待
+  }
+  if (!frameWaitEvent) {
+    frameWaitEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    if (!frameWaitEvent) {
+      return;
+    }
+  }
+  if (FAILED(interopFence->SetEventOnCompletion(target, frameWaitEvent))) {
+    return;
+  }
+  WaitForSingleObject(frameWaitEvent, 100);
 }
 
 bool Dx11SharedTex::canInteropRead() {

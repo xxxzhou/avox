@@ -189,6 +189,16 @@ void VkWinImage::updateInputContext(IRenderContext* context) {
       interopType = InteropType::input;
     }
   }
+  // 输入侧本身就是外部 NT 共享纹理(inputNt): 本引擎直读该纹理, 不做拷贝。
+  // 但 DX11 写方(VideoProcessorBlt)与 Vulkan 读方分属两个 GPU 队列, 二者
+  // 互不排序: 不等写方落地就读, 会读到未更新的旧帧, 图重算出同一张画面,
+  // 窗口连续 present 相同内容 —— 屏上表现为每秒冻 3~4 帧(实测 115~133ms)。
+  if (interopType == InteropType::inputNt) {
+    if (exShardTex) {
+      exShardTex->waitWriterFrame();
+    }
+    return;
+  }
   // 如何的如果本身就是共享纹理,则不处理
   if (interopType != InteropType::input) {
     return;

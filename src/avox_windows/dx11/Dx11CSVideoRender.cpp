@@ -573,6 +573,10 @@ void Dx11CSVideoRender::renderToTexture(const GpuFrame& gpuFrame) {
   uint32_t groupX = divUp(imageWidth / 2, 16);
   uint32_t groupY = divUp(imageHeight / 2, 16);
   d3dcontext->Dispatch(groupX, groupY, 1);
+  // 写方同步点: 告知读方(Vulkan 图直读本共享纹理)本帧已写入。缺这一步时
+  // Vulkan 读队列与 DX11 写队列互不排序, 读方会读到未更新的旧帧 —— 图重算出
+  // 同一张画面, 窗口连续 present 相同内容, 屏上每秒冻 3~4 帧(实测 115~133ms)
+  outSharedTex->signalFence();
   // 解绑所有可能的冲突,outTexture在这做UAV，不解绑，后面不能做SRV
   // ID3D11ShaderResourceView* nullSRVs[2] = {nullptr, nullptr};
   // ID3D11UnorderedAccessView* nullUAVs[1] = {nullptr};
