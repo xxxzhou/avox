@@ -1,4 +1,6 @@
 #pragma once
+#include <atomic>
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -111,11 +113,17 @@ protected:
   RingBuffer<MPPingbackPtr> mpPingbacks;
   IPingbackOb *pingbackOb = nullptr;
   static int32_t mpid;
+  // 队列满丢弃的累计条数: 满了不反压帧路径, 但要可观测(否则"埋点变少"分不清是采样还是丢包)
+  std::atomic<uint64_t> droppedCount{0};
 
 public:
   bool canLogPts() { return bLogPts; }
   bool canLogBitrate() { return bLogBitrate; }
   void setPingbackOb(IPingbackOb *ob) { pingbackOb = ob; }
+  // 累计丢弃条数, 供宿主与日志观测
+  uint64_t dropped() const {
+    return droppedCount.load(std::memory_order_relaxed);
+  }
   // 取出队列中的埋点并输出
   void depueuePB();
 
@@ -124,14 +132,18 @@ public:
     auto pingback = std::make_shared<XMPPingback<T>>(data);
     pingback->timespan = {localTimeStampMS() * 10000};
     pingback->mpid = mpid;
-    bool bGet = mpPingbacks.enqueue(pingback);
-    // 队列满了，就直接输出，不在RunTask线程里
-    if (!bGet) {
-      depueuePB();
+    // 队列满直接丢弃: 埋点是统计性数据不可反压帧路径 — 满时若在调用线程
+    // 同步 depueuePB, 宿主回调链(shim→Dart)的慢会拖住渲染/解码线程
+    // (panvox 每秒顿实证 2026-10-01, 禁回调后 PTS 步进 33-50 宽散→39-43 紧凑)
+    // enqueue 满时不写入并返回 false(见 RingBuffer::enqueue), 排空交给 onRunTask 线程
+    if (!mpPingbacks.enqueue(pingback)) {
+      droppedCount.fetch_add(1, std::memory_order_relaxed);
     }
   }
   // 输出到IO，如果有可能，专门在一个线程上处理
   virtual void onRunTask() override;
+  // 收尾前排空残余: 停止后再无消费者, 留在队列里的埋点会静默丢失
+  virtual void onStopTask() override;
 };
 
 template <MPPBType T>

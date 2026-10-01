@@ -32,10 +32,22 @@ void MPPingQueue::depueuePB() {
 }
 
 void MPPingQueue::onRunTask() {
+  uint64_t lastDropped = 0;
   while (running()) {
     depueuePB();
+    // 只在丢弃数变化时记一条, 避免 10ms 周期刷屏
+    const uint64_t nowDropped = droppedCount.load(std::memory_order_relaxed);
+    if (nowDropped != lastDropped) {
+      lastDropped = nowDropped;
+      log(LogLevel::warn, "pingback queue full, dropped:", nowDropped);
+    }
     sleepTask(false, 10);
   }
+}
+
+void MPPingQueue::onStopTask() {
+  // 排空残余: 停止后队列再无消费者, 不收尾则最后一批埋点静默丢失
+  depueuePB();
 }
 
 MPPingbackPtr pbFromJson(const char* jsonstr) {
