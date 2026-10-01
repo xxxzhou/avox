@@ -84,6 +84,10 @@ class Window : public Observer<IWindowOb> {
   // HDR 静态元数据(ST2086)下发: 直通交换链据此向系统/屏声明内容亮度,
   // 缺省 no-op(不支持元数据的腿忽略)
   virtual void setHdrMeta(const HdrMeta &meta) { (void)meta; };
+  // 呈现面直通实态(交换链/层已真切上 HDR 即 true; 命令被拒/SDR 屏 = false)。
+  // 语义 = 「当前」真切状态, 非「意愿」位 —— 供 VideoRender 基类每帧比对,
+  // 与缓存不一致即触发输出端重建。缺省 false(不支持直通的腿)。
+  virtual bool hdrPassthroughActive() const { return false; }
 
  public:
   const char* getTitle() const { return wdTitle.c_str(); }

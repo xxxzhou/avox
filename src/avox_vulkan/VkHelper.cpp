@@ -351,6 +351,9 @@ VkFormat getVkFormat(ImageType type) {
       return VK_FORMAT_R8_UNORM;
     case ImageType::rgba8:
       return VK_FORMAT_R8G8B8A8_UNORM;
+    case ImageType::rgba10:
+      // R10G10B10A2_UNORM 的 VK 对应: A2 在高位, 与 DXGI 布局一致
+      return VK_FORMAT_A2B10G10R10_UNORM_PACK32;
     case ImageType::rgba32f:
       return VK_FORMAT_R32G32B32A32_SFLOAT;
     case ImageType::r32f:

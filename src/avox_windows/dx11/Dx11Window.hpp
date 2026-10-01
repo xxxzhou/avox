@@ -59,6 +59,9 @@ private:
   virtual bool setHdrPassthrough(bool bPassthrough) override;
   // ST2086 元数据: 直通时经 SetHDRMetaData 声明内容亮度, 供系统/屏映射
   virtual void setHdrMeta(const HdrMeta &meta) override;
+  // 直通实态: bHdrActive 本身即实态(SetColorSpace1 失败回滚 false,
+  // rebuildDevice 重置, resize 经 applyHdrSwapchainState 重入兜底)
+  virtual bool hdrPassthroughActive() const override { return bHdrActive; }
 
  public:
   virtual ID3D11Device *getDevice() override;

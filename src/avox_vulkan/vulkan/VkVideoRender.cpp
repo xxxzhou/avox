@@ -511,6 +511,10 @@ void VkVideoRender::onParametUpdate() {
 }
 
 bool VkVideoRender::vaildAndInitGraph() {
+  // 统一检查点(§4.2): 呈现面直通实态翻转 → 置 bResetFlag 重建输出端
+  if (checkTargetPassthrough()) {
+    bResetFlag = true;
+  }
   // 如果bResetFlag为true,则需要重新初始化
   if (graph && !bResetFlag) {
     onParametUpdate();
@@ -818,6 +822,8 @@ void VkVideoRender::onCpuData(IImageBuffer* buffer) {
 }
 
 void VkVideoRender::renderWindow(Window* window) {
+  // 基类记录目标窗口 + 刷新直通实态缓存(§4.2)
+  VideoRender::renderWindow(window);
   if (!window) {
     return;
   }

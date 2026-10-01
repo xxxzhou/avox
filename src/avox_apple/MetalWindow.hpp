@@ -18,6 +18,12 @@ public:
   // EDR 屏受理并返回 true; SDR 屏恒 no-op 返回 false。关断恒受理
   virtual bool setHdrPassthrough(bool bPassthrough) override;
   virtual void initSurface(void* surface) override;
+  // 直通实态: Metal 侧翻转在渲染器, 意愿位即实态(经 EDR 探测后置位)。
+  // ⚠️ metalHdrPassthrough 是 namespace 级全局量, 多窗口/多实例会串
+  // (方案按单窗口假设, 多窗口需求出现时改实例成员+原子)
+  virtual bool hdrPassthroughActive() const override {
+    return metalHdrPassthrough.load();
+  }
 
 protected:
   virtual void onChangeSize() override;

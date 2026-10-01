@@ -119,6 +119,9 @@ public:
   // HDR 直通(vk-hdr-lane.md V1): 交换链切 FP16+EXTENDED_SRGB_LINEAR,
   // 两向主动重建; 格式不可得(SDR 屏/系统 HDR 关)恒 false
   bool setHdrPassthrough(bool bPassthrough) override;
+  // 直通实态: 取 bHdrActive(交换链当前态), **不取** bHdrPassthrough(意愿位)。
+  // 换面重建会重置 bHdrActive 而保留 bHdrPassthrough, 取后者会误报 true
+  bool hdrPassthroughActive() const override { return bHdrActive; }
 
 private:
   // 按 bHdrPassthrough 挑 surface 格式(直通: FP16+EXTENDED_SRGB_LINEAR)

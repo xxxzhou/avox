@@ -367,4 +367,30 @@ void VideoRender::renderFrame(const avox::VideoFrame& videoBuffer,
   // log(LogLevel::info, "video render cost 2:", clock.recordLast());
 }
 
+void VideoRender::renderWindow(Window* window) { setTargetWindow(window); }
+
+void VideoRender::setTargetWindow(Window* window) {
+  targetWindow = window;
+  // 立刻刷一次实态缓存: 换窗口/首帧时避免把旧态当基准而误触发重建
+  if (targetWindow) {
+    bTargetPassthrough = targetWindow->hdrPassthroughActive();
+  } else {
+    bTargetPassthrough = false;
+  }
+}
+
+bool VideoRender::checkTargetPassthrough() {
+  if (!targetWindow) {
+    return false;
+  }
+  const bool active = targetWindow->hdrPassthroughActive();
+  if (active == bTargetPassthrough) {
+    return false;
+  }
+  bTargetPassthrough = active;
+  LOGFLF(LogLevel::info, "hdr passthrough state changed:", active ? 1 : 0,
+         " render:", getVRenderTypeStr(renderType));
+  return true;
+}
+
 }

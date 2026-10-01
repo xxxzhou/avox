@@ -402,6 +402,12 @@ void WindowRender::onRenderWindow() {
   if (pauseing()) {
     return;
   }
+  // 两路都下发窗口指针: 派生据此每帧比对 hdrPassthroughActive() 实态,
+  // 翻转时置 bResetFlag 重建输出端(§4.2 统一检查点)。window 可能为空
+  // (贴图腿/离屏), 基类判空即安全
+  if (pVideoRender) {
+    pVideoRender->renderWindow(window.get());
+  }
   if (bVulkan && vkVideoRender) {
     vkVideoRender->renderWindow(window.get());
   }

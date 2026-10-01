@@ -24,7 +24,8 @@ namespace avox {
   XX(bgr8, 12, 3, 3, "bgr8")        \
   XX(rgb8P, 13, 1, 1, "rgb8P")      \
   XX(bgr8P, 14, 1, 1, "bgr8P")     \
-  XX(rgba16f, 15, 4, 8, "rgba16f")
+  XX(rgba16f, 15, 4, 8, "rgba16f")  \
+  XX(rgba10, 16, 4, 4, "rgba10")
 
 enum class ImageType : int32_t {
   other = -1,

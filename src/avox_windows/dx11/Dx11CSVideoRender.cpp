@@ -294,6 +294,11 @@ static const std::string& shaderSource(bool withDv) {
 Dx11CSVideoRender::Dx11CSVideoRender() { renderType = RenderType::D3D11; }
 
 bool Dx11CSVideoRender::vaildAndInitGraph() {
+  // 统一检查点(§4.2): 呈现面直通实态翻转 → 置 bResetFlag 重建输出端
+  // (输出纹理格式须与交换链同翻, 否则中间帧值域错配发灰/过曝)
+  if (checkTargetPassthrough()) {
+    bResetFlag = true;
+  }
   if (!gpuFrame.buffer || cpuIn) {
     return false;
   }
@@ -436,8 +441,13 @@ void Dx11CSVideoRender::createProgram() {
   // outTexture->initResource(device);
   outSharedTex = std::make_unique<Dx11SharedTex>();
   outTexture = outSharedTex->getDx11Texture();
-  outTexture->setTextureSize(imageWidth, imageHeight,
-                             DXGI_FORMAT_R8G8B8A8_UNORM);
+  // 输出格式跟呈现面直通实态走(§6.1): 直通=R10G10B10A2(PQ 码原样写),
+  // 否则=R8G8B8A8。两端必须同翻, 错配即发灰(SDR 码当 PQ 码上屏)
+  DXGI_FORMAT outFormat = bTargetPassthrough ? DXGI_FORMAT_R10G10B10A2_UNORM
+                                             : DXGI_FORMAT_R8G8B8A8_UNORM;
+  outTexture->setTextureSize(imageWidth, imageHeight, outFormat);
+  LOGFLF(LogLevel::info, "cs output format, passthrough:",
+         bTargetPassthrough ? 1 : 0, " dxgi:", (int32_t)outFormat);
   outSharedTex->initTexture(device);
   // 创建输入复制纹理
   D3D11_TEXTURE2D_DESC inCopyDesc = yuvDesc;
@@ -588,6 +598,12 @@ void Dx11CSVideoRender::renderToTexture(const GpuFrame& gpuFrame) {
 
 bool Dx11CSVideoRender::fetchFrame(ImageBuffer* imageBuffer) {
   if (!outTexture) {
+    return false;
+  }
+  // 直通态输出是 PQ 码 rgba10, 回读出来是脏图(非 SDR 口径), 拒绝并提示
+  // 走 SDR 口径截图(临时 follow 抽帧)
+  if (bTargetPassthrough) {
+    LOGFLF(LogLevel::warn, "fetchFrame refused in hdr passthrough (pq code)");
     return false;
   }
   Dx11Context context = {};

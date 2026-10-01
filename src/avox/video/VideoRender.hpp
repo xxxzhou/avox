@@ -87,6 +87,12 @@ class AVOX_EXPORT VideoRender : public OptionLink {
   bool bFullScreen = false;
   float aspect = 0.0f;
 
+  // 呈现窗口弱引用(生命周期归 WindowRender), renderWindow() 存入
+  Window* targetWindow = nullptr;
+  // 呈现面直通实态缓存: 每帧比对 hdrPassthroughActive(), 不一致即置
+  // bResetFlag 触发输出端重建(§4.2 统一检查点)。仅渲染线程读写
+  bool bTargetPassthrough = false;
+
  public:
   RenderType getRenderType() { return renderType; }
   ImageFormat getImageFormat() { return imageFormat; }
@@ -183,10 +189,21 @@ class AVOX_EXPORT VideoRender : public OptionLink {
   // 把DX11/OpenGL/Metal的RGBA纹理GPU映射到Vulkan的GPU数据
   virtual void renderGpuFrame(IRenderContext* context) {};
   //  Vk/dx11输出到窗口,Vk计算与呈现分离
-  virtual void renderWindow(Window* window) {};
+  // 基类实现只做「记窗口 + 立刻刷一次实态」, 派生覆写请带基类调用
+  // (实现在 .cpp: 避免内联体引入跨 TU 的 setTargetWindow 未解析符号)
+  virtual void renderWindow(Window* window);
   // 各平台GPU输出buffer
   virtual void* getOutGpuBuffer() { return nullptr; }
 
+ protected:
+  // 记录目标窗口并立即刷新一次直通实态缓存(§4.2)
+  void setTargetWindow(Window* window);
+  // 呈现面直通实态统一检查点(§4.2): 读 hdrPassthroughActive() 与缓存比对,
+  // 不一致则更新缓存并返回 true(派生据此置 bResetFlag 重建输出端)。
+  // 渲染线程每帧入口或 vaildAndInitGraph 首行调用; 无窗口恒 false
+  bool checkTargetPassthrough();
+
+ public:
   // IOption
  public:
   virtual void onOptionChange(const char* key, ArgType option) override;

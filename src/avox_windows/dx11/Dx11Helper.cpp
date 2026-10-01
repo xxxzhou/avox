@@ -18,6 +18,10 @@ DXGI_FORMAT getImageDXFormt(ImageType imageType) {
     case ImageType::rgba8:
       dxFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
       break;
+    case ImageType::rgba10:
+      // HDR 直通域: PQ 码值恒在 0-1, 10bit 保住动态范围与梯度精度
+      dxFormat = DXGI_FORMAT_R10G10B10A2_UNORM;
+      break;
     case ImageType::r16:
       dxFormat = DXGI_FORMAT_R16_UINT;
       break;
@@ -53,6 +57,9 @@ ImageType getImageType(DXGI_FORMAT imageFormat) {
     case DXGI_FORMAT_B8G8R8A8_UNORM:
     case DXGI_FORMAT_B8G8R8A8_TYPELESS:
       imageType = ImageType::bgra8;
+      break;
+    case DXGI_FORMAT_R10G10B10A2_UNORM:
+      imageType = ImageType::rgba10;
       break;
     case DXGI_FORMAT_R32_SINT:
       imageType = ImageType::r32;
