@@ -310,11 +310,54 @@ mac 走链F 的收益本就不足——原生 EDR 腿已达标, 链F 在 mac 是
 
 ⇒ **结论**: 「接口通用」的诉求在**格式语义层已经满足**(X-Macro 枚举 + 映射函数本就跨平台); 缺的是 Linux/鸿蒙各自的 handle 导入实现, 属各自批次。**现在补映射 = 给未来铺路, 不是给 Windows 打补丁**——Windows 用它与 Linux/鸿蒙用它是同一个枚举、同一份映射。
 
-### 6.4 硬解状态上报(G6, R5)
+### 6.4 硬解状态上报(G6, R5) — **结论: 引擎内部已自洽, 无需新增接口(2026-10-01 定案)**
 
-- FFDx11Decoder 开档硬解判定失败(vp9/av1 profile 不支持等 `fallback to software` 路径)冒宿主事件/状态位;
-- shim 加查询或回调口(与 panvox 徽章「下发成功≠直通生效」实态上报同批设计);
-- panvox 收事件后用于徽章实态/降级 UX——v2 口径下原生腿就地吃软解帧(§1.3), 换道(`switchNvvLane`)**不再是恢复必需**, 保留为呈现路由手段。
+**结论先行**: R5 原稿要「冒宿主事件/状态位 + shim 加查询口」的设想 **经 v2 口径复核后作废**。
+理由见 §6.4.1——回退软解在 v2 下是**引擎内部自治的自愈行为**, 宿主既无法也不需要参与;
+再往外冒事件/开查询口只会增加 ABI+SWIG+文档维护面, 并以同步回调制造跨线程时序风险。
+
+- FFDx11Decoder 开档硬解判定失败(vp9/av1 profile 不支持等 `fallback to software` 路径)——
+  **保持现状即可**: 已有 `LOGFLF(warn)` 一行 + `VDecoderTask` 的 `openFallbacks` 自动降级链;
+- **不加** shim 查询口 / **不加** `IMediaPlayerOb` 事件 / **不加** `IMediaPlayer` 查询方法;
+- 宿主侧徽章维持但**改口径**: 「下发成功」即点亮(现状), 只需在文档/注释里写明
+  「徽章 = 宿主意图, 非引擎实态」, 不做实态上报。若未来确有分诊需求, 走既有
+  MPPingback 埋点(异步批量, 不占调用栈)而非同步回调。
+
+#### 6.4.1 R5 撤销依据(2026-10-01, 用户定稿)
+
+**原设计(已废)**: 曾拟新增 `IMediaPlayer::isHardwareDecoding()` + `getVideoCodecTh()` 查询口
+与 `IMediaPlayerOb::onDecoderStateChange()` 事件口, 让宿主徽章吃引擎实态。**已实现一版, 后按
+用户判定全部撤回**(源码零改动, 仅留本文档结论)。
+
+**撤回理由(逐条)**:
+
+1. **回落软解不需要宿主做任何事 —— 引擎已自治**。硬解失败 → `VDecoderTask::openFallbacks`
+   自动降级 → **原生渲染腿就地吃 CPU 帧**(Win G9 `renderCpuFrame` / mac 既有), 播放与画面
+   全程不断。宿主"知道"与"不知道"对最终结果**零影响**, 上报即纯负担。
+2. **软解帧现在原生腿就能接, 接不了还有 VK 腿兜底**(§1.3 / §6.3):
+   `lane=1` 原生腿吃 CPU 帧、`lane=0` VK `renderCpuFrame` 吃 CPU 帧, 两条路都通。
+   既然**不用换 lane 就能继续放**, 就不存在"宿主必须介入"的场景。
+3. **告诉上面反而添乱**: 宿主收到事件后要么无事可做, 要么被诱导去做"处理"
+   (换道/重建/重开)——而 v2 口径下换道(`switchNvvLane`)**已不是恢复必需**,
+   多余动作只会引入卡顿与状态机复杂化。
+4. **同步回调的时序风险**: `onDecoderStateChange` 会从**解码线程/命令线程**打到宿主,
+   宿主若在回调里调 player API 即跨线程重入(既有 `IMediaPlayerOb` 的 `onDecodeError`
+   注释已警示「回调内勿重入」)。为一个"宿主啥也做不了"的通知承担这个风险, 不划算。
+5. **信息公开面成本**: 新增虚函数 = ABI 面 + SWIG 三端(csharp/java/nodejs)重生成 +
+   文档同步; `VCodecTh` 还得多曝光一个枚举。收益(宿主分诊)远小于成本。
+6. **既有埋点已覆盖"可查"**: `VDecoderTask` 落降级时本就有
+   `LOGFLF(warn, "video decoder fallback to:", name)` +
+   `pushPB<MPPBType::MediaAction>(msg="video decoder fallback from X to Y")`。
+   这正是「异步、批量、不占调用栈」的内部上报形态, 满足排障与分诊需求。
+
+**逐平台判定源(现状, 不动)**: Win `FFDx11Decoder::onVaild:125-140` /
+Android `AndVDecoder::onVaild:132` / Apple `IOSVDecoder::onVaild` /
+Linux `FFVADecoder::onVaild:46` —— 各自探测、返回 false 即被选型链跳过,
+**由 `VDecoderTask` 的 `openFallbacks` 统一兜底**, 无需新增任何跨层出口。
+
+⇒ **R5 就此收口**: 「硬解失败不中断播放」由 v2 自愈链保证(已实现);
+「可查可上报」由既有 MPPingback 埋点保证(已实现)。**本项无代码缺口**。
+
 
 ### 6.5 iOS / Android / Linux
 
@@ -339,7 +382,7 @@ mac 走链F 的收益本就不足——原生 EDR 腿已达标, 链F 在 mac 是
 | R2 VK HDR 内容链(软解 16F + 硬解 PQ 升样) | §6.3(G4+G10) | Win 软解 HDR 片×HDR 屏: FP16 交换链上高光顶出; 链F 硬解片同验(高光顶出+VK 图像处理/字幕可用); SDR 口径截图正常 |
 | R3 统一检查收口 | mac/VK 对齐 §4.2 检查点 + iOS EDR 探测口径评估(G5) + mac 场景② Metal 腿端到端真验(G7 结论) | 三平台检查路径同源; iOS 内建屏 EDR 可行性结论 |
 | R4 Android/Linux HDR | EGL HDR 呈现面口等(G8) | 另批详设(不在本稿展开) |
-| R5 硬解状态上报 | §6.4 | 硬解失败事件可上报可查(徽章实态); 宿主换道可选, 非恢复必需 |
+| R5 硬解状态上报 | §6.4 | **2026-10-01 定案: 引擎内部已自洽, 无代码缺口**——硬解失败由 `VDecoderTask::openFallbacks` 自动降级 + 原生腿就地吃 CPU 帧(v2 自愈), 宿主无需参与; 「可查」由既有 MPPingback 埋点满足。**不新增任何接口**(§6.4.1 撤销依据) |
 
 ## 八、验收矩阵
 
@@ -393,7 +436,7 @@ mac 走链F 的收益本就不足——原生 EDR 腿已达标, 链F 在 mac 是
 | **D1** | ~~§3.4 CPU 读回防护只 Win 有~~ **2026-10-01 已补三腿** | ~~`bTargetPassthrough` 守卫**只**在 `Dx11CSVideoRender::fetchFrame`(:818)~~ → 已补 `MetalRender::fetchFrame`(bF16Pipeline 拒绝)、`EglVideoRender::fetchFrame`(bTargetPassthrough 拒绝)、`VkOutputLayer::fetchData`(VkFormat FP16/A2B10G10R10 拒绝) | 链F/直通态截图三腿均已拒脏图 | R3 完成 |
 | **D2** | ~~§4.2 检查点只接 VK 与 Win 两腿~~ **2026-10-01 已接四腿** | ~~调用点仅 `VkVideoRender.cpp:515`、`Dx11CSVideoRender.cpp:299`~~ → 已接 `MetalRender::vaildAndInitGraph`(替换自有 `metalHdrPassthrough.load()` 判据)、`EglVideoRender::vaildAndInitGraph`(新增) | §4.2「三平台检查路径同源」达成 | R3 完成 |
 | **D3** | **§3.4 同帧对齐手段 —— 2026-10-01 已落码(Win/VK 结构调整, Metal 核对合规, EGL 接检查点)** | 落码前: 交换链在宿主线程翻(`Dx11Window.cpp:290 initBuffers`)、输出在渲染线程 `bResetFlag` 重建, 二者不同帧; **同处的竞态 A(crash)**: `run()` 持 `mtx` 跑 `onTickWin`(WindowRender.cpp:323)而 `setHdrPassthrough`/`initBuffers` 不持 `mtx` ⇒ 交换链资源可能被宿主线程在 `Present` 当口拆掉 | 选型=**方案②(过渡帧按 SDR 口径)+ 标志位驱动**, 逐平台落点见 **§3.4.1**。**已落**: `Dx11Window` 加 `bHdrPending`+`bufMtx`+`applyPendingHdr()`(实翻移入 `onTickWin`), `VkWindow` 同形(`applyPendingHdr` 在 `onTickWin` 的 `lockCommand` 临界区), `MetalRender` 接统一检查点, `EGL` 接检查点+读回闸。构建 0 error、单测 96/96×1210 全绿。**真机验收(§八矩阵)待跑** | R3 完成(编码)
-| **D4** | **R5 硬解状态上报未做** | §6.4 无任何实现; `engine_controller.dart:564` 注释自认「引擎交换链真切上与否待实态上报(R5), 当前按『下发成功』记」= 宿主侧徽章是猜的 | 徽章实态依赖项; 不影响画面, 但 R5 出口「硬解失败事件可上报可查」为 0 | R5 |
+| **D4** | ~~R5 硬解状态上报未做~~ **2026-10-01 定案: 非缺口, 撤销** | 曾拟新增 `isHardwareDecoding()`/`getVideoCodecTh()` 查询口 + `onDecoderStateChange` 事件口(实现过一版, 已全部撤回, 源码零改动) | **用户判定**: 硬解失败→回落软解在 v2 下是**引擎内部自愈**(`openFallbacks` 自动降级 + 原生腿就地吃 CPU 帧, §1.3), 宿主无需也无法参与; 往外冒事件只会增 ABI/SWIG 面并以同步回调引入跨线程时序风险。「可查」由既有 MPPingback 埋点(`video decoder fallback from X to Y`)满足。详见 §6.4.1 六条撤销依据 | 无 |
 | **D5** | **VK 出图交平台 GPU 资源的格式闸只放行 rgba8/bgra8, 未纳入 rgba16f**(2026-10-01 核码; **17:45 订正受限面**) | `VkOutputLayer::onCommand`(:184) `bool bCanMapGpu = outFormat.imageType==rgba8 \|\| ==bgra8;` —— 该闸是 **`setVulkan(false)` 时** VK 腿交平台 GPU 资源(Win NT 共享 / Android EGLImage / Apple IOSurface)的唯一入口(:186 起整段)。**但 panvox 走 `setVulkan(true)`→`VkWindow` 路线(原生窗直渲, `outputGpuData` 格式无关), 不经此闸 ⇒ panvox 不受影响**。第二层: `VkWinImage::bindD3D:58` 用 `getImageDXFormt`(无 16F 分支, 落 RGBA8) 定纹理格式 ⇒ 放开闸须同补三处映射 | 仅影响**仍以平台资源交帧**的消费者: `samples/vulkantest/dx11sharedtest|dx11windowtest`, Unity/Avalonia 类插件; 这些若在 lane=0 走 HDR(16F)出图 → 平台资源不更新(停帧/黑) | R2 补(低优先, 随平台资源消费者启用 HDR 时) |
 
 > **D5 影响的到底是哪条出图支路(2026-10-01 核码; **同日 17:45 二度订正——用户指出 avox 有原生窗与 VK 窗两种, `setVulkan` 选的就是 VK 原生窗**)**:
@@ -416,7 +459,7 @@ mac 走链F 的收益本就不足——原生 EDR 腿已达标, 链F 在 mac 是
 - R2: Win 软解 HDR×HDR 屏 FP16 交换链高光顶出; 链F 硬解片高光顶出 + VK 图像处理/字幕可用
 - 回归: SDR 片零变化、播中开关/跨屏/缩放往返(**依赖 D3**)
 
-> **一句话结论**: R1/R2/R3 的**编码已收口**(R3 = D1+D2+D3 本批落地); 剩余是 **R5(D4 上报)** 与**真机验收**, 外加 mac 链F/R4 两个非排期结构项。**D3(同帧对齐)已按方案②落码**(§3.4.1), 「播中开关/跨屏/缩放往返不花屏」首次有了设计支撑; 该矩阵**必须真机跑**(重点: Win 竞态 A 的 crash 现场)。
+> **一句话结论**: R1/R2/R3 的**编码已收口**(R3 = D1+D2+D3 本批落地); **R5 经复核判定为非缺口**(硬解失败的降级与继续播放已由引擎自愈链 + 既有埋点覆盖, 不新增接口, §6.4.1); 剩余仅**真机验收**, 外加 mac 链F/R4 两个非排期结构项。**D3(同帧对齐)已按方案②落码**(§3.4.1), 「播中开关/跨屏/缩放往返不花屏」首次有了设计支撑; 该矩阵**必须真机跑**(重点: Win 竞态 A 的 crash 现场)。
 
 ## 十一、沿革
 
@@ -438,3 +481,4 @@ mac 走链F 的收益本就不足——原生 EDR 腿已达标, 链F 在 mac 是
 
 - 2026-10-01(十二): **VK 腿两条问项核码**(核代码, 未改实现)——回答「VK 自身 CPU HDR 通道做了吗 / 对接各平台 SDR·PQ 是否分别出 RGBA8·RGBA16F」(§十 D5): ①**VK 自身 CPU(软解)帧 HDR 通道 = 已做**: `VideoRender::renderFrame(YUVFrame)` 置 `cpuIn=true` → `VkVideoRender::renderCpuFrame` → `inputLayer->inputCpuData(frame,false)` → `yuv2RGBA`(10bit 时 `hdrMode==forceHDR` 选 `yuv2rgbaHDR.comp` + 输出 16F, G4 后条件化正确) → 16F 域合成 → VK FP16 交换链。即链B 的 lane=0 支路完整。②**「对接各平台」语义要看出图支路, 而支路由 `WindowRender::setVulkan` 选窗类型决定**: `setVulkan(true)` 得 **VkWindow(VK 原生窗, 自有交换链)**——出图走 `outputGpuData`(:292, `blitFillImage` **格式无关**, rgba8/16F 都成立); `setVulkan(false)` 得平台原生窗——VK 腿交平台 GPU 资源才走 `onCommand`(:184)的**格式闸 `bCanMapGpu`(只放行 rgba8/bgra8)**, HDR 出 rgba16f 被判 false, 整段 interop 跳过。③**panvox 走前者, 不受此影响**: `pvx_player_create` 调 `setVulkan(lane!=1)`+`setSurface(宿主视频窗)`(「原生窗口直渲唯一车道」), lane=0 即 VkWindow 直渲; `enableVkOutputDx11` 支路已死(`PassthroughSig::wanted` 无人置 true)。受限面 = 仍用 `setVulkan(false)` 的平台资源消费者(Unity/Avalonia/vulkantest 样例)。④**SDR(→rgba8)全路径正常**。⇒ **结论: VK 腿的「SDR→平台资源」正常; 「HDR(PQ)→平台资源」在 `setVulkan(false)` 交平台资源的路径上因 D5 断链**(panvox 不受影响, 它走 `setVulkan(true)`→VkWindow 原生窗直渲)。**勘误(同日 17:40/17:45)**: ①17:40 宿主传输细节订正——已由老式 `external_texture_d3d` 镜像 blit 改为 **Flutter GPU surface + DXGI 共享句柄**; ②**17:45 路径归属订正(用户指出 avox 有原生窗/VK 窗两种, `setVulkan` 即选 VK 原生窗)**——panvox 现行 `pvx_player_create` 调 `setVulkan(lane!=1)` + `setSurface(宿主视频窗)`, lane=0 得 **VkWindow**, 走 `outputGpuData`(格式无关), **D5 在 panvox 不成立**; 此前两版「panvox 必现」判断作废。`enableVkOutputDx11` 那条(`PassthroughSig::wanted` 无人置 true)已是死支路。
 - 2026-10-01(十三): **R3 编码收口: D3 方案②选型落地(四腿) + D1 读回防护 + D2 检查点同源**(实施, 用户定稿「可以让2来做…有一二帧显示花一下没啥…但是不能crash」, 落地范围「Win + Metal/EGL/VK 一起收」, 过渡判定「标志位驱动, 不数帧」): ①**D3 §3.4 同帧对齐 = 方案②**(意愿/实态分离, 翻转实际动作挪到与输出重建同一临界区、由渲染线程执行) 四平台落地清单见新增 **§3.4.1**; 候选①/③弃用理由及 **竞态 A** + `hdrPassthroughActive()` 必须返实态 两条要害注记一并入 §3.4。②**Win `Dx11Window`**: 新增 `bufMtx`+`bHdrPending`; `setHdrPassthrough` 改为「能力检查+挂意愿」(不再当场 `initBuffers`, 消除竞态 A 的 use-after-free 根因); 渲染线程 `onTickWin` 首段(已持 `mtx`)调 `applyPendingHdr()`——`initBuffers`(10bit/rgba8)+`bHdrActive` 更新 + `applyHdrSwapchainState()` 失败回滚, 与 `Present` 同临界区; `onChangeSize` 加锁并改判 `bHdrActive||bHdrPending`。③**`VkWindow`**: 同款意愿位 `bHdrPassthrough` + `applyPendingHdr()` 插在 `onTickWin` 的 `vkResetFences` 后/`vkAcquireNextImageKHR` 前, `pickFormat()` 实际格式未变则还原早退, 变则 `lockCommand()` 内 `vkDestroyRenderPass→createRenderPass→reSwapChainBefore→reSwapChainAfter`(与 HEAD 逐字同序)+`unLockCommand()`, 完置 `bHdrActive`。④**`MetalRender`**: 零结构改动(意愿为 atomic、翻转已在渲染线程 `vaildAndInitGraph`), 仅接 D2 检查点。⑤**`EglVideoRender`**: 无 HDR 呈现面(实态恒 false), 仅接 D2 检查点。⑥**D1 §3.4 读回防护四腿齐**: `MetalRender::fetchFrame` / `EglVideoRender::fetchFrame` / `VkOutputLayer::fetchData` 各加直通态拒绝(用 `VkFormat` 判定 16F/10bit, 非 `ImageType`——`VkTexture` 无该字段), 未报错日志英文。⑦**D2 §4.2 检查点四腿同源**: `MetalRender::vaildAndInitGraph` 自读判据改 `checkTargetPassthrough()`、`EglVideoRender::vaildAndInitGraph`(`__ANDROID__` 首段)新增 `checkTargetPassthrough()`→`bResetFlag`。⑧构建 `avox` 目标 0 错误; 单测 **96/96·1210 断言全绿**; `doc_check.py --strict` warnings 0 / errors 0。⇒ **R1/R2/R3 编码已收口, 剩 R5(R5=D4 上报)+真机验收**。
+- 2026-10-01(十四): **R5 撤销定案(用户定稿)——硬解状态上报不新增任何接口**(核代码+判断复核): 曾拟新增 `IMediaPlayer::isHardwareDecoding()`/`getVideoCodecTh()` 查询口 + `IMediaPlayerOb::onDecoderStateChange()` 事件口(并已实现一版, 含 `VDecoderTask::reportDecoderState` 助手 + `VideoTrack` 原子缓存), **经用户判定全部撤回, 源码零改动**。撤销理由(§6.4.1 六条): ①硬解失败→回落软解在 v2 下是**引擎内部自愈**——`VDecoderTask::openFallbacks` 自动降级 + 原生腿**就地吃 CPU 帧**(Win G9/mac 既有), 播放与画面全程不断, 宿主知与不知对结果零影响; ②软解帧原生腿能接、接不了还有 VK 腿兜底(`lane=1` 原生 / `lane=0` VK 的 `renderCpuFrame`), **不用换 lane 就能继续放** ⇒ 无「宿主必须介入」场景; ③告诉上面反而添乱: 宿主收到事件要么无事可做、要么被诱导换道/重建(v2 下换道已非恢复必需), 徒增卡顿与状态机复杂化; ④同步回调从解码/命令线程打到宿主, 宿主若在回调里调 player API 即跨线程重入(既有 `onDecodeError` 注释已警示); ⑤新增虚函数 = ABI 面 + SWIG 三端重生成 + 文档同步 + `VCodecTh` 多曝光一个枚举, 成本远超收益; ⑥既有埋点已覆盖「可查」(`video decoder fallback to:` + `pushPB<MPPBType::MediaAction>(msg="video decoder fallback from X to Y")`, 异步批量不占调用栈)。⇒ §6.4 重写为「引擎内部已自洽, 无代码缺口」; §七 R5 行与 §十 D4 行同步改为「非缺口/撤销」。**副作用**: 上一批(十三)结论里的「剩 R5」作废, 现仅剩真机验收。
