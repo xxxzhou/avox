@@ -350,7 +350,40 @@ mac 走链F 的收益本就不足——原生 EDR 腿已达标, 链F 在 mac 是
 - 遗留挂账: tone map sdrWhite 恒 100nit 不跟手显示(GET_SDR_WHITE_LEVEL, 潜在改进); `pvx_hdr_toggle.ps1 -Off` set ok 但状态不动(关态对照工具挂账, panvox 侧); HLG 直通线性化腿在直通分支同生效需确认;
 - 旧 A-9 backlog(2026-10-01 删)了结注记: SDR→HDR 上变换与本稿「SDR 片零变化」口径相抵, 不做; DV P5 兼容层未列入本稿范围, 如需重启另立新账; VT 路径 RPU/HDR 自提施工记录已删, 其 P1 落地(e9d9d54)归 git, 战役纪要见 [DV-HDR与构建协同](../../reports/DV-HDR与构建协同.md)。
 
-## 十、沿革
+## 十、当前实现 vs 方案 差分(2026-10-01 核码)
+
+逐条把 §六落地清单与 §七里程碑对着**实现代码**核过一遍, 分清「已落 / 未落 / 结构性不可落」。口径: 只记**代码级**差分, 真机验收项单列。
+
+**已落地(代码就绪, 待真机验)**:
+- §4.1 实态位: `Window::hdrPassthroughActive()` 三平台实现齐(Dx11Window.hpp:64 / VkWindow.hpp:124 / MetalWindow.hpp:24) ✅
+- §4.2 统一检查点: `VideoRender::checkTargetPassthrough()` 存在(VideoRender.cpp:382), `WindowRender::onRenderWindow` 两路都下发窗口(WindowRender.cpp:430/433) ✅
+- §4.3 `HdrMode::vkHDR(3)` + lane 分岔归一化(WindowRender.cpp:64-77) ✅
+- §6.1 Win 输出端 10bit 翻转 + `fetchFrame` 直通态拒绝(Dx11CSVideoRender.cpp:299/652/818) ✅
+- G4 `VkYUV2RGBALayer` 16F 条件化、G9 Win CPU 腿、G10 `VkPqUpsampleLayer` + `pqUpsample.comp` ✅
+
+**未落地 — 代码缺口(可直接补, 归 R3 前后)**:
+
+| # | 缺口 | 现状证据 | 影响 | 建议批 |
+|---|---|---|---|---|
+| **D1** | **§3.4 CPU 读回防护只 Win 有, Metal/EGL/VK 三腿全缺** | `bTargetPassthrough` 守卫**只**在 `Dx11CSVideoRender::fetchFrame`(:818); `MetalRender::fetchFrame`(:611)、`EglVideoRender::fetchFrame`(:433)无条件读; `VkOutputLayer::fetchData`(:399)**只查 `resourceReady` 不查格式/直通**, 出图直接把 `inTexs[0]`(链F 下是 16F 线性)download 进调用方 rgba8 `patchFormat` 缓冲 → **脏图/越界写** | 直通态截图(=§八验收「直通态截图/缩略: 拒绝或走 SDR 口径」)在 Mac/Android/VK 腿无防护; 链F 截图必错 | R3(与统一检查点同批) |
+| **D2** | **§4.2 检查点只接了 VK 与 Win 两腿, Metal/EGL 未接** | `checkTargetPassthrough()` 调用点仅 `VkVideoRender.cpp:515`、`Dx11CSVideoRender.cpp:299`; `MetalRender::vaildAndInitGraph`(:354)仍走自有 `metalHdrPassthrough.load()` 路径(:364 `wantF16 != bF16Pipeline`), 未过基类检查点; EGL 完全没有 | 与 §4.2「三平台检查路径同源」目标未达成 → **R3 出口「三平台检查路径同源」未满足**; 当前 mac 因自有路径恰好等价而**行为正确**, 但两套机制并存是漂移源 | R3 |
+| **D3** | **§3.4 同帧对齐手段未选型未实现** | §3.4 明列「必须定义同帧对齐手段(择一, 实施时定)」,**三种方案都未落** —— 交换链在宿主线程翻(`Dx11Window.cpp:290 initBuffers`)、输出在渲染线程 `bResetFlag` 重建, 二者仍不同帧 | §八验收「播中开关/跨屏/缩放往返不花屏」**无设计支撑**, 真机大概率能看到过渡帧发灰/过曝 | R3(验收前必须定) |
+| **D4** | **R5 硬解状态上报未做** | §6.4 无任何实现; `engine_controller.dart:564` 注释自认「引擎交换链真切上与否待实态上报(R5), 当前按『下发成功』记」= 宿主侧徽章是猜的 | 徽章实态依赖项; 不影响画面, 但 R5 出口「硬解失败事件可上报可查」为 0 | R5 |
+
+**结构性缺口(非代码疏漏, 需独立批次/另批详设)**:
+- **Mac 链F 通道不存在**(G10 跨平台半场): mac `MetalRender` forceHDR 出已 EOTF 线性(非 PQ 码), 且 lane=0 时 Metal 画 drawable 直呈屏、IOSurface 仅离屏路径 ⇒ 无「Metal 产→VK 导入」通道。需独立批(Metal 侧 PQ 直通变体 + 切 IOSurface 为 VK 腿目标), 且与 G7(原生 EDR 腿已达标)叠加后收益不足 —— **列为不排期**。
+- **R4 Android/Linux HDR**: EGL 无 HDR 呈现面口(G8), Linux 无 GPU 导入腿; 本稿 §七明标「另批详设, 不在本稿展开」⇒ 非缺口, 是**范围外**。
+- **iOS EDR(G5)**: `MetalWindow.mm:58-63` iOS 腿恒不受理(无 NSScreen); 探测口径(UIScreen EDR headroom?)未评估 ⇒ 归 R3 的「iOS EDR 探测口径评估」出口。
+- **§3.5 VK 16F 域层兼容(Blend/VR/font)**: 16F 线性域合成未处理, 归 R2 字幕/图像处理专项。
+
+**真机验收项(代码就绪但未验)**:
+- R1: SU130 HDR10 片 lane=1 全 10bit 无 banding; 软解 HDR lane=1 直通(G9) ✅代码就绪
+- R2: Win 软解 HDR×HDR 屏 FP16 交换链高光顶出; 链F 硬解片高光顶出 + VK 图像处理/字幕可用
+- 回归: SDR 片零变化、播中开关/跨屏/缩放往返(**依赖 D3**)
+
+> **一句话结论**: 计划内 R1/R2 的**编码**已收口; 剩余是 **R3(统一检查收口: D1+D2+D3)** 与 **R5(D4)**, 外加 mac 链F/R4 两个非排期结构项。**D3(同帧对齐)是唯一挡在「不花屏」验收前的硬缺口**, 建议 R3 最先动它。
+
+## 十一、沿革
 
 - 2026-09-14/15: 管线改造立项(trc/元数据/UBO 3a; 原 HDR管线改造计划.md 记载, 该文档已删, 史料归 git);
 - 2026-09-24~25: Metal EDR 直通落地验收(forceHDR 分支线性化+ExtendedLinearITUR_2020);
@@ -366,4 +399,5 @@ mac 走链F 的收益本就不足——原生 EDR 腿已达标, 链F 在 mac 是
 - 2026-10-01(八): **G9 Win 原生腿吃 CPU 帧落地**(实施, 提交前): `Dx11CSVideoRender` 新增 `renderCpuFrame(yuv420P/yuv420P10)`——平面收进自建 DYNAMIC NV12/P010 上传纹理(`initGraphCpu`/`uploadCpuPlanes`, 10bit 逐样 `<<6` 与 `MetalRender.mm:417` 同语义)→复用既有 CS(tone map/forceHDR 分支全同)→超 RGBA8 输出; `vaildAndInitGraph` 的 `cpuIn` 早退改为走 CPU 建图分支; `createProgram` 输入段在 CPU 腿跳过(否则上传纹理被覆盖成不可 Map 的 DEFAULT); 设备取自**呈现窗口**(`targetWindow->getRenderContext()` → `IDx11Context::getDevice()`, 与输出共享纹理/窗口 blit 同设备); `WindowRender::render(YUVFrame)` 补下发 `window->renderContext()`(缺它则 `Dx11Window::onTickWin` 因 `sharedTexture` 空而早退不上屏)。硬解失败 lane=1 就地直通, 不再依赖换道。
 - 2026-10-01(九): **R2 主体落地: §4.3 vkHDR + G4 收口 + G10 升样层**(实施): ①§4.3 `HdrMode::vkHDR(3)` 新增, `WindowRender::setHdrMode` 入口按 lane 分岔归一化(lane=0 折 forceHDR / lane=1 折 follow+告警), UBO/shader 协议仍只见 2; ②G4 `VkYUV2RGBALayer::onInitLayer` 的 16F 赋值从 forceHDR 分支移到**格式归一化段之后**并条件化为「10bit + forceHDR」, 修掉共用归一化段把 16F 盖回 rgba8 的老 bug; ③G10 **新增 `VkPqUpsampleLayer` + `glsl/pqUpsample.comp`**(rgba8 PQ 码 → 16F 线性, `pqToLinear(rgb)*125.0` 与 `yuv2rgbaHDR.comp` EOTF 段逐字同源), 接在 `VkInputLayer` 之后、下游合成之前, 拓扑条件 = forceHDR 行为态 + 非 CPU-YUV 输入(`!cpuIn && !bRgbaInput`), 即链F 硬解 PQ 码载荷; ④输出端分岔走 `bVkOutput`: 新增 `VideoRender::bVkOutput` + `setVkOutput()`(随 `SurfaceRenderNative::setVulkan` 同步), `Dx11CSVideoRender::createProgram` 输出格式改按「给 VK 恒 rgba8 / 直呈窗口跟直通实态」两轴定(§6.1 R2 修订: 上位版 R10G10B10A2 只保留给后者); ⑤`glsl/glslindexcurrent.txt` 加 `pqUpsample.comp` + 手动 `python glsl/compileglsl.py`(12 shader 全绿, 产物已落 install 三目录)。构建 0 错误(`avox` 目标), 单测 96/96·1210 断言全绿(提交 `caafcda`)。**未含**: mac/Android 交接面 PQ 码直通口径核对/补齐(G10 的跨平台半场, 见下条)。
 - 2026-10-01(十): **G10 跨平台交接面语义核对**(核代码, 未改实现): 逐平台核 forceHDR 分支往 rgba8 交接面写了什么——**Win `Dx11CSVideoRender` CS = PQ 码原样** ✅、**Android `EglVideoRender` `uHdrMode==2` → `return rgb;` = PQ 码原样** ✅(FBO 为 `GL_RGBA`/`GL_UNSIGNED_BYTE`), 二者与升样层契约一致, 链F 直接可用; **Mac `MetalRender` `hdrMode==2` → `pqToLinear(rgb)*100.0` = 已 EOTF 的线性** ❌ 语义相反(链F 会二次解码)。且 mac lane=0 交接面结构不成立: `MetalRender.mm:933-938` 有 `metalLayer` 时画 drawable 直呈屏, IOSurface(rgba8, `:768/775`)仅在离屏时才是渲染目标 ⇒ **mac 今天没有可用的「Metal 产→VK 导入」通道**, 需独立批次(Metal 侧 PQ 直通变体 + 切 IOSurface 为 VK 腿目标); 与 G7 叠加后 mac 走链F 收益本就不足(原生 EDR 腿已达标)。Linux 无 GPU 导入腿(`VkInputLayer.hpp:5-9` 条件编译不命中)走 CPU 上传, 不涉本条。**⇒ R2 的跨平台半边: Android 就绪, Mac 转独立缺口, Linux 不适用**。
+- 2026-10-01(十一): **当前实现 vs 方案 差分入档**(核码, 未改实现): 新增 §十, 逐条核对 §六/§七 对码。结论: R1/R2 编码已收口; 剩余缺口 **D1 §3.4 读回防护只 Win 有(Metal/EGL/VK `fetchFrame`/`fetchData` 无守卫, 链F 截图必错)**、**D2 §4.2 检查点未接 Metal/EGL(R3「检查路径同源」出口未满足)**、**D3 §3.4 同帧对齐手段未选型(唯一挡「不花屏」验收的硬缺口, R3 需最先动)**、**D4 R5 上报未做**; mac 链F 通道不存在(=不排期), R4/iOS EDR/16F 域层=范围外或归批。
 
