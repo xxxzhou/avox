@@ -60,6 +60,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 
 **open/起播** → [`references/病族-open.md`](references/病族-open.md)
 - 容器头解析失败(EBML…) → 拿到非容器(假 mkv/改后缀 FLV) → 源端假片, §1.2 体检定真身
+- **Mac VT 起播全帧 `-12909` 风暴(resync 循环无效, 黑屏只有声) → 多 slice 流被逐 slice 包直喂 VT; 已修 AU 重组+让道软解(1002 定谳, 见 open 分册)**
 - **wmv3 拒播/有声无画 → 已修 ee8bf7b(0927)**
 - open 后卡死(`partial file` 风暴 + misland EOF + `clock-leak guard seek(0)` 死循环) → **0926 定谳未修**
 - http 直链 open 卡 10 分钟+ = 迅雷逐 GOP 落盘 mp4 → 已修 39aa4aa

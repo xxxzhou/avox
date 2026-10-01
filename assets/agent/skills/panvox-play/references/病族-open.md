@@ -1,6 +1,6 @@
 # 病族案卷 · open / 起播
 
-> 状态: 有效 · 上次核对: 2026-09-28 · 权威源: -
+> 状态: 有效 · 上次核对: 2026-10-01 · 权威源: -
 > panvox-play skill 的案卷分册: SKILL.md §4 只放一行式索引, 签名对上后再来本文读根因/判据/验收。
 > 配套: `../SKILL.md`(流程与日志判读) · `病族-seek.md` · `病族-播放中.md`
 
@@ -11,3 +11,4 @@
 - **open 慢≠败(15s 驻留误判 OPEN_FAIL) → AVI 慢开两族分治已修(ce86db8+271db52+393f954, 0927)**: ①RIFF 申报大小≠实际(迅雷虚报, 321 CEAD146 实锤: 申报 1.07GB vs 实际 1.39GB)→ avi_load_index 从申报 movi_end 逐块爬找 idx1, 走网爬完 315MB 尾区; **此类半截片尾本无 idx1(尾部 16B 实锤), seek 钳在已读前沿是数据缺失的固有事实, 非引擎可治**。②ODML indx 主索引(383 デジタルマスタリング 实锤: 申报=实际)→ read_odml_index 逐 ix## 叶 ~32MB 步进跨全文件追读(AVOX_SEG_TRACE=1 实锤 37 次 ~150ms 重连)。修: ①剪尾线 = 申报+8MB(线外段快速失败/读回 EOF 与钳尾同通道)+ open 窗口内降 wrapPb->seekable 跳索引; ②open 传 `use_odml=0` 只免逐叶追读, **idx1 照常 open 期加载(就在 movi_end, 半秒), 索引/seek/时钟全保留**(实测 383 open 425ms, seek 5400s 落 5398.8s)。诊断 warn: `avi tail clip on`(①)/`avi odml direct-idx1 on`(②)。**教训: AVI 的 pts=ast->frame_offset 是读包计数器, 裸字节跳读位(绕过 avi_read_seek)时钟必错(616MB 实报 15s) —— 只能走索引或钳边, 字节估算路线不成立**。夜巡 15s 驻留对真实慢源仍可能掐在 open 前, 复核: 单片 `avox_cli pl -t 30` 到 playing 即改判「慢开可播」。
 - 开片即崩(avsubtitle_free 栈, 播 PGS 字幕触发; **cli 不渲字幕故不崩 = 最大迷惑点**) → ffmpeg dll 与 .lib 序号错位 → 已修 c08adb4(按名字重生成导入库); 根训 = dll 与 lib 必须成对更新。
 - 网络源硬解首帧慢(~4.6s)被 5s 看门狗误杀 → vulkan 接棒炸 → 软解 GOP 中段缺参考空转 ~15s → 已修 2c2444b(供给窗看门狗 + openFailed 瞬时降级 + 回退吸 IDR)。
+- **Mac VT 起播全帧 BadData 风暴(黑屏只有声走完, `-12909` ×全片 + `vt resync: rebuild session at idr` 循环重建无效, 视频队列 pts 恒 -1) → 已修(2026-10-01/02 定谳, AU 重组 + 让道)**: 真根因 = **多 slice HEVC 流被逐 slice 包直喂 VT** —— VT 要求一幅图一个样本, 非首 slice(continuation, `first_slice_segment_in_pic_flag=0`)单独成样本必 BadData; 每图单 slice 的流逐包喂恰好等于整图故无症状(同批片一好一坏的成因)。上游逐 slice 下发的确切分裂点未终局定位(processVideo 的 combine 本应合并; 解码侧修法对上游形态鲁棒)。判据: 提交明细可见同 pts 多个小包同首 NAL 类型; **裸 API 探针定流无罪**(同 session 配方按图聚合喂 30/30 全解, 探针源 `references/vtprobe.mm`, ⚠️ Swift 版撞 macOS26 SDK 桥接坑须 ObjC++)。**伴生特征勿当根因**: scaling list(671B 巨型 SPS)/PoC 16bit/每图 8 slice 均非毒(探针带 scaling list 照解; `ffmpeg -hwaccel videotoolbox` 静默回退软解勿当苹果判决, 认输出像素格式)。修复(src/avox_apple/IOSVDecoder): ①decode 内 AU 重组(preNal 收图前导非 VCL(SEI/HDR 元数据), pendingAu 聚当前图, 下一图起始才提交, block 字节拷贝自持异步时效) ②孤儿续 slice(seek 落点缺首 slice 的残图)静默丢弃, 防喂 wedge(会话 wedge 后 WaitForAsynchronousFrames 收尾挂死实证) ③持久 BadData 让道(重建 ≥2 次仍零好帧 → openFailed 换软解, 选型链既有机制)。验收: cli play 4K 多 slice 片 first_video_frame ~124ms 零 12909; 同批单 slice 片零回归; ctest 2/2; seektest pre=51/post=110 帧正常(RGBA dump 失败系 mac GPU 帧工具既有局限非回归)。
