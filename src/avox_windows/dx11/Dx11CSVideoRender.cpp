@@ -299,7 +299,11 @@ bool Dx11CSVideoRender::vaildAndInitGraph() {
   if (checkTargetPassthrough()) {
     bResetFlag = true;
   }
-  if (!gpuFrame.buffer || cpuIn) {
+  // CPU 帧腿(G9): 无解码纹理, 走自建上传纹理的独立建图分支
+  if (cpuIn) {
+    return initGraphCpu(yuvFrame);
+  }
+  if (!gpuFrame.buffer) {
     return false;
   }
   Dx11Context* context = static_cast<Dx11Context*>(gpuFrame.context);
@@ -315,6 +319,11 @@ bool Dx11CSVideoRender::vaildAndInitGraph() {
   }
   // NV12/P010 流切换: SRV 视图与着色器分支都不同, 必须重建
   if (yuvDesc.Format != desc.Format && desc.Format != DXGI_FORMAT_UNKNOWN) {
+    releaseGraph();
+  }
+  // 输入从 CPU 腿切回硬解腿: CPU 自建纹理与设备须作废, 否则 inTexture 仍是
+  // 上传纹理, CS 采样它拿到的是 CPU 旧帧
+  if (cpuInFormat != DXGI_FORMAT_UNKNOWN) {
     releaseGraph();
   }
   // 早退/失败的重试由 computeShader 是否为空驱动, 不依赖本标志
@@ -349,6 +358,12 @@ void Dx11CSVideoRender::releaseGraph() {
   dvShader.Reset();
   boundShader = nullptr;
   bDvProgramTried = false;
+  // CPU 帧腿上游纹理随图释放(重建时按新尺寸/格式重造)
+  inTexture.Reset();
+  yView.Reset();
+  uvView.Reset();
+  cpuInFormat = DXGI_FORMAT_UNKNOWN;
+  cpuDevice = nullptr;
   // 释放回读资源,映射指针一并失效
   if (bStagingMapped && d3dcontext) {
     d3dcontext->Unmap(stagingTexture.Get(), 0);
@@ -357,6 +372,193 @@ void Dx11CSVideoRender::releaseGraph() {
   stagingTexture.Reset();
   stagingWidth = 0;
   stagingHeight = 0;
+}
+
+// CPU 帧腿(G9): CPU 无解码 D3D11 设备, 借用呈现窗口的设备建上传纹理。
+// 输出共享纹理由该设备创建后交给同设备的 Dx11Window 开 NT 句柄(同适配器,
+// 与硬解腿「解码设备→窗口设备」的跨设备句柄共享路径互不干扰)
+bool Dx11CSVideoRender::initGraphCpu(const YUVFrame& frame) {
+  const YuvType yuvType = frame.format.type;
+  const bool b10 = yuvType == YuvType::yuv420P10;
+  if ((yuvType != YuvType::yuv420P && !b10) || !frame.data[0]) {
+    static std::once_flag once;
+    std::call_once(once, [yuvType] {
+      LOGFLF(LogLevel::warn, "dx11 cs cpu frame yuv type not support:",
+             (int32_t)yuvType);
+    });
+    return false;
+  }
+  const int32_t width = frame.format.width;
+  const int32_t height = frame.format.height;
+  if (width <= 0 || height <= 0 || (height % 2) != 0 || (width % 2) != 0) {
+    return false;
+  }
+  // 取呈现窗口的 D3D11 设备(与输出共享纹理/窗口 blit 同设备)
+  ID3D11Device* wdDevice = nullptr;
+  if (targetWindow) {
+    IDx11Context* wdCtx =
+        dynamic_cast<IDx11Context*>(targetWindow->getRenderContext());
+    if (wdCtx) {
+      wdDevice = wdCtx->getDevice();
+    }
+  }
+  if (!wdDevice) {
+    LOGFLF(LogLevel::warn, "dx11 cs cpu frame no window device, skip");
+    return false;
+  }
+  const bool bNeedReset = bResetFlag.exchange(false);
+  // 设备变了 / 宿主请求重建 / 输入格式换了 / 尺寸换了 → 全部重建图
+  if (computeShader && (bNeedReset || cpuDevice != wdDevice ||
+                        cpuInFormat != (b10 ? DXGI_FORMAT_P010
+                                            : DXGI_FORMAT_NV12) ||
+                        imageWidth != (uint32_t)width ||
+                        imageHeight != (uint32_t)height)) {
+    releaseGraph();
+  }
+  if (computeShader) {
+    return true;
+  }
+  setDevice(wdDevice);
+  cpuDevice = wdDevice;
+  cpuInFormat = b10 ? DXGI_FORMAT_P010 : DXGI_FORMAT_NV12;
+  // NV12/P010 上传纹理: 与解码纹理同为两平面视图(r8 / r16), CS 分支按格式选
+  D3D11_TEXTURE2D_DESC tdesc = {};
+  tdesc.Width = (UINT)width;
+  tdesc.Height = (UINT)height;
+  tdesc.MipLevels = 1;
+  tdesc.ArraySize = 1;
+  tdesc.Format = cpuInFormat;
+  tdesc.SampleDesc.Count = 1;
+  tdesc.Usage = D3D11_USAGE_DYNAMIC;
+  tdesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+  tdesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+  if (FAILED(device->CreateTexture2D(&tdesc, nullptr,
+                                     inTexture.GetAddressOf()))) {
+    LOGFLF(LogLevel::warn, "dx11 cs cpu upload texture create failed, dxgi:",
+           (int32_t)cpuInFormat);
+    cpuInFormat = DXGI_FORMAT_UNKNOWN;
+    return false;
+  }
+  // P010 必须用 16bit 视图(类型不兼容 cast 会建 SRV 失败 → 静默全黑)
+  D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+  srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+  srvDesc.Texture2D.MipLevels = 1;
+  srvDesc.Format = b10 ? DXGI_FORMAT_R16_UNORM : DXGI_FORMAT_R8_UNORM;
+  if (FAILED(device->CreateShaderResourceView(inTexture.Get(), &srvDesc,
+                                              &yView))) {
+    LOGFLF(LogLevel::warn, "dx11 cs cpu create y srv failed");
+    return false;
+  }
+  srvDesc.Format = b10 ? DXGI_FORMAT_R16G16_UNORM : DXGI_FORMAT_R8G8_UNORM;
+  if (FAILED(device->CreateShaderResourceView(inTexture.Get(), &srvDesc,
+                                              &uvView))) {
+    LOGFLF(LogLevel::warn, "dx11 cs cpu create uv srv failed");
+    return false;
+  }
+  // 走硬解同款 desc 语义: CS 按 yuvDesc.Format 选 P010 分支并做 tone map
+  yuvDesc = {};
+  yuvDesc.Width = (UINT)width;
+  yuvDesc.Height = (UINT)height;
+  yuvDesc.Format = cpuInFormat;
+  if (imageWidth != (uint32_t)width || imageHeight != (uint32_t)height) {
+    bParamsDirty = true;
+  }
+  imageWidth = (uint32_t)width;
+  imageHeight = (uint32_t)height;
+  createProgram();
+  return computeShader != nullptr;
+}
+
+// 把 CPU 平面收进 inTexture: NV12 逐行直拷 Y + UV 交织; P010 逐样 <<6
+// (yuv420P10 值在低位, P010 值在高位, 与 MetalRender.mm 的 <<6 同语义)
+bool Dx11CSVideoRender::uploadCpuPlanes(const YUVFrame& frame) {
+  if (!inTexture || !d3dcontext) {
+    return false;
+  }
+  D3D11_MAPPED_SUBRESOURCE mapped = {};
+  if (FAILED(d3dcontext->Map(inTexture.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0,
+                             &mapped))) {
+    LOGFLF(LogLevel::warn, "dx11 cs cpu upload map failed");
+    return false;
+  }
+  const int32_t width = frame.format.width;
+  const int32_t height = frame.format.height;
+  const int32_t cw = width / 2;
+  const int32_t ch = height / 2;
+  const bool b10 = frame.format.type == YuvType::yuv420P10;
+  uint8_t* dstY = (uint8_t*)mapped.pData;
+  uint8_t* dstUV = dstY + (size_t)mapped.RowPitch * height;
+  if (b10) {
+    const size_t dstYW = mapped.RowPitch / 2;
+    const size_t dstUVW = mapped.RowPitch / 2;
+    for (int32_t r = 0; r < height; ++r) {
+      const uint16_t* src =
+          (const uint16_t*)(frame.data[0] + (size_t)r * frame.stride[0]);
+      uint16_t* d = (uint16_t*)dstY + (size_t)r * dstYW;
+      for (int32_t c = 0; c < width; ++c) {
+        d[c] = (uint16_t)(src[c] << 6);
+      }
+    }
+    for (int32_t r = 0; r < ch; ++r) {
+      const uint16_t* u =
+          (const uint16_t*)(frame.data[1] + (size_t)r * frame.stride[1]);
+      const uint16_t* v =
+          (const uint16_t*)(frame.data[2] + (size_t)r * frame.stride[2]);
+      uint16_t* d = (uint16_t*)dstUV + (size_t)r * dstUVW;
+      for (int32_t c = 0; c < cw; ++c) {
+        d[2 * c] = (uint16_t)(u[c] << 6);
+        d[2 * c + 1] = (uint16_t)(v[c] << 6);
+      }
+    }
+  } else {
+    for (int32_t r = 0; r < height; ++r) {
+      memcpy(dstY + (size_t)r * mapped.RowPitch,
+             frame.data[0] + (size_t)r * frame.stride[0], (size_t)width);
+    }
+    for (int32_t r = 0; r < ch; ++r) {
+      const uint8_t* u = frame.data[1] + (size_t)r * frame.stride[1];
+      const uint8_t* v = frame.data[2] + (size_t)r * frame.stride[2];
+      uint8_t* d = dstUV + (size_t)r * mapped.RowPitch;
+      for (int32_t c = 0; c < cw; ++c) {
+        d[2 * c] = u[c];
+        d[2 * c + 1] = v[c];
+      }
+    }
+  }
+  d3dcontext->Unmap(inTexture.Get(), 0);
+  return true;
+}
+
+void Dx11CSVideoRender::renderCpuFrame(const YUVFrame& frame) {
+  if (!uploadCpuPlanes(frame)) {
+    return;
+  }
+  // 常量参数(尺寸/格式/transfer/hdrMode/峰值): 与硬解腿同一套上传口径
+  if (bParamsDirty) {
+    bParamsDirty = false;
+    constData.width = (int32_t)imageWidth;
+    constData.height = (int32_t)imageHeight;
+    constData.yuvType = (yuvDesc.Format == DXGI_FORMAT_P010) ? 1 : 0;
+    constData.transfer = (int32_t)cs.transfer;
+    constData.maxLuminance = (float)hdrPeakNits(hdrMeta);
+    constData.sdrWhiteNits = 100.0f;
+    constData.hdrMode = (int32_t)hdrMode;
+    Mat4x4f mat = buildYuvToRgb(cs);
+    memcpy(&constData.colorMat, &mat, 16 * sizeof(float));
+    constBuf->updateResource(d3dcontext.Get());
+  }
+  // 绑定输入 SRV / 输出 UAV / 着色器, 与 createProgram 尾段口径一致
+  d3dcontext->CSSetShader(computeShader.Get(), nullptr, 0);
+  boundShader = computeShader.Get();
+  ID3D11ShaderResourceView* srvArray[2] = {yView.Get(), uvView.Get()};
+  d3dcontext->CSSetShaderResources(0, 2, srvArray);
+  ID3D11UnorderedAccessView* uavArray[1] = {outTexture->uavView.Get()};
+  d3dcontext->CSSetUnorderedAccessViews(0, 1, uavArray, nullptr);
+  uint32_t groupX = divUp(imageWidth / 2, 16);
+  uint32_t groupY = divUp(imageHeight / 2, 16);
+  d3dcontext->Dispatch(groupX, groupY, 1);
+  outSharedTex->signalFence();
+  texture = outTexture->texture.Get();
 }
 
 void Dx11CSVideoRender::renderGpuFrame(const GpuFrame& frame) {
@@ -450,30 +652,35 @@ void Dx11CSVideoRender::createProgram() {
          bTargetPassthrough ? 1 : 0, " dxgi:", (int32_t)outFormat);
   outSharedTex->initTexture(device);
   // 创建输入复制纹理
-  D3D11_TEXTURE2D_DESC inCopyDesc = yuvDesc;
-  inCopyDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-  inCopyDesc.MipLevels = 1;
-  inCopyDesc.ArraySize = 1;
-  inCopyDesc.SampleDesc.Count = 1;
-  inCopyDesc.Usage = D3D11_USAGE_DEFAULT;
-  device->CreateTexture2D(&inCopyDesc, nullptr, &inTexture);
-  // 创建输入纹理的SRV: NV12 用 8bit 视图; P010 必须用 16bit 视图
-  // (类型不兼容的 cast 会创建失败且无 SRV -> 渲染静默全黑)
-  bool bP010 = inCopyDesc.Format == DXGI_FORMAT_P010;
-  D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-  srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-  srvDesc.Texture2D.MipLevels = inCopyDesc.MipLevels;
-  srvDesc.Format = bP010 ? DXGI_FORMAT_R16_UNORM : DXGI_FORMAT_R8_UNORM;
-  if (FAILED(device->CreateShaderResourceView(inTexture.Get(), &srvDesc,
-                                              &yView))) {
-    LOGFLF(LogLevel::warn, "create y srv failed, dxgi:",
-           (int32_t)inCopyDesc.Format);
-  }
-  srvDesc.Format = bP010 ? DXGI_FORMAT_R16G16_UNORM : DXGI_FORMAT_R8G8_UNORM;
-  if (FAILED(device->CreateShaderResourceView(inTexture.Get(), &srvDesc,
-                                              &uvView))) {
-    LOGFLF(LogLevel::warn, "create uv srv failed, dxgi:",
-           (int32_t)inCopyDesc.Format);
+  // CPU 帧腿(G9): inTexture 与 y/uv SRV 已由 initGraphCpu 按 DYNAMIC 上传
+  // 需求建好(硬解腿要的是 USAGE_DEFAULT 解码拷贝纹理), 此处跳过, 否则会把
+  // 上传纹理覆盖成不可 Map 的 DEFAULT 纹理
+  if (cpuInFormat == DXGI_FORMAT_UNKNOWN) {
+    D3D11_TEXTURE2D_DESC inCopyDesc = yuvDesc;
+    inCopyDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    inCopyDesc.MipLevels = 1;
+    inCopyDesc.ArraySize = 1;
+    inCopyDesc.SampleDesc.Count = 1;
+    inCopyDesc.Usage = D3D11_USAGE_DEFAULT;
+    device->CreateTexture2D(&inCopyDesc, nullptr, &inTexture);
+    // 创建输入纹理的SRV: NV12 用 8bit 视图; P010 必须用 16bit 视图
+    // (类型不兼容的 cast 会创建失败且无 SRV -> 渲染静默全黑)
+    bool bP010 = inCopyDesc.Format == DXGI_FORMAT_P010;
+    D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+    srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+    srvDesc.Texture2D.MipLevels = inCopyDesc.MipLevels;
+    srvDesc.Format = bP010 ? DXGI_FORMAT_R16_UNORM : DXGI_FORMAT_R8_UNORM;
+    if (FAILED(device->CreateShaderResourceView(inTexture.Get(), &srvDesc,
+                                                &yView))) {
+      LOGFLF(LogLevel::warn, "create y srv failed, dxgi:",
+             (int32_t)inCopyDesc.Format);
+    }
+    srvDesc.Format = bP010 ? DXGI_FORMAT_R16G16_UNORM : DXGI_FORMAT_R8G8_UNORM;
+    if (FAILED(device->CreateShaderResourceView(inTexture.Get(), &srvDesc,
+                                                &uvView))) {
+      LOGFLF(LogLevel::warn, "create uv srv failed, dxgi:",
+             (int32_t)inCopyDesc.Format);
+    }
   }
   // 设置当前纹理
   texture = outTexture->texture.Get();

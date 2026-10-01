@@ -53,12 +53,19 @@ class Dx11CSVideoRender : public VideoRender, public Dx11Context {
   uint32_t publishedTick = 0;
   int32_t stagingWidth = 0;
   int32_t stagingHeight = 0;
+  // CPU 帧腿(G9): cpuIn 时输入不是解码纹理, 自建 NV12/P010 上传纹理当 CS 源。
+  // 值 = 该纹理的 DXGI 格式(NV12/P010), UNKNOWN 表示非 CPU 建图
+  DXGI_FORMAT cpuInFormat = DXGI_FORMAT_UNKNOWN;
+  // CPU 帧腿的 D3D11 设备(取自呈现窗口, 渲染线程持有; 非拥有, 不 Release)
+  ID3D11Device* cpuDevice = nullptr;
 
  protected:
   // 初始化图形管线
   virtual bool vaildAndInitGraph() override;
   virtual void releaseGraph() override;
   virtual void renderGpuFrame(const GpuFrame& frame) override;
+  // CPU 帧腿(G9): yuv420P/yuv420P10 平面 → NV12/P010 上传纹理 → 既有 CS
+  virtual void renderCpuFrame(const YUVFrame& frame) override;
   virtual bool fetchFrame(ImageBuffer* imageBuffer) override;
   // 颜色/HDR 参数(VideoRender 虚接口), 触发常量脏标记
   virtual void setColorSpace(const ColorSpaceDesc& c) override;
@@ -82,5 +89,9 @@ class Dx11CSVideoRender : public VideoRender, public Dx11Context {
   ID3D11ComputeShader* selectShader();
   // staging拷贝+Map+零拷发布到stagingBuffer,失败返回false
   bool mapStagingFrame();
+  // CPU 帧腿建图: 自建 NV12/P010 输入纹理 + 取窗口设备 + createProgram
+  bool initGraphCpu(const YUVFrame& frame);
+  // 把 CPU 平面收进 inTexture(NV12 直拷 / P010 <<6), 失败返回 false
+  bool uploadCpuPlanes(const YUVFrame& frame);
 };
 }

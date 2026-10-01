@@ -211,6 +211,13 @@ void WindowRender::render(const YUVFrame& frame) {
   } else {
     if (pVideoRender) {
       pVideoRender->renderFrame(frame);
+#ifdef WIN32
+      // CPU 帧腿(G9): 原生腿就地吃软解帧, 共享纹理经 CS 出图后须下发窗口,
+      // 否则 Dx11Window::onTickWin 因 sharedTexture 为空直接早退不上屏
+      if (!bVulkan && window) {
+        window->renderContext(pVideoRender->getGpuContext());
+      }
+#endif
     }
   }
   onRenderOut();
