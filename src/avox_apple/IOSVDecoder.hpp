@@ -52,6 +52,22 @@ private:
   std::atomic<int32_t> badDataStreak{0};
   std::atomic<bool> bWaitResyncIdr{false};
   int32_t resyncDropped = 0;
+  // 持久不兼容流让道: 重建多次仍零好帧 → openFailed 换下一候选(软解),
+  // 不对整片不兼容的流无限重建 (1001 多 slice 流定谳)
+  int32_t resyncCount = 0;
+  // 回调线程写(VT 线程), 解码线程读
+  std::atomic<bool> bEverDecoded{false};
+
+  // AU 重组: VT 要求整幅图一个样本, 逐 slice 包直喂非首 slice 即 BadData
+  // (1001 多 slice 流定谳)。preNal 收图前导非 VCL(SEI 等), pendingAu 聚
+  // 当前图的全部 slice, 下一图起始才提交
+  std::vector<uint8_t> preNal;
+  std::vector<uint8_t> pendingAu;
+  int64_t pendingPts = -1;
+  int64_t pendingDts = -1;
+  // pending 里已有 VCL(图已起头): 否则续 slice 是 seek 落点缺首 slice 的残图,
+  // 单独成 AU 必 BadData 且把会话喂 wedge, 静默丢到下一图起始
+  bool pendingHasVcl = false;
 
   // 按渲染方式把解码帧交给观察者; 消费掉传入的 buffer 引用
   void dispatchDecodedFrame(int64_t pts, CVImageBufferRef imageBuffer);
@@ -61,6 +77,11 @@ private:
   void flushReorder();
   // seek/关闭: 丢弃并释放扣住的帧
   void releaseReorder();
+  // 提交一组完整 AU 字节(内部拷贝持有时效, 异步解码不受包队列回收影响)
+  DecodeResult submitAuData(const uint8_t *data, int32_t size, int64_t pts,
+                            int64_t dts);
+  // 丢弃重组中的半成品
+  void dropPendingAu();
 
 public:
   void updateYuvFormat();

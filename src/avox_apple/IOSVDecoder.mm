@@ -16,6 +16,38 @@ namespace avox {
 // 回调 BadData 连击阈值(帧): 达到即判定会话已 wedge, 扣帧等下个 IDR 重建。
 // 30 帧 ≈ 1s, 单个偶发坏包远够不着
 static constexpr int32_t kVtBadDataResync = 30;
+// 让道阈值(重建次数): 重建 N 次仍从未出过好帧 = 流与 VT 整体不兼容
+// (不是偶发坏包), 返回 openFailed 让选型链换下一候选(软解), 不无限重建
+static constexpr int32_t kVtResyncGiveUp = 2;
+
+// 包内 NAL 分类: 首个 VCL 是否起新图、是否含 IRAP 关键帧。
+// 纯非 VCL 包(SEI/HDR 元数据)由调用方暂存随下一图提交, 不作坏包丢
+struct VtAuClass {
+  bool bVcl = false;
+  bool bNewPic = false;
+  bool bKey = false;
+};
+static VtAuClass classifyPacket(const AvoxPacket &packet, VCodecId vc) {
+  VtAuClass c;
+  std::vector<AvoxPacket> nalus;
+  splitAvccNalu(packet, nalus);
+  bool bSeenVcl = false;
+  for (const auto &n : nalus) {
+    uint8_t unit = getNalUnit(vc, n);
+    if (!naluDataFrame(vc, unit)) {
+      continue;
+    }
+    if (!bSeenVcl) {
+      c.bNewPic = naluNewFrame(vc, n.data.data + n.prefixSize);
+      bSeenVcl = true;
+    }
+    if (naluKeyFrame(vc, unit)) {
+      c.bKey = true;
+    }
+  }
+  c.bVcl = bSeenVcl;
+  return c;
+}
 
 void regIOSVDecoder() {
   RegFunc regFunc = {"ios video decoder init", []() {
@@ -190,6 +222,8 @@ DecodeResult IOSVDecoder::onPreDecoder() {
   }
   // 每次会话重建重置, 防解码器复用时上次流的位深残留
   streamBitDepth = 8;
+  // 重组中的半幅图属于旧会话/旧位置, 重建即弃
+  dropPendingAu();
   // 重排状态随会话重建复位: 新流要重新学重排深度
   releaseReorder();
   maxPtsMinusDts = 0;
@@ -392,69 +426,103 @@ DecodeResult IOSVDecoder::decode(const AvoxPacket &packet_) {
     return onPreDecoder();
   }
   AvoxPacket packet = packet_;
-//    AvoxData logData = {packet.data.data,std::min(16,packet.data.size),true};
-//    LOGFLF(LogLevel::info,"data:",logData," size:",packet.data.size);
   // 非h26x(vp9/av1)无NALU语义: getNalUnit/naluDataFrame 恒0/false, 照h26x
   // 判定会把整包误杀成 dataError(VP9硬解车道全包被丢的实证), OBU流整包直喂
   bool bH26x = codecDesc.vcodecId == VCodecId::h264 ||
                codecDesc.vcodecId == VCodecId::h265;
-  uint8_t ualUnit = bH26x ? getNalUnit(codecDesc.vcodecId, packet) : 0;
-  // 是否可解码数据
-  bool bDecode = !bH26x || naluDataFrame(codecDesc.vcodecId, ualUnit);
-  // 合并组首NAL可能是PPS/SEI/AUD等非VCL而组内仍含slice, 不能按首NAL整包丢:
-  // HDR素材每组带前导SEI(元数据), 首NAL判会全量丢帧(实证硬解零帧)。VT 能自行
-  // 解析组内非VCL前缀, 整组喂入; 拆分后无任何帧NAL才丢
-  if (bH26x && !bDecode) {
-    std::vector<AvoxPacket> nalus;
-    splitAvccNalu(packet, nalus);
-    for (const auto &item : nalus) {
-      if (naluDataFrame(codecDesc.vcodecId, getNalUnit(codecDesc.vcodecId, item))) {
-        bDecode = true;
-        break;
-      }
-    }
+  // IOS硬解不支持annb为3的包,转换成4头
+  // 但是这个前面一般会有转换,所以这里应该不会出现
+  if (bH26x && packet.prefixSize == 3) {
+    log(LogLevel::warn, "ios hard decoder not support annb 3");
+    return DecodeResult::dataError;
   }
-  bool bKeyFrame = bH26x && naluKeyFrame(codecDesc.vcodecId, ualUnit);
+  if (!bH26x) {
+    return submitAuData(packet.data.data, packet.data.size, packet.pts,
+                        packet.dts);
+  }
+  // h26x AU 重组: VT 要求一幅图一个样本, 上游逐 NAL/逐 slice 下发时非首
+  // slice 单独成样本必 BadData(1001 多 slice 流定谳), 在此聚合到下一图
+  // 起始才提交。分类一次搞定新图/关键帧判定
+  VtAuClass au = classifyPacket(packet, codecDesc.vcodecId);
   // 韧性: VT 吃到坏 NAL 后会话永久 wedge(回调连环 BadData, 0926 seek 落点簇
-  // 拆坏包实证), 扣帧到下个 IDR 重建会话自愈, 不让一次坏包打死硬解车道
+  // 拆坏包实证), 扣帧到下个 IDR 重建会话自愈, 不让一次坏包打死硬解车道;
+  // 重建多次仍零好帧 = 流整体不兼容, 让道软解
   if (bWaitResyncIdr) {
-    if (!bKeyFrame) {
+    if (!au.bKey) {
       resyncDropped++;
       return DecodeResult::dataError;
     }
-    log(LogLevel::warn, "vt resync: rebuild session at idr, dropped:", resyncDropped);
+    if (!bEverDecoded && resyncCount >= kVtResyncGiveUp) {
+      log(LogLevel::warn,
+          "vt baddata persistent after resyncs, give up hw lane");
+      return DecodeResult::openFailed;
+    }
+    log(LogLevel::warn, "vt resync: rebuild session at idr, dropped:",
+        resyncDropped);
     bWaitResyncIdr = false;
     badDataStreak = 0;
     resyncDropped = 0;
+    resyncCount++;
     releaseReorder();
+    dropPendingAu();
     DecodeResult resyncResult = onPreDecoder();
     if (resyncResult != DecodeResult::success) {
       return resyncResult;
     }
   }
-  // ios里不能解码的包不要输入,可能引起问题
-  if (!bDecode) {
+  if (!au.bVcl) {
+    // 纯非 VCL 包(SEI, 载带内 HDR 元数据): 暂存随下一图提交
+    preNal.insert(preNal.end(), packet.data.data,
+                  packet.data.data + packet.data.size);
+    return DecodeResult::success;
+  }
+  if (au.bNewPic || pendingAu.empty()) {
+    // 新图起始: 先交出上一幅完整 AU, 再起新 pending(图前导非 VCL 一并入组)
+    DecodeResult result = DecodeResult::success;
+    if (!pendingAu.empty()) {
+      result = submitAuData(pendingAu.data(), (int32_t)pendingAu.size(),
+                            pendingPts, pendingDts);
+      pendingAu.clear();
+    }
+    pendingAu = std::move(preNal);
+    preNal.clear();
+    pendingAu.insert(pendingAu.end(), packet.data.data,
+                     packet.data.data + packet.data.size);
+    pendingPts = packet.pts;
+    pendingDts = packet.dts;
+    pendingHasVcl = true;
+    return result;
+  }
+  if (!pendingHasVcl) {
+    // seek 落点缺首 slice 的残图: 无首 slice 的续 slice 不可解, 喂 VT 即
+    // BadData 还会把会话喂 wedge(异步收尾挂死), 静默丢到下一图起始
     return DecodeResult::dataError;
   }
-  if (bKeyFrame) {
-    // LOGFLF(LogLevel::info, "key frame");
-  }
-  // IOS硬解不支持annb为3的包,转换成4头
-  // 但是这个前面一般会有转换,所以这里应该不会出现
-  if (packet.prefixSize == 3) {
-    log(LogLevel::warn, "ios hard decoder not support annb 3");
-    return DecodeResult::dataError;
-  }
+  // 续 slice: 并入当前图
+  pendingAu.insert(pendingAu.end(), packet.data.data,
+                   packet.data.data + packet.data.size);
+  return DecodeResult::success;
+}
+
+DecodeResult IOSVDecoder::submitAuData(const uint8_t *data, int32_t size,
+                                       int64_t pts, int64_t dts) {
+  // 拷贝进 block 自持: 异步解码期间上游包缓冲可能已被队列回收, 零拷贝直包
+  // packet.data 的写法把生命周期押在队列时序上
   CMBlockBufferRef videoBlock = nullptr;
   OSStatus status = CMBlockBufferCreateWithMemoryBlock(
-      nullptr, packet.data.data, packet.data.size, kCFAllocatorNull, nullptr, 0,
-      packet.data.size, 0, &videoBlock);
+      nullptr, nullptr, size, nullptr, nullptr, 0, size, 0, &videoBlock);
   if (status != noErr) {
     LOGFLF(LogLevel::warn, "create with memory block error:", status);
     return DecodeResult::dataError;
   }
+  status = CMBlockBufferReplaceDataBytes(data, videoBlock, 0, size);
+  if (status != noErr) {
+    CFRelease(videoBlock);
+    LOGFLF(LogLevel::warn, "replace block data error:", status);
+    return DecodeResult::dataError;
+  }
   CMSampleBufferRef sampleBuffer = nullptr;
-  const size_t sampleSizeArray[] = {(size_t)packet.data.size};
+  const size_t sampleSizeArray[] = {(size_t)size};
   CMSampleTimingInfo timingInfo = {};
   int32_t timeScale = 90000;
   // 重排深度: 包级 max(pts-dts) 就是"解码最多提前显示多少毫秒", 除以帧长即帧数。
@@ -465,22 +533,21 @@ DecodeResult IOSVDecoder::decode(const AvoxPacket &packet_) {
       frameDurMs = 40;
     }
   }
-  if (packet.dts >= 0 && packet.pts >= 0) {
+  if (pts >= 0 && dts >= 0) {
     // 回调线程会读 reorderFrames, 写入需互斥
     std::lock_guard<std::mutex> lk(reorderMutex);
-    maxPtsMinusDts = std::max(maxPtsMinusDts, packet.pts - packet.dts);
+    maxPtsMinusDts = std::max(maxPtsMinusDts, pts - dts);
     reorderFrames = std::min<int64_t>(16, maxPtsMinusDts / frameDurMs);
   }
-  timingInfo.presentationTimeStamp =
-      CMTimeMakeWithSeconds(packet.pts, timeScale);
+  timingInfo.presentationTimeStamp = CMTimeMakeWithSeconds(pts, timeScale);
   // 喂真实 DTS: kCMTimeInvalid 时 VT 按投递顺序直接输出, B 帧流输出次序乱
   // (pts 回跳), 同步层逐帧判 jump 丢帧 → 卡顿。dts 无效才回退 kCMTimeInvalid
-  // 单位必须与 pts 同源: packet.pts/dts 都是毫秒, 两者都用「秒」构造。
+  // 单位必须与 pts 同源: pts/dts 都是毫秒, 两者都用「秒」构造。
   // 混用 CMTimeMake 会把 dts 当 90000 分之一秒, 压缩成 0~0.0015s 的假解码轴,
   // VT 据它算不出重排深度 → 即使开了 EnableTemporalProcessing 也照投递序吐帧
   // (2026-09-24 实证: 投递序与回调序 pts 序列逐项相同)
-  if (packet.dts >= 0) {
-    timingInfo.decodeTimeStamp = CMTimeMakeWithSeconds(packet.dts, timeScale);
+  if (dts >= 0) {
+    timingInfo.decodeTimeStamp = CMTimeMakeWithSeconds(dts, timeScale);
   } else {
     timingInfo.decodeTimeStamp = kCMTimeInvalid;
   }
@@ -507,8 +574,17 @@ DecodeResult IOSVDecoder::decode(const AvoxPacket &packet_) {
   return status == noErr ? DecodeResult::success : DecodeResult::dataError;
 }
 
+void IOSVDecoder::dropPendingAu() {
+  preNal.clear();
+  pendingAu.clear();
+  pendingPts = -1;
+  pendingDts = -1;
+  pendingHasVcl = false;
+}
+
 void IOSVDecoder::flush() {
-  // seek 语义: 扣住的重排帧属于旧位置, 丢弃而不是放出
+  // seek 语义: 扣住的重排帧与重组中的半幅图都属于旧位置, 丢弃而不是放出
+  dropPendingAu();
   releaseReorder();
   if (decompressionSession) {
     // VTDecompressionSessionFlush(decompressionSession);
@@ -516,7 +592,13 @@ void IOSVDecoder::flush() {
 }
 
 void IOSVDecoder::onInputEnd() {
-  // 输入排空: 放空重排缓冲尾部, 否则最后 reorderFrames 帧永不显示
+  // 输入排空: 先交出重组中的尾图, 再放空重排缓冲尾部, 否则最后 reorderFrames
+  // 帧永不显示
+  if (!pendingAu.empty()) {
+    submitAuData(pendingAu.data(), (int32_t)pendingAu.size(), pendingPts,
+                 pendingDts);
+    dropPendingAu();
+  }
   flushReorder();
 }
 
@@ -531,6 +613,7 @@ void IOSVDecoder::onClose() {
     decompressionSession = nullptr;
   }
   releaseReorder();
+  dropPendingAu();
 }
 
 void IOSVDecoder::dispatchDecodedFrame(int64_t pts, CVImageBufferRef imageBuffer) {
@@ -641,7 +724,8 @@ void IOSVDecoder::decompressionOutputCallback(
     std::lock_guard<std::mutex> lk(decoder->reorderMutex);
     decoder->reorderBuf.push_back({pts, imageBuffer});
   }
-  // 好帧到: BadData 连击清零
+  // 好帧到: BadData 连击清零; 记录"此会话出过好帧"(让道判据依据)
+  decoder->bEverDecoded = true;
   decoder->badDataStreak = 0;
   decoder->drainReorder();
 }
