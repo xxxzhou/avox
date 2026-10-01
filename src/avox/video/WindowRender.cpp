@@ -99,6 +99,13 @@ void WindowRender::onSurfaceChange() {
   std::lock_guard<std::mutex> lck(mtx);
   if (bOffSurface) {
     if (window) {
+      // 析构前先清渲染器的 targetWindow 裸指针: 渲染线程每帧检查点解引用旧窗口即UAF
+      if (pVideoRender) {
+        pVideoRender->renderWindow(nullptr);
+      }
+      if (vkVideoRender) {
+        vkVideoRender->renderWindow(nullptr);
+      }
       window.reset();
     }
     LOGFLF(LogLevel::info, "use empty surface, cpu out:", outCpuYuv);

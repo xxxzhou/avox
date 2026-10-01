@@ -28,6 +28,10 @@ void ImageRender::setSurface(void* surface_) {
   if (!surface_) {
     // nullptr = 自动创建Vulkan窗口
     if (window) {
+      // 换窗即析构旧窗, 先清 targetWindow 裸指针防渲染检查点悬空
+      if (vkVideoRender) {
+        vkVideoRender->renderWindow(nullptr);
+      }
       window->close();
     }
 #ifdef AVOX_ENABLE_VULKAN
@@ -47,6 +51,10 @@ void ImageRender::setSurface(void* surface_) {
       if (bMatch) {
         window->initSurface(surface_);
       } else {
+        // 同上: 析构前先清 targetWindow 裸指针
+        if (vkVideoRender) {
+          vkVideoRender->renderWindow(nullptr);
+        }
         window.reset();
       }
     }
