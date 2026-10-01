@@ -126,6 +126,9 @@ public:
 private:
   // 按 bHdrPassthrough 挑 surface 格式(直通: FP16+EXTENDED_SRGB_LINEAR)
   void pickFormat();
+  // 方案②实翻点(§3.4.1): 渲染线程在 onTickWin 内(显式 lockCommand 临界区)按
+  // bHdrPassthrough(意愿) 重建 renderPass+swapchain 并提交 bHdrActive
+  void applyPendingHdr();
 
   void createSwipChain();
 

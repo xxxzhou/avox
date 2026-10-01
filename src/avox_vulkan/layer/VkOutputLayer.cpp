@@ -405,6 +405,16 @@ bool VkOutputLayer::fetchData(IImageBuffer* buffer) {
   if (inTexs.size() <= 0 || !inTexs[0]) {
     return false;
   }
+  // §3.4 CPU 读回防护: 直通(链F)下本层输出是 FP16 线性域, 而下面按
+  // patchFormat(调用方 rgba8 口径)download ⇒ 脏图/越界写。与 Dx11CSVideoRender/
+  // MetalRender 同口径拒绝(PQ/16F 截图走 SDR 口径另取)。
+  // 纹理按 VkFormat 判定(VkTexture 不带 ImageType 字段)
+  const VkFormat inFmt = inTexs[0]->format;
+  if (inFmt == VK_FORMAT_R16G16B16A16_SFLOAT ||
+      inFmt == VK_FORMAT_A2B10G10R10_UNORM_PACK32) {
+    LOGFLF(LogLevel::warn, "fetchData refused in hdr passthrough (16f/10bit)");
+    return false;
+  }
   // 只拿取一帧,单独建立一个VkCommandBuffer
 
   vkCommand = std::make_unique<VkCommand>();

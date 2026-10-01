@@ -1,5 +1,7 @@
 #pragma once
 
+#include <mutex>
+
 #include "Dx11Helper.hpp"
 #include "Dx11Resource.hpp"
 #include "avox/video/Window.hpp"
@@ -43,7 +45,14 @@ private:
   ImageFormat sformat = {};
   // HDR 直通输出(块3): 显示器能力探测 + 交换链 PQ 色彩空间状态
   bool bHdrDisplay = false;
+  // 实态: 交换链当前是否已切 10bit+PQ(由渲染线程 applyPendingHdr 提交)
   bool bHdrActive = false;
+  // 意愿位: 宿主请求的直通态。方案②(§3.4.1) 下与 bHdrActive 分离 ——
+  // setHdrPassthrough 只写它, 渲染线程在 mtx 临界区内实翻后才令两者一致
+  bool bHdrPending = false;
+  // 护住交换链资源(renderView/backTex/swapChain)的改与用:
+  // 改=setHdrPassthrough 挂意愿 / initBuffers / applyPendingHdr; 用=onTickWin 的 Present
+  std::mutex bufMtx;
   HdrMeta hdrMeta;
 
  protected:
@@ -72,6 +81,9 @@ private:
   void initShader();
   void initBuffers(DXGI_FORMAT fmt = DXGI_FORMAT_R8G8B8A8_UNORM);
   void detectHdrDisplay();
+  // 方案②实翻点(§3.4.1): 渲染线程在 onTickWin 内(持 WindowRender::mtx)调用,
+  // 按 bHdrPending 重建 10bit/8bit 交换链并提交 bHdrActive
+  void applyPendingHdr();
   bool applyHdrSwapchainState();
   void updateHdrMetaData();
   void renderWindow();

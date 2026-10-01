@@ -131,9 +131,30 @@ Android 恒 VK 车道: EglVideoRender NV12→rgba8(EglVideoRender.cpp:435)+自�
 
 - **翻转时序差(风险等级: 中, 原稿「理论无害」定性已修正 2026-10-01)**: 交换链由 `setHdrPassthrough` 在**宿主线程**同步翻(Dx11Window.cpp:294), 输出纹理由 `bResetFlag` 在**渲染线程**消费后重建(VideoRender.hpp:46 契约), 二者**不同帧**——中间必然有过若干帧「交换链已 10bit+PQ、输出仍是 rgba8」或反向。此时 `Dx11Window` 的 blit 是**像素着色器纯采样直出、无任何色彩处理**(§3.2), 若输出是 tone map 结果(SDR 码)而交换链已挂 G2084, 就是把 SDR 码当 PQ 码呈现 → **这几帧必发灰/过曝**(与 §4.3 lane=1 误折 forceHDR 同一病根)。
   - 原稿「UNORM→UNORM 值域同 0-1, 只损位深不花屏」的论证**只在两端同为「PQ 码」或同为「SDR 码」时成立**; 值域不同(SDR 码 vs PQ 码)时位深论证失效。**位深与值域是两件事**。
-  - **必须定义同帧对齐手段**(择一, 实施时定): ①交换链翻转推迟到输出重建完成后(输出先重建并在下一帧 blit 时一并切换); ②过渡帧按 SDR 口径呈现(follow 兜底); ③翻转期间用中间格式(R10G10B10A2 双端, 只切 colorSpace)。**§八验收「播中开关 HDR / 跨屏 / 缩放往返不花屏」依赖本条的落地, 缺它则验收无设计支撑**。
+  - **同帧对齐手段已选型(用户拍板 2026-10-01): 方案②「过渡帧按 SDR 口径」+ 标志位驱动, 不数帧**。口径: 宿主下发翻转只**挂意愿**(不当场改交换链), 渲染线程在**持 `mtx` 的临界区内**先重建输出端、再翻交换链, 两端同一帧生效; 意愿与实态不一致的中间帧, 双端**天然都停在旧(SDR)口径** —— 不存在「一端已 PQ、一端仍 SDR 码」的错配窗口。用户附加约束: **过渡帧花一下可接受(人眼看不出 1~2 帧), 但绝不能 crash**(见下「竞态 A」)。候选①(交换链推迟到输出重建后) 与③(中间格式只切 colorSpace) 弃用: ①无法保证「输出重建完成」与「交换链翻转」落在同一帧的可见点上, ③需双端同时支持 10bit 中间格式而 Apple/VK 腿是 16F, 不成同构。
+  - **⚠️ 竞态 A(crash, 与花屏同级处理)**: `WindowRender::run()` **持 `mtx`** 跑 `window->tick()`→`onTickWin`(WindowRender.cpp:323), 其中 `DrawIndexed`+`swapChain->Present` 用的是 `renderView`/`backTex`/`sharedTexture`(Dx11Window.cpp:118-136); 而 `setHdrMode`→`setHdrPassthrough`→`initBuffers`(`renderView.Reset()`/`ResizeBuffers()`/`CreateRenderTargetView()`, Dx11Window.cpp:290/468-493) 在宿主线程执行且**不持 `mtx`** ⇒ 渲染线程可能正 `Present` 的当口被宿主线程拆掉交换链资源 = **释放后使用**。方案②的落点正是把这步挪进渲染线程的 `mtx` 临界区, **竞态 A 与花屏一并消除**。
+  - **`hdrPassthroughActive()` 的语义约束(实现要害)**: 方案②下翻转期间「意愿 ≠ 实态」, 本查询口**必须返回实态(旧值)**——若返回意愿位, `checkTargetPassthrough()` 会在**交换链尚未翻**时就置 `bResetFlag` 去重建输出端, 反而把两端重新拉开成错帧。三平台现口径(§4.1)正好都取实态, 实现时**勿改**。
 - **CPU 读回防护**: fetchFrame/mapStagingFrame 按输出纹理格式, 遇直通格式(rgba10/16F)拒绝并日志; 截图走 SDR 口径(临时 follow 抽帧), 防脏图。
 - **3s 自愈重发节流(da27cbf)必须保留**(宿主侧, §6.6)。
+
+#### 3.4.1 方案② 落地清单(逐平台, 2026-10-01 定; 范围=Win+Metal+EGL+VK 一起收)
+
+范围按 §4.2「三平台检查路径同源」的同一义务口径定: **四个后端一次收齐**, 不留 Win 私有机制。各腿翻转机制本就不同(见下表), 因此**共性只有两条**: ①意愿与实态分离 ②翻转实际动作落在「与输出重建同一临界区」内。**其余各自本地实现, 不强行统一代码**。
+
+| 腿 | 现状翻转点 | 现状线程安全 | 方案②落点 | 改动性质 |
+|---|---|---|---|---|
+| **Win** `Dx11Window` | `setHdrPassthrough`→`initBuffers(R10G10B10A2)` + `SetColorSpace1(G2084)`, **宿主线程同步** | ❌ **不持 `mtx`**(竞态 A) | `setHdrPassthrough` 改为只落原子意愿位(`bHdrPending`)并立即返回; 实翻移入 `onTickWin` **首段**(渲染线程持 `mtx`), 检 `bHdrPending != bHdrActive` 才 `initBuffers`+`applyHdrSwapchainState`+提交 `bHdrActive` | **结构调整**(唯一真正动的) |
+| **Metal** `MetalWindow`/`MetalRender` | `MetalWindow::setHdrPassthrough` **只写原子** `metalHdrPassthrough`; 实际层/管线翻转在 `MetalRender::vaildAndInitGraph:364-370`(`wantF16 != bF16Pipeline` → `applyLayerHdrConfig`+`releaseGraph`) | ✅ 已安全(原子写 + 渲染线程消费) | **已符合方案②, 零改动**; 仅在 `hdrPassthroughActive()` 处保留「意愿位即实态」的既有口径(金属腿无宿主侧同步资源可竞态) | 无需改(核对项) |
+| **EGL** `EglWindow`/`EglVideoRender` | `EglVideoRender::setHdrMode:289` **仅 `hdrMode = mode`**(纯数据); Android 腿**无 HDR 呈现面** | ✅ 无宿主侧资源翻转可竞态 | 无 HDR 直通可翻, **本批不改**; 但要满足 D2: 接 `checkTargetPassthrough()`(见 §4.2 落地清单), 令三平台检查路径同源 | 仅接检查点 |
+| **VK** `VkWindow` | `setHdrPassthrough:498-527` 在**同一调用内** `vkDestroyRenderPass`+`createRenderPass`+`reSwapChainBefore/After`, 置 `bHdrActive` | ⚠️ 与 `onTickWin` 的 `vkQueueSubmit/Present` 有 `lockCommand()` 互斥(仅护队列提交, **未护 renderPass/swapchain 重建**) | `setHdrPassthrough` 只落意愿位(`bHdrPassthrough`)返回; 实翻移入 `onTickWin`(`vkGetFenceStatus` 通过后、`vkAcquireNextImageKHR` 之前), 与 `lockCommand()` 同护 | **结构调整**(与 Win 同形) |
+
+**判据(与花屏同级, 必过)**:
+1. 播中开关 HDR / 跨屏拖动 / 窗口缩放往返 —— 全过程无 crash(重点验 Win, 竞态 A 唯一现场);
+2. 翻转过渡帧**不出现两端值域错配**(即不出现整屏发灰/过曝的稳定中间态; 1~2 帧闪动可接受);
+3. SDR 片零变化(翻转机制重构不得影响非 HDR 路径);
+4. VK 腿自窗直渲不变(翻转期间 `outputGpuData` 仍格式无关地 blit)。
+
+**回归面**: 改动集中在「翻转发生的线程/时机」, 不动格式协商与 shader 分支 ⇒ 单测(白盒)预期全绿; 真机项依赖 §八矩阵。
 
 ## 四、统一接口设计(所有平台同构)
 
@@ -361,14 +382,17 @@ mac 走链F 的收益本就不足——原生 EDR 腿已达标, 链F 在 mac 是
 - §4.3 `HdrMode::vkHDR(3)` + lane 分岔归一化(WindowRender.cpp:64-77) ✅
 - §6.1 Win 输出端 10bit 翻转 + `fetchFrame` 直通态拒绝(Dx11CSVideoRender.cpp:299/652/818) ✅
 - G4 `VkYUV2RGBALayer` 16F 条件化、G9 Win CPU 腿、G10 `VkPqUpsampleLayer` + `pqUpsample.comp` ✅
+- **D1 读回防护四腿齐**(2026-10-01 落): Win 既有 + `MetalRender::fetchFrame`(FP16 管线拒绝)/`EglVideoRender::fetchFrame`(直通拒绝)/`VkOutputLayer::fetchData`(FP16/10bit VkFormat 拒绝) ✅
+- **D2 统一检查点三腿同源**(2026-10-01 落): `VkVideoRender` / `Dx11CSVideoRender` 既有 + `MetalRender::vaildAndInitGraph`(改走 `checkTargetPassthrough`, 不再自读 `metalHdrPassthrough`)/`EglVideoRender::vaildAndInitGraph` 新接 ✅
+- **D3 同帧对齐方案②落码**(2026-10-01): 见 §3.4.1 ✅
 
 **未落地 — 代码缺口(可直接补, 归 R3 前后)**:
 
 | # | 缺口 | 现状证据 | 影响 | 建议批 |
 |---|---|---|---|---|
-| **D1** | **§3.4 CPU 读回防护只 Win 有, Metal/EGL/VK 三腿全缺** | `bTargetPassthrough` 守卫**只**在 `Dx11CSVideoRender::fetchFrame`(:818); `MetalRender::fetchFrame`(:611)、`EglVideoRender::fetchFrame`(:433)无条件读; `VkOutputLayer::fetchData`(:399)**只查 `resourceReady` 不查格式/直通**, 出图直接把 `inTexs[0]`(链F 下是 16F 线性)download 进调用方 rgba8 `patchFormat` 缓冲 → **脏图/越界写** | 直通态截图(=§八验收「直通态截图/缩略: 拒绝或走 SDR 口径」)在 Mac/Android/VK 腿无防护; 链F 截图必错 | R3(与统一检查点同批) |
-| **D2** | **§4.2 检查点只接了 VK 与 Win 两腿, Metal/EGL 未接** | `checkTargetPassthrough()` 调用点仅 `VkVideoRender.cpp:515`、`Dx11CSVideoRender.cpp:299`; `MetalRender::vaildAndInitGraph`(:354)仍走自有 `metalHdrPassthrough.load()` 路径(:364 `wantF16 != bF16Pipeline`), 未过基类检查点; EGL 完全没有 | 与 §4.2「三平台检查路径同源」目标未达成 → **R3 出口「三平台检查路径同源」未满足**; 当前 mac 因自有路径恰好等价而**行为正确**, 但两套机制并存是漂移源 | R3 |
-| **D3** | **§3.4 同帧对齐手段未选型未实现** | §3.4 明列「必须定义同帧对齐手段(择一, 实施时定)」,**三种方案都未落** —— 交换链在宿主线程翻(`Dx11Window.cpp:290 initBuffers`)、输出在渲染线程 `bResetFlag` 重建, 二者仍不同帧 | §八验收「播中开关/跨屏/缩放往返不花屏」**无设计支撑**, 真机大概率能看到过渡帧发灰/过曝 | R3(验收前必须定) |
+| **D1** | ~~§3.4 CPU 读回防护只 Win 有~~ **2026-10-01 已补三腿** | ~~`bTargetPassthrough` 守卫**只**在 `Dx11CSVideoRender::fetchFrame`(:818)~~ → 已补 `MetalRender::fetchFrame`(bF16Pipeline 拒绝)、`EglVideoRender::fetchFrame`(bTargetPassthrough 拒绝)、`VkOutputLayer::fetchData`(VkFormat FP16/A2B10G10R10 拒绝) | 链F/直通态截图三腿均已拒脏图 | R3 完成 |
+| **D2** | ~~§4.2 检查点只接 VK 与 Win 两腿~~ **2026-10-01 已接四腿** | ~~调用点仅 `VkVideoRender.cpp:515`、`Dx11CSVideoRender.cpp:299`~~ → 已接 `MetalRender::vaildAndInitGraph`(替换自有 `metalHdrPassthrough.load()` 判据)、`EglVideoRender::vaildAndInitGraph`(新增) | §4.2「三平台检查路径同源」达成 | R3 完成 |
+| **D3** | **§3.4 同帧对齐手段 —— 2026-10-01 已落码(Win/VK 结构调整, Metal 核对合规, EGL 接检查点)** | 落码前: 交换链在宿主线程翻(`Dx11Window.cpp:290 initBuffers`)、输出在渲染线程 `bResetFlag` 重建, 二者不同帧; **同处的竞态 A(crash)**: `run()` 持 `mtx` 跑 `onTickWin`(WindowRender.cpp:323)而 `setHdrPassthrough`/`initBuffers` 不持 `mtx` ⇒ 交换链资源可能被宿主线程在 `Present` 当口拆掉 | 选型=**方案②(过渡帧按 SDR 口径)+ 标志位驱动**, 逐平台落点见 **§3.4.1**。**已落**: `Dx11Window` 加 `bHdrPending`+`bufMtx`+`applyPendingHdr()`(实翻移入 `onTickWin`), `VkWindow` 同形(`applyPendingHdr` 在 `onTickWin` 的 `lockCommand` 临界区), `MetalRender` 接统一检查点, `EGL` 接检查点+读回闸。构建 0 error、单测 96/96×1210 全绿。**真机验收(§八矩阵)待跑** | R3 完成(编码)
 | **D4** | **R5 硬解状态上报未做** | §6.4 无任何实现; `engine_controller.dart:564` 注释自认「引擎交换链真切上与否待实态上报(R5), 当前按『下发成功』记」= 宿主侧徽章是猜的 | 徽章实态依赖项; 不影响画面, 但 R5 出口「硬解失败事件可上报可查」为 0 | R5 |
 | **D5** | **VK 出图交平台 GPU 资源的格式闸只放行 rgba8/bgra8, 未纳入 rgba16f**(2026-10-01 核码; **17:45 订正受限面**) | `VkOutputLayer::onCommand`(:184) `bool bCanMapGpu = outFormat.imageType==rgba8 \|\| ==bgra8;` —— 该闸是 **`setVulkan(false)` 时** VK 腿交平台 GPU 资源(Win NT 共享 / Android EGLImage / Apple IOSurface)的唯一入口(:186 起整段)。**但 panvox 走 `setVulkan(true)`→`VkWindow` 路线(原生窗直渲, `outputGpuData` 格式无关), 不经此闸 ⇒ panvox 不受影响**。第二层: `VkWinImage::bindD3D:58` 用 `getImageDXFormt`(无 16F 分支, 落 RGBA8) 定纹理格式 ⇒ 放开闸须同补三处映射 | 仅影响**仍以平台资源交帧**的消费者: `samples/vulkantest/dx11sharedtest|dx11windowtest`, Unity/Avalonia 类插件; 这些若在 lane=0 走 HDR(16F)出图 → 平台资源不更新(停帧/黑) | R2 补(低优先, 随平台资源消费者启用 HDR 时) |
 
@@ -392,7 +416,7 @@ mac 走链F 的收益本就不足——原生 EDR 腿已达标, 链F 在 mac 是
 - R2: Win 软解 HDR×HDR 屏 FP16 交换链高光顶出; 链F 硬解片高光顶出 + VK 图像处理/字幕可用
 - 回归: SDR 片零变化、播中开关/跨屏/缩放往返(**依赖 D3**)
 
-> **一句话结论**: 计划内 R1/R2 的**编码**已收口; 剩余是 **R3(统一检查收口: D1+D2+D3)** 与 **R5(D4)**, 外加 mac 链F/R4 两个非排期结构项。**D3(同帧对齐)是唯一挡在「不花屏」验收前的硬缺口**, 建议 R3 最先动它。
+> **一句话结论**: R1/R2/R3 的**编码已收口**(R3 = D1+D2+D3 本批落地); 剩余是 **R5(D4 上报)** 与**真机验收**, 外加 mac 链F/R4 两个非排期结构项。**D3(同帧对齐)已按方案②落码**(§3.4.1), 「播中开关/跨屏/缩放往返不花屏」首次有了设计支撑; 该矩阵**必须真机跑**(重点: Win 竞态 A 的 crash 现场)。
 
 ## 十一、沿革
 
@@ -413,3 +437,4 @@ mac 走链F 的收益本就不足——原生 EDR 腿已达标, 链F 在 mac 是
 - 2026-10-01(十一): **当前实现 vs 方案 差分入档**(核码, 未改实现): 新增 §十, 逐条核对 §六/§七 对码。结论: R1/R2 编码已收口; 剩余缺口 **D1 §3.4 读回防护只 Win 有(Metal/EGL/VK `fetchFrame`/`fetchData` 无守卫, 链F 截图必错)**、**D2 §4.2 检查点未接 Metal/EGL(R3「检查路径同源」出口未满足)**、**D3 §3.4 同帧对齐手段未选型(唯一挡「不花屏」验收的硬缺口, R3 需最先动)**、**D4 R5 上报未做**; mac 链F 通道不存在(=不排期), R4/iOS EDR/16F 域层=范围外或归批。
 
 - 2026-10-01(十二): **VK 腿两条问项核码**(核代码, 未改实现)——回答「VK 自身 CPU HDR 通道做了吗 / 对接各平台 SDR·PQ 是否分别出 RGBA8·RGBA16F」(§十 D5): ①**VK 自身 CPU(软解)帧 HDR 通道 = 已做**: `VideoRender::renderFrame(YUVFrame)` 置 `cpuIn=true` → `VkVideoRender::renderCpuFrame` → `inputLayer->inputCpuData(frame,false)` → `yuv2RGBA`(10bit 时 `hdrMode==forceHDR` 选 `yuv2rgbaHDR.comp` + 输出 16F, G4 后条件化正确) → 16F 域合成 → VK FP16 交换链。即链B 的 lane=0 支路完整。②**「对接各平台」语义要看出图支路, 而支路由 `WindowRender::setVulkan` 选窗类型决定**: `setVulkan(true)` 得 **VkWindow(VK 原生窗, 自有交换链)**——出图走 `outputGpuData`(:292, `blitFillImage` **格式无关**, rgba8/16F 都成立); `setVulkan(false)` 得平台原生窗——VK 腿交平台 GPU 资源才走 `onCommand`(:184)的**格式闸 `bCanMapGpu`(只放行 rgba8/bgra8)**, HDR 出 rgba16f 被判 false, 整段 interop 跳过。③**panvox 走前者, 不受此影响**: `pvx_player_create` 调 `setVulkan(lane!=1)`+`setSurface(宿主视频窗)`(「原生窗口直渲唯一车道」), lane=0 即 VkWindow 直渲; `enableVkOutputDx11` 支路已死(`PassthroughSig::wanted` 无人置 true)。受限面 = 仍用 `setVulkan(false)` 的平台资源消费者(Unity/Avalonia/vulkantest 样例)。④**SDR(→rgba8)全路径正常**。⇒ **结论: VK 腿的「SDR→平台资源」正常; 「HDR(PQ)→平台资源」在 `setVulkan(false)` 交平台资源的路径上因 D5 断链**(panvox 不受影响, 它走 `setVulkan(true)`→VkWindow 原生窗直渲)。**勘误(同日 17:40/17:45)**: ①17:40 宿主传输细节订正——已由老式 `external_texture_d3d` 镜像 blit 改为 **Flutter GPU surface + DXGI 共享句柄**; ②**17:45 路径归属订正(用户指出 avox 有原生窗/VK 窗两种, `setVulkan` 即选 VK 原生窗)**——panvox 现行 `pvx_player_create` 调 `setVulkan(lane!=1)` + `setSurface(宿主视频窗)`, lane=0 得 **VkWindow**, 走 `outputGpuData`(格式无关), **D5 在 panvox 不成立**; 此前两版「panvox 必现」判断作废。`enableVkOutputDx11` 那条(`PassthroughSig::wanted` 无人置 true)已是死支路。
+- 2026-10-01(十三): **R3 编码收口: D3 方案②选型落地(四腿) + D1 读回防护 + D2 检查点同源**(实施, 用户定稿「可以让2来做…有一二帧显示花一下没啥…但是不能crash」, 落地范围「Win + Metal/EGL/VK 一起收」, 过渡判定「标志位驱动, 不数帧」): ①**D3 §3.4 同帧对齐 = 方案②**(意愿/实态分离, 翻转实际动作挪到与输出重建同一临界区、由渲染线程执行) 四平台落地清单见新增 **§3.4.1**; 候选①/③弃用理由及 **竞态 A** + `hdrPassthroughActive()` 必须返实态 两条要害注记一并入 §3.4。②**Win `Dx11Window`**: 新增 `bufMtx`+`bHdrPending`; `setHdrPassthrough` 改为「能力检查+挂意愿」(不再当场 `initBuffers`, 消除竞态 A 的 use-after-free 根因); 渲染线程 `onTickWin` 首段(已持 `mtx`)调 `applyPendingHdr()`——`initBuffers`(10bit/rgba8)+`bHdrActive` 更新 + `applyHdrSwapchainState()` 失败回滚, 与 `Present` 同临界区; `onChangeSize` 加锁并改判 `bHdrActive||bHdrPending`。③**`VkWindow`**: 同款意愿位 `bHdrPassthrough` + `applyPendingHdr()` 插在 `onTickWin` 的 `vkResetFences` 后/`vkAcquireNextImageKHR` 前, `pickFormat()` 实际格式未变则还原早退, 变则 `lockCommand()` 内 `vkDestroyRenderPass→createRenderPass→reSwapChainBefore→reSwapChainAfter`(与 HEAD 逐字同序)+`unLockCommand()`, 完置 `bHdrActive`。④**`MetalRender`**: 零结构改动(意愿为 atomic、翻转已在渲染线程 `vaildAndInitGraph`), 仅接 D2 检查点。⑤**`EglVideoRender`**: 无 HDR 呈现面(实态恒 false), 仅接 D2 检查点。⑥**D1 §3.4 读回防护四腿齐**: `MetalRender::fetchFrame` / `EglVideoRender::fetchFrame` / `VkOutputLayer::fetchData` 各加直通态拒绝(用 `VkFormat` 判定 16F/10bit, 非 `ImageType`——`VkTexture` 无该字段), 未报错日志英文。⑦**D2 §4.2 检查点四腿同源**: `MetalRender::vaildAndInitGraph` 自读判据改 `checkTargetPassthrough()`、`EglVideoRender::vaildAndInitGraph`(`__ANDROID__` 首段)新增 `checkTargetPassthrough()`→`bResetFlag`。⑧构建 `avox` 目标 0 错误; 单测 **96/96·1210 断言全绿**; `doc_check.py --strict` warnings 0 / errors 0。⇒ **R1/R2/R3 编码已收口, 剩 R5(R5=D4 上报)+真机验收**。

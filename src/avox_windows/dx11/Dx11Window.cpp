@@ -64,9 +64,14 @@ void Dx11Window::onChangeSize() {
   // 避免重新创建设备导致 "Only one flip model swap chain can be associate with
   // an HWND" 错误
   if (bInitDevice && swapChain) {
-    // 直通态必须保住 10bit: 无参 initBuffers 会把交换链降回 8bit
-    initBuffers(bHdrActive ? DXGI_FORMAT_R10G10B10A2_UNORM
-                           : DXGI_FORMAT_R8G8B8A8_UNORM);
+    // 方案②(§3.4.1): 本调用来自 onPreTick/updateSize(渲染线程持 mtx), 但
+    // setHdrPassthrough 侧也会摸 bHdrPending, 统一走 bufMtx 护住
+    std::lock_guard<std::mutex> lck(bufMtx);
+    // 直通态必须保住 10bit: 无参 initBuffers 会把交换链降回 8bit。
+    // 用「意愿或实态」任一为真判直通, 否则翻转窗口内的 resize 会把待翻态打回 8bit
+    const bool bHdr = bHdrActive || bHdrPending;
+    initBuffers(bHdr ? DXGI_FORMAT_R10G10B10A2_UNORM
+                     : DXGI_FORMAT_R8G8B8A8_UNORM);
     applyHdrSwapchainState();  // ResizeBuffers 会重置色彩空间, 直通态必须重挂
   } else {
     // 首次初始化设备
@@ -96,6 +101,10 @@ void Dx11Window::onTickWin() {
     LOGFLF(LogLevel::warn, "dx11 device not init");
     return;
   }
+  // 方案②(§3.4.1): 交换链翻转落在此处 —— 本函数由 WindowRender::run() 持 mtx
+  // 调用(WindowRender.cpp:323), 与 Present 同一临界区, 消除宿主线程拆交换链的
+  // 竞态 A。翻转窗口内双端都停旧口径 = 过渡帧不出值域错配
+  applyPendingHdr();
   // 初始化 shader
   if (!bInitShader) {
     initShader();
@@ -268,16 +277,21 @@ void Dx11Window::detectHdrDisplay() {
 }
 
 // forceHDR 时把交换链切 10bit+PQ 色彩空间, 内容原样上屏;
-// SDR 显示器恒 no-op(返回 false), 行为零变化
+// SDR 显示器恒 no-op(返回 false), 行为零变化。
+// 方案②(§3.4.1): 本函数只在宿主线程做「能力检查 + 挂意愿」, 不当场改交换链 ——
+// 实翻由渲染线程在 onTickWin 的 mtx 临界区内经 applyPendingHdr() 完成
 bool Dx11Window::setHdrPassthrough(bool bPassthrough) {
   if (!swapChain || !bInitDevice) {
     return false;
   }
-  if (bHdrActive == bPassthrough) {
-    if (bPassthrough) {
-      applyHdrSwapchainState();  // 重入兜底: 重建路径可能已重置色彩空间
+  {
+    std::lock_guard<std::mutex> lck(bufMtx);
+    if (bHdrActive == bPassthrough && bHdrPending == bPassthrough) {
+      if (bPassthrough) {
+        applyHdrSwapchainState();  // 重入兜底: 重建路径可能已重置色彩空间
+      }
+      return true;
     }
-    return true;
   }
   if (!bPassthrough && !bHdrDisplay) {
     return true;  // SDR 链本来就是非直通状态
@@ -286,20 +300,41 @@ bool Dx11Window::setHdrPassthrough(bool bPassthrough) {
     LOGFLF(LogLevel::info, "hdr passthrough ignored, display not hdr capable");
     return false;
   }
-  // PQ 直通需要 10bit 交换链; 切回时恢复 8bit
-  initBuffers(bPassthrough ? DXGI_FORMAT_R10G10B10A2_UNORM
-                           : DXGI_FORMAT_R8G8B8A8_UNORM);
-  bHdrActive = bPassthrough;
+  // 只挂意愿: 实际切 10bit 交换链 + SetColorSpace1 由渲染线程执行(见 applyPendingHdr)
+  bool bActive = false;
+  {
+    std::lock_guard<std::mutex> lck(bufMtx);
+    bHdrPending = bPassthrough;
+    bActive = bHdrActive;
+  }
+  LOGFLF(LogLevel::info, "hdr passthrough requested, active:", bActive ? 1 : 0,
+         " pending:", bPassthrough ? 1 : 0);
+  return true;
+}
+
+// 方案②实翻点: 由渲染线程在 onTickWin 内(持 WindowRender::mtx)调用。
+// PQ 直通需 10bit 交换链; 切回恢复 8bit。改完提交 bHdrActive, 令
+// hdrPassthroughActive() 与输出端检查点(checkTargetPassthrough)在同一帧看到新值
+void Dx11Window::applyPendingHdr() {
+  bool want = false;
+  {
+    std::lock_guard<std::mutex> lck(bufMtx);
+    want = bHdrPending;
+  }
+  if (want == bHdrActive) {
+    return;
+  }
+  initBuffers(want ? DXGI_FORMAT_R10G10B10A2_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM);
+  bHdrActive = want;
   if (!applyHdrSwapchainState()) {
-    if (bPassthrough) {
+    if (want) {
       bHdrActive = false;
       initBuffers();  // 回退 SDR 链
       applyHdrSwapchainState();
     }
-    return false;
+    return;
   }
-  LOGFLF(LogLevel::info, "hdr passthrough swapchain:", bPassthrough);
-  return true;
+  LOGFLF(LogLevel::info, "hdr passthrough swapchain:", want ? 1 : 0);
 }
 
 // 重挂交换链色彩空间: ResizeBuffers/重建会把它重置回默认, PQ 码被当 sRGB

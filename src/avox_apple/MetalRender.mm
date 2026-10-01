@@ -360,7 +360,11 @@ bool MetalRender::vaildAndInitGraph() {
     releaseGraph();
   }
   // 建不建由 pipelineState/cacheTexture 是否为空驱动, 不依赖本标志
-  // 直通态翻转: 层与管线同帧切格式(RGBA8Unorm <-> RGBA16Float+PQ), 重建对齐
+  // 直通态翻转: 层与管线同帧切格式(RGBA8Unorm <-> RGBA16Float+PQ), 重建对齐。
+  // 统一检查点(§4.2): 与 VK/Win/EGL 同走 checkTargetPassthrough(), 不再自读
+  // metalHdrPassthrough —— 三平台检查路径同源, 消除两套机制并存的漂移源。
+  // (Metal 腿的翻转本是原子的, 此处只为口径统一; 实态查询口见 MetalWindow)
+  checkTargetPassthrough();
   const bool wantF16 = metalHdrPassthrough.load();
   if (wantF16 != bF16Pipeline) {
     LOGFLF(LogLevel::info, "hdr pipeline flip f16:", wantF16 ? 1 : 0);
@@ -609,6 +613,13 @@ bool MetalRender::getCpuFrameBuffer(IImageBuffer **buffer, YuvType &yuvType,
 }
 
 bool MetalRender::fetchFrame(ImageBuffer *imageBuffer) {
+  // §3.4 CPU 读回防护: 直通态呈现面是 16F 线性域(RGBA16Float+PQ), 回读出来
+  // 不是 SDR 口径 —— 与 Dx11CSVideoRender::fetchFrame 同口径拒绝并提示,
+  // 防 16F 线性被当 rgba8 写进调用方缓冲(脏图/越界)
+  if (bF16Pipeline) {
+    LOGFLF(LogLevel::warn, "fetchFrame refused in hdr passthrough (16f linear)");
+    return false;
+  }
   // 有 layer 时读上一帧画过的 drawable 纹理: 这里再 nextDrawable 拿到的是一张
   // 全新未绘制的 drawable(抓出来是清屏色), 而且取了不 present 会占空池子
   id<MTLTexture> targetTexture = metalLayer ? lastTargetTexture : outputTexture;

@@ -192,6 +192,9 @@ void VkWindow::onTickWin() {
   }
 
   vkResetFences(vkDevice, 1, &addCmdFences[currentFrame]);
+  // 方案②(§3.4.1): 呈现面翻转落在此处 —— 与下面的 acquire/submit/present 同一
+  // 临界区(且 GPU fence 已确保上一帧完成), 双端同帧切, 过渡帧不出值域错配
+  applyPendingHdr();
   vkAcquireNextImageKHR(vkDevice, swapChain, UINT64_MAX,
                         presentCompletes[currentFrame], VK_NULL_HANDLE,
                         &currentImage);
@@ -494,34 +497,61 @@ void VkWindow::pickFormat() {
 }
 
 // forceHDR: 交换链切 FP16 + EXTENDED_SRGB_LINEAR(扩展线性, 1.0=SDR 白);
-// 格式不可得(SDR 屏/系统 HDR 关)恒 no-op 返回 false; 关向主动重建回落 8bit
+// 格式不可得(SDR 屏/系统 HDR 关)恒 no-op 返回 false; 关向主动重建回落 8bit。
+// 方案②(§3.4.1): 本函数只做「选型可用性检查 + 挂意愿」, 不当场重建 swapchain ——
+// 重建涉及 renderPass/framebuffer/image view 全套, 与 onTickWin 的提交同属 GPU 资源,
+// 实翻统一放到 onTickWin 的显式临界区内(见 applyPendingHdr)
 bool VkWindow::setHdrPassthrough(bool bPassthrough) {
   if (!swapChain) {
     return false;
   }
-  if (bHdrActive == bPassthrough) {
+  if (bHdrActive == bPassthrough && bHdrPassthrough == bPassthrough) {
     return true;
   }
+  // 先按意愿探一次格式可得性(不改 format 之外的 GPU 资源)
   bHdrPassthrough = bPassthrough;
   VkSurfaceFormatKHR old = format;
   pickFormat();
   const bool hdrNow = format.format == VK_FORMAT_R16G16B16A16_SFLOAT;
   if (hdrNow != bPassthrough) {
     format = old;
+    bHdrPassthrough = bHdrActive;  // 还原意愿, 与实态保持一致
     LOGFLF(LogLevel::info, "hdr passthrough ignored, hdr format unavailable:",
            bPassthrough);
     return false;
   }
-  if (old.format != format.format || old.colorSpace != format.colorSpace) {
-    // renderpass 挂着旧格式, 换面必须跟着重建(视频路径是 compute+copy, 保持一致)
-    vkDestroyRenderPass(vkDevice, renderPass, nullptr);
-    createRenderPass();
-    reSwapChainBefore();
-    reSwapChainAfter();
-    LOGFLF(LogLevel::info, "hdr passthrough swapchain:", bPassthrough);
-  }
-  bHdrActive = bPassthrough;
+  LOGFLF(LogLevel::info, "hdr passthrough requested, active:", bHdrActive ? 1 : 0,
+         " pending:", bPassthrough ? 1 : 0);
   return true;
+}
+
+// 方案②实翻点: 由渲染线程在 onTickWin 内调用(vkGetFenceStatus 通过后、
+// vkAcquireNextImageKHR 之前), 重建 renderPass + swapchain 并提交 bHdrActive。
+// 与提交同护: 进出 lockCommand, 与 vkQueueSubmit/Present 串行
+void VkWindow::applyPendingHdr() {
+  // 「意愿位」即重建目标: setHdrPassthrough 已按意愿探过格式, 不一致只可能是
+  // 上一次被拒时还原过。此处以 bHdrPassthrough(意愿) 为目标重挑一次
+  if (bHdrPassthrough == bHdrActive) {
+    return;
+  }
+  VkSurfaceFormatKHR old = format;
+  pickFormat();
+  const bool hdrNow = format.format == VK_FORMAT_R16G16B16A16_SFLOAT;
+  if (hdrNow == bHdrActive) {
+    // 格式实际没变(选型本次不可得): 还原 format 与意愿, 不重建
+    format = old;
+    bHdrPassthrough = bHdrActive;
+    return;
+  }
+  lockCommand();
+  // renderpass 挂着旧格式, 换面必须跟着重建(视频路径是 compute+copy, 保持一致)
+  vkDestroyRenderPass(vkDevice, renderPass, nullptr);
+  createRenderPass();
+  reSwapChainBefore();
+  reSwapChainAfter();
+  unLockCommand();
+  bHdrActive = hdrNow;
+  LOGFLF(LogLevel::info, "hdr passthrough swapchain:", hdrNow ? 1 : 0);
 }
 
 void VkWindow::createSwipChain() {
