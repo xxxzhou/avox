@@ -643,13 +643,19 @@ void Dx11CSVideoRender::createProgram() {
   // outTexture->initResource(device);
   outSharedTex = std::make_unique<Dx11SharedTex>();
   outTexture = outSharedTex->getDx11Texture();
-  // 输出格式跟呈现面直通实态走(§6.1): 直通=R10G10B10A2(PQ 码原样写),
-  // 否则=R8G8B8A8。两端必须同翻, 错配即发灰(SDR 码当 PQ 码上屏)
-  DXGI_FORMAT outFormat = bTargetPassthrough ? DXGI_FORMAT_R10G10B10A2_UNORM
-                                             : DXGI_FORMAT_R8G8B8A8_UNORM;
+  // 输出格式按两轴定(§6.1 R2 修订):
+  // ① 输出去向: 给 VK(链F/lane=0)恒 rgba8 —— VkInputLayer 对接面全平台统一,
+  //    不给别平台加 rgba10 特例;
+  // ② 直呈原生窗口(链A/lane=1)跟呈现面直通实态: 直通=R10G10B10A2(PQ 码原样写),
+  //    否则=R8G8B8A8。两端必须同翻, 错配即发灰(SDR 码当 PQ 码上屏)
+  DXGI_FORMAT outFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+  if (!bVkOutput && bTargetPassthrough) {
+    outFormat = DXGI_FORMAT_R10G10B10A2_UNORM;
+  }
   outTexture->setTextureSize(imageWidth, imageHeight, outFormat);
-  LOGFLF(LogLevel::info, "cs output format, passthrough:",
-         bTargetPassthrough ? 1 : 0, " dxgi:", (int32_t)outFormat);
+  LOGFLF(LogLevel::info, "cs output format, vkOut:", bVkOutput ? 1 : 0,
+         " passthrough:", bTargetPassthrough ? 1 : 0, " dxgi:",
+         (int32_t)outFormat);
   outSharedTex->initTexture(device);
   // 创建输入复制纹理
   // CPU 帧腿(G9): inTexture 与 y/uv SRV 已由 initGraphCpu 按 DYNAMIC 上传

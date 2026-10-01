@@ -64,8 +64,12 @@ struct ColorSpaceDesc {
 
 // HDR 输出模式(ISurfaceRender::setHdrMode): 声明序即 ColorYuvUBO.hdrMode 的 int 值
 // follow=按流与元数据自动(HDR 进 tone map 出 SDR); forceSDR=恒 tone map;
-// forceHDR=跳过 tone map 直通(PQ 编码值原样落帧, 需 HDR 显示链支持, SDR 表面过曝)
-enum class HdrMode { follow = 0, forceSDR = 1, forceHDR = 2 };
+// forceHDR=跳过 tone map 直通(PQ 编码值原样落帧, 需 HDR 显示链支持, SDR 表面过曝);
+// vkHDR=「转 VK 的 HDR 处理」宿主意图值(链F)——引擎入口按车道归一化:
+// lane=0(VK 腿) 折 forceHDR 行为(直通命令+PQ 码直出+VK 升样层);
+// lane=1(原生腿) 折 follow 走 SDR 呈现并告警(原生无 VK 处理链, 误开直通会把
+// SDR 载荷当 PQ 码上 G2084 面 = 发灰)。UBO/shader 协议仍只见 2, 不进 UBO
+enum class HdrMode { follow = 0, forceSDR = 1, forceHDR = 2, vkHDR = 3 };
 
 // HDR 静态元数据(ST2086/CTA-861.3): 解码器从 side data 解出, 无标记全零不生效
 struct HdrMeta {

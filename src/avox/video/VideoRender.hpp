@@ -92,6 +92,11 @@ class AVOX_EXPORT VideoRender : public OptionLink {
   // 呈现面直通实态缓存: 每帧比对 hdrPassthroughActive(), 不一致即置
   // bResetFlag 触发输出端重建(§4.2 统一检查点)。仅渲染线程读写
   bool bTargetPassthrough = false;
+  // 本帧输出去向(链F 路由): true=经 VK 合成再呈现(lane=0), false=原生窗口直呈。
+  // 由 WindowRender 随 setVulkan 同步。输出格式据此分岔(Win): 给 VK 恒 rgba8
+  // (VkInputLayer 对接面全平台统一), 给原生窗口跟直通实态(rgba10/rgba8)——
+  // 同一 outSharedTex 只能一种格式, 两条路天然互斥(WindowRender 里 !bVulkan vs bVulkan)
+  bool bVkOutput = false;
 
  public:
   RenderType getRenderType() { return renderType; }
@@ -106,6 +111,14 @@ class AVOX_EXPORT VideoRender : public OptionLink {
   bool bImageOut() { return bEnableImage; }
   // 是否支持CPU输出
   bool bCpuOut() { return bOutCpuYuv; }
+  // 本帧输出去向(lane=0 经 VK 合成 vs 原生窗口直呈), WindowRender 随 setVulkan 同步;
+  // 派生输出格式据此分岔(见 bVkOutput 注释)
+  void setVkOutput(bool bVk) {
+    if (bVkOutput != bVk) {
+      bVkOutput = bVk;
+      bResetFlag = true;
+    }
+  }
   // 当前输入是否为CPU帧(软解/软编透传),供外层判交付格式
   bool bCpuInput() { return cpuIn; }
   // 颜色空间与HDR参数: vk lane 进 UBO, dx11 lane 进 CS 常量

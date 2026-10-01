@@ -37,6 +37,10 @@ SurfaceRenderNative::SurfaceRenderNative() {
     if (!pVideoRender) {
       LOGFLF(LogLevel::warn,
              "no initFunc for rtype:", getVRenderTypeStr(rtype));
+    } else {
+      // 初值同步: bVulkan 缺省 true(VK 腿), 原生渲染器的输出去向要跟它一致,
+      // 否则首帧会按"直呈窗口"选错输出格式(两侧后续都会因不一致置 bResetFlag)
+      pVideoRender->setVkOutput(bVulkan);
     }
   }
 }
@@ -64,6 +68,11 @@ void SurfaceRenderNative::setVulkan(bool bVulkan_) {
   if (bVulkan != bVulkan_) {
     bVulkan = bVulkan_;
     LOGFLF(LogLevel::info, "change use vulkan:", bVulkan);
+  }
+  // 输出去向同步给原生渲染器: lane=0 时它的输出经 VK 合成(链F 对接面恒 rgba8),
+  // lane=1 时直呈原生窗口(格式跟直通实态)。据此分岔输出纹理格式(§6.1)
+  if (pVideoRender) {
+    pVideoRender->setVkOutput(bVulkan);
   }
 }
 

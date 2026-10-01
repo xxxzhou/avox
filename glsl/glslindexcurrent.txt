@@ -9,3 +9,4 @@ yuv2rgbaV5.comp
 canvasBlend.comp
 vrProject.comp
 yuv2rgbaHDR.comp
+pqUpsample.comp

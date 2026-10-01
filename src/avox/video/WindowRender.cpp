@@ -61,12 +61,26 @@ void WindowRender::setVulkan(bool bVulkan_) {
 }
 
 void WindowRender::setHdrMode(HdrMode mode) {
+  // vkHDR(链F 意图值)按车道归一化, 不能一律折 forceHDR(§4.3):
+  // lane=0(VK 腿) 折 forceHDR —— 与 forceHDR 在 VK 腿既有行为一致, 正是链F 要的;
+  // lane=1(原生腿) 折 follow —— 宿主意图是「交给 VK 做图像处理」, 原生腿无 VK 处理链,
+  // 若按 forceHDR 执行会误开原生直通交换链(Dx11Window.cpp:294)并把 SDR 载荷当 PQ 码
+  // 送上 G2084 面 = 直接发灰。属宿主路由错误, 降回 follow 走 SDR 呈现并告警
+  HdrMode applied = mode;
+  if (mode == HdrMode::vkHDR) {
+    if (bVulkan) {
+      applied = HdrMode::forceHDR;
+    } else {
+      applied = HdrMode::follow;
+      LOGFLF(LogLevel::warn,
+             "vkHDR on native lane(no VK process chain), downgrade follow");
+    }
+  }
   // 直通先于 shader 模式: 呈现面切不上(屏/格式不可得)时降级 follow,
   // 防 shader 跳过 tone map 落在 SDR 表面(过曝)。SDR 显示器 no-op
-  HdrMode applied = mode;
   if (window) {
-    const bool ok = window->setHdrPassthrough(mode == HdrMode::forceHDR);
-    if (!ok && mode == HdrMode::forceHDR) {
+    const bool ok = window->setHdrPassthrough(applied == HdrMode::forceHDR);
+    if (!ok && applied == HdrMode::forceHDR) {
       applied = HdrMode::follow;
       LOGFLF(LogLevel::warn, "hdr passthrough refused, downgrade follow");
     }

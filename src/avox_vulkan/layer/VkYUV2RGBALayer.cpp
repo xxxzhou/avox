@@ -99,9 +99,9 @@ void VkYUV2RGBALayer::onInitLayer() {
   }
   if (yuvType == YuvType::yuv420P10 || yuvType == YuvType::p010) {
     if (hdrMode == HdrMode::forceHDR) {
-      // 直通变体(vk-hdr-lane.md V1): rgba16f 输出扩展线性域(1.0=SDR 白)
+      // 直通变体(vk-hdr-lane.md V1): 输出扩展线性域(1.0=SDR 白)。
+      // 输出格式不在此设 —— 下面的共用归一化段会盖回 rgba8(G4), 改在段末收口
       path = "glsl/yuv2rgbaHDR.comp.spv";
-      outFormats[0].imageType = ImageType::rgba16f;
     } else {
       // V5 通吃 10bit(含 p010 上传归一化): transfer 为运行时 UBO 分支, SDR 直通零改动
       path = "glsl/yuv2rgbaV5.comp.spv";
@@ -150,6 +150,13 @@ void VkYUV2RGBALayer::onInitLayer() {
     outFormats[0].width = inFormats[0].width * 2 / 5;
     sizeX = divUp(outFormats[0].width, 2 * groupX);
     sizeY = divUp(outFormats[0].height, groupY);
+  }
+  // 直通变体输出格式收口(G4): 上面共用归一化段会按输入类型把 outFormats[0]
+  // 重置成 rgba8, 故 16F 覆盖必须放在它之后 —— 否则 yuv2rgbaHDR 写出的 >1 线性
+  // 值进 8bit 纹理被钳 1.0, 高光全丢。仅 HDR 变体(10bit + forceHDR)需要
+  if ((paramet == YuvType::yuv420P10 || paramet == YuvType::p010) &&
+      hdrMode == HdrMode::forceHDR) {
+    outFormats[0].imageType = ImageType::rgba16f;
   }
   // 填 UBO 头字段 + 矩阵(随 cs)
   uboData.width = outFormats[0].width;

@@ -11,6 +11,7 @@
 #include "../layer/VkInputLayer.hpp"
 #include "../layer/VkOutputLayer.hpp"
 #include "../layer/VkPipeGraph.hpp"
+#include "../layer/VkPqUpsampleLayer.hpp"
 #include "../layer/VkRGBA2YUVLayer.hpp"
 #include "../layer/VkResizeLayer.hpp"
 #include "../layer/VkVrLayer.hpp"
@@ -109,6 +110,11 @@ class VkVideoRender : public VideoRender, public IVOutputLayerOb {
   HdrMode hdrMode = HdrMode::follow;
   // 拓扑建成时的模式(直通过界未对齐→置 bResetFlag 重建, hdr-chain-plan V1)
   HdrMode hdrTopologyMode = HdrMode::follow;
+  // 链F 升样层(G10): 输入是平台渲染器 forceHDR 分支原样写下的 rgba8 PQ 码
+  // (硬解 HDR 帧经 VkInputLayer 导入), 在此做 PQ EOTF -> 16F 线性。
+  // 拓扑建成条件见 vaildAndInitGraph: forceHDR 行为态 + 非 CPU YUV 输入(即
+  // GPU 导入的 RGBA 载荷), 二者同时满足才接; 一旦接入即替换 yuv2RGBA 的位置。
+  VKTNodePtr<VkPqUpsampleLayer> pqUpsampleLayer = nullptr;
   // DV RPU 整形数据, 重建尾重放到新 yuv2RGBA 节点
   DoviMeta doviMeta = {};
 

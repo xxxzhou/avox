@@ -1,0 +1,41 @@
+#version 450
+
+// 链F 升样层(§6.3 G10): rgba8 PQ 码 -> rgba16f 扩展线性域。
+// 硬解 HDR 片经平台渲染器 forceHDR 分支原样写下 PQ 码(不做 tone map), 以 rgba8
+// 字节流经 VkInputLayer 导入; 本层做 PQ EOTF 解码回到线性光, 使 VK 合成/字幕/
+// 图像处理在全链 16F 线性域进行, 最终交 FP16 交换链呈现。
+// 归一化与 yuv2rgbaHDR.comp 的 forceHDR 段完全同源(1.0 = SDR 白 80nit),
+// 否则同屏两路(VK 软解直通 vs 链F)域不一致会亮度错位。
+// 输入恒 rgba8(全平台统一, 不给别平台加 rgba10 特例); 颜色空间 BT.2020 PQ 直通。
+
+layout (local_size_x = 16, local_size_y = 16) in;
+// 输入: PQ 编码值 RGBA8(PQ 码值全在 0-1, 保住完整动态范围, 只损梯度精度)
+layout (binding = 0, rgba8) uniform readonly image2D inTex;
+// 输出: 扩展线性域, 1.0 = SDR 白 80nit, 值可 >1 由 EXTENDED_SRGB_LINEAR 交换链出光
+layout (binding = 1, rgba16f) uniform image2D outTex;
+
+// PQ EOTF (SMPTE ST2084): 编码值 -> 线性光, 1.0 = 10000 nits
+// (与 yuv2rgbaHDR.comp 同源, 勿单侧改动)
+vec3 pqToLinear(vec3 n) {
+	const float m1 = 0.1593017578125;
+	const float m2 = 78.84375;
+	const float c1 = 0.8359375;
+	const float c2 = 18.8515625;
+	const float c3 = 18.6875;
+	vec3 p = pow(clamp(n, vec3(0.0), vec3(1.0)), vec3(1.0 / m2));
+	vec3 num = max(p - c1, vec3(0.0));
+	return pow(num / (c2 - c3 * p), vec3(1.0 / m1));
+}
+
+void main() {
+	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+	ivec2 size = imageSize(outTex);
+	if (uv.x >= size.x || uv.y >= size.y) {
+		return;
+	}
+	vec4 src = imageLoad(inTex, uv);
+	// PQ 码 -> 线性光(10000nit 归一) -> 80nit 归一(与 VK 直通链一致, *125.0)
+	vec3 lin = pqToLinear(src.rgb) * 125.0;
+	// alpha 原样透传(合成用; 输入是不透明视频帧, 恒 1)
+	imageStore(outTex, uv, vec4(lin, src.a));
+}

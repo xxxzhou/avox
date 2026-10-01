@@ -540,6 +540,17 @@ bool VkVideoRender::vaildAndInitGraph() {
     yuv2RGBA->get()->setDoviMeta(doviMeta);
   }
   hdrTopologyMode = hdrMode;
+  // 链F 升样层(G10): 硬解 HDR 帧经平台渲染器 forceHDR 分支原样写下 PQ 码
+  // rgba8, 经 VkInputLayer 导入。此处做 PQ EOTF→16F 线性, 使下游(合成/字幕/
+  // 图像处理)在扩展线性域进行, 末端交 FP16 交换链 HDR 呈现。
+  // 拓扑条件 = forceHDR 行为态 + 非 CPU-YUV 输入(cpuIn 的软解 YUV 走 yuv2RGBA
+  // 的 HDR 变体, 不重复升样; IImageBuffer 的 CPU RGBA 是 SDR 内容, 不升样)。
+  const bool bChainF =
+      hdrMode == HdrMode::forceHDR && !cpuIn && !bRgbaInput;
+  if (bChainF) {
+    pqUpsampleLayer = graph->addNode<VkPqUpsampleLayer>();
+    LOGFLF(LogLevel::info, "chain-F pq upsample layer enabled (rgba8 PQ -> 16F)");
+  }
   outputLayer = graph->addNode<VkOutputLayer>();
   // HDR 直通(vk-hdr-lane.md V1): 裁全部可选画质/OSD/字幕/录制支路, 链最小化
   // ——16f 线性域与 rgba8 gamma 域层互斥(格式+语义双错); 成员态保留,
@@ -643,6 +654,10 @@ bool VkVideoRender::vaildAndInitGraph() {
     outNode = inputLayer->addLine(yuv2RGBA);
   } else {
     outNode = inputLayer;
+  }
+  // 链F: 导入的 rgba8 PQ 码先升样到 16F 线性, 之后所有层(含输出端)即在线性域
+  if (bChainF) {
+    outNode = outNode->addLine(pqUpsampleLayer);
   }
   if (bEnableVr && !bPt) {
     // VR投影自带视口尺寸, 替代 resize; 后续画质层作用于透视后的视口图
