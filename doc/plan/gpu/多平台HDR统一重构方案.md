@@ -125,7 +125,7 @@ Android 恒 VK 车道: EglVideoRender NV12→rgba8(EglVideoRender.cpp:435)+自�
   - 实现要点: VK 呈现域恒 FP16 扩展线性(HDR10 色空间被禁, §3.1), 升样=显式 PQ EOTF(与 yuv2rgbaHDR.comp 的 EOTF 段同源); 链A 的「升样」由交换链 G2084 免费完成, VK 无 HDR10 色空间必须显式做;
   - **模式映射(v2 修订 2026-10-01: 加意图值 `vkHDR = 3`)**: 链A 用 `forceHDR`(原生直通), 链F 用新增 `vkHDR`(「转 VK 的 HDR 处理」)。设计: vkHDR 是**宿主意图值**——引擎在 `WindowRender::setHdrMode` 入口**按 lane 分岔归一化**(lane=0 → 折 forceHDR 行为: 直通命令+PQ 码直出+VK 升样层; lane=1 → 折 follow 并告警, **不可一律折 forceHDR**, 详见 §4.3), UBO/shader 协议仍只见 2(ColorSpace.hpp:35 / Dx11CSVideoRender.cpp:39 / EGL uHdrMode), 零协议改动; SWIG 三端随枚举重生成。加值依据: ①本枚举本就是宿主意图语言——forceSDR 在引擎无任何独立分支(全仓只特判 ==2, follow≡forceSDR 同为 tone map), 意图值有先例; ②「lane=0+forceHDR」组合无名字正是旧禁令 bug 的根源(组合语义未定义→被禁→链F 无法表达), 命名即防复发; ③VK 升样层键控不依赖新值(按 forceHDR 行为态+输入类型分流), 引擎内零新路径。
   - 代价与缓解: 一次 8bit 量化(PQ 域)——画质仍以链A(全程超 RGBA8)为首选; banding 可选 dither 缓解, 另批评估。
-- 域交接: mac lane 往返(Metal↔VK)交接面恒 rgba8 IOSurface(现状保持); Win lane=1↔lane=0 换道经宿主拆面复挂。
+- 域交接: mac lane 往返(Metal↔VK)交接面恒 rgba8 IOSurface(现状保持); Win lane=1↔lane=0 换道经宿主拆面复挂。⚠️ **「交接面恒 rgba8」只说了载体格式, 没说载荷语义**——mac 的 forceHDR 分支出的是**已 EOTF 的线性**(非 PQ 码), 且 lane=0 时 Metal 画的是 drawable 而非 IOSurface, 该交接面在 mac 结构上不成立, 详见 §6.3「交接面语义核对」。
 
 ### 3.4 过界与过渡
 
@@ -199,7 +199,7 @@ UBO/shader 协议仍只见 2(forceHDR); setHdrMeta 照常转发。SWIG 三端随
 | G7 | mac VK 窗 MoltenVK 无 EDR(恒 SDR 呈现)→「硬解 fail→VK 接手真 HDR」在 mac 不可达; mac 场景② 改落原生腿(§1.3), VK 16F 链主供 lane=0 路径 | VkWindow(mac) | R3 评估 |
 | G8 | Android HDR 呈现面口(EGL/Flutter 桥均无 HDR) | EglVideoRender / VkWindow(Flutter) | R4 另批 |
 | G9 | Win 原生腿不吃 CPU 帧(cpuIn 不建图)→补 yuv420P/yuv420P10 上传→CS 腿(对齐 Metal 模式), 硬解失败 lane=1 就地直通; Android 由 VK 承担(R4 开原生呈现时 EglVideoRender 同补) | Dx11CSVideoRender | **R1 已落地** |
-| G10 | 链F 升样层缺失: VK 无「rgba8 PQ 码→16F 线性」EOTF 层; mac/Android 交接面 PQ 码直通口径未核对/未补。**前置依赖(原稿漏记)**: 链F 输入侧(VkInputLayer 导入 D3D11 共享纹理)需要 `ImageType::rgba10` 在 `getVkFormat` 有映射(VkHelper.cpp:344, 现缺→`VK_FORMAT_UNDEFINED`)——即 §6.1 的三处映射补齐是 G10 的**硬前置**, 少补则 R2 一动导入 10bit 就撞 UNDEFINED | avox_vulkan 新层 + MetalRender/EglVideoRender | ✅ 主体 R2(2026-10-01(九)): `VkPqUpsampleLayer`+`pqUpsample.comp` 已落并接入 graph; mac/Android 交接面口径核对仍待 |
+| G10 | 链F 升样层缺失: VK 无「rgba8 PQ 码→16F 线性」EOTF 层; mac/Android 交接面 PQ 码直通口径未核对/未补。**前置依赖(原稿漏记)**: 链F 输入侧(VkInputLayer 导入 D3D11 共享纹理)需要 `ImageType::rgba10` 在 `getVkFormat` 有映射(VkHelper.cpp:344, 现缺→`VK_FORMAT_UNDEFINED`)——即 §6.1 的三处映射补齐是 G10 的**硬前置**, 少补则 R2 一动导入 10bit 就撞 UNDEFINED | avox_vulkan 新层 + MetalRender/EglVideoRender | ✅ **主体 + Win/Android 半场已落**(2026-10-01(九)(十)): `VkPqUpsampleLayer`+`pqUpsample.comp` 已接入 graph; Win CS 与 Android `EglVideoRender` 的 forceHDR 分支均已产「PQ 码原样」rgba8, 与升样层契约一致。**mac 转独立缺口**（`MetalRender` forceHDR 出已 EOTF 的线性 + lane=0 交接面结构不成立, 详见 §6.3 交接面语义核对), 与 G7 叠加后收益不足 |
 
 ## 六、平台落地清单
 
@@ -230,7 +230,7 @@ Metal 腿已有完整翻转(§3.2), 语义与 §一一致——只把 `MetalWind
 - `src/avox_vulkan/layer/VkYUV2RGBALayer.cpp` onInitLayer: 16F 赋值移到格式归一化段**之后**(原稿「~112 行盖回条件化」过简——该段还承载 10bit 字节视图约定, 见 G4); ✅ **已落**(2026-10-01(九), 条件化为「10bit + forceHDR」);
 - `src/avox_vulkan/vulkan/VkTexture.cpp` 16F 建纹理/内存尺寸/upload 字宽适配(现默认 8bit); ✅ **核代码确认无需改**: `VkHelper.cpp:151` 的 `formatTable` 已有 `{VK_FORMAT_R16G16B16A16_SFLOAT, {8, 4}}`, `vkPixelSize` 直接命中; 上游 `VkOutputLayer` 复制 `inFormats[0]` 自动跟随, 格式协商无需额外代码;
 - graph 下游格式协商(canvas→output→交换链)跟 16F; Blend/VR/font 层 16F 域兼容先保主链, 余项跟进批;
-- 升样层(G10, 链F): 新增「rgba8 PQ 码→16F 线性」compute 层(EOTF 段与 yuv2rgbaHDR.comp 同源), 接在 VkInputLayer 导入之后、合成之前; ✅ **已落**(2026-10-01(九)): `VkPqUpsampleLayer` + `glsl/pqUpsample.comp`, 拓扑条件 = `hdrMode==forceHDR && !cpuIn && !bRgbaInput`, 插在 `inputLayer`(或 `yuv2RGBA`)之后、其余层之前; `glslindexcurrent.txt` 已登记, 12 shader 编译全绿。mac/Android 交接面 PQ 直通口径核对/补齐仍待(跨平台半场); ⚠️ 改 `.comp` 后**必须手动** `python glsl/compileglsl.py`(cmake 不含此步, 否则运行时仍加载旧 spv);
+- 升样层(G10, 链F): 新增「rgba8 PQ 码→16F 线性」compute 层(EOTF 段与 yuv2rgbaHDR.comp 同源), 接在 VkInputLayer 导入之后、合成之前; ✅ **已落**(2026-10-01(九)): `VkPqUpsampleLayer` + `glsl/pqUpsample.comp`, 拓扑条件 = `hdrMode==forceHDR && !cpuIn && !bRgbaInput`, 插在 `inputLayer`(或 `yuv2RGBA`)之后、其余层之前; `glslindexcurrent.txt` 已登记, 12 shader 编译全绿。✅ **交接面口径已核**(2026-10-01(十), 见上「交接面语义核对」表): **Win/Android 就绪**; **mac 不一致转独立缺口**; ⚠️ 改 `.comp` 后**必须手动** `python glsl/compileglsl.py`(cmake 不含此步, 否则运行时仍加载旧 spv);
 - 修完真验: 软解 HDR 片(或强制软解)×HDR 屏, FP16 交换链+16F 内容链端到端(Win); 链F 用硬解 HDR 片同屏验(高光顶出+图像处理/字幕可用)。
 
 **链F 的真实定位(2026-10-01 核平台结构后修正——原稿按「给 Win 增强」理解, 偏了)**:
@@ -248,6 +248,34 @@ Metal 腿已有完整翻转(§3.2), 语义与 §一一致——只把 `MetalWind
 在 Linux/Android 上是**唯/首要**手段。原稿把 R2 排在 R1 之后、定位为「Win 增强」,
 掩盖了它对 Linux 的**必要性**——Linux 若确定「只做 Vulkan 渲染」, 链F 即其 HDR 前提。
 - Linux 落地前提: `VkWindow::setHdrPassthrough` 是平台无关的(VkWindow.cpp:498, 已禁 `VK_EXT_swapchain_colorspace`——AMD 崩 0xC0000374), 呈面缺的只是「X11/Wayland WSI 上 FP16 交换链能否跑通」= **真机验项, 非代码缺失**。
+
+**交接面语义核对(G10 跨平台半场, 2026-10-01(十) 逐平台核代码)**:
+
+升样层假定输入是「**PQ 码原样**(未做 EOTF)」的 rgba8。三平台原生渲染器在
+forceHDR(`hdrMode==2`)分支下到底往 rgba8 交接面写了什么, 差异很大——**这是 G10
+能否跨平台的关键, 也是「同为 rgba8 载荷但语义不同」的又一实例**(§3.3 两种 rgba8 载荷注记):
+
+| 平台 | forceHDR 分支产出 | 交接面载体/格式 | 与链F 契约 | 结论 |
+|---|---|---|---|---|
+| **Win** | `Dx11CSVideoRender` CS: **PQ 码原样**(不做 tone map) | `outSharedTex`(rgba8, VK 腿时 §6.1 已恒 rgba8) | ✅ 一致 | 链F 直接就绪 |
+| **Android** | `EglVideoRender` `processColor`: `uHdrMode==2` → **`return rgb;`**(PQ 码原样) | FBO 纹理 `GL_RGBA`/`GL_UNSIGNED_BYTE`(rgba8, `EglVideoRender.cpp:305`) | ✅ 一致 | 链F 直接就绪 |
+| **Mac** | `MetalRender` `processColor`: `hdrMode==2` → **`pqToLinear(rgb)*100.0`(已做 EOTF, 出线性)** | IOSurface `32RGBA`(rgba8, `MetalRender.mm:768/775`) | ❌ **不一致** | **链F 会二次解码** |
+
+⚠️ **Mac 的两点事实(2026-10-01 核代码, 颠覆「mac 交接面照旧」的原判)**:
+1. **mac 的 forceHDR 分支是「EOTF 已做」的线性域输出**, 与 Win/Android 的「PQ 码原样」**语义相反**。
+   若 mac 走链F, 升样层会对已线性化的值再跑一次 `pqToLinear` ⇒ 画面严重错暗/错色。
+2. **mac lane=0 的交接面在结构上也不成立**: `MetalRender.mm:933-938` 的渲染目标是
+   **`metalLayer` 存在就画 drawable(直呈屏), 否则才画 `outputTexture`(IOSurface)**。
+   即 mac 有窗口时 Metal **自己直接上屏**, IOSurface 这条 rgba8 路只在**离屏**时才是渲
+   染目标 —— 与 Win(CS 恒产 `outSharedTex` 供 VK 导入)的「生产端恒在」结构不同。
+   ⇒ mac 的 lane=0 HDR 交接**今天就没有可用的「Metal 产 → VK 导入」通道**,
+   而非仅缺格式映射。
+
+**⇒ G10 跨平台结论: Android 就绪(Win 亦就绪); mac 需先定义「Metal 侧 PQ 码直通变体
++ 切 IOSurface 为 VK 腿渲染目标」, 属独立批次**(与 G7「mac VK 窗无 EDR」叠加后,
+mac 走链F 的收益本就不足——原生 EDR 腿已达标, 链F 在 mac 是冗余)。**Linux 无原生腿、
+无 GPU 导入腿(`VkInputLayer.hpp:5-9` 三段条件编译不命中), 走 CPU 上传, 不涉本条**。
+
 
 **通用性三层结构(2026-10-01 核代码, 回答「接口要通用, 后面能直接给 Linux/鸿蒙」)**:
 链F 这条通路按「通用程度」分三层, 混在一起谈会误判工作量——**格式语义层是通用资产, 平台层各家自补**:
@@ -336,4 +364,6 @@ Metal 腿已有完整翻转(§3.2), 语义与 §一一致——只把 `MetalWind
 - 2026-10-01(五): **独立复查修订**(逐条对码, 未动实现代码): ①`vkHDR` 归一化改正为**按 lane 分岔**(lane=0 折 forceHDR / lane=1 折 follow+告警)——原「一律折 forceHDR」会让原生腿误开直通把 SDR 载荷当 PQ 码呈现(§4.3/§3.3/§1.1); ②§3.4 翻转过渡由「理论无害」升格为**错帧风险**并补同帧对齐手段(值域不同时位深论证失效); ③§6.1 `R10G10B10A2 NT 共享`定性由「驱动待验」修正为**消费端映射表缺 10bit**(三处 getImageDXFormt/getImageType/getVkFormat 需同补), 纯 D3D11 无驱动风险; ④G4 描述改准(共用归一化段 + 字节视图约定, 非简单盖回); ⑤G10 补前置依赖(getVkFormat 映射); ⑥§4.1 实态位收口(Vk 取 `bHdrActive` 非意愿位; Dx11 去冗余判据; Metal 全局量多窗口约束); ⑦权威源边界显式化(引擎侧本稿 / 宿主侧归 panvox)。
 - 2026-10-01(七): **R1 接口收口 + Win 输出端翻转落地**(实施): ①§4.1 `Window::hdrPassthroughActive()` 新增 + 三平台实现(Dx11 返 `bHdrActive` / Vk 返 `bHdrActive` 非意愿位 / Metal 读 `metalHdrPassthrough`); ②§4.2 `VideoRender` 基类统一检查点(`targetWindow`+`bTargetPassthrough` 缓存 + `setTargetWindow`/`checkTargetPassthrough`), `WindowRender::onRenderWindow` 两路都下发窗口; ③§6.1 `Dx11CSVideoRender::createProgram` 输出格式按实态分支(R10G10B10A2/R8G8B8A8) + `vaildAndInitGraph` 首行接检查点 + `fetchFrame` 直通态拒绝; ④连同预备批 C1~C4(`ImageType::rgba10` + 三处映射 + code-wiki)。构建 0 错误, 单测 96/96·1210 断言全绿(提交 `1ac769a`)。**未含**: §4.3 `HdrMode::vkHDR`(v2, 归 R2)。
 - 2026-10-01(八): **G9 Win 原生腿吃 CPU 帧落地**(实施, 提交前): `Dx11CSVideoRender` 新增 `renderCpuFrame(yuv420P/yuv420P10)`——平面收进自建 DYNAMIC NV12/P010 上传纹理(`initGraphCpu`/`uploadCpuPlanes`, 10bit 逐样 `<<6` 与 `MetalRender.mm:417` 同语义)→复用既有 CS(tone map/forceHDR 分支全同)→超 RGBA8 输出; `vaildAndInitGraph` 的 `cpuIn` 早退改为走 CPU 建图分支; `createProgram` 输入段在 CPU 腿跳过(否则上传纹理被覆盖成不可 Map 的 DEFAULT); 设备取自**呈现窗口**(`targetWindow->getRenderContext()` → `IDx11Context::getDevice()`, 与输出共享纹理/窗口 blit 同设备); `WindowRender::render(YUVFrame)` 补下发 `window->renderContext()`(缺它则 `Dx11Window::onTickWin` 因 `sharedTexture` 空而早退不上屏)。硬解失败 lane=1 就地直通, 不再依赖换道。
-- 2026-10-01(九): **R2 主体落地: §4.3 vkHDR + G4 收口 + G10 升样层**(实施): ①§4.3 `HdrMode::vkHDR(3)` 新增, `WindowRender::setHdrMode` 入口按 lane 分岔归一化(lane=0 折 forceHDR / lane=1 折 follow+告警), UBO/shader 协议仍只见 2; ②G4 `VkYUV2RGBALayer::onInitLayer` 的 16F 赋值从 forceHDR 分支移到**格式归一化段之后**并条件化为「10bit + forceHDR」, 修掉共用归一化段把 16F 盖回 rgba8 的老 bug; ③G10 **新增 `VkPqUpsampleLayer` + `glsl/pqUpsample.comp`**(rgba8 PQ 码 → 16F 线性, `pqToLinear(rgb)*125.0` 与 `yuv2rgbaHDR.comp` EOTF 段逐字同源), 接在 `VkInputLayer` 之后、下游合成之前, 拓扑条件 = forceHDR 行为态 + 非 CPU-YUV 输入(`!cpuIn && !bRgbaInput`), 即链F 硬解 PQ 码载荷; ④输出端分岔走 `bVkOutput`: 新增 `VideoRender::bVkOutput` + `setVkOutput()`(随 `SurfaceRenderNative::setVulkan` 同步), `Dx11CSVideoRender::createProgram` 输出格式改按「给 VK 恒 rgba8 / 直呈窗口跟直通实态」两轴定(§6.1 R2 修订: 上位版 R10G10B10A2 只保留给后者); ⑤`glsl/glslindexcurrent.txt` 加 `pqUpsample.comp` + 手动 `python glsl/compileglsl.py`(12 shader 全绿, 产物已落 install 三目录)。构建 0 错误(`avox` 目标), 单测 96/96·1210 断言全绿。**未含**: mac/Android 交接面 PQ 码直通口径核对/补齐(G10 的跨平台半场, 本轮范围 = apple/window/android 的**代码侧就绪**, 真机验另计)。
+- 2026-10-01(九): **R2 主体落地: §4.3 vkHDR + G4 收口 + G10 升样层**(实施): ①§4.3 `HdrMode::vkHDR(3)` 新增, `WindowRender::setHdrMode` 入口按 lane 分岔归一化(lane=0 折 forceHDR / lane=1 折 follow+告警), UBO/shader 协议仍只见 2; ②G4 `VkYUV2RGBALayer::onInitLayer` 的 16F 赋值从 forceHDR 分支移到**格式归一化段之后**并条件化为「10bit + forceHDR」, 修掉共用归一化段把 16F 盖回 rgba8 的老 bug; ③G10 **新增 `VkPqUpsampleLayer` + `glsl/pqUpsample.comp`**(rgba8 PQ 码 → 16F 线性, `pqToLinear(rgb)*125.0` 与 `yuv2rgbaHDR.comp` EOTF 段逐字同源), 接在 `VkInputLayer` 之后、下游合成之前, 拓扑条件 = forceHDR 行为态 + 非 CPU-YUV 输入(`!cpuIn && !bRgbaInput`), 即链F 硬解 PQ 码载荷; ④输出端分岔走 `bVkOutput`: 新增 `VideoRender::bVkOutput` + `setVkOutput()`(随 `SurfaceRenderNative::setVulkan` 同步), `Dx11CSVideoRender::createProgram` 输出格式改按「给 VK 恒 rgba8 / 直呈窗口跟直通实态」两轴定(§6.1 R2 修订: 上位版 R10G10B10A2 只保留给后者); ⑤`glsl/glslindexcurrent.txt` 加 `pqUpsample.comp` + 手动 `python glsl/compileglsl.py`(12 shader 全绿, 产物已落 install 三目录)。构建 0 错误(`avox` 目标), 单测 96/96·1210 断言全绿(提交 `caafcda`)。**未含**: mac/Android 交接面 PQ 码直通口径核对/补齐(G10 的跨平台半场, 见下条)。
+- 2026-10-01(十): **G10 跨平台交接面语义核对**(核代码, 未改实现): 逐平台核 forceHDR 分支往 rgba8 交接面写了什么——**Win `Dx11CSVideoRender` CS = PQ 码原样** ✅、**Android `EglVideoRender` `uHdrMode==2` → `return rgb;` = PQ 码原样** ✅(FBO 为 `GL_RGBA`/`GL_UNSIGNED_BYTE`), 二者与升样层契约一致, 链F 直接可用; **Mac `MetalRender` `hdrMode==2` → `pqToLinear(rgb)*100.0` = 已 EOTF 的线性** ❌ 语义相反(链F 会二次解码)。且 mac lane=0 交接面结构不成立: `MetalRender.mm:933-938` 有 `metalLayer` 时画 drawable 直呈屏, IOSurface(rgba8, `:768/775`)仅在离屏时才是渲染目标 ⇒ **mac 今天没有可用的「Metal 产→VK 导入」通道**, 需独立批次(Metal 侧 PQ 直通变体 + 切 IOSurface 为 VK 腿目标); 与 G7 叠加后 mac 走链F 收益本就不足(原生 EDR 腿已达标)。Linux 无 GPU 导入腿(`VkInputLayer.hpp:5-9` 条件编译不命中)走 CPU 上传, 不涉本条。**⇒ R2 的跨平台半边: Android 就绪, Mac 转独立缺口, Linux 不适用**。
+
