@@ -55,6 +55,34 @@
 
 ## 二、情况矩阵(所有情况一张表)
 
+### 2.1 「源 × 屏」四格总表(2026-10-01 晚新增, 回答「哪些组合与 HDR 有关」)
+
+**核心判据: HDR 能力挂在「显示器」上, 不挂在「源」上**。源只决定「有没有真 HDR 数据可放」,
+屏决定「能不能放出来」。故「与 HDR 有关」的判据是**屏**, 不是源——非 HDR 源在 HDR 屏上**恰恰有关**,
+在非 HDR 屏上才无关。
+
+| 源 \ 屏 | **HDR 显示器** | **非 HDR 显示器** |
+|---|---|---|
+| **HDR 源** | **3 档可选**(§6.6.1): ①原生直通(默认, 真HDR) ②vkHDR/链F(真HDR+可图像处理) ③降SDR(链E) | **1 档**(被动): 降 SDR(引擎拒直通→折 follow, §9.2)<br>若做 §9.2「装 HDR」→ +1 档(仍 SDR 码, 增强观感) |
+| **非 HDR 源** | **2 档**: ①当 SDR 呈现(默认) ②**ITM 上变换**(§9.1, 用上屏的高动态范围)<br>← **不是「与 HDR 无关」** | **1 档**: 普通 SDR(与 HDR 无关, 无选择) |
+
+**★ 哪些档位有实际意义 / 业界做过(按价值排序, 供 panvox 定设置项默认值与取舍)**:
+
+| 档位 | 有意义吗 | 业界先例 |
+|---|---|---|
+| **HDR源×HDR屏 → 原生直通** | ★★★ **必需, 真 HDR 正解**(最全动态范围+无 8bit 量化) | **所有播放器的基础路径**: madVR(passthrough)、mpv(`target-colorspace-hint`)、VLC、PowerDVD、系统播放器(Win「电影和电视」/ mac QuickTime 走 EDR) |
+| **HDR源×HDR屏 → 降SDR** | ★★ 有意义(用户手动选择/旧屏兼容); 画质不如直通, 但**色准可控** | mpv `--tone-mapping`、madVR(显示器不支持 HDR 时的降级)、VLC(老口径默认) |
+| **HDR源×非HDR屏 → 降SDR** | ★★★ **唯一可行(现状即此)** | 全行业默认(madVR/mpv/VLC 皆此路); 差异只在 tone map 曲线/峰值亮度设定 |
+| **非HDR源×HDR屏 → ITM 上变换** | ★★ **有争议**: 能「用上屏」但**无真值**(推测性提亮), 口碑两极 | **做过**: madVR「HDR 输出 SDR 内容」、**NVIDIA RTX Video HDR**(显卡级, 游戏/视频通用)、Windows Auto HDR(游戏, 非视频)、部分电视「HDR 增强/上变换」(索尼/三星常带, 用户常关) |
+| **HDR源×非HDR屏 → 「装 HDR」增强** | ★ **噱头居多**: 屏本身没能力, 只是「SDR 里更冲」, 易过曝/失真 | 同上「HDR 增强」类(电视居多); 桌面播放器**少有专门做**(因收益低、易被用户投诉) |
+| **HDR源×HDR屏 → vkHDR/链F** | ★★ **avox 特有**: 真实价值是「**HDR 保真的同时还能加 VK 图像处理/字幕**」, 不是画质提升(画质不如直通) | **无直接先例**——业界通常是「要么直通(无处理)、要么降SDR(能处理)」二选一; avox 的链F 是「保 HDR + 能处理」的第三条路 |
+
+**结论(给宿主定位用)**: 真正**产品级必需**的是「HDR源×HDR屏 直通」+「HDR源×非HDR屏 降SDR」两条(行业标配, 已达标);
+「降SDR 档」「ITM」「装HDR」「链F」都是**可选增强/实验档**——建议宿主**默认走行业标配两条**,
+其余以「实验性开关」暴露(符合用户「比对效果」的初衷, 且不打扰普通用户)。
+
+### 2.2 逐情况明细(承接 §2.1, 展开到解码/链路/批)
+
 | # | 片源 | 显示器 | 解码 | 链路 | 像素处理(YUV10→?) | 呈现面 | 现状 | 批 |
 |---|---|---|---|---|---|---|---|---|
 | 1 | HDR | HDR | 硬解 OK | lane=1 原生直通 | 平台渲染器 PQ 码原样(超 RGBA8 输出) | Win: R10G10B10A2+G2084 / Mac: RGBA16F+EDR | Mac 达标(样板); Win 输出恒 rgba8=G3 | R1(Win) |
@@ -381,7 +409,7 @@ Linux `FFVADecoder::onVaild:46` —— 各自探测、返回 false 即被选型�
 #### 6.6.1 宿主待办: 「源HDR × 显示器HDR」三态呈现切换(2026-10-01 晚, 用户定需求)
 
 **需求**: panvox 现口径是「HDR 片 + HDR 屏 → 恒直通 lane=1」。用户要在此组合上再加一个
-**可切换的三态呈现档**(目的是**比对效果**), 界面由 panvox 做:
+**可切换的三态呈现档**(目的是**比对效果**), 界面由 panvox 做(**本档的「源×屏」定位与业界先例见 §2.1**):
 
 | 档位 | 宿主下发(lane=0) | 引擎实际行为 | 链路 | 画质定位 |
 |---|---|---|---|---|
@@ -547,5 +575,5 @@ Linux `FFVADecoder::onVaild:46` —— 各自探测、返回 false 即被选型�
 - 2026-10-01(十二): **VK 腿两条问项核码**(核代码, 未改实现)——回答「VK 自身 CPU HDR 通道做了吗 / 对接各平台 SDR·PQ 是否分别出 RGBA8·RGBA16F」(§十 D5): ①**VK 自身 CPU(软解)帧 HDR 通道 = 已做**: `VideoRender::renderFrame(YUVFrame)` 置 `cpuIn=true` → `VkVideoRender::renderCpuFrame` → `inputLayer->inputCpuData(frame,false)` → `yuv2RGBA`(10bit 时 `hdrMode==forceHDR` 选 `yuv2rgbaHDR.comp` + 输出 16F, G4 后条件化正确) → 16F 域合成 → VK FP16 交换链。即链B 的 lane=0 支路完整。②**「对接各平台」语义要看出图支路, 而支路由 `WindowRender::setVulkan` 选窗类型决定**: `setVulkan(true)` 得 **VkWindow(VK 原生窗, 自有交换链)**——出图走 `outputGpuData`(:292, `blitFillImage` **格式无关**, rgba8/16F 都成立); `setVulkan(false)` 得平台原生窗——VK 腿交平台 GPU 资源才走 `onCommand`(:184)的**格式闸 `bCanMapGpu`(只放行 rgba8/bgra8)**, HDR 出 rgba16f 被判 false, 整段 interop 跳过。③**panvox 走前者, 不受此影响**: `pvx_player_create` 调 `setVulkan(lane!=1)`+`setSurface(宿主视频窗)`(「原生窗口直渲唯一车道」), lane=0 即 VkWindow 直渲; `enableVkOutputDx11` 支路已死(`PassthroughSig::wanted` 无人置 true)。受限面 = 仍用 `setVulkan(false)` 的平台资源消费者(Unity/Avalonia/vulkantest 样例)。④**SDR(→rgba8)全路径正常**。⇒ **结论: VK 腿的「SDR→平台资源」正常; 「HDR(PQ)→平台资源」在 `setVulkan(false)` 交平台资源的路径上因 D5 断链**(panvox 不受影响, 它走 `setVulkan(true)`→VkWindow 原生窗直渲)。**勘误(同日 17:40/17:45)**: ①17:40 宿主传输细节订正——已由老式 `external_texture_d3d` 镜像 blit 改为 **Flutter GPU surface + DXGI 共享句柄**; ②**17:45 路径归属订正(用户指出 avox 有原生窗/VK 窗两种, `setVulkan` 即选 VK 原生窗)**——panvox 现行 `pvx_player_create` 调 `setVulkan(lane!=1)` + `setSurface(宿主视频窗)`, lane=0 得 **VkWindow**, 走 `outputGpuData`(格式无关), **D5 在 panvox 不成立**; 此前两版「panvox 必现」判断作废。`enableVkOutputDx11` 那条(`PassthroughSig::wanted` 无人置 true)已是死支路。
 - 2026-10-01(十三): **R3 编码收口: D3 方案②选型落地(四腿) + D1 读回防护 + D2 检查点同源**(实施, 用户定稿「可以让2来做…有一二帧显示花一下没啥…但是不能crash」, 落地范围「Win + Metal/EGL/VK 一起收」, 过渡判定「标志位驱动, 不数帧」): ①**D3 §3.4 同帧对齐 = 方案②**(意愿/实态分离, 翻转实际动作挪到与输出重建同一临界区、由渲染线程执行) 四平台落地清单见新增 **§3.4.1**; 候选①/③弃用理由及 **竞态 A** + `hdrPassthroughActive()` 必须返实态 两条要害注记一并入 §3.4。②**Win `Dx11Window`**: 新增 `bufMtx`+`bHdrPending`; `setHdrPassthrough` 改为「能力检查+挂意愿」(不再当场 `initBuffers`, 消除竞态 A 的 use-after-free 根因); 渲染线程 `onTickWin` 首段(已持 `mtx`)调 `applyPendingHdr()`——`initBuffers`(10bit/rgba8)+`bHdrActive` 更新 + `applyHdrSwapchainState()` 失败回滚, 与 `Present` 同临界区; `onChangeSize` 加锁并改判 `bHdrActive||bHdrPending`。③**`VkWindow`**: 同款意愿位 `bHdrPassthrough` + `applyPendingHdr()` 插在 `onTickWin` 的 `vkResetFences` 后/`vkAcquireNextImageKHR` 前, `pickFormat()` 实际格式未变则还原早退, 变则 `lockCommand()` 内 `vkDestroyRenderPass→createRenderPass→reSwapChainBefore→reSwapChainAfter`(与 HEAD 逐字同序)+`unLockCommand()`, 完置 `bHdrActive`。④**`MetalRender`**: 零结构改动(意愿为 atomic、翻转已在渲染线程 `vaildAndInitGraph`), 仅接 D2 检查点。⑤**`EglVideoRender`**: 无 HDR 呈现面(实态恒 false), 仅接 D2 检查点。⑥**D1 §3.4 读回防护四腿齐**: `MetalRender::fetchFrame` / `EglVideoRender::fetchFrame` / `VkOutputLayer::fetchData` 各加直通态拒绝(用 `VkFormat` 判定 16F/10bit, 非 `ImageType`——`VkTexture` 无该字段), 未报错日志英文。⑦**D2 §4.2 检查点四腿同源**: `MetalRender::vaildAndInitGraph` 自读判据改 `checkTargetPassthrough()`、`EglVideoRender::vaildAndInitGraph`(`__ANDROID__` 首段)新增 `checkTargetPassthrough()`→`bResetFlag`。⑧构建 `avox` 目标 0 错误; 单测 **96/96·1210 断言全绿**; `doc_check.py --strict` warnings 0 / errors 0。⇒ **R1/R2/R3 编码已收口, 剩 R5(R5=D4 上报)+真机验收**。
 - 2026-10-01(十四): **R5 撤销定案(用户定稿)——硬解状态上报不新增任何接口**(核代码+判断复核): 曾拟新增 `IMediaPlayer::isHardwareDecoding()`/`getVideoCodecTh()` 查询口 + `IMediaPlayerOb::onDecoderStateChange()` 事件口(并已实现一版, 含 `VDecoderTask::reportDecoderState` 助手 + `VideoTrack` 原子缓存), **经用户判定全部撤回, 源码零改动**。撤销理由(§6.4.1 六条): ①硬解失败→回落软解在 v2 下是**引擎内部自愈**——`VDecoderTask::openFallbacks` 自动降级 + 原生腿**就地吃 CPU 帧**(Win G9/mac 既有), 播放与画面全程不断, 宿主知与不知对结果零影响; ②软解帧原生腿能接、接不了还有 VK 腿兜底(`lane=1` 原生 / `lane=0` VK 的 `renderCpuFrame`), **不用换 lane 就能继续放** ⇒ 无「宿主必须介入」场景; ③告诉上面反而添乱: 宿主收到事件要么无事可做、要么被诱导换道/重建(v2 下换道已非恢复必需), 徒增卡顿与状态机复杂化; ④同步回调从解码/命令线程打到宿主, 宿主若在回调里调 player API 即跨线程重入(既有 `onDecodeError` 注释已警示); ⑤新增虚函数 = ABI 面 + SWIG 三端重生成 + 文档同步 + `VCodecTh` 多曝光一个枚举, 成本远超收益; ⑥既有埋点已覆盖「可查」(`video decoder fallback to:` + `pushPB<MPPBType::MediaAction>(msg="video decoder fallback from X to Y")`, 异步批量不占调用栈)。⇒ §6.4 重写为「引擎内部已自洽, 无代码缺口」; §七 R5 行与 §十 D4 行同步改为「非缺口/撤销」。**副作用**: 上一批(十三)结论里的「剩 R5」作废, 现仅剩真机验收。
-- 2026-10-01(十五): **宿主需求登记 + VK 归属边界补充**(文档, 未改实现): 用户提出两个新需求并定「宿主做界面, 引擎侧先写口径」。①**§6.6.1 新增**「源HDR×显示器HDR 三态呈现切换」(A 原生直通 / B vkHDR链F / C 降SDR), 记明**引擎零改动**(vkHDR+lane分岔+升样层全就绪, 缺宿主入口)+ **两条硬约束**(切档必经「换道重开」——`setVulkan` 对有 window 直接拒改, WindowRender.cpp:49-58; lane 必须真在 0 否则 vkHDR 被折 follow 防呆); ②**§1.1 补边界**——原「tone map 不算图像处理」只覆盖**降域**(HDR→SDR), 新增**升域 ITM(SDR→HDR)属图像处理必走 VK** 的明确表述(方向相反归属不同); ③**§9.1/§9.2 两新账**——SDR 内容→HDR 观感(ITM, 引擎零实现, 全仓 grep 零命中)、HDR 内容→非 HDR 屏「装 HDR」(真 HDR **物理不可达**: 非 HDR 屏 `SetColorSpace1` 不可得→自动降 follow; 只可做增强型 tone map 仍出 SDR 码), 二者归 VK, **建议合并为一个「HDR 观感增强」层**; ④一句话结论同步补三处引用。
+- 2026-10-01(十五): **宿主需求登记 + VK 归属边界补充**(文档, 未改实现): 用户提出两个新需求并定「宿主做界面, 引擎侧先写口径」。①**§6.6.1 新增**「源HDR×显示器HDR 三态呈现切换」(A 原生直通 / B vkHDR链F / C 降SDR), 记明**引擎零改动**(vkHDR+lane分岔+升样层全就绪, 缺宿主入口)+ **两条硬约束**(切档必经「换道重开」——`setVulkan` 对有 window 直接拒改, WindowRender.cpp:49-58; lane 必须真在 0 否则 vkHDR 被折 follow 防呆); ②**§1.1 补边界**——原「tone map 不算图像处理」只覆盖**降域**(HDR→SDR), 新增**升域 ITM(SDR→HDR)属图像处理必走 VK** 的明确表述(方向相反归属不同); ③**§9.1/§9.2 两新账**——SDR 内容→HDR 观感(ITM, 引擎零实现, 全仓 grep 零命中)、HDR 内容→非 HDR 屏「装 HDR」(真 HDR **物理不可达**: 非 HDR 屏 `SetColorSpace1` 不可得→自动降 follow; 只可做增强型 tone map 仍出 SDR 码), 二者归 VK, **建议合并为一个「HDR 观感增强」层**; ④一句话结论同步补三处引用。⑤**§2.1 新增「源 × 屏」四格总表**(用户混淆「非HDR源是否与HDR无关」暴露缺表): 判据=**HDR能力挂显示器不挂源**——非HDR源在 HDR 屏上**恰恰有关**(可 ITM 上变换), 非HDR屏上才无关; 附**「哪些档位有实际意义 / 业界做过」**表(直通+降SDR=行业标配【madVR/mpv/VLC/系统播放器】; ITM=NVIDIA RTX Video HDR/madVR/电视「HDR增强」; 「装HDR」=噱头居多; 链F=**avox 特有, 业界无直接先例**), 建议宿主默认走标配两条、其余作实验开关。
 - 2026-10-01(勘误): 修方案文档两处笔误——`glsl/pqUpsample.comp` → **`glsl/source/pqUpsample.comp`**(源在 `source/`, 产物落 `target/`; 原文漏一级目录, 2 处); Dx11Window 行号按 D3 落码后刷新(`hpp:46/:64`→`:73`; `cpp:290/295/191`→`:318/329-353/200`, 6 处), 并给 §3.4「翻转时序差」补「落地后由渲染线程 `applyPendingHdr()` 执行」的现态说明。严格门禁 0 warn 0 error。(提交 `9173d98`)
