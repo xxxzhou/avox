@@ -103,7 +103,8 @@ SWIG 绑定: `swig/csharp/`, `swig/nodejs/`, `swig/python/` (Java 绑定构建�
 `assets/agent/skills/panvox-play`** 按其流程排查, 不空手反问: 平台缺省=当前
 机器, 片源从 panvox 数据缓存(history/sources.json)定位, -Log 复现, 日志定
 归属; 引擎日志行细判引用 `assets/agent/skills/analyze-log`。skill 是活文档:
--Log 机制/数据缓存结构/部署配方变动后回写同步。
+-Log 机制/数据缓存结构/部署配方变动后回写同步。已定谳的历史案例(根因 / 修复提交号 /
+可复用判据)见 [doc/reports/README.md](doc/reports/README.md), 同类症状先对号入座。
 
 ## 重要说明
 

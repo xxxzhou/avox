@@ -1,6 +1,6 @@
 # avox 项目导航
 
-> 状态: 有效 · 上次核对: 2026-09-16 · 权威源: -
+> 状态: 有效 · 上次核对: 2026-10-01 · 权威源: -
 
 
 本文档提供项目各模块的快速导航，帮助快速了解项目结构和功能。
@@ -28,6 +28,7 @@ avox 是跨平台音视频播放器 SDK，支持直播流、本地媒体、硬�
 | [build](build/) | 构建: 脚本/CMake、Android、FFmpeg、SWIG |
 | [tools](tools/) | 开发工具: VSCode/Wireshark/ffmpeg/git/trae/冻结排查 |
 | [plan](plan/) | 设计与规划方案 · 功能计划集 [backlog/README.md](plan/backlog/README.md) (panvox 双仓对齐 A-1~A-19) |
+| [reports](reports/README.md) | 排查案例集: 已定谳案例(根因 / 修复提交号 / 可复用判据) —— 解码与呈现 · seek 与音画同步 · 网络直链与 NAS · 帧节奏与上屏停顿，另有 DV-HDR、panvox 直通两篇专题 |
 | [test](test/环境与插件总览.md) | 测试: 环境与插件关系地图 / 测试与修复工作流 / 发布检查清单 / 功能测试矩阵 —— **测试整体移交同级 `../avox-test` 仓**，功能完成后到那边跑测试（见其 README.md）；本目录为过渡期副本 |
 
 ---
@@ -228,6 +229,7 @@ class IAudioRender {
 - WebRTC → [播放器WebRTC](webrtc/播放器WebRTC.md)
 - AI 功能 → [AI 模块](ai/)
 - GPU 直通/纹理共享 → [多平台GPU共享](player/decode/多平台GPU共享.md)
+- 排查案例（花屏 / 卡顿 / 上屏停顿 / seek / 网络） → [排查案例集](reports/README.md)
 
 **按平台查找：**
 

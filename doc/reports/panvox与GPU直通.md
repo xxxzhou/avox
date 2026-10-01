@@ -21,12 +21,11 @@
   负载脚本抓窗用 avox-test capture_window(其 CLI 第二参数是进程名不是 PID)。
 - **RMVB 时钟生态**补充: cook 合成 ts 致 HUD 1.09x 快走——「为何只有这片」的答案。
 
-## 2. 原生渲染方向 (09-23 拍板)
+## 2. 原生渲染方向 (09-23 拍板 → 09-24 落地)
 
-- **NativeVideoView 替换纹理直通**已定方向: Windows 真透明合成
-  (flutter_native_view 原理: SetWindowCompositionAttribute accent6 整窗透明 +
-  视频窗垫后, 真 alpha, 死项目需自研 ~200 行) + 其他端 PlatformView。
-  权威文档 panvox `docs/design/native-video-view.md`; P0 尖刀待开工, 改动未提交。
+- **纹理直通已整条退役，改原生窗口直渲**（Windows accent=6 真透明 + 其他端 PlatformView）。
+  起因（慢性碎块 / 起播 1s 花屏 / 跨 API 排序未建立）、平台路线、落地时间线与验收，见
+  [纹理直通与原生窗口.md](纹理直通与原生窗口.md)（本篇不复述）。
 - Windows 事实: PlatformView=Android/iOS/mac ✅ Windows ❌; 官方多窗口 API
   实验性仅桌面。
 - **外部 DS 滤镜桥设计草案** (09-23, 未实施): 仿 PotPlayer(自研+内嵌 FFmpeg+
@@ -88,7 +87,7 @@
 | 09-23 | 二分: xproc01 跨进程排除 → 同进程并发 | 七假设证伪 |
 | 09-23 | 守卫 seek(0) + 镜像 release 门闸 | 已落 |
 | 09-24 | avox 帧闸(1912c43)废除——无效且致卡顿 | 已废除 |
-| 09-23 | 主推方向=Windows 原生窗口直渲(真透明) | 待开工 |
+| 09-23 | 主推方向=Windows 原生窗口直渲(真透明) | 09-24 已落地 |
 
 判别实验配方: dx11windowtest + 8 线程负载; 「1-2s 自愈」= GOP 粒度信号,
 指向 demux 跳包缺参考而非渲染突发——症状自愈时长要先换算成 GOP 数再归因。

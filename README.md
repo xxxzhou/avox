@@ -306,6 +306,7 @@ ISurfaceRender* render = player->getSurfaceRender(); // 托管，不释放
 ## 文档
 
 - **[doc/INDEX.md](doc/INDEX.md)** - 项目文档总索引（模块说明、API、平台集成、构建配置）
+- **[doc/reports/README.md](doc/reports/README.md)** - 排查案例集：已定谳案例（根因、修复提交号、可复用判据）
 - **[DeveloperGuide.md](DeveloperGuide.md)** - C++ 编码规范与跨 DLL 安全规范
 - **[CLAUDE.md](CLAUDE.md)** - 项目结构概览与 AI 辅助开发指引
 
