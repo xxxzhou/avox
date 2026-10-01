@@ -197,7 +197,10 @@ void Dx11Window::renderWindow() {
 void Dx11Window::initDevice() {
   bInitDevice = false;
   bInitShader = false;
-  bHdrActive = false;  // 重建设备=新交换链, 旧直通态不复存在; 宿主补发可自愈
+  // 重建设备=新交换链, 直通实态与挂起的意愿一并作废(意愿残留会在 SDR 屏被
+  // applyPendingHdr 重放成 PQ 交换链=洗白/品红钉死; 宿主补发可自愈)
+  bHdrActive = false;
+  bHdrPending = false;
 
   HRESULT hr = S_OK;
   UINT createDeviceFlags = 0;
@@ -294,10 +297,19 @@ bool Dx11Window::setHdrPassthrough(bool bPassthrough) {
     }
   }
   if (!bPassthrough && !bHdrDisplay) {
-    return true;  // SDR 链本来就是非直通状态
+    // SDR 屏永远到不了直通态: 实态/意愿一并压 false。只 return true 不清
+    // pending 的话, 宿主降档每次都白发, applyPendingHdr 会把 PQ 交换链
+    // 重放回来(10/1 跨屏品灰案的根因之一)
+    std::lock_guard<std::mutex> lck(bufMtx);
+    bHdrPending = false;
+    bHdrActive = false;
+    return true;
   }
   if (!bHdrDisplay) {
     LOGFLF(LogLevel::info, "hdr passthrough ignored, display not hdr capable");
+    // 被拒请求不得留意愿: 残留会被 applyPendingHdr 无视显示能力重放
+    std::lock_guard<std::mutex> lck(bufMtx);
+    bHdrPending = bHdrActive;
     return false;
   }
   // 只挂意愿: 实际切 10bit 交换链 + SetColorSpace1 由渲染线程执行(见 applyPendingHdr)
@@ -324,6 +336,20 @@ void Dx11Window::applyPendingHdr() {
   if (want == bHdrActive) {
     return;
   }
+  // 显示能力先于翻转判定: SetColorSpace1 是交换链声明, 屏不拦它 —— 不看
+  // bHdrDisplay 就翻, SDR 屏上会钉死在 PQ 交换链(10/1 跨屏品灰案根因)
+  if (want && !bHdrDisplay) {
+    std::lock_guard<std::mutex> lck(bufMtx);
+    bHdrPending = false;
+    if (bHdrActive) {
+      bHdrActive = false;
+      initBuffers();  // 退出误入的 PQ 链
+      applyHdrSwapchainState();
+      LOGFLF(LogLevel::warn,
+             "hdr passthrough dropped, display not hdr capable");
+    }
+    return;
+  }
   initBuffers(want ? DXGI_FORMAT_R10G10B10A2_UNORM : DXGI_FORMAT_R8G8B8A8_UNORM);
   bHdrActive = want;
   if (!applyHdrSwapchainState()) {
@@ -331,6 +357,10 @@ void Dx11Window::applyPendingHdr() {
       bHdrActive = false;
       initBuffers();  // 回退 SDR 链
       applyHdrSwapchainState();
+      // 失败清意愿: 不清则每帧重建交换链循环(实翻失败≠能力不足时宿主
+      // 重发前唯一的退出口)
+      std::lock_guard<std::mutex> lck(bufMtx);
+      bHdrPending = false;
     }
     return;
   }
