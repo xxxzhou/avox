@@ -50,6 +50,8 @@ if(APPLE AND OPENSSL_SSL_LIBRARY)
   if(EXISTS "${_ossl_dir}/libssl.a")
     list(REMOVE_ITEM _REMOTE_LIBS ${OPENSSL_LIBRARIES})
     list(APPEND _REMOTE_LIBS "${_ossl_dir}/libssl.a" "${_ossl_dir}/libcrypto.a")
+    # libsmb2 预编译件含 Secure Transport 腿, SSL* 系符号由系统框架提供
+    list(APPEND _REMOTE_LIBS "-framework Security")
   endif()
 endif()
 register_plugin(avox_remote DYNAMIC LIBS ${_REMOTE_LIBS})
