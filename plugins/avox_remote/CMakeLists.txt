@@ -14,14 +14,6 @@ include_directories(${AVOX_TRDPARTY}/cpp-httplib)
 include_directories(${OPENSSL_INCLUDE_DIRS})
 
 set(_REMOTE_LIBS ${OPENSSL_LIBRARIES})
-if(APPLE AND OPENSSL_SSL_LIBRARY)
-  # 插件为 -undefined dynamic_lookup 构建: openssl 动态库依赖的 UND 在 RTLD_LOCAL
-  # dlopen 的平面查找下不可见(10/2 mac 实证), 静态吞入保插件自包含
-  get_filename_component(_ossl_dir "${OPENSSL_SSL_LIBRARY}" DIRECTORY)
-  if(EXISTS "${_ossl_dir}/libssl.a")
-    set(_REMOTE_LIBS "${_ossl_dir}/libssl.a" "${_ossl_dir}/libcrypto.a")
-  endif()
-endif()
 if(WIN32)
   # httplib 基础 socket 依赖(与 avox_torrent 同注)
   list(APPEND _REMOTE_LIBS ws2_32 crypt32)
@@ -50,4 +42,14 @@ else()
   message(STATUS "avox_remote plugin: libsmb2 未找到, smb 源不参与编译(见 D:/Work/github/libsmb2)")
 endif()
 
+if(APPLE AND OPENSSL_SSL_LIBRARY)
+  # 插件为 -undefined dynamic_lookup 构建: openssl 动态依赖的 UND 在 RTLD_LOCAL
+  # dlopen 平面查找下不可见(10/2 mac 实证), 静态吞入保插件自包含。
+  # 静态归档只吸收挂起 UND: libssl.a 必须排在 libsmb2.a/ffmpeg 之后(符号由它们引入)
+  get_filename_component(_ossl_dir "${OPENSSL_SSL_LIBRARY}" DIRECTORY)
+  if(EXISTS "${_ossl_dir}/libssl.a")
+    list(REMOVE_ITEM _REMOTE_LIBS ${OPENSSL_LIBRARIES})
+    list(APPEND _REMOTE_LIBS "${_ossl_dir}/libssl.a" "${_ossl_dir}/libcrypto.a")
+  endif()
+endif()
 register_plugin(avox_remote DYNAMIC LIBS ${_REMOTE_LIBS})
