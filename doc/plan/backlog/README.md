@@ -16,7 +16,7 @@
 | A-1 ASS/PGS 链收尾 | P0 | M1 | 施工中(**T3 样式覆盖已落地 09-20**,剩跨平台 STATIC+人工走查) | 信号暴露/延迟接口/候选枚举/ass 编码自愈/PGS e2e/T3 ASS 轨样式覆盖(setAssScale/setAssFont, f2c328e/0936284)均落地;剩 Apple 编译+真渲染取证 | [a01](a01-ass-pgs.md) |
 | A-2 秒起播/seek 秒响应 | P0 | M1 | 施工中(T1/T2 完成 09-19) | 埋点+probe 降档落地(本地快档 3-14ms, 保底字段回退);T3 seek 精确化已判定不动(09-19 基线);剩 T4 基线用例 | [a02](a02-fast-start-seek.md) |
 | A-3 VP9/WEBM 硬解排查 | P0 | M1 | **三平台硬解已落地(09-19)** | Win 实测 hw 命中/Android 编译过/Apple 待 mac 编译;选型失败自动回退软解;剩真机验证+W38 样片 | [a03](a03-vp9-webm.md) |
-| A-4 GPU 直通三平台 | P0 | M4 | 计划就绪(**Windows 分辨率变化已修, 待实测验证, 见 T5**) | Windows 全链通;分辨率变化不跟随已修(换片后旧画布 1:1 落新纹理左上角问题消除);Android AHB 基建在但解码不直出;Apple 缺 Metal 导出 | [a04](a04-gpu-passthrough.md) |
+| A-4 GPU 直通三平台 | P0 | M4 | **Flutter 侧已收口(2026-10-02 改原生窗口, 纹理交互放弃); 余下维护非 Flutter 宿主通路** | Windows 全链通;分辨率变化修复对 Unity/Godot 纹理路仍有效;Android AHB/Apple IOSurface 导出在, 仅 Unity/Godot 消费(Unity Android 真机未验);Flutter 纹理桥 T2/T3 作废 | [a04](a04-gpu-passthrough.md) |
 | A-5 可 seek 虚拟文件系统 | P0 | M2 | **T1~T4+§1 全落地(09-20)** | 断链自愈双例 PASS(恢复 5.6s/11.9s);T4 目录缓存(dav+smb 会话级连接复用+dav TTL 缓存)与 §1 authExpired 回调链已落(2cacdef/3cf565d/fd4fc87/2b17164);剩 dav-auth-expired 用例+秒开指标(均 avox-test 侧) | [a05](a05-remote-vfs.md) |
 | A-6 FFmpeg 9.0.1 换代 | P0 | 独立 | **适配已完成,待收口(Windows 回归已过, 版本守卫已加)** | 五平台库均 9.0.1、源码已新 API;Windows 离线回归 33/33(09-18),剩四平台回归+UE 链路(待 CI/真机);T6 16KB 页对齐 P2 | [a06](a06-ffmpeg9.md) |
 | A-7 avox_subtitle CLI | P1 | M3 | 计划就绪 | sherpa/翻译/CLI 骨架在,批量管线与 SRT 写出为零 | [a07](a07-subtitle-cli.md) |

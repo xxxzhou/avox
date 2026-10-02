@@ -1,19 +1,32 @@
 # A-4 GPU 直通三平台
 
-> 状态: 进行中 · 上次核对: 2026-09-17 · 权威源: -
+> 状态: 进行中 · 上次核对: 2026-10-02 · 权威源: [纹理直通与原生窗口](../../reports/纹理直通与原生窗口.md)
 
 
-优先级 P0 · 里程碑 M4(建议提前,panvox P-1 零拷贝路径切换等它) · 计划状态:就绪
-Windows 已通(分辨率变化不跟随已修并实测通过; 见「已知缺陷」节);本计划覆盖 Android AHB→Flutter Texture 与 iOS/macOS CVPixelBuffer 桥。
+优先级 P0 · 里程碑 M4 · 计划状态: **Flutter 侧已收口(全平台原生窗口直渲), 余下只维护非 Flutter 宿主(Unity/Godot)的纹理导入通路**
 
-## 出口判据
+**方向变更(2026-10-02 用户口径): Flutter(panvox)全平台已改原生窗口直渲, 不再走纹理交互。** 纹理链上有两条
+解决不了的问题: ①**莫名的卡一下**(直通链有 blit 线程与 fence 等待); ②**部分片子色块**(慢性碎块=同进程
+跨设备共享纹理并发, 七种消费端同步方案全证伪; 起播/seek 后 ~1s 块状花屏=D3D11 共享纹理 fence 竞态;
+机制层=output 方向跨 API 排序从未建立——写纹理的是 Vulkan, 打 fence 的是 D3D11)。故本计划原
+「Android AHB→Flutter Texture / iOS/macOS CVPixelBuffer 桥」目标作废; 取证、平台路线与落地时间线见
+[纹理直通与原生窗口](../../reports/纹理直通与原生窗口.md)(权威源=panvox 仓 `docs/design/native-video-view.md`),
+本文只记 avox 侧残留口径。
 
-1. Android:播放帧经 AHB 进 Flutter Texture,panvox 播放页零拷贝出图。
-2. iOS/macOS:播放帧以 CVPixelBuffer/IOSurface 进 Flutter Texture,零拷贝出图。
-3. 三平台 CPU 占用对比 CPU 帧泵有可测改善;帧可用通知与尺寸变化时序无黑屏。
-   (「帧可用通知」已由渲染输出事件化承接: `ISurfaceRenderOb::onRender` 携带
-   SurfaceRenderEvent 世代/尺寸/重建信号, 见 `doc/plan/player/open出图时延与渲染输出事件化.md`;
-   「无黑屏」的换片重建间隔仍开放)
+Windows 已通(分辨率变化不跟随已修并实测通过; 见「已知缺陷」节)。
+
+## 出口判据(2026-10-02 修订)
+
+1. ~~Android:播放帧经 AHB 进 Flutter Texture, panvox 播放页零拷贝出图~~ **已作废** —— Flutter 改原生
+   窗口直渲(avox 侧 `ISurfaceRender::setVulkan/setSurface` 通路现成), 纹理导出 API 不再有 Flutter 消费方。
+2. ~~iOS/macOS:播放帧以 CVPixelBuffer/IOSurface 进 Flutter Texture, 零拷贝出图~~ **已作废**(同上)。
+   Apple 纹理导出(含 IOSurface 分支)当前**无宿主消费方**(Godot 纹理导入仅 Win/Android, Unity 无 Metal
+   纹理函数), 不再推进真机验证。
+3. **现行判据**: 非 Flutter 宿主(Unity flavor1/2/3、Godot)的纹理导入通路保持可用且回归不破;
+   该路径的「帧可用通知与尺寸变化时序无黑屏」仍以 `ISurfaceRenderOb::onRender`
+   (SurfaceRenderEvent 世代/尺寸/重建信号, 见 `doc/plan/player/open出图时延与渲染输出事件化.md`)
+   为准, 「无黑屏」的换片重建间隔仍开放。
+   (原「三平台 CPU 占用对比 CPU 帧泵有可测改善」判据随 Flutter 纹理路一并作废)
 
 ## 现状(代码落点)
 
@@ -24,6 +37,9 @@ Windows 已通(分辨率变化不跟随已修并实测通过; 见「已知缺陷
   Unity 侧 flavor1 VK 导入 / flavor2 DX11 拷贝
   (`platform/unity/plugin/src/GpuPassthrough.h:20-60`)。注意:外部 DX11 通路是 CopyResource
   拷贝非零拷贝导入,如需真零拷贝是加分项。
+  **消费方现状(2026-10-02)**: Flutter/panvox 已不消费(NT 共享支路在 panvox 侧已死); 仍在使用的是
+  Unity 插件 flavor2/3(`platform/unity/plugin/src/PlayerBridge.cpp:232` `enableVkOutputDx11`)与
+  flavor1 的 `enableVkOutput` VK 导入, Godot 插件同款(`platform/godot/plugin/src/surface.cpp:529`)。
 - **Android:渲染输出 AHB 导出已有,解码不直出**。AHB 基建完整:
   `src/avox_android/SharedGpuBuffer.cpp:49-56`(dlsym 分配)、:144 EGL 绑定、
   VK 导入 `src/avox_vulkan/share/VkSharedImage.hpp:78,87`;`enableVkOutput` 有
@@ -31,15 +47,22 @@ Windows 已通(分辨率变化不跟随已修并实测通过; 见「已知缺陷
   但 MediaCodec 解码输出走 SurfaceTexture→OES 中转
   (`AndVDecoder.cpp:154-188`,onFrameRender releaseOutputBuffer+updateTexImage :365-387),
   解码帧直出 AHB 是另一条新路径。解码器仅注册 h264/h265(:20-40)。
+  **消费方现状(2026-10-02)**: AHB 导出保留给 Unity(Android)/Godot; 「MediaCodec 直出 AHB」新路径
+  不再需要(Flutter 不走纹理, 无消费方)。
 - **Apple:VT 解码已是 CVPixelBuffer 零拷贝,缺对外导出**。
   `IOSVDecoder.mm:342-354` bMetalRender 时 CFRetain(imageBuffer)→GpuFrame;
   Metal 渲染直引用(:482-493 CVMetalTextureCache)。对外仅 Vulkan IOSurface 通道
   (`Avox.cpp:707-717` ioSurface,「非所有权语义」见 `AvoxLayer.h:489-493`),
   **Metal 纹理导出完全没有**(GpuPassthrough.h 无 Metal 函数)。
+  **消费方现状(2026-10-02)**: 原目标「喂 Flutter Texture」作废; IOSurface 导出无宿主消费方,
+  Metal 纹理导出维持不做(无需求方)。
 - **Unity 参考路径**:backlog 指明「抄 avox-unity 路径」——AHB 导入 flavor1 已有
   (`GpuPassthrough.cpp:357`),但仓内无 Android gradle/Java 宿主工程,真机未验证。
 
 ## 已知缺陷(已修 + 已实测通过):分辨率变化后输出内容不跟随(2026-09-16 复现, 2026-09-17 闭环)
+
+> 本节及以下各修复(T5 输入层重检/blit 兜底、CS constBuf 重传、硬解中段换分辨率停帧)对
+> 非 Flutter 宿主(Unity/Godot)的纹理导出通路**仍然有效, 不撤**; Flutter 换道只改变消费方。
 
 换片到**不同分辨率的媒体**后,新共享纹理按新尺寸正确重建(NT 句柄换新、尺寸正确),
 但拷进它的内容仍是上一部尺寸的画布(1:1 落在左上角),新画面始终不上屏。
@@ -144,24 +167,27 @@ DX11VA 硬解播到切换点前帧/事件即停(~168 帧后无输出, 输出尺�
 
 ## 任务拆解
 
-- [ ] T1 通路定案(先做):Android 用现有「OES 管线 → VkOutputLayer → AHB 导出」延伸
-      (改造小、已有全链代码),不追「MediaCodec 直出 AHB」新路径;Apple 用 CVPixelBuffer
-      (iOS)/IOSurface(mac)直出——VT 解码已是 CVPixelBuffer,补导出即可。
-- [ ] T2 Android Flutter 桥:导出接口暴露 AHB handle + 帧可用回调;Flutter 侧 TextureRegistry
-      接入(AHB→EGLImage→纹理);与 panvox 对齐 FFI 契约(生命周期/尺寸变化/重建)。
-- [ ] T3 Apple Flutter 桥:iOS CVPixelBuffer 直接喂 Flutter Texture;macOS IOSurface;
-      补 IMediaPlayer 层帧可用通知(现 onFrame 观察者核实口径)。
-- [ ] T4 样例先行:samples 下加最小宿主(或复用 avox-unity Android 路径)验证三平台导出,
-      再接 panvox 播放页(P-1 的零拷贝切换在产品侧做)。
-- [x] T5 分辨率变化正确性(**已落地 + 已实测通过 2026-09-17**; 原可提前于 T1/T2 插队):修 1:1 拷贝的
+- [x] T1 通路定案(**已定, 口径 2026-10-02 修订**):Flutter 侧不走纹理(改原生窗口直渲), 原
+      「Android AHB→Flutter Texture / Apple CVPixelBuffer→Flutter Texture」定案作废; 非 Flutter 宿主
+      沿用现状——Windows NT 共享纹理(Unity flavor2/3)/VK 导入(flavor1)、Android AHB、Apple IOSurface。
+      「MediaCodec 直出 AHB」「Apple Metal 纹理导出」不再需要(无 Flutter 消费方)。
+- [x] ~~T2 Android Flutter 桥~~ **作废(2026-10-02)**:Flutter 不再走纹理; AHB 导出仅由 Unity/Godot
+      消费(接口已在, 无需新做), 「与 panvox 对齐 FFI 契约」随 Flutter 纹理路取消。
+- [x] ~~T3 Apple Flutter 桥~~ **作废(2026-10-02)**:同 T2; IOSurface 导出保留(非 Flutter 宿主可用),
+      Apple 纹理路无推进项。
+- [x] T4 样例先行(**部分作废**):导出探针已在(`samples/vulkantest/iosharedtest.mm` 等);
+      「再接 panvox 播放页」作废——panvox 播放页改原生窗口直渲, 不走本计划的纹理通路。
+- [x] T5 分辨率变化正确性(**已落地 + 已实测通过 2026-09-17**):修 1:1 拷贝的
       extent 不匹配 —— **二选一**:(a) 分辨率变化后重建画布,并让本层输出格式(`outFormat`)
       跟随上游;(b) Windows 拷贝改走带 `viewRect` 的 `blitFillImage`,extent 不等时就缩放,
       别静默截断。验收:同一播放器实例换片 640x360 ↔ 1920x1080 各一次,比例正确、无黑屏
       无残影(复现与实测见上「已知缺陷」节)。
 
-## 验收
+## 验收(2026-10-02 修订)
 
-- 三平台样例出图,avox-test 归档时序/占用手册;panvox 接入后 CPU 帧率对比报告。
+- 原「三平台样例出图 + panvox 接入后 CPU 帧率对比报告」作废(Flutter 不走纹理)。
+- 现行: 非 Flutter 宿主的纹理导入通路在 avox-test 归档时序/占用手册; 纹理链作为 Flutter 车道的
+  判死结论与可复用判据见 [纹理直通与原生窗口](../../reports/纹理直通与原生窗口.md) §7。
 
 ## 风险与开放问题
 
@@ -171,7 +197,12 @@ DX11VA 硬解播到切换点前帧/事件即停(~168 帧后无输出, 输出尺�
 - **Vulkan 上游的 DX11 CS 转色是同类隐患**:`Dx11CSVideoRender` 曾因 constBuf 不随分辨率重传而
   静默只填左上角(2026-09-17 修复)。**教训**:凡是「着色器常量里带尺寸 + Dispatch 用另一处尺寸」
   的地方,换分辨率都必须重传常量;`VideoProcessRender`(DXVA)通路不受影响,因为它不吃这个 constBuf。
-- Android 多平面 NV12 AHB 在 Flutter 侧 EGL 导入的兼容性(设备碎片化),需真机矩阵。
-- Flutter GL/VK context 与 avox Vulkan context 的外部内存口径(requirement flags/handleType)。
-- CVPixelBuffer 生命周期(谁 release、pool 深度),ioSurface「换面语义」依赖调用方遵守注释,
-  Flutter 侧需把该约定固化成 API 而不是注释。
+- ~~Android 多平面 NV12 AHB 在 Flutter 侧 EGL 导入的兼容性(设备碎片化), 需真机矩阵~~
+  随 Flutter 纹理路取消; 非 Flutter 宿主的 AHB/VK 导入兼容性按各宿主自己验证(Unity Android 真机未验)。
+- ~~Flutter GL/VK context 与 avox Vulkan context 的外部内存口径(requirement flags/handleType)~~
+  同上作废。
+- CVPixelBuffer/IOSurface 生命周期(谁 release、pool 深度): 「非所有权/换面语义」依赖调用方遵守注释;
+  当前无宿主消费方, 将来若有宿主接入须先把该约定固化成 API 而不是注释。
+- **重走 Flutter 纹理路的前置**: 若未来有宿主想在 Flutter 里重走纹理直通, 先读
+  [纹理直通与原生窗口](../../reports/纹理直通与原生窗口.md) §2 的三条病灶(同进程并发碎块 / fence 竞态
+  1s 花屏 / output 方向跨 API 排序未建立)——该链是「修不如绕」判死, 不是缺一次修复。

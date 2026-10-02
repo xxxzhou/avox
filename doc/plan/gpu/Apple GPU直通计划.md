@@ -1,6 +1,6 @@
 # Apple GPU 直通计划 (macOS/iOS IOSurface 导出)
 
-> 状态: 进行中 · 上次核对: 2026-09-16 · 权威源: -
+> 状态: 进行中 · 上次核对: 2026-10-02 · 权威源: -
 
 
 > 2026-09-14 调研与规划, 同日 M1 SDK 侧落地。
@@ -17,6 +17,10 @@
 > `VULKAN_SDK=$HOME/VulkanSDK/1.4.313.0/macOS`(iOS 用 iOS slice), 探针构建需
 > `AVOX_CMAKE_ARGS="-DAVOX_ENABLE_SAMPLES=ON"`(Mac 缓存默认 OFF)。
 > **待办**: M2 iOS 真机 + panvox Flutter 桥(iOS 侧复用同一探针逻辑)。
+> **口径变更(2026-10-02)**: Flutter/panvox 已改原生窗口直渲、不走纹理交互(见
+> [a04](../backlog/a04-gpu-passthrough.md) 与 [纹理直通与原生窗口](../../reports/纹理直通与原生窗口.md));
+> 上述待办中「panvox Flutter 桥」作废, Apple IOSurface 导出能力保留但当前无宿主消费方
+> (Godot 纹理导入仅 Win/Android, Unity 无 Metal 纹理函数), iOS 真机验证随之不再推进。
 > 背景: GPU 直通 win/android 已通 ([多平台GPU共享](../../player/decode/多平台GPU共享.md),
 > win 双形态 Vk↔Vk/D3D11 + android AHB 均实测 PASS); panvox(Flutter)消费端在
 > win/android 已跑通, mac/iOS 缺口补齐后全端拉平。本计划行号基于当前 main,
@@ -25,6 +29,7 @@
 > 的 `__APPLE__` 分支无条件建 VkIosImage 并每帧 blit 进 IOSurface-backed
 > VkImage, 该链已被 VideoToolbox 编码管线消费 (IOSVEncoder)。
 > 缺的是: ①对宿主的正式导出 API ②独立设备读回验证 ③panvox/引擎消费桥。
+> (截至 2026-10-02 口径: ①已补(Avox.cpp Apple 分支) ②M1 已过 ③已随 Flutter 换道作废, 见上「口径变更」)
 
 ## 1. 现状盘点 (比「IOSurface(待做)」靠前)
 
