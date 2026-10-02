@@ -98,6 +98,8 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 
 **mac 插件腿 dlopen 失败(「STT plugin unavailable」/ 字幕降级 no-op 等)**: mac 引擎静态链入 shim, **只拉被引用的归档成员** → 插件 dlopen(RTLD_NOW 全量解析)要的引擎符号若 shim 自身无引用就不在 dylib 里(10/2 定谳: AudioTts::setSpeaker)。修=deploy_macos_runtime.sh 链接行按部署插件 `nm -u | grep -o __ZN4avox*` 逐 `-u` 钉链(f7a1ee0); 诊断三板斧: ①裸 ctypes dlopen 插件看首个缺符号 ②引擎 RTLD_GLOBAL 后再 dlopen(模拟 app) ③nm -gU shim 对缺符号。
 
+**mac 插件自包含纪律(第二插件案, 10/2)**: mac 插件是 `-undefined dynamic_lookup` 构建, 其 UND 在 RTLD_LOCAL dlopen 的平面查找下**看不到自己 LC_LOAD 的依赖 dylib** → 插件依赖的第三方符号必须静态吞入插件内(libsmb2/SSL 系 = WebRTC 归档的 BoringSSL + 系统 Security.framework; 注意 darwin 预编译件按 BoringSSL 编, 这些名字在 BoringSSL 是真函数, 别拿 OpenSSL 3 静态库去接——3.x 里它们是宏, 符号不存在)。引擎 rebuild 会连带重链插件, 依赖面可能静默变化, 插件加载失败先 `otool -L` + `nm -u` 重验。
+
 **网络环境(本机代理/TUN, 非引擎病)** —— 修法在引擎外, 故全文留本文常驻
 - IPTV/m3u 列表与国内流普遍慢、超时、周期 buffering, 而 NAS/局域网源全正常 → 先查本机 TUN 接管: `route print` 见 Meta Tunnel/Wintun + `tasklist` 见 verge-mihomo(Clash Verge)= 全机流量过代理。**对照法: `curl` 默认路由 vs `curl --interface <物理网卡IP>` 直连**(0923 实锤 CCTV1 列表 TUN 19s→直连 1s; 0926 复测首响 3.2s vs 1.2s); 修法 = Clash 给国内直播域名加 DIRECT 规则或关 TUN, 不动引擎。**绑定源地址法在部分环境只是绕路成功, 直连腿 000 时先核对绑定语义再下结论**。
 - 免费聚合清单(live.zbds 类)两大常态别当 app 病: ①大量「频道」= 点播循环(HTTP-FLV 服务端把整剧/整片循环推流, 0926 抽样 542 频道 107 个循环体, metshop 一台 66 个 —— 循环是内容本身, 永不完播); ②死链/整台服务器超时常态(145 台流服务器抽样过半 8s 无响应)。
