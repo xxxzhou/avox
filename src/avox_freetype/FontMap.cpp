@@ -132,10 +132,18 @@ bool loadFontFace(const char* fontName, const FT_Library& ftLib,
   }
 #elif __APPLE__
 // iOS/macOS平台
-#ifdef TARGET_OS_IPHONE
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
   fontPath = getFontPath(fontName);
 #else
-  // macOS: 系统字体目录
+  // macOS: 先吃 app 内置字体(avox.bundle/fonts, 与 iOS 同源), 再退系统目录
+  const char* bundledFont = getFontPath(fontName);
+  if (bundledFont) {
+    FT_Error bundledErr = FT_New_Face(ftLib, bundledFont, 0, &ftFace);
+    if (bundledErr == 0 && ftFace) {
+      LOGFLF(LogLevel::info, "Loaded bundled font:", bundledFont);
+      return true;
+    }
+  }
   fontPath = "/System/Library/Fonts/";
   fontPath += fontName;
 #endif
@@ -162,10 +170,13 @@ bool loadFontFace(const char* fontName, const FT_Library& ftLib,
       "C:\\Windows\\Fonts\\arial.ttf"    // Arial
   };
 #elif __APPLE__
+  // PingFang/Arial 自 macOS 26 起缺位, 兜底按现存 CJK 字体降序, Latin 殿底
   const char* defaultFonts[] = {
-      "/System/Library/Fonts/PingFang.ttc",   // 苹方
-      "/System/Library/Fonts/Helvetica.ttc",  // Helvetica
-      "/System/Library/Fonts/Arial.ttf"       // Arial
+      "/System/Library/Fonts/PingFang.ttc",             // 苹方(旧版 macOS)
+      "/System/Library/Fonts/Hiragino Sans GB.ttc",     // 冬青黑体-简(含假名)
+      "/System/Library/Fonts/STHeiti Medium.ttc",       // 黑体-简(含假名)
+      "/System/Library/Fonts/Supplemental/Songti.ttc",  // 宋体-简
+      "/System/Library/Fonts/Helvetica.ttc"             // Latin 兜底
   };
 #elif __ANDROID__
   const char* defaultFonts[] = {"/system/fonts/DMSans-Regular.ttf"};
