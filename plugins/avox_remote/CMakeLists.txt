@@ -42,16 +42,15 @@ else()
   message(STATUS "avox_remote plugin: libsmb2 未找到, smb 源不参与编译(见 D:/Work/github/libsmb2)")
 endif()
 
-if(APPLE AND OPENSSL_SSL_LIBRARY)
-  # 插件为 -undefined dynamic_lookup 构建: openssl 动态依赖的 UND 在 RTLD_LOCAL
-  # dlopen 平面查找下不可见(10/2 mac 实证), 静态吞入保插件自包含。
-  # 静态归档只吸收挂起 UND: libssl.a 必须排在 libsmb2.a/ffmpeg 之后(符号由它们引入)
-  get_filename_component(_ossl_dir "${OPENSSL_SSL_LIBRARY}" DIRECTORY)
-  if(EXISTS "${_ossl_dir}/libssl.a")
+if(APPLE)
+  # 插件为 -undefined dynamic_lookup 构建: 依赖库的 UND 在 RTLD_LOCAL dlopen
+  # 平面查找下不可见(10/2 mac 实证), 须在插件内解析。libsmb2/dav 按 BoringSSL
+  # 编(与 agent 同源, 这些名字在 BoringSSL 是真函数), 符号由 WebRTC 归档提供;
+  # libsmb2 的 Secure Transport 腿链系统 Security。
+  find_package(WebRTC QUIET)
+  if(WEBRTC_FOUND)
     list(REMOVE_ITEM _REMOTE_LIBS ${OPENSSL_LIBRARIES})
-    list(APPEND _REMOTE_LIBS "${_ossl_dir}/libssl.a" "${_ossl_dir}/libcrypto.a")
-    # libsmb2 预编译件含 Secure Transport 腿, SSL* 系符号由系统框架提供
-    list(APPEND _REMOTE_LIBS "-framework Security")
+    list(APPEND _REMOTE_LIBS ${WEBRTC_LIBRARIES} "-framework Security")
   endif()
 endif()
 register_plugin(avox_remote DYNAMIC LIBS ${_REMOTE_LIBS})
