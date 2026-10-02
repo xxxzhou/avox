@@ -37,9 +37,13 @@
 //   例外: AVOX_PLUGIN_BUILDING(独立 dylib/so 插件编进静态核工程)仍走动态导出分支,
 //   否则静态核平台(mac)上宿主 dlsym 找不到 NewModule。
 // - 动态(Win/Linux): 导出 NewModule + GetModuleABI, 运行期 dlopen 后取符号 + ABI 校验。
+// 静态分支同时生成保活符号 avox_keep_module_<name>: 注册器是全局 ctor 对象, 归档
+// 成员无引用即被链接器静默丢弃; ModuleMgr.cpp 的保活表按平台宏取址此符号, 把
+// 注册器所在 .o 拖进闭包。新静态并档模块无需再写任何锚点代码。
 #if AVOX_ENABLE_STATIC && !defined(AVOX_PLUGIN_BUILDING)
 #define AVOX_REGISTER_MODULE(ModuleClass, name)                       \
-  static avox::StaticLinkModule<ModuleClass> _linkMod_##name(#name);
+  static avox::StaticLinkModule<ModuleClass> _linkMod_##name(#name);  \
+  extern "C" void avox_keep_module_##name() {}
 #else
 #define AVOX_REGISTER_MODULE(ModuleClass, name)                        \
   extern "C" AVOX_PLUGIN_API IModule* NewModule() { return new ModuleClass(); } \

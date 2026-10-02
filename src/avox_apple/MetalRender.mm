@@ -1087,7 +1087,14 @@ void MetalRender::renderCVPixelBuffer(CVImageBufferRef imageBuffer) {
       targetTexture = outputTexture;
     }
     if (!imageBuffer || !cacheTexture || !pipelineState || !targetTexture) {
-      LOGFLF(LogLevel::warn, "Invalid parameters for rendering");
+      // 点名哪一环缺失(iOS 黑屏排查 10/3): imageBuffer=解码帧, cache/pipeline=
+      // vaildAndInitGraph 产物, target=层 drawable(nextDrawable 可返 nil)或
+      // 离屏 outputTexture
+      LOGFLF(LogLevel::warn, "Invalid parameters for rendering img:",
+             imageBuffer ? 1 : 0, " cache:", cacheTexture ? 1 : 0,
+             " pipeline:", pipelineState ? 1 : 0,
+             " target:", targetTexture ? 1 : 0,
+             " layer:", metalLayer ? 1 : 0);
       return;
     }
     id<MTLTexture> yTexture = nil;

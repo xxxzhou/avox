@@ -5,6 +5,11 @@
 #include <cstdlib>
 #include <thread>
 
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#include <dlfcn.h>
+#endif
+
 #include "avox/module/AvoxManager.hpp"
 
 namespace avox {
@@ -20,9 +25,25 @@ static std::atomic<int64_t> sRecoverBackoffBaseMs{1000};
 
 struct VkReg {
   VkReg() {
-    if (volkInitialize() != VK_SUCCESS) {
-      LOGFLF(LogLevel::warn, "volkInitialize failed");
+    if (volkInitialize() == VK_SUCCESS) {
+      return;
     }
+#if defined(__APPLE__) && defined(IOS) && !TARGET_OS_SIMULATOR
+    // iOS 真机(10/3): MoltenVK 以动态框架随宿主内嵌(独立命名空间 — 静态 .a
+    // 曾与 volk 全局指针变量撞名炸链接), 无 LC_LOAD 引用, 此处显式 dlopen 后
+    // 经 RTLD_DEFAULT 取 vkGetInstanceProcAddr 自举 volk; 缺框架仍落 Metal
+    // 原生腿(非致命)。
+    if (void* mvk = dlopen("@rpath/MoltenVK.framework/MoltenVK", RTLD_NOW | RTLD_LOCAL)) {
+      (void)mvk;
+      if (auto gipa = reinterpret_cast<PFN_vkGetInstanceProcAddr>(
+              dlsym(RTLD_DEFAULT, "vkGetInstanceProcAddr"))) {
+        volkInitializeCustom(gipa);
+        LOGFLF(LogLevel::info, "volk bootstrapped via MoltenVK framework");
+        return;
+      }
+    }
+#endif
+    LOGFLF(LogLevel::warn, "volkInitialize failed");
   }
 };
 

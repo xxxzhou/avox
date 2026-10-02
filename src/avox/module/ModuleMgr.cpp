@@ -27,6 +27,45 @@ static std::string sehCodeToString(DWORD code) {
 #include <dlfcn.h>
 #endif
 
+// 静态并档模块保活表 (10/2, 替代逐插件锚点+宿主 shim 引用的旧做法):
+// 注册器是全局 ctor 对象, 归档成员无引用即被链接器静默丢弃("编译了但没注册")。
+// 本 .o 因 ModuleMgr::Get 被核心必经路径引用而必入链接, 表内取址即把各注册器
+// 所在 .o 拖进闭包。新静态并档模块三步: 插件宏已自动生成 avox_keep_module_<name>
+// (见 IModule.hpp); CMake 闸门加定义 AVOX_STATIC_MODULE_<NAME>; 此表加一行。
+// 注意 mac 不入 webrtc: 并档会拖全 webrtc 闭包(BoringSSL×OpenSSL 撞链), 有意不保活。
+extern "C" {
+#if defined(AVOX_STATIC_MODULE_REMOTE)
+void avox_keep_module_avox_remote();
+#endif
+#if defined(AVOX_STATIC_MODULE_SHERPA)
+void avox_keep_module_avox_sherpa();
+#endif
+#if defined(AVOX_STATIC_MODULE_ONNX)
+void avox_keep_module_avox_onnx();
+#endif
+#if defined(AVOX_STATIC_MODULE_TRANSLATION)
+void avox_keep_module_avox_translation();
+#endif
+}
+static void avoxModuleKeeperNoop() {}
+// 非 const: 命名空间级 const 隐含内部链接, 未被引用时 -O2 连表带取址 relocation
+// 一并剔除, 保活失效(10/2 实证) — 必须外部链接, 定义即发射, relocation 必在
+void (*avox_moduleKeepers[])(void) = {
+    reinterpret_cast<void (*)(void)>(avoxModuleKeeperNoop),
+#ifdef AVOX_STATIC_MODULE_REMOTE
+    avox_keep_module_avox_remote,
+#endif
+#ifdef AVOX_STATIC_MODULE_SHERPA
+    avox_keep_module_avox_sherpa,
+#endif
+#ifdef AVOX_STATIC_MODULE_ONNX
+    avox_keep_module_avox_onnx,
+#endif
+#ifdef AVOX_STATIC_MODULE_TRANSLATION
+    avox_keep_module_avox_translation,
+#endif
+};
+
 namespace avox {
 
 namespace {

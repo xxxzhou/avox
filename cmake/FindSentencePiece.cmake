@@ -9,7 +9,11 @@ message(STATUS "SPM_INCLUDE_DIRS: ${SPM_INCLUDE_DIRS}")
 if(WIN32)
     set(SPM_LIB_DIR ${CMAKE_SOURCE_DIR}/build/windows/sentencepiece/src/${CMAKE_BUILD_TYPE})
 elseif(IOS)
+    # Xcode 多配置生成器 CMAKE_BUILD_TYPE 为空, 实际落位 <Config>-iphoneos
     set(SPM_LIB_DIR ${AVOX_MOEDULE_BUILD_DIR}/sentencepiece/src/${CMAKE_BUILD_TYPE}-iphoneos)
+    if(NOT EXISTS "${SPM_LIB_DIR}")
+        set(SPM_LIB_DIR ${AVOX_MOEDULE_BUILD_DIR}/sentencepiece/src/Release-iphoneos)
+    endif()
 elseif(APPLE)
     # macOS(Xcode 多配置生成器): 库在 sentencepiece/src/<Config>/
     set(SPM_LIB_DIR ${AVOX_MOEDULE_BUILD_DIR}/sentencepiece/src/${CMAKE_BUILD_TYPE})

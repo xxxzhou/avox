@@ -47,20 +47,52 @@ if __name__ == "__main__":
         build_common.build_module("fdk-aac",onlyMake,FDK_AAC_CMAKE_ARGS)
     if not build_common.check_module("freetype","freetype"):
         build_common.build_module("freetype",onlyMake,FREETYPE_CMAKE_ARGS)
-    # AVOX_SKIP_AI=1: 跳过 AI 模块 (sherpa/SPM 为 find_package 可选, 缺席自动 OFF)
-    if os.environ.get("AVOX_SKIP_AI", "1") == "1":
-        print("AVOX_SKIP_AI=1: 跳过 sherpa-onnx / sentencepiece (iOS 无 onnxruntime 预编译, 默认跳)")
+    # AI 通路 (sherpa 语音识别 / onnx 推理 / translation 翻译): onnxruntime 1.23.2
+    # iOS 静态库预编译入库仓 (ios/onnxruntime/onnxruntime-ios-arm64-1.23.2/, 与 mac
+    # 同版本) 后默认构建; 缺库或 AVOX_SKIP_AI=1 回退跳过 (find_package 缺席自动 OFF)。
+    # 模拟器无 ORT 切片校验, 沿用跳过。
+    is_sim = os.environ.get("AVOX_IOS_SIM") == "1"
+    ort_dir = os.path.abspath(os.path.join(os.path.dirname(__file__),
+        "..", "avox_library", "3rdparty", "library", "ios", "onnxruntime",
+        "onnxruntime-ios-arm64-1.23.2"))
+    ai_ready = (not is_sim) and os.path.exists(os.path.join(ort_dir, "lib", "libonnxruntime.a"))
+    if os.environ.get("AVOX_SKIP_AI", "0" if ai_ready else "1") == "1":
+        print("AVOX_SKIP_AI=1: 跳过 sherpa-onnx / sentencepiece")
+        ai_enabled = False
+    elif not ai_ready:
+        print("onnxruntime iOS 预编译缺失 (avox_library/.../ios/onnxruntime/), AI 回退跳过")
+        ai_enabled = False
     else:
+        # sherpa-onnx 链 ORT: build-ios.sh 同款 env 变量喂其 cmake
+        os.environ["SHERPA_ONNXRUNTIME_INCLUDE_DIR"] = os.path.join(ort_dir, "include")
+        os.environ["SHERPA_ONNXRUNTIME_LIB_DIR"] = os.path.join(ort_dir, "lib")
         if not build_common.check_module_sherpa():
             build_common.build_module("sherpa-onnx", onlyMake, SHERPA_CMAKE_ARGS)
         if not build_common.check_module_sentencepiece():
             build_common.build_module("sentencepiece", onlyMake, SPM_CMAKE_ARGS)
+        # sherpa-onnx 自设归档输出 lib/Release/ (Xcode 下无 -iphoneos 后缀); 归拢到
+        # check_module_sherpa / FindSherpaOnnx 的判据位 (幂等, 已在位则零拷贝)
+        import shutil
+        root = os.path.join(os.path.dirname(__file__), "build", "ios", "sherpa-onnx")
+        dst = os.path.join(root, "Release-iphoneos")
+        os.makedirs(dst, exist_ok=True)
+        for pat in (os.path.join(root, "lib", "Release", "*.a"),
+                    os.path.join(root, "**", "Release-iphoneos", "*.a")):
+            for src in glob.glob(pat, recursive=True):
+                if os.path.dirname(os.path.realpath(src)) == os.path.realpath(dst):
+                    continue  # 判据目录自身, 递归 glob 扫到时跳过
+                shutil.copy2(src, dst)
+        ai_enabled = build_common.check_module_sherpa() and build_common.check_module_sentencepiece()
     # Agent/Tool 仅 Windows, 其他平台关闭
     extra_args = "-DAVOX_ENABLE_AGENT=OFF -DAVOX_ENABLE_CLI=OFF -DAVOX_ENABLE_SWIG=OFF"
-    # onnxruntime.cmake 无 iOS 预编译(仅 Linux/macOS/Windows): 关 ONNX+SHERPA(CV/OCR/AVATAR 随之);
-    # vulkan 保持开: volk 动态加载只需头文件, VULKAN_SDK 未设时自动用本机 SDK 的 macOS 目录,
-    # MoltenVK 不随 INTERFACE 链接(iOS 由宿主 App 自带, LinkVulkan 对 iOS 缺库已降级为警告)
-    extra_args += " -DAVOX_ENABLE_ONNX=OFF -DAVOX_ENABLE_SHERPA=OFF"
+    # AI 开时三旗标齐开 (AVOXOptions find_package 三家+全局头/宏, 缺库逐项自动 OFF);
+    # 关时维持旧行为 (iOS 无 ORT 预编译时代的硬关)。vulkan 保持开: volk 动态加载只需
+    # 头文件, VULKAN_SDK 未设时自动用本机 SDK 的 macOS 目录, MoltenVK 不随 INTERFACE
+    # 链接(iOS 由宿主 App 自带, LinkVulkan 对 iOS 缺库已降级为警告)
+    if ai_enabled:
+        extra_args += " -DAVOX_ENABLE_ONNX=ON -DAVOX_ENABLE_SHERPA=ON -DAVOX_ENABLE_TRANSLATION=ON"
+    else:
+        extra_args += " -DAVOX_ENABLE_ONNX=OFF -DAVOX_ENABLE_SHERPA=OFF"
     # iOS 不出单测/试跑目标(含 avox_agent_tests, 与 SDK 无关)
     extra_args += " -DAVOX_BUILD_TESTS=OFF"
     if not os.environ.get("VULKAN_SDK"):

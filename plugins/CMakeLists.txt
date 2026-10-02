@@ -40,6 +40,11 @@ if(IOS)
   list(REMOVE_ITEM PLUGINS_DYNAMIC avox_remote)
   list(REMOVE_ITEM PLUGINS_DYNAMIC avox_fbx)
   list(REMOVE_ITEM PLUGINS_DYNAMIC avox_ass)
+  # AI 三件在 iOS 由 src/CMakeLists.txt 真机闸门静态并档进 libavox(AVOX_STATIC_MODULE_*),
+  # 动态路径若再建同名 dylib 会双重注册/双实现, 必须排除 (10/2); 其余插件维持原状
+  list(REMOVE_ITEM PLUGINS_DYNAMIC avox_sherpa)
+  list(REMOVE_ITEM PLUGINS_DYNAMIC avox_onnx)
+  list(REMOVE_ITEM PLUGINS_DYNAMIC avox_translation)
 endif()
 
 # 动态插件: 各自子目录调用 register_plugin(<name> DYNAMIC ...)

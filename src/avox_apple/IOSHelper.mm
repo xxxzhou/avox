@@ -97,6 +97,21 @@ const char* getBundlePath(NSString* bundleName, NSString* resourceName){
     NSString *flat = [avoxBundlePath stringByAppendingPathComponent:resourceName];
     if ([fm fileExistsAtPath:flat]) return [flat UTF8String];
   }
+  //  b2) iOS use_frameworks: pod 资源进 <App>/Frameworks/<pod>.framework/
+  //      <bundleName>/ (10/3 实证 avox.bundle 被装进 panvox_native.framework,
+  //      mainBundle pathForResource 永远找不到 → glsp/字体/模型全哑)
+  if (!avoxBundlePath) {
+    NSString *fwDir = [[[NSBundle mainBundle] bundlePath]
+        stringByAppendingPathComponent:@"Frameworks"];
+    NSArray<NSString *> *fws = [fm contentsOfDirectoryAtPath:fwDir error:nil];
+    for (NSString *fw in fws) {
+      if (![fw hasSuffix:@".framework"]) continue;
+      NSString *bundleDir = [[fwDir stringByAppendingPathComponent:fw]
+          stringByAppendingPathComponent:bundleName];
+      NSString *hit = [bundleDir stringByAppendingPathComponent:resourceName];
+      if ([fm fileExistsAtPath:hit]) return [hit UTF8String];
+    }
+  }
   NSArray<NSString*>* roots = @[
     [[[NSBundle mainBundle] bundlePath] stringByAppendingPathComponent:@"Contents/Resources"],
     [[NSFileManager defaultManager] currentDirectoryPath],
