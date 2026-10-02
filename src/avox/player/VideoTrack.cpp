@@ -64,6 +64,10 @@ void VideoTrack::start() {
 void VideoTrack::onVideoDesc() {
   // 每次开流复位: track跨open复用, 不复位则第二个HDR流不再回调
   bHdrMetaSent = false;
+  // 每次开流复位 DV 整形元数据: 解码器只在帧带 DOVI side data 时派发, 非 DV 流
+  // 整片不派发 —— 不复位则渲染腿沿用上个 DV 片的整形链(doviEnable 恒 1), 非 DV
+  // 内容被当 IPT 处理, 整体偏色(DV 片之后播 HDR10 片发红的根因)
+  windowRender->setDoviMeta(DoviMeta{});
   // 设置图像格式
   ImageFormat imageFormat = {};
   imageFormat.width = srcDesc.width;
