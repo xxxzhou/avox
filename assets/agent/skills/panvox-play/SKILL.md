@@ -91,9 +91,12 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 - 全片每秒周期跳帧(TrueHD 碎片轨) → 已修 c3f92b0
 - **多声道 AAC(5.1+)整轨静音(音轨在、画面正常、无 buffering, 日志缺 `setDesc` 行) → 已修(fdk-aac 输出缓冲定长 10240B 不足 6ch×1024, 每帧 `8204` 风暴; 见播放中分册)**: fdk 初始化成功故不触发 openFailed 回退链而 FFmpeg 车道永不接管; 首帧恒有一条 `error:5` 是无害噪声勿与风暴混判
 - **顶部细条彩带闪烁 → 片源病, 非引擎(换源才能根治)**
+- **DV Profile 5 颜色与 VLC/系统播放器不一致(自己品红/紫、别家青绿) → 非引擎问题: P5 基础层=IPTPQc2 且容器无色彩标签, 不做 DV 反变换的播放器按 BT.709 直出必然偏色; 自己日志 `[dovi] dispatch valid=1` 即正确(判据/复现配方见分册)**
 - **点播放/拖进度条后整 UI 冻死(低 CPU+无 .ips+`sample` 全采样锁同一栈) → 锁序反转死锁, Apple 专属(macOS/iOS) → 已修 466a928**: IOSAudioRender 同把 `mtx` 护缓冲+CoreAudio 句柄, onClose/pause/setVolume 持锁调 AudioOutputUnitStop/Start/SetParameter 等 HAL 锁, 实时 `renderCallback` 持 HAL 锁抢 `mtx` → AB-BA; `renderCallback` 改 `try_lock` + CoreAudio 调用全移锁外。判据/二进制验收见本文「锁序反转死锁」条。
 
 **App 内模型下载「满进度重来」(AI 字幕/画质模型的下载卡)**: 进度反复跑满→清零重下 = 清单 sha256 与发布 asset 失配 → 下载器每源**完整下载后**才 hashMismatch 换源重下(无续传、当时零日志)。102 定谳: stt-sense-voice.zip 4/24 重传后字节变(实测 11152a86)≠三份清单烤的 01cd4398, 主源组三条源全废靠 HF 备用组落地; 修=三份清单同哈希(avox a287502 + panvox 173a719)+ 失败路径落 `model-fetch:` 日志行(-Log 可见)。诊断铁证 = 真机 `curl -sL` 拉 zip 实算 sha 对清单; Windows 不暴露此族因模型由部署配方预铺, 不走 app 内下载器。
+
+**mac 插件腿 dlopen 失败(「STT plugin unavailable」/ 字幕降级 no-op 等)**: mac 引擎静态链入 shim, **只拉被引用的归档成员** → 插件 dlopen(RTLD_NOW 全量解析)要的引擎符号若 shim 自身无引用就不在 dylib 里(10/2 定谳: AudioTts::setSpeaker)。修=deploy_macos_runtime.sh 链接行按部署插件 `nm -u | grep -o __ZN4avox*` 逐 `-u` 钉链(f7a1ee0); 诊断三板斧: ①裸 ctypes dlopen 插件看首个缺符号 ②引擎 RTLD_GLOBAL 后再 dlopen(模拟 app) ③nm -gU shim 对缺符号。
 
 **网络环境(本机代理/TUN, 非引擎病)** —— 修法在引擎外, 故全文留本文常驻
 - IPTV/m3u 列表与国内流普遍慢、超时、周期 buffering, 而 NAS/局域网源全正常 → 先查本机 TUN 接管: `route print` 见 Meta Tunnel/Wintun + `tasklist` 见 verge-mihomo(Clash Verge)= 全机流量过代理。**对照法: `curl` 默认路由 vs `curl --interface <物理网卡IP>` 直连**(0923 实锤 CCTV1 列表 TUN 19s→直连 1s; 0926 复测首响 3.2s vs 1.2s); 修法 = Clash 给国内直播域名加 DIRECT 规则或关 TUN, 不动引擎。**绑定源地址法在部分环境只是绕路成功, 直连腿 000 时先核对绑定语义再下结论**。
