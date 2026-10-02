@@ -184,13 +184,16 @@ vec3 processColor(vec3 rgb) {
 	if (ubo.hdrMode == 2) {           // forceHDR: 直通, HDR 显示链消费
 		return rgb;
 	}
-	if (ubo.transfer == 2) {          // pq (HDR10)
+	// DV 链输出恒为 PQ BT.2020, 与容器标签无关(P5 无色彩标签时 transfer=0):
+	// 不覆盖则走 SDR 直通, DV 输出被当 gamma 直显 → 偏暗欠饱和
+	int xfer = (ubo.doviEnable == 1) ? 2 : ubo.transfer;
+	if (xfer == 2) {          // pq (HDR10)
 		vec3 lin = pqToLinear(rgb);
 		lin = toneMap(lin);
 		lin = bt2020ToBt709(lin);
 		return linearToBt709(lin);
 	}
-	if (ubo.transfer == 3) {          // hlg
+	if (xfer == 3) {          // hlg
 		vec3 lin = hlgToLinear(rgb) * 0.1;  // 1000nit 归一 -> 10000nit 归一
 		lin = toneMap(lin);
 		lin = bt2020ToBt709(lin);

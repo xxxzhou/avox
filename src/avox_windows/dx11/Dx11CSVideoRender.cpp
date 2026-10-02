@@ -197,13 +197,16 @@ float3 processColor(float3 rgb) {
     if (hdrMode == 2) {
         return rgb;
     }
-    if (transfer == 2) {
+    // DV 链输出恒为 PQ BT.2020, 与容器标签无关(P5 无色彩标签时 transfer=0):
+    // 不覆盖则走 SDR 直通, DV 输出被当 gamma 直显 → 偏暗欠饱和
+    int xfer = (doviEnable == 1) ? 2 : transfer;
+    if (xfer == 2) {
         float3 lin = pqToLinear(rgb);
         lin = toneMap(lin);
         lin = bt2020ToBt709(lin);
         return linearToBt709(lin);
     }
-    if (transfer == 3) {
+    if (xfer == 3) {
         float3 lin = hlgToLinear(rgb) * 0.1;
         lin = toneMap(lin);
         lin = bt2020ToBt709(lin);

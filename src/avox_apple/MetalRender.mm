@@ -121,21 +121,24 @@ NSString *const nv12trgbBody = AVOX_SHADER_STRING(
     }
 
     float3 processColor(float3 rgb, constant FragParams& params) {
+      // DV 链输出恒为 PQ BT.2020, 与容器标签无关(P5 无色彩标签时 transfer=0):
+      // 不覆盖则走 SDR 直通, DV 输出被当 gamma 直显 → 偏暗欠饱和
+      int xfer = (params.doviEnable == 1) ? 2 : params.transfer;
       if (params.hdrMode == 2) {
         // EDR 直通(extended linear ITUR-2020, 1.0=SDR 白): 线性化后原样
         // 上屏, 不 tone map 不压 709; 超白部分由合成器按 EDR 头距出光
-        float3 lin = (params.transfer == 2) ? (pqToLinear(rgb) * 100.0)
-                     : ((params.transfer == 3) ? (hlgToLinear(rgb) * 10.0)
+        float3 lin = (xfer == 2) ? (pqToLinear(rgb) * 100.0)
+                     : ((xfer == 3) ? (hlgToLinear(rgb) * 10.0)
                      : pow(max(rgb, float3(0.0)), float3(2.2)));
         return lin;
       }
-      if (params.transfer == 2) {
+      if (xfer == 2) {
         float3 lin = pqToLinear(rgb);
         lin = toneMap(lin, params.peakNits, params.sdrWhiteNits);
         lin = bt2020ToBt709(lin);
         return linearToBt709(lin);
       }
-      if (params.transfer == 3) {
+      if (xfer == 3) {
         float3 lin = hlgToLinear(rgb) * 0.1;
         lin = toneMap(lin, params.peakNits, params.sdrWhiteNits);
         lin = bt2020ToBt709(lin);
