@@ -46,9 +46,9 @@
     },
     {
       "label": "智谱 GLM",
-      "apiUrl": "https://open.bigmodel.cn/api/paas/v4",
+      "apiUrl": "https://open.bigmodel.cn/api/coding/paas/v4",
       "apiPath": "/chat/completions",
-      "keyUrl": "https://open.bigmodel.cn/usercenter/apikeys",
+      "keyUrl": "https://bigmodel.cn/coding-plan/personal/overview",
       "models": [
         { "id": "glm-5.3", "name": "GLM-5.3", "free": false, "note": "旗舰" },
         { "id": "glm-5.3-flash", "name": "GLM-5.3-Flash", "free": false, "note": "低价", "default": true },
