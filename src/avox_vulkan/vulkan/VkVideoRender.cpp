@@ -626,15 +626,21 @@ bool VkVideoRender::vaildAndInitGraph() {
       fontRender->setFontLayer(fontLayer->get());
     }
 #endif
-    if (bEnableCanvas) {
-      canvasLayer = graph->addNode<VkCanvasLayer>();
-      canvasRender->setCanvasLayer(canvasLayer->get());
-    }
     if (geometryRender->enabled() && !bPt) {
       geometryLayer = graph->addNode<VkGeometryLayer>();
       geometryLayer->get()->setSource(geometryRender.get());
       geometryRender->setLayer(geometryLayer->get());
     }
+  }
+  // 字幕画布层豁免直通裁剪(V2 兑现, 字幕画布多后端渲染计划 §5.4): forceHDR
+  // 拓扑照挂线, 帧在 16F 线性域走 canvasBlendHDR 变体(shader 内线性化×参考白);
+  // RGBA 直入(IImageBuffer 的 SDR 内容不升样)不升域。其余 font/geometry/
+  // 画质层在 bPt 仍全裁
+  if (bEnableCanvas) {
+    // 域开关经构造参数进(addNode 同步 attach→onInitGraph, 后置设置来不及):
+    // forceHDR 拓扑 in/out rgba16f + canvasBlendHDR; RGBA 直入不升域
+    canvasLayer = graph->addNode<VkCanvasLayer>(bPt && !bRgbaInput);
+    canvasRender->setCanvasLayer(canvasLayer->get());
   } else {
     // 直通态清画布挂靠: 图重建后旧 canvas 层已销毁, 防悬垂
     canvasRender->setCanvasLayer(nullptr);
@@ -715,8 +721,9 @@ bool VkVideoRender::vaildAndInitGraph() {
   }
 #endif
   // 字幕画布层在字体(OSD/SRT)之后、几何层之前: ASS/PGS 与 SRT 互斥,
-  // 顺序晚于所有画质层, 保证字幕不被超分/增强重采样(计划 §3.4 挂载位)
-  if (canvasLayer && !bPt) {
+  // 顺序晚于所有画质层, 保证字幕不被超分/增强重采样(计划 §3.4 挂载位);
+  // 直通态也连(bEnableCanvas 豁免, V2)
+  if (canvasLayer) {
     outNode = outNode->addLine(canvasLayer);
   }
   if (geometryRender->enabled() && !bPt) {

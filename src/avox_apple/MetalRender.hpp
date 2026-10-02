@@ -3,7 +3,11 @@
 #include <CoreVideo/CoreVideo.h>
 #include <Metal/Metal.h>
 #include <QuartzCore/QuartzCore.h>
+#include <atomic>
+#include <memory>
+#include "MetalCanvasLayer.hpp"
 #include "MetalContext.hpp"
+#include "avox/subtitle/CanvasRender.hpp"
 
 namespace avox {
 
@@ -56,6 +60,11 @@ public:
   virtual ImageFormat getImageFormat() override;
   virtual IOSurfaceRef getIOSurface() override;
 
+  // 字幕画布挂口(字幕画布多后端渲染计划 §5.2): lane=0 本腿输出是 VK 对接面
+  // 禁挂(字幕由 VK canvas 层负责); lane=1 返回稳定前端, 第二 draw 合成
+  virtual ICanvasLayer* enableRenderCanvas() override;
+  virtual void disableRenderCanvas() override;
+
  protected:
   // 颜色/HDR 参数(与 Dx11CSVideoRender 同策略): 随帧进 setFragmentBytes,
   // 无需重建管线。transfer=pq/hlg 且非 forceHDR 时走 tone map
@@ -85,6 +94,19 @@ private:
   void renderCVPixelBuffer(CVImageBufferRef imageBuffer);
   // 锁定并零拷发布当前NV12/x420 CVPixelBuffer到cpuBuffer(每帧最多一次)
   void publishCpuFrame(CVImageBufferRef imageBuffer);
+
+ private:
+  // 字幕画布挂/摘同步(渲染线程消费 bCanvasWanted, 内容信号走 CanvasRender)
+  void syncCanvasLayer();
+  // 画布第二 draw 管线(惰性首挂才建, 零字幕会话零驱动对象)
+  void createCanvasPipelineState();
+
+ private:
+  // 字幕画布: 宿主持前端(wanted 标志), 渲染线程持层实例
+  std::unique_ptr<CanvasRender> canvasRender;
+  std::unique_ptr<MetalCanvasLayer> canvasLayer;
+  std::atomic<bool> bCanvasWanted{false};
+  id<MTLRenderPipelineState> canvasPipelineState = nil;
 
 private:
   void logIOSurface();

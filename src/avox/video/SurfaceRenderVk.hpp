@@ -102,6 +102,11 @@ class AVOX_EXPORT SurfaceRenderVk : public ISurfaceRender,
   // 获取底层 VideoRender
   VideoRender* getVkVideoRender();
 
+  // 字幕画布挂口(字幕画布多后端渲染计划 P0): 纯 VK 包裹直进 VK 稳定前端,
+  // 无 VK(nullptr/未启用)返回 nullptr
+  virtual ICanvasLayer* enableRenderCanvas();
+  virtual void disableRenderCanvas();
+
  public:
   virtual void onSurfaceChange();
   // VideoFrame必需是下面二种GpuFrame/YUVFrame

@@ -15,77 +15,30 @@ VkCanvasLayer::VkCanvasLayer() {
   bParametChange = true;
 }
 
+VkCanvasLayer::VkCanvasLayer(bool bLinearDomain) : VkCanvasLayer() {
+  this->bLinearDomain = bLinearDomain;
+}
+
 VkCanvasLayer::~VkCanvasLayer() {}
 
 void VkCanvasLayer::updateCanvas(const AssCanvas& canvas) {
-  const uint8_t* rgba = canvas.rgba;
-  const int32_t w = canvas.width;
-  const int32_t h = canvas.height;
-  const int32_t stride = canvas.stride;
-  const int32_t x = canvas.x;
-  const int32_t y = canvas.y;
-  if (!rgba || w <= 0 || h <= 0) {
-    return;
-  }
-  std::lock_guard<std::mutex> lock(mtx);
-  if (canvasW <= 0 || canvasH <= 0) {
-    // 图未建(首帧尺寸未知): 暂存, onInitLayer 后应用
-    pendingCanvas.assign((size_t)h * stride, 0);
-    memcpy(pendingCanvas.data(), rgba, (size_t)h * stride);
-    pendingW = w;
-    pendingH = h;
-    pendingStride = stride;
-    pendingX = x;
-    pendingY = y;
-    hasPending = true;
-    return;
-  }
-  if (hasContent) {
-    // 清上一帧 bbox(CPU 画布侧); GPU 侧旧区域在本帧已不在采样矩形内
-    for (int32_t row = 0; row < rectH; ++row) {
-      memset(canvasData.data() + (size_t)(rectY + row) * canvasW * 4 +
-                 (size_t)rectX * 4,
-             0, (size_t)rectW * 4);
-    }
-  }
-  // blit 新 bbox(裁到画布内)
-  const int32_t cx0 = x < 0 ? 0 : x;
-  const int32_t cy0 = y < 0 ? 0 : y;
-  int32_t cx1 = x + w, cy1 = y + h;
-  if (cx1 > canvasW) cx1 = canvasW;
-  if (cy1 > canvasH) cy1 = canvasH;
-  for (int32_t row = cy0; row < cy1; ++row) {
-    const uint8_t* src = rgba + (size_t)(row - y) * stride + (size_t)(cx0 - x) * 4;
-    uint8_t* dst = canvasData.data() + (size_t)row * canvasW * 4 + (size_t)cx0 * 4;
-    memcpy(dst, src, (size_t)(cx1 - cx0) * 4);
-  }
-  rectX = cx0;
-  rectY = cy0;
-  rectW = cx1 - cx0;
-  rectH = cy1 - cy0;
-  hasContent = rectW > 0 && rectH > 0;
-  bNeedUpdate = true;
+  state.updateCanvas(canvas);
 }
 
-void VkCanvasLayer::clearCanvas() {
-  std::lock_guard<std::mutex> lock(mtx);
-  if (!hasContent) {
-    return;
-  }
-  hasContent = false;
-  bNeedUpdate = true;
-}
+void VkCanvasLayer::clearCanvas() { state.clearCanvas(); }
 
 void VkCanvasLayer::setCanvasTransform(float scale, float offsetX,
                                        float offsetY, float opacity) {
-  std::lock_guard<std::mutex> lock(mtx);
-  userScale = scale > 0.f ? scale : 1.f;
-  userOffsetX = offsetX;
-  userOffsetY = offsetY;
-  userOpacity = std::min(std::max(opacity, 0.f), 1.f);
+  state.setCanvasTransform(scale, offsetX, offsetY, opacity);
 }
 
 void VkCanvasLayer::onInitGraph() {
+  // 双域变体(字幕画布多后端渲染计划 §5.4): forceHDR 拓扑帧在 16F 线性域
+  // (1.0=80nit), canvas 采样在 shader 内线性化; SDR 拓扑照旧 rgba8 gamma 域
+  if (bLinearDomain) {
+    glslPath = "glsl/canvasBlendHDR.comp.spv";
+    inFormats[0].imageType = ImageType::rgba16f;
+  }
   // descriptor set layout: inTexs[0](视频帧) + canvasImage(sampler) +
   // outTexs[0] + UBO — 与 VkFontLayer/VkGeometryLayer 同构
   std::vector<UBOLayoutItem> items = {
@@ -94,7 +47,8 @@ void VkCanvasLayer::onInitGraph() {
       {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT},
       {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT}};
   layout->addSetLayout(items);
-  outFormats[0].imageType = ImageType::rgba8;
+  outFormats[0].imageType =
+      bLinearDomain ? ImageType::rgba16f : ImageType::rgba8;
   VkLayer::onInitGraph();
 }
 
@@ -105,17 +59,16 @@ void VkCanvasLayer::onInitLayer() {
   }
   // 画布纹理 = 合成画布尺寸(>1080p 恒 1920x1080 基准), 铺满全帧由 sampler
   // 归一化映射拉伸(与旧 VkFontLayer 同机制)
-  subtitleCanvasSize(inFormats[0].width, inFormats[0].height, &canvasW,
-                     &canvasH);
-  if (canvasW <= 0 || canvasH <= 0) {
-    canvasW = canvasH = 0;
+  int32_t cw = 0;
+  int32_t ch = 0;
+  subtitleCanvasSize(inFormats[0].width, inFormats[0].height, &cw, &ch);
+  if (!state.reset(cw, ch)) {
     return;
   }
-  canvasData.assign((size_t)canvasW * canvasH * 4, 0);
   // staging(TRANSFER_SRC): 一次分配画布尺寸, 每次只上传当前 bbox 紧凑行
   cpuBuffer = std::make_unique<VkWrapBuffer>();
   cpuBuffer->setVkContext(vkPipeGraph);
-  cpuBuffer->initResoure(BufferUsage::store, canvasW * canvasH * 4,
+  cpuBuffer->initResoure(BufferUsage::store, cw * ch * 4,
                          VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
   applyPending();
 }
@@ -123,7 +76,8 @@ void VkCanvasLayer::onInitLayer() {
 void VkCanvasLayer::onInitPipe() {
   canvasImage = VulkanTexturePtr(new VkTexture());
   canvasImage->setVkContext(vkPipeGraph);
-  canvasImage->InitResource(canvasW, canvasH, getVkFormat(ImageType::rgba8),
+  canvasImage->InitResource(state.width(), state.height(),
+                            getVkFormat(ImageType::rgba8),
                             VK_IMAGE_USAGE_SAMPLED_BIT |
                                 VK_IMAGE_USAGE_TRANSFER_DST_BIT,
                             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
@@ -140,66 +94,40 @@ void VkCanvasLayer::onInitPipe() {
 }
 
 void VkCanvasLayer::applyPending() {
-  if (!hasPending) {
+  if (!state.hasPending()) {
     return;
   }
   // 暂存件按当前帧参数走通用 blit(一次性; 调用方 onInitLayer 不持锁)
   std::vector<uint8_t> data;
-  data.swap(pendingCanvas);
-  const int32_t w = pendingW, h = pendingH, stride = pendingStride;
-  const int32_t x = pendingX, y = pendingY;
-  hasPending = false;
-  pendingW = pendingH = pendingStride = pendingX = pendingY = 0;
+  int32_t w = 0, h = 0, stride = 0, x = 0, y = 0;
+  state.takePending(data, w, h, stride, x, y);
   updateCanvas(AssCanvas{data.data(), w, h, stride, x, y});
 }
 
 void VkCanvasLayer::onPreFrame() {
   VkLayer::onPreFrame();
-  std::lock_guard<std::mutex> lock(mtx);
-  if (!cpuBuffer || canvasW <= 0) {
+  if (!cpuBuffer || state.width() <= 0) {
     return;
   }
-  if (bNeedUpdate) {
-    bNeedUpdate = false;
-    if (hasContent) {
-      // 整画布上传(staging 常驻画布尺寸)。命令缓冲在 onInitBuffers 只录制
-      // 一次并逐帧重提交, 拷贝区域必须是录制期确定的常量, 内容更新只能
-      // 走 staging 数据; 带宽 ~8MB/次内容变化(对白节奏数秒一次), 可接受。
-      cpuBuffer->upload(canvasData.data(), canvasW * canvasH * 4);
-    }
+  if (state.takeUploadDue()) {
+    // 整画布上传(staging 常驻画布尺寸)。命令缓冲在 onInitBuffers 只录制
+    // 一次并逐帧重提交, 拷贝区域必须是录制期确定的常量, 内容更新只能
+    // 走 staging 数据; 带宽 ~8MB/次内容变化(对白节奏数秒一次), 可接受。
+    cpuBuffer->upload(state.data(), state.width() * state.height() * 4);
   }
   // 门控矩形与采样映射每帧由 base bbox + 用户变换重算(不做增量累加,
   // 静止帧改变换也即时生效); 无内容时 opacity=0 强制直通(不能填用户值,
-  // 否则去采样已清空的画布)
-  if (!hasContent) {
-    vkParamet.opacity = 0.f;
-  } else {
-    const float s = userScale;
-    const float inv = 1.f / s;
-    // 轴心 = 帧中心(ASS/PGS 锚点归片源不可知); offset 叠加在轴心上:
-    // 正向 screen = P + (c - P) * s + o, 反算 suv = origin + uv * invScale
-    // (画布被 sampler 铺满全帧, 画布归一化 == 帧归一化, 除画布尺寸即帧比例)
-    const float qx = 0.5f + userOffsetX;
-    const float qy = 0.5f + userOffsetY;
-    const float baseCX = (float)(rectX + rectW / 2) / canvasW;
-    const float baseCY = (float)(rectY + rectH / 2) / canvasH;
-    vkParamet.centerX = qx + (baseCX - 0.5f) * s;
-    vkParamet.centerY = qy + (baseCY - 0.5f) * s;
-    vkParamet.width = (float)rectW / canvasW * s;
-    vkParamet.height = (float)rectH / canvasH * s;
-    vkParamet.originX = 0.5f - qx * inv;
-    vkParamet.originY = 0.5f - qy * inv;
-    vkParamet.invScale = inv;
-    vkParamet.opacity = userOpacity;
-  }
-  // UBO 每帧提交: 内容首帧恰逢命令缓冲录制常量的时序下, 一次性提交会
-  // 被吞掉; 常备提交成本可忽略(32 字节)
+  // 否则去采样已清空的画布)。UBO 每帧提交: 内容首帧恰逢命令缓冲录制
+  // 常量的时序下, 一次性提交会被吞掉; 常备提交成本可忽略(32 字节)
+  vkParamet = state.computeParamet();
   updateUBO(&vkParamet);
   bParametChange = true;
 }
 
 void VkCanvasLayer::onCommand() {
-  if (!cpuBuffer || !canvasImage || outTexs.empty()) {
+  const int32_t cw = state.width();
+  const int32_t ch = state.height();
+  if (!cpuBuffer || !canvasImage || cw <= 0 || outTexs.empty()) {
     return;
   }
   VkCommandBuffer cmd = getCurrentCmdBuffer();
@@ -218,16 +146,16 @@ void VkCanvasLayer::onCommand() {
   region.imageSubresource.layerCount = 1;
   region.imageOffset.x = 0;
   region.imageOffset.y = 0;
-  region.imageExtent.width = (uint32_t)canvasW;
-  region.imageExtent.height = (uint32_t)canvasH;
+  region.imageExtent.width = (uint32_t)cw;
+  region.imageExtent.height = (uint32_t)ch;
   region.imageExtent.depth = 1;
   vkCmdCopyBufferToImage(cmd, cpuBuffer->buffer, canvasImage->image,
                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
   canvasImage->addBarrier(cmd, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                           VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                           VK_ACCESS_SHADER_READ_BIT);
-  // 2. canvasBlend.comp: 无内容时 opacity=0, shader 直通把 base 写进输出 —
-  //    层在图内就必须 dispatch, 否则输出纹理是未定义内存(灰带伪影)
+  // 2. canvasBlend(.comp/HDR.comp): 无内容时 opacity=0, shader 直通把 base 写
+  //    进输出 — 层在图内就必须 dispatch, 否则输出纹理是未定义内存(灰带伪影)
   inTexs[0]->addBarrier(cmd, VK_IMAGE_LAYOUT_GENERAL,
                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                         VK_ACCESS_SHADER_READ_BIT);

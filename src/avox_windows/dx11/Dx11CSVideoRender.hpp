@@ -1,7 +1,11 @@
 #pragma once
 
+#include <atomic>
+
 #include "../dx12/Dx12Helper.hpp"
 #include "Dx11Resource.hpp"
+#include "DxCanvasLayer.hpp"
+#include "avox/subtitle/CanvasRender.hpp"
 #include "avox/video/ColorSpace.hpp"
 #include "avox/video/VideoBuffer.hpp"
 #include "avox/video/VideoRender.hpp"
@@ -58,6 +62,15 @@ class Dx11CSVideoRender : public VideoRender, public Dx11Context {
   DXGI_FORMAT cpuInFormat = DXGI_FORMAT_UNKNOWN;
   // CPU 帧腿的 D3D11 设备(取自呈现窗口, 渲染线程持有; 非拥有, 不 Release)
   ID3D11Device* cpuDevice = nullptr;
+  // 字幕画布(字幕画布多后端渲染计划 §5.1): 宿主持前端(wanted 标志), 渲染线程
+  // 持层实例; canvas 变体惰性编译(withDv×withCanvas 四象限只补 canvas 两象限)
+  std::unique_ptr<CanvasRender> canvasRender;
+  std::unique_ptr<DxCanvasLayer> canvasLayer;
+  std::atomic<bool> bCanvasWanted{false};
+  MComPtr<ID3D11ComputeShader> canvasShader;
+  MComPtr<ID3D11ComputeShader> canvasDvShader;
+  bool bCanvasProgramTried = false;
+  bool bCanvasDvProgramTried = false;
 
  protected:
   // 初始化图形管线
@@ -66,6 +79,12 @@ class Dx11CSVideoRender : public VideoRender, public Dx11Context {
   virtual void renderGpuFrame(const GpuFrame& frame) override;
   // CPU 帧腿(G9): yuv420P/yuv420P10 平面 → NV12/P010 上传纹理 → 既有 CS
   virtual void renderCpuFrame(const YUVFrame& frame) override;
+  // 字幕画布挂/摘同步(渲染线程消费 bCanvasWanted, 内容信号走 CanvasRender)
+  void syncCanvasLayer();
+  // canvas 变体惰性编译(百毫秒级冷编译只付一次, 与 DV 同策略)
+  bool ensureCanvasProgram(bool withDv);
+  // 变体选择 + canvas 资源绑定(render 线程); allowDv=false 供 CPU 帧腿
+  ID3D11ComputeShader* selectShader(bool allowDv);
   virtual bool fetchFrame(ImageBuffer* imageBuffer) override;
   // 颜色/HDR 参数(VideoRender 虚接口), 触发常量脏标记
   virtual void setColorSpace(const ColorSpaceDesc& c) override;
@@ -75,6 +94,12 @@ class Dx11CSVideoRender : public VideoRender, public Dx11Context {
   // bOutCpuYuv时把当前NV12帧staging回读,渲染线程内按需调用,一帧最多一次
   virtual bool getCpuFrameBuffer(IImageBuffer** buffer, YuvType& yuvType,
                                  int64_t* pts) override;
+
+ public:
+  // 字幕画布挂口(字幕画布多后端渲染计划 §5.1): lane=0 本腿输出是 VK 对接面
+  // 禁挂(字幕由 VK canvas 层负责); lane=1 返回稳定前端, CS canvas 变体合成
+  virtual ICanvasLayer* enableRenderCanvas() override;
+  virtual void disableRenderCanvas() override;
 
  public:
   virtual IRenderContext* getGpuContext() override {

@@ -1,15 +1,23 @@
 #pragma once
 
+#include <GLES2/gl2.h>
+
+#include <atomic>
+#include <memory>
+
 #include "GLESContext.hpp"
 #include "avox/module/RunTask.hpp"
 #include "avox/video/ColorSpace.hpp"
 #include "avox/video/VideoRender.hpp"
+#include "avox/subtitle/CanvasRender.hpp"
 
 #ifdef __ANDROID__
 #include "avox_android/AndVDecoder.hpp"
 #include "avox_android/SharedGpuBuffer.hpp"
 #endif
 namespace avox {
+
+class GlesCanvasLayer;
 
 class EglVideoRender : public VideoRender, public GLESContext {
 public:
@@ -56,10 +64,31 @@ protected:
 public:
   virtual IRenderContext *getGpuContext() override;
 
+  // 字幕画布挂口(字幕画布多后端渲染计划 §5.3): lane=0 本腿输出是 VK 对接面
+  // 禁挂; GLES 无 HDR 呈现面, 恒 SDR gamma 域, 第二 draw 混合
+  virtual ICanvasLayer* enableRenderCanvas() override;
+  virtual void disableRenderCanvas() override;
+
 private:
   void createProgram();
   void useProgram(uint32_t oesId);
   void closeProgram();
+  // 字幕画布挂/摘同步(渲染线程消费 bCanvasWanted, 内容信号走 CanvasRender)
+  void syncCanvasLayer();
+  // canvas 第二 draw 程序(惰性首挂才建, 零字幕会话零 GL 对象)
+  bool ensureCanvasProgram();
+
+ private:
+  // 字幕画布: 宿主持前端(wanted 标志), 渲染线程持层实例
+  std::unique_ptr<CanvasRender> canvasRender;
+  std::unique_ptr<GlesCanvasLayer> canvasLayer;
+  std::atomic<bool> bCanvasWanted{false};
+  uint32_t glCanvasProgram = 0;
+  int32_t canvasPosAttr = 0;
+  int32_t canvasUvAttr = 0;
+  int32_t canvasTexAttr = 0;
+  int32_t canvasRectAttr = 0;
+  int32_t canvasXformAttr = 0;
 };
 
 }

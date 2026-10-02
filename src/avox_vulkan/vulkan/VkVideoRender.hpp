@@ -185,9 +185,9 @@ class VkVideoRender : public VideoRender, public IVOutputLayerOb {
   FontRender* enableRenderFont();
   void disableRenderFont();
 #endif
-  // ASS/PGS 字幕画布层
-  ICanvasLayer* enableRenderCanvas();
-  void disableRenderCanvas();
+  // ASS/PGS 字幕画布层(基类虚口, lane=0 字幕的唯一落点)
+  ICanvasLayer* enableRenderCanvas() override;
+  void disableRenderCanvas() override;
   // 几何叠加层
   GeometryRender* enableRenderGeometry();
   void disableRenderGeometry();

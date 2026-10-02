@@ -185,7 +185,7 @@ Windows 输出翻转 6.1 / macOS 对齐 6.2 / VK HDR 内容链 6.3(G4+G10, 含�
 | 播中开关 Win HDR / 跨屏搬家 / 缩放往返 | 自动翻转重建, 不花屏不崩 | R1 |
 | SDR 片×任意 | 零变化 | 回归 |
 | 直通态截图/缩略 | 拒绝或走 SDR 口径, 不产脏图不灰 | R1/R2 |
-| 直通态字幕(内/外挂) | 域正确(直通裁字幕支路现状; V2 专项遗留) | R3 |
+| 直通态字幕(内/外挂) | 域正确(直通裁字幕支路现状; 方案已定稿 → [字幕画布多后端渲染计划](../player/字幕画布多后端渲染计划.md), 并入本稿 R2/R3) | R3 |
 | mac lane=0/lane=1 往返 | Metal→VK 交接 rgba8 照旧 | R3 回归 |
 | 硬解帧×图像处理需求(HDR 片) | 链F(PQ 码 rgba8→VK 升样, 保 HDR)或链E(tone map 降 SDR)按需路由; 超 RGBA8 不进 VK | R2/口径回归 |
 | 链F 画质对照 | 升样后 FP16 窗口高光顶出, 与链A 对照暗部/高光可察觉轻度 banding(8bit 量化, 已知代价) | R2 |
@@ -199,7 +199,7 @@ Windows 输出翻转 6.1 / macOS 对齐 6.2 / VK HDR 内容链 6.3(G4+G10, 含�
 - **lane=1 误收 vkHDR**: 若归一化一律折 forceHDR, 原生腿会误开直通交换链把 SDR 载荷当 PQ 码呈现=发灰; 已修入 §4.3(lane 分岔);
 - **ImageType 加枚举**: 枚举追加向后兼容(0~15 值不动); **影响面四件套**(分册 §6.1); **实际生效面=0**(全仓无 rgba10 产出点), 属纯预备;
 - **VkSharedImage 平台分支缺口**: 声明层已平台无关(`VkShareHandle` 含 `opaqueFd`/`androidHwBuffer`), 但**实现层只有 Win32**(`importFromHandle` 硬编码 `OPAQUE_WIN32_BIT` VkSharedImage.cpp:239, 导入整段在 `#ifdef _WIN32` :266-311)。Linux/鸿蒙若要用 VkDevice↔VkDevice 共享则不可用——**不阻塞 R1/R2**, 归 Linux/鸿蒙批次;
-- **VK 16F 域层兼容**: Blend/VR/font 层在 16F 线性域合成未处理, R2 先保主链, 字幕域专项跟进;
+- **VK 16F 域层兼容**: Blend/VR/font 层在 16F 线性域合成未处理, R2 先保主链, 字幕域专项跟进(方案已定稿 → [字幕画布多后端渲染计划](../player/字幕画布多后端渲染计划.md));
 - **iOS EDR**: 无 NSScreen 探测口径(UIScreen maximumPotentialEDRHeadroom?)另评估;
 - **遗留挂账**: tone map sdrWhite 恒 100nit 不跟手显示(GET_SDR_WHITE_LEVEL); `pvx_hdr_toggle.ps1 -Off` set ok 但状态不动(panvox 侧); HLG 直通线性化腿在直通分支同生效需确认;
 - **旧 A-9 backlog(2026-10-01 删)**: SDR→HDR 上变换口径**现修正**为「要做就归 VK+显式开关」(§9.1), 不违背「SDR 片**默认**零变化」; DV P5 兼容层未列入本稿范围, 如需重启另立新账; VT 路径 P1 落地(e9d9d54)归 git, 战役纪要见 [DV-HDR与构建协同](../../reports/DV-HDR与构建协同.md)。
@@ -246,7 +246,7 @@ Windows 输出翻转 6.1 / macOS 对齐 6.2 / VK HDR 内容链 6.3(G4+G10, 含�
 - **Mac 链F 通道不存在**(G10 跨平台半场): mac forceHDR 出已 EOTF 线性(非 PQ 码), 且 lane=0 时 Metal 画 drawable 直呈屏、IOSurface 仅离屏路径 ⇒ 无「Metal 产→VK 导入」通道。需独立批(与 G7 叠加后收益不足)——**列为不排期**。
 - **R4 Android/Linux HDR**: EGL 无 HDR 呈现面口(G8), Linux 无 GPU 导入腿; §七明标「另批详设」⇒ **范围外**。
 - **iOS EDR(G5)**: `MetalWindow.mm:58-63` iOS 腿恒不受理(无 NSScreen); 探测口径未评估 ⇒ 归 R3 出口。
-- **VK 16F 域层兼容(Blend/VR/font)**: 16F 线性域合成未处理 ⇒ 归 R2 字幕/图像处理专项。
+- **VK 16F 域层兼容(Blend/VR/font)**: 16F 线性域合成未处理 ⇒ 归 R2 字幕/图像处理专项(方案已定稿 → [字幕画布多后端渲染计划](../player/字幕画布多后端渲染计划.md))。
 
 **真机验收项(代码就绪但未验)**: R1(SU130 HDR10 片 lane=1 全 10bit 无 banding; 软解 HDR lane=1 直通) / R2(Win 软解 HDR×HDR 屏 FP16 高光顶出; 链F 硬解片高光顶出+图像处理可用) / 回归(SDR 片零变化、播中开关/跨屏/缩放往返, **依赖 D3**) 。
 

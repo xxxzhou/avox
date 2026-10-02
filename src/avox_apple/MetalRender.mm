@@ -286,7 +286,55 @@ NSString *const nv12trgbBody = AVOX_SHADER_STRING(
       }
       rgb = processColor(rgb, params);
       return float4(clamp(rgb, 0.0, 1.0), 1.0);
-    });
+    }
+
+    // 字幕画布混合(字幕画布多后端渲染计划 §5.2): premultiplied source-over
+    // 交 OM blend(one, oneMinusSourceAlpha)。canvas 恒 rgba8 SDR gamma 域,
+    // f16 直通(extended linear 1.0=100nit, 与 pqToLinear*100 同标尺)时在
+    // shader 内线性化×参考白比例(203/100, 权威源 CanvasBlendMath.hpp);
+    // SDR 目标(linearScale=0)gamma 域直混, 与 VK canvasBlend.comp 同语义
+    struct CanvasParams {
+      float centerX;
+      float centerY;
+      float width;
+      float height;
+      float opacity;
+      float originX;
+      float originY;
+      float invScale;
+      float linearScale;
+    };
+
+    fragment float4 canvasFragmentShader(VertexOut in [[stage_in]],
+                                         texture2d<float> canvasTex [[texture(0)]],
+                                         sampler canvasSampler [[sampler(0)]],
+                                         constant CanvasParams& p [[buffer(0)]]) {
+      if (p.opacity <= 0.0) {
+        discard_fragment();
+      }
+      float2 uv = in.texCoord;
+      float2 rmin = float2(p.centerX - p.width * 0.5, p.centerY - p.height * 0.5);
+      float2 rmax = float2(p.centerX + p.width * 0.5, p.centerY + p.height * 0.5);
+      if (any(uv < rmin) || any(uv >= rmax)) {
+        discard_fragment();
+      }
+      // 反算采样点; 越界显式丢弃(sampler clamp-to-edge 会把画布边缘拉花)
+      float2 suv = float2(p.originX, p.originY) + uv * p.invScale;
+      if (any(suv < float2(0.0)) || any(suv > float2(1.0))) {
+        discard_fragment();
+      }
+      float4 overlay = canvasTex.sample(canvasSampler, suv);
+      float3 rgb = overlay.rgb;
+      if (p.linearScale > 0.0) {
+        // BT.709 逆 OETF(canvas 码值→相对线性光, 白=1.0)
+        float3 lo = rgb * 4.5;
+        float3 hi = pow((rgb + float3(0.099)) / float3(1.099), float3(1.0 / 0.45));
+        rgb = mix(lo, hi, step(float3(0.081), rgb)) * p.linearScale;
+      }
+      // opacity<1 时 rgb 随 alpha 同乘防白漂(与 VK canvasBlend 同规)
+      return float4(rgb * p.opacity, overlay.a * p.opacity);
+    }
+  );
 
 NSString *const nv12trgb =
     [NSString stringWithFormat:@"%@%@", nv12trgbPrefix, nv12trgbBody];
@@ -303,9 +351,94 @@ void regIOSVRender() {
   AvoxManager::Get().initFuncs.push_back(metalRenderReg);
 }
 
-MetalRender::MetalRender() { renderType = RenderType::Metal; updateColorMat(); }
+MetalRender::MetalRender() {
+  renderType = RenderType::Metal;
+  updateColorMat();
+  canvasRender = std::make_unique<CanvasRender>();
+}
 
 MetalRender::~MetalRender() { releaseGraph(); }
+
+// 字幕画布挂口(字幕画布多后端渲染计划 §5.2)
+ICanvasLayer* MetalRender::enableRenderCanvas() {
+  // lane=0 本腿输出是 VK 对接面: 禁挂(双重字幕+字幕被超分), 由 VK canvas 层负责
+  if (bVkOutput) {
+    return nullptr;
+  }
+  bCanvasWanted = true;
+  return canvasRender.get();
+}
+
+void MetalRender::disableRenderCanvas() { bCanvasWanted = false; }
+
+// 渲染线程: 挂/摘同步(宿主侧只置 wanted, 层实例归渲染线程)
+void MetalRender::syncCanvasLayer() {
+  if (bCanvasWanted && !canvasLayer) {
+    canvasLayer = std::make_unique<MetalCanvasLayer>();
+    canvasRender->setCanvasLayer(canvasLayer.get());
+  } else if (!bCanvasWanted && canvasLayer) {
+    canvasRender->setCanvasLayer(nullptr);
+    canvasLayer.reset();
+  }
+}
+
+// 画布第二 draw 管线: 同顶点描述符, canvasFragmentShader + OM blend
+// one/oneMinusSourceAlpha(premultiplied source-over); 色附格式随 bF16Pipeline
+// 与视频管线同帧对齐(flip 走 releaseGraph→重建, 此处重建后惰性再建)
+void MetalRender::createCanvasPipelineState() {
+  if (!device) {
+    return;
+  }
+  MTLRenderPipelineDescriptor *pipelineDescriptor =
+      [[MTLRenderPipelineDescriptor alloc] init];
+  // 顶点描述符与 createPipelineState 同构(同 vertexShader 顶点布局)
+  MTLVertexDescriptor *vertexDescriptor = [[MTLVertexDescriptor alloc] init];
+  vertexDescriptor.attributes[0].format = MTLVertexFormatFloat2;
+  vertexDescriptor.attributes[0].offset = 0;
+  vertexDescriptor.attributes[0].bufferIndex = 0;
+  vertexDescriptor.attributes[1].format = MTLVertexFormatFloat2;
+  vertexDescriptor.attributes[1].offset = 2 * sizeof(float);
+  vertexDescriptor.attributes[1].bufferIndex = 0;
+  vertexDescriptor.layouts[0].stride = 4 * sizeof(float);
+  vertexDescriptor.layouts[0].stepFunction = MTLVertexStepFunctionPerVertex;
+  vertexDescriptor.layouts[0].stepRate = 1;
+  pipelineDescriptor.vertexDescriptor = vertexDescriptor;
+  NSError *libraryError = nil;
+  id<MTLLibrary> library =
+      [device newLibraryWithSource:nv12trgb options:nil error:&libraryError];
+  if (!library) {
+    LOGFLF(LogLevel::warn, "canvas library failed:",
+           libraryError.localizedDescription
+               ? libraryError.localizedDescription.UTF8String
+               : "(no description)");
+    return;
+  }
+  pipelineDescriptor.vertexFunction =
+      [library newFunctionWithName:@"vertexShader"];
+  pipelineDescriptor.fragmentFunction =
+      [library newFunctionWithName:@"canvasFragmentShader"];
+  pipelineDescriptor.colorAttachments[0].pixelFormat =
+      bF16Pipeline ? MTLPixelFormatRGBA16Float : MTLPixelFormatRGBA8Unorm;
+  pipelineDescriptor.colorAttachments[0].blendingEnabled = YES;
+  pipelineDescriptor.colorAttachments[0].rgbBlendOperation = MTLBlendOperationAdd;
+  pipelineDescriptor.colorAttachments[0].alphaBlendOperation = MTLBlendOperationAdd;
+  pipelineDescriptor.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorOne;
+  pipelineDescriptor.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorOne;
+  pipelineDescriptor.colorAttachments[0].destinationRGBBlendFactor =
+      MTLBlendFactorOneMinusSourceAlpha;
+  pipelineDescriptor.colorAttachments[0].destinationAlphaBlendFactor =
+      MTLBlendFactorOneMinusSourceAlpha;
+  NSError *pipelineError = nil;
+  canvasPipelineState =
+      [device newRenderPipelineStateWithDescriptor:pipelineDescriptor
+                                             error:&pipelineError];
+  if (!canvasPipelineState) {
+    LOGFLF(LogLevel::warn, "canvas pipeline state failed:",
+           pipelineError.localizedDescription
+               ? pipelineError.localizedDescription.UTF8String
+               : "(no description)");
+  }
+}
 
 // 直通层配置: forceHDR 且过 EDR 探测时 16Float + BT.2100 PQ(PQ 值原样落帧),
 // 否则恢复 SDR 默认。管线色附格式随 bF16Pipeline 对齐, 两者必须同帧一致,
@@ -799,7 +932,10 @@ void MetalRender::createTextureCache() {
          " output texture:", outputTexture);
 }
 
-void MetalRender::closePipelineState() { pipelineState = nil; }
+void MetalRender::closePipelineState() {
+  pipelineState = nil;
+  canvasPipelineState = nil;
+}
 
 void MetalRender::closeTextureCache() {
   if (cacheTexture) {
@@ -1040,6 +1176,39 @@ void MetalRender::renderCVPixelBuffer(CVImageBufferRef imageBuffer) {
     [commandEncoder drawPrimitives:MTLPrimitiveTypeTriangle
                        vertexStart:0
                        vertexCount:6];
+    // 字幕画布第二 draw(lane=1 呈现腿, 字幕画布多后端渲染计划 §5.2):
+    // 无内容整跳(零字幕零影响); 同 viewport(视频矩形, canvas 归一化坐标与
+    // 帧归一化一致), OM blend 完成 source-over。f16 直通时 canvas 在 shader
+    // 内线性化×(203/100)(1.0=100nit, 与 processColor forceHDR 分支同标尺)
+    syncCanvasLayer();
+    if (canvasLayer) {
+      canvasLayer->ensureTexture(device, (int32_t)width, (int32_t)height);
+      canvasLayer->uploadIfNeeded();
+      if (canvasLayer->visible() && canvasLayer->texture()) {
+        if (!canvasPipelineState) {
+          createCanvasPipelineState();
+        }
+        if (canvasPipelineState) {
+          const CanvasBlendParamet cp = canvasLayer->computeParamet();
+          MetalCanvasParams sp;
+          sp.centerX = cp.centerX;
+          sp.centerY = cp.centerY;
+          sp.width = cp.width;
+          sp.height = cp.height;
+          sp.opacity = cp.opacity;
+          sp.originX = cp.originX;
+          sp.originY = cp.originY;
+          sp.invScale = cp.invScale;
+          sp.linearScale = bF16Pipeline ? (203.0f / 100.0f) : 0.0f;
+          [commandEncoder setRenderPipelineState:canvasPipelineState];
+          [commandEncoder setFragmentBytes:&sp length:sizeof(sp) atIndex:0];
+          [commandEncoder setFragmentTexture:canvasLayer->texture() atIndex:0];
+          [commandEncoder drawPrimitives:MTLPrimitiveTypeTriangle
+                             vertexStart:0
+                             vertexCount:6];
+        }
+      }
+    }
     [commandEncoder endEncoding];
     // 渲染线程无 RunLoop, 隐式 CA 事务可能不下刷; 显式事务逐帧 flush。
     // 2026-09-24 实测未观测到差异(present 节奏本就是干净 25fps), 属理论保险

@@ -13,6 +13,8 @@
 
 namespace avox {
 
+class ICanvasLayer;
+
 struct VRenderDesc {
   std::string name = "VideoRender";
 };
@@ -207,6 +209,12 @@ class AVOX_EXPORT VideoRender : public OptionLink {
   virtual void renderWindow(Window* window);
   // 各平台GPU输出buffer
   virtual void* getOutGpuBuffer() { return nullptr; }
+
+  // 字幕画布混合层挂口(字幕画布多后端渲染计划 P0): 返回稳定前端(CanvasRender
+  // 归实现方所有), 不支持返回 nullptr。lane 语义: 实现方仅在自身输出为呈现
+  // 终点时可接 — lane=0 的平台腿输出是 VK 对接面, 禁挂(双重字幕+被超分)
+  virtual ICanvasLayer* enableRenderCanvas() { return nullptr; }
+  virtual void disableRenderCanvas() {}
 
  protected:
   // 记录目标窗口并立即刷新一次直通实态缓存(§4.2)

@@ -105,6 +105,25 @@ void SurfaceRenderNative::setHdrMode(HdrMode mode) {
   }
 }
 
+ICanvasLayer* SurfaceRenderNative::enableRenderCanvas() {
+  // lane 路由: lane=0 VK 图内合成(lane=0 的平台腿输出是 VK 对接面, 禁挂);
+  // lane=1 平台腿(P0 平台渲染器未实现, 基类返回 nullptr = 字幕缺失现状)
+  if (bVulkan) {
+    return vkVideoRender ? vkVideoRender->enableRenderCanvas() : nullptr;
+  }
+  return pVideoRender ? pVideoRender->enableRenderCanvas() : nullptr;
+}
+
+void SurfaceRenderNative::disableRenderCanvas() {
+  // 双腿都清: 换道重开后挂层可能落在另一条腿, disable 须跨腿生效
+  if (vkVideoRender) {
+    vkVideoRender->disableRenderCanvas();
+  }
+  if (pVideoRender) {
+    pVideoRender->disableRenderCanvas();
+  }
+}
+
 void SurfaceRenderNative::enableYuvOut(YuvType ytype) {
   // vulkan在场: 走vk管线输出处理后的帧(现状不变)
   if (bVulkan) {

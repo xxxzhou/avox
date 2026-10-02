@@ -59,6 +59,12 @@ class AVOX_EXPORT SurfaceRenderNative : public SurfaceRenderVk {
   virtual bool getCpuFrame(YUVFrame& frame) override;
   // 按bVulkan分流: vulkan走vk管线, 非vulkan走平台渲染器原生回读
   virtual bool getCpuFrameBuffer(IImageBuffer** buffer, YuvType& yuvType) override;
+
+ public:
+  // 字幕画布挂口按 lane 路由(字幕画布多后端渲染计划 §三): lane=0 VK 图内
+  // 合成, lane=1 平台腿; disable 双腿都清(换道重开后挂层可能在另一条腿)
+  virtual ICanvasLayer* enableRenderCanvas() override;
+  virtual void disableRenderCanvas() override;
 };
 
 }

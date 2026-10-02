@@ -2,6 +2,7 @@
 
 #include "GLES3/gl3.h"
 #include "GLESContext.hpp"
+#include "GlesCanvasLayer.hpp"
 #include "avox/module/AvoxManager.hpp"
 #include "avox/module/HighClock.hpp"
 #include "avox/player/VideoTrack.hpp"
@@ -123,6 +124,49 @@ static const GLfloat uvs[] = {
     0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f,
 };
 
+// 字幕画布第二 draw 程序(字幕画布多后端渲染计划 §5.3): GLES 腿无 HDR 呈现面,
+// 恒 SDR gamma 域, 语义与 VK canvasBlend.comp 同源。顶点布局与主 program 同构
+// (position vec4 + uv vec2, 复用 verts/uvs 指针); premultiplied source-over
+// 交固定管线混合(GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
+static const char* CanvasVertexShaderString = R"(
+attribute vec4 position;
+attribute vec2 uv;
+varying mediump vec2 canvasUv;
+void main() {
+    gl_Position = vec4(position.xy, 0.0, 1.0);
+    canvasUv = uv;
+}
+)";
+
+static const char* CanvasFragmentShaderString = R"(
+precision mediump float;
+varying mediump vec2 canvasUv;
+uniform sampler2D canvasTex;
+uniform vec4 uRect;   // center.xy, size.xy(帧归一化)
+uniform vec4 uXform;  // origin.xy, invScale, opacity
+void main() {
+    if (uXform.w <= 0.0) {
+        gl_FragColor = vec4(0.0);
+        return;
+    }
+    vec2 rmin = uRect.xy - uRect.zw * 0.5;
+    vec2 rmax = uRect.xy + uRect.zw * 0.5;
+    if (any(lessThan(canvasUv, rmin)) || any(greaterThanEqual(canvasUv, rmax))) {
+        gl_FragColor = vec4(0.0);
+        return;
+    }
+    // 反算采样点; 越界显式置空(clamp-to-edge 会把画布边缘 alpha 拉花)
+    vec2 suv = uXform.xy + canvasUv * uXform.z;
+    if (any(lessThan(suv, vec2(0.0))) || any(greaterThan(suv, vec2(1.0)))) {
+        gl_FragColor = vec4(0.0);
+        return;
+    }
+    vec4 o = texture2D(canvasTex, suv);
+    // opacity<1 时 rgb 随 alpha 同乘防白漂(与 VK canvasBlend 同规)
+    gl_FragColor = vec4(o.rgb * uXform.w, o.a * uXform.w);
+}
+)";
+
 void regEglRender() {
   RegFunc eglRenderReg = {
       "egl render init", []() {
@@ -135,9 +179,54 @@ void regEglRender() {
   AvoxManager::Get().initFuncs.push_back(eglRenderReg);
 }
 
-EglVideoRender::EglVideoRender() { renderType = RenderType::OpenGLES; }
+EglVideoRender::EglVideoRender() {
+  renderType = RenderType::OpenGLES;
+  canvasRender = std::make_unique<CanvasRender>();
+}
 
 EglVideoRender::~EglVideoRender() { closeProgram(); }
+
+// 字幕画布挂口(字幕画布多后端渲染计划 §5.3)
+ICanvasLayer* EglVideoRender::enableRenderCanvas() {
+  // lane=0 本腿输出是 VK 对接面: 禁挂(双重字幕+字幕被超分), 由 VK canvas 层负责
+  if (bVkOutput) {
+    return nullptr;
+  }
+  bCanvasWanted = true;
+  return canvasRender.get();
+}
+
+void EglVideoRender::disableRenderCanvas() { bCanvasWanted = false; }
+
+// 渲染线程: 挂/摘同步(宿主侧只置 wanted, 层实例归渲染线程)
+void EglVideoRender::syncCanvasLayer() {
+  if (bCanvasWanted && !canvasLayer) {
+    canvasLayer = std::make_unique<GlesCanvasLayer>();
+    canvasRender->setCanvasLayer(canvasLayer.get());
+  } else if (!bCanvasWanted && canvasLayer) {
+    canvasRender->setCanvasLayer(nullptr);
+    canvasLayer.reset();
+  }
+}
+
+// canvas 第二 draw 程序(调用点 context current)
+bool EglVideoRender::ensureCanvasProgram() {
+  if (glCanvasProgram) {
+    return true;
+  }
+  glCanvasProgram =
+      createGLProgram(CanvasVertexShaderString, CanvasFragmentShaderString);
+  if (!glCanvasProgram) {
+    LOGFLF(LogLevel::warn, "create canvas gl program failed");
+    return false;
+  }
+  canvasPosAttr = glGetAttribLocation(glCanvasProgram, "position");
+  canvasUvAttr = glGetAttribLocation(glCanvasProgram, "uv");
+  canvasTexAttr = glGetUniformLocation(glCanvasProgram, "canvasTex");
+  canvasRectAttr = glGetUniformLocation(glCanvasProgram, "uRect");
+  canvasXformAttr = glGetUniformLocation(glCanvasProgram, "uXform");
+  return true;
+}
 
 void EglVideoRender::onSetSurface() {
   LOGFLF(LogLevel::info, "surface:", surface);
@@ -394,6 +483,37 @@ void EglVideoRender::useProgram(uint32_t oesId) {
   glVertexAttribPointer(uvAttr, 2, GL_FLOAT, false, 0, (void*)(uvs));
   // 渲染
   glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+  // 字幕画布第二 draw(lane=1 呈现腿, 字幕画布多后端渲染计划 §5.3):
+  // GLES 无 HDR 呈现面恒 SDR gamma 域; 无内容整跳(零字幕零影响)。
+  // 同 viewport(视频矩形, canvas 归一化坐标与帧归一化一致)
+  syncCanvasLayer();
+  if (canvasLayer &&
+      canvasLayer->ensureTexture(imageFormat.width, imageFormat.height)) {
+    canvasLayer->uploadIfNeeded();
+    if (canvasLayer->visible() && ensureCanvasProgram()) {
+      const CanvasBlendParamet p = canvasLayer->computeParamet();
+      glUseProgram(glCanvasProgram);
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D, canvasLayer->texture());
+      glUniform1i(canvasTexAttr, 0);
+      glUniform4f(canvasRectAttr, p.centerX, p.centerY, p.width, p.height);
+      glUniform4f(canvasXformAttr, p.originX, p.originY, p.invScale,
+                  p.opacity);
+      glEnableVertexAttribArray(canvasPosAttr);
+      glVertexAttribPointer(canvasPosAttr, 2, GL_FLOAT, false, 0,
+                            (void*)(verts));
+      glEnableVertexAttribArray(canvasUvAttr);
+      glVertexAttribPointer(canvasUvAttr, 2, GL_FLOAT, false, 0, (void*)(uvs));
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+      glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+      glDisable(GL_BLEND);
+      glDisableVertexAttribArray(canvasPosAttr);
+      glDisableVertexAttribArray(canvasUvAttr);
+      glBindTexture(GL_TEXTURE_2D, 0);
+      glUseProgram(glProgram);
+    }
+  }
   //
   glDisableVertexAttribArray(posAttr);
   glDisableVertexAttribArray(uvAttr);
@@ -419,6 +539,16 @@ void EglVideoRender::useProgram(uint32_t oesId) {
 
 void EglVideoRender::closeProgram() {
 #ifndef WIN32
+  // canvas GL 对象随 context 释放; 层解绑, contentStale 走宿主重传
+  if (canvasLayer) {
+    canvasLayer->releaseGL();
+    canvasRender->setCanvasLayer(nullptr);
+    canvasLayer.reset();
+  }
+  if (glCanvasProgram) {
+    glDeleteProgram(glCanvasProgram);
+    glCanvasProgram = 0;
+  }
   if (glProgram) {
     glDeleteProgram(glProgram);
     glProgram = 0;

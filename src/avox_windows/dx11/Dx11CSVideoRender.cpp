@@ -7,6 +7,7 @@
 
 #include "Dx11ShaderCache.hpp"
 #include "Dx11Window.hpp"
+#include "DxCanvasLayer.hpp"
 #include "avox/module/AvoxManager.hpp"
 #include "avox/video/ColorSpace.hpp"
 
@@ -277,24 +278,157 @@ static const char* kDvBranch = R"(    if (doviEnable == 1) {
     }
 )";
 
-static std::string buildShaderSource(bool withDv) {
-  std::string s =
-      std::string(kShaderHead) + (withDv ? kShaderDv : "") + kShaderBody;
+// canvas 变体附加段(字幕画布多后端渲染计划 §5.1): 混合码与输出域无关 ——
+// HDR 直通域的画布已由 CPU 预编码为 PQ 码(DxCanvasLayer), SDR 域原样 gamma。
+// 逐像素 gate-rect + 反算采样, 语义与 VK canvasBlend.comp/Metal canvasFragment
+// 同源
+static const char* kShaderCanvas = R"(
+Texture2D<float4> canvasTex : register(t2);
+SamplerState canvasSampler : register(s0);
+
+cbuffer CanvasCbuf : register(b1)
+{
+    float4 canvasRect;   // center.xy, size.xy(帧归一化)
+    float4 canvasXform;  // origin.xy, invScale, opacity
+    float4 canvasMisc;   // canvasW, canvasH(补位)
+};
+
+// premultiplied source-over 叠加(写 UAV 前); opacity=0/出矩形/越采样域走原值
+float4 applyCanvas(float4 base, uint2 pix) {
+    if (canvasXform.w <= 0.0f) {
+        return base;
+    }
+    float2 uv = (float2(pix) + 0.5f) / float2(width, height);
+    float2 rmin = canvasRect.xy - canvasRect.zw * 0.5f;
+    float2 rmax = canvasRect.xy + canvasRect.zw * 0.5f;
+    if (any(uv < rmin) || any(uv >= rmax)) {
+        return base;
+    }
+    float2 suv = canvasXform.xy + uv * canvasXform.z;
+    if (any(suv < 0.0f) || any(suv > 1.0f)) {
+        return base;
+    }
+    float4 o = canvasTex.SampleLevel(canvasSampler, suv, 0);
+    float a = o.a * canvasXform.w;
+    return float4(o.rgb * canvasXform.w + base.rgb * (1.0f - a), base.a);
+}
+)";
+
+static std::string buildShaderSource(bool withDv, bool withCanvas) {
+  std::string s = std::string(kShaderHead) + (withDv ? kShaderDv : "") +
+                  (withCanvas ? kShaderCanvas : "") + kShaderBody;
   const std::string marker = "%%DV_BRANCH%%";
   auto p = s.find(marker);
   if (p != std::string::npos) {
     s.replace(p, marker.size(), withDv ? kDvBranch : "");
   }
+  if (withCanvas) {
+    // outTex 写入点接 applyCanvas(与 kShaderBody 内字面量严格同形, 替换唯一)
+    struct Rep {
+      const char* from;
+      const char* to;
+    };
+    static const Rep reps[] = {
+        {"= o1;", "= applyCanvas(o1, uint2(DTid.x*2, DTid.y*2));"},
+        {"= o2;", "= applyCanvas(o2, uint2(DTid.x*2+1, DTid.y*2));"},
+        {"= o3;", "= applyCanvas(o3, uint2(DTid.x*2, DTid.y*2+1));"},
+        {"= o4;", "= applyCanvas(o4, uint2(DTid.x*2+1, DTid.y*2+1));"},
+        {"= rgba1;", "= applyCanvas(rgba1, uint2(DTid.x*2,DTid.y*2));"},
+        {"= rgba2;", "= applyCanvas(rgba2, uint2(DTid.x*2+1,DTid.y*2));"},
+        {"= rgba3;", "= applyCanvas(rgba3, uint2(DTid.x*2,DTid.y*2+1));"},
+        {"= rgba4;", "= applyCanvas(rgba4, uint2(DTid.x*2+1,DTid.y*2+1));"},
+    };
+    for (const auto& r : reps) {
+      const auto pos = s.find(r.from);
+      if (pos != std::string::npos) {
+        s.replace(pos, strlen(r.from), r.to);
+      }
+    }
+  }
   return s;
 }
 
-static const std::string& shaderSource(bool withDv) {
-  static const std::string baseSrc = buildShaderSource(false);
-  static const std::string dvSrc = buildShaderSource(true);
+static std::string buildShaderSource(bool withDv) {
+  return buildShaderSource(withDv, false);
+}
+
+static const std::string& shaderSource(bool withDv, bool withCanvas) {
+  static const std::string baseSrc = buildShaderSource(false, false);
+  static const std::string dvSrc = buildShaderSource(true, false);
+  static const std::string canvasSrc = buildShaderSource(false, true);
+  static const std::string canvasDvSrc = buildShaderSource(true, true);
+  if (withCanvas) {
+    return withDv ? canvasDvSrc : canvasSrc;
+  }
   return withDv ? dvSrc : baseSrc;
 }
 
-Dx11CSVideoRender::Dx11CSVideoRender() { renderType = RenderType::D3D11; }
+static const std::string& shaderSource(bool withDv) {
+  return shaderSource(withDv, false);
+}
+
+Dx11CSVideoRender::Dx11CSVideoRender() {
+  renderType = RenderType::D3D11;
+  canvasRender = std::make_unique<CanvasRender>();
+}
+
+// 字幕画布挂口(字幕画布多后端渲染计划 §5.1)
+ICanvasLayer* Dx11CSVideoRender::enableRenderCanvas() {
+  // lane=0 本腿输出是 VK 对接面: 禁挂(双重字幕+字幕被超分), 由 VK canvas 层负责
+  if (bVkOutput) {
+    return nullptr;
+  }
+  bCanvasWanted = true;
+  return canvasRender.get();
+}
+
+void Dx11CSVideoRender::disableRenderCanvas() { bCanvasWanted = false; }
+
+// 渲染线程: 挂/摘同步(宿主侧只置 wanted, 层实例归渲染线程)
+void Dx11CSVideoRender::syncCanvasLayer() {
+  if (bCanvasWanted && !canvasLayer) {
+    canvasLayer = std::make_unique<DxCanvasLayer>();
+    canvasRender->setCanvasLayer(canvasLayer.get());
+  } else if (!bCanvasWanted && canvasLayer) {
+    canvasRender->setCanvasLayer(nullptr);
+    canvasLayer.reset();
+  }
+}
+
+// canvas 变体惰性编译(与 DV 同策略)
+bool Dx11CSVideoRender::ensureCanvasProgram(bool withDv) {
+  MComPtr<ID3D11ComputeShader>& slot = withDv ? canvasDvShader : canvasShader;
+  if (slot) {
+    return true;
+  }
+  const bool& tried = withDv ? bCanvasDvProgramTried : bCanvasProgramTried;
+  if (tried || !device || !d3dcontext) {
+    return false;
+  }
+  if (withDv) {
+    bCanvasDvProgramTried = true;
+  } else {
+    bCanvasProgramTried = true;
+  }
+  ID3DBlob* errorBlob = nullptr;
+  ID3DBlob* shaderBlob = Dx11ShaderCache::get(shaderSource(withDv, true).c_str(),
+                                              "main", "cs_5_0", &errorBlob);
+  if (!shaderBlob) {
+    if (errorBlob) {
+      log(LogLevel::warn, "Dx11Graph canvas D3DCompile error: ",
+          (char*)errorBlob->GetBufferPointer());
+      errorBlob->Release();
+    }
+    return false;
+  }
+  if (FAILED(device->CreateComputeShader(shaderBlob->GetBufferPointer(),
+                                         shaderBlob->GetBufferSize(), nullptr,
+                                         &slot))) {
+    slot.Reset();
+    return false;
+  }
+  return true;
+}
 
 bool Dx11CSVideoRender::vaildAndInitGraph() {
   // 统一检查点(§4.2): 呈现面直通实态翻转 → 置 bResetFlag 重建输出端
@@ -361,6 +495,15 @@ void Dx11CSVideoRender::releaseGraph() {
   dvShader.Reset();
   boundShader = nullptr;
   bDvProgramTried = false;
+  canvasShader.Reset();
+  canvasDvShader.Reset();
+  bCanvasProgramTried = false;
+  bCanvasDvProgramTried = false;
+  // 画布纹理/参数常量随设备资源一起失效: 解绑层, contentStale 走宿主重传
+  if (canvasLayer) {
+    canvasRender->setCanvasLayer(nullptr);
+    canvasLayer.reset();
+  }
   // CPU 帧腿上游纹理随图释放(重建时按新尺寸/格式重造)
   inTexture.Reset();
   yView.Reset();
@@ -551,8 +694,10 @@ void Dx11CSVideoRender::renderCpuFrame(const YUVFrame& frame) {
     constBuf->updateResource(d3dcontext.Get());
   }
   // 绑定输入 SRV / 输出 UAV / 着色器, 与 createProgram 尾段口径一致
-  d3dcontext->CSSetShader(computeShader.Get(), nullptr, 0);
-  boundShader = computeShader.Get();
+  // (CPU 帧腿同样可 canvas 合成; allowDv=false 保持不吃 DV 链的既有行为)
+  ID3D11ComputeShader* want = selectShader(false);
+  d3dcontext->CSSetShader(want ? want : computeShader.Get(), nullptr, 0);
+  boundShader = want ? want : computeShader.Get();
   ID3D11ShaderResourceView* srvArray[2] = {yView.Get(), uvView.Get()};
   d3dcontext->CSSetShaderResources(0, 2, srvArray);
   ID3D11UnorderedAccessView* uavArray[1] = {outTexture->uavView.Get()};
@@ -747,10 +892,37 @@ bool Dx11CSVideoRender::ensureDvProgram() {
 }
 
 ID3D11ComputeShader* Dx11CSVideoRender::selectShader() {
-  if (!doviMeta.valid) {
-    return computeShader.Get();
+  return selectShader(true);
+}
+
+// 变体选择 + canvas 资源绑定(render 线程): canvas 活跃帧走 canvas 变体
+// (prepareAndBind 同步建纹理/上传/刷参数), 空窗/编译失败回退非 canvas 变体
+// (零字幕零影响); allowDv=false 供 CPU 帧腿(既有行为不吃 DV 链)
+ID3D11ComputeShader* Dx11CSVideoRender::selectShader(bool allowDv) {
+  syncCanvasLayer();
+  const bool bDv = allowDv && doviMeta.valid;
+  ID3D11ComputeShader* base = nullptr;
+  if (!bDv) {
+    base = computeShader.Get();
+  } else {
+    base = ensureDvProgram() ? dvShader.Get() : computeShader.Get();
   }
-  return ensureDvProgram() ? dvShader.Get() : computeShader.Get();
+  const bool bCanvasFrame =
+      canvasLayer && canvasLayer->visible() &&
+      canvasLayer->prepareAndBind(device, d3dcontext.Get(), imageWidth,
+                                  imageHeight,
+                                  !bVkOutput && bTargetPassthrough);
+  if (!bCanvasFrame || !ensureCanvasProgram(bDv)) {
+    return base;
+  }
+  ID3D11ComputeShader* want = bDv ? canvasDvShader.Get() : canvasShader.Get();
+  if (want) {
+    ID3D11ShaderResourceView* cSrv = canvasLayer->srv();
+    d3dcontext->CSSetShaderResources(2, 1, &cSrv);
+    ID3D11Buffer* cBuf = canvasLayer->paramBuffer();
+    d3dcontext->CSSetConstantBuffers(1, 1, &cBuf);
+  }
+  return want;
 }
 
 void Dx11CSVideoRender::renderToTexture(const GpuFrame& gpuFrame) {

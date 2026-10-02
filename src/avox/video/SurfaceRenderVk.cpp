@@ -31,6 +31,16 @@ VideoRender* SurfaceRenderVk::getVkVideoRender() {
   return nullptr;
 }
 
+ICanvasLayer* SurfaceRenderVk::enableRenderCanvas() {
+  return vkVideoRender ? vkVideoRender->enableRenderCanvas() : nullptr;
+}
+
+void SurfaceRenderVk::disableRenderCanvas() {
+  if (vkVideoRender) {
+    vkVideoRender->disableRenderCanvas();
+  }
+}
+
 void SurfaceRenderVk::setVulkan(bool bVulkan) {
   LOGFLF(LogLevel::warn, "not support set vulkan,now vulkan:", bVulkan);
 }

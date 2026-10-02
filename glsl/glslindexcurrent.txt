@@ -7,6 +7,7 @@ yuv2rgbaV2.comp
 yuv2rgbaV3.comp
 yuv2rgbaV5.comp
 canvasBlend.comp
+canvasBlendHDR.comp
 vrProject.comp
 yuv2rgbaHDR.comp
 pqUpsample.comp

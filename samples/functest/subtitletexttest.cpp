@@ -130,7 +130,21 @@ class TextOutOb : public ISurfaceRenderOb {
     delete rgba;
   }
   void onSurface() override {}
-  void onRender(const SurfaceRenderEvent*) override {}
+  // onRender 事件续流计数: forceHDR 直通裁 yuv/image 出图(CPU 像素证据不可
+  // 得), 事件流是否延续 = 直通拓扑含 canvas 层时图健康的客观信号
+  // (格式不匹配/建图失败即断流), ev.hdr 位佐证直通档真在生效
+  void onRender(const SurfaceRenderEvent* ev) override {
+    std::lock_guard<std::mutex> lock(mtx);
+    ++renderEvents;
+    if (ev) {
+      lastHdr = ev->hdr;
+    }
+    // 只数带真输出层的事件(generation!=0): 重建失败(格式不匹配等)时图死,
+    // 事件仍派发但 generation=0 — 门槛保证直通拓扑的图健康判据成立
+    if (hdrPhase && ev && ev->generation != 0) {
+      ++hdrEvents;
+    }
+  }
   void onWinSizeChange(int32_t, int32_t) override {}
 
   void beginSeekPhaseLocked(bool wantText) {
@@ -150,6 +164,11 @@ class TextOutOb : public ISurfaceRenderOb {
   int32_t seekPhase = -1;
   int64_t phaseFrames = 0;
   int64_t phaseBright = 0;
+  // forceHDR 相(SUBTEXT_HDR=1): 事件续流计数
+  int64_t renderEvents = 0;
+  int64_t hdrEvents = 0;
+  int32_t lastHdr = -1;
+  bool hdrPhase = false;
 };
 
 }  // namespace
@@ -254,8 +273,7 @@ int main(int argc, char* argv[]) {
   }
 
   // 可选 seek 相位: SUBTEXT_SEEK=1 (对白内 2s 带字 / 空档 9s 无字)
-  const bool doSeek = std::getenv("SUBTEXT_SEEK") != nullptr;
-  bool seekOk = !doSeek;
+  const bool doSeek = std::getenv("SUBTEXT_SEEK") != nullptr;  bool seekOk = !doSeek;
   if (doSeek) {
     struct SeekCase {
       int64_t pos;
@@ -295,15 +313,42 @@ int main(int argc, char* argv[]) {
     }
   }
 
+  // forceHDR 相(SUBTEXT_HDR=1): SDR 字幕验收后切直通档(字幕画布多后端渲染
+  // 计划 §5.4)。直通裁 yuv/image 出图故无 CPU 像素证据; 判据 = onRender 事件
+  // 续流不断(直通拓扑含 16F canvas 层时建图健康, 失败即断流) + ev.hdr 位置位。
+  // 字幕内容的 HDR 域正确性归 HDR 屏人眼验收, 不在本探针
+  const bool doHdr = std::getenv("SUBTEXT_HDR") != nullptr &&
+                     std::getenv("SUBTEXT_HDR")[0] == '1';
+  bool hdrOk = !doHdr;
+  int64_t hdrEvents = 0;
+  int32_t hdrFlag = -1;
+  if (doHdr) {
+    sr->setHdrMode(HdrMode::forceHDR);
+    {
+      std::lock_guard<std::mutex> lock(ob.mtx);
+      ob.hdrPhase = true;
+    }
+    for (int i = 0; i < 50 && ob.hdrEvents < 30; ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    std::lock_guard<std::mutex> lock(ob.mtx);
+    hdrEvents = ob.hdrEvents;
+    hdrFlag = ob.lastHdr;
+    hdrOk = hdrEvents >= 30 && hdrFlag == 1;
+    std::printf("hdr phase: events=%lld hdr=%d %s\n", (long long)hdrEvents,
+                hdrFlag, hdrOk ? "ok" : "BAD");
+  }
+
   player->close();
   removeSurfaceRenderOb(sr, &ob);
   delete player;
 
-  const bool ok = loadOk && ob.frames >= 30 && ob.subFrames >= 10 && seekOk;
+  const bool ok =
+      loadOk && ob.frames >= 30 && ob.subFrames >= 10 && seekOk && hdrOk;
   std::printf(
       "[AVOX][TEST] case=subtext result=%s loadOk=%d seekOk=%d frames=%lld "
-      "subFrames=%lld\n",
+      "subFrames=%lld hdrOk=%d hdrEvents=%lld hdr=%d\n",
       ok ? "PASS" : "FAIL", (int)loadOk, (int)seekOk, (long long)ob.frames,
-      (long long)ob.subFrames);
+      (long long)ob.subFrames, (int)hdrOk, (long long)hdrEvents, hdrFlag);
   return ok ? 0 : 1;
 }

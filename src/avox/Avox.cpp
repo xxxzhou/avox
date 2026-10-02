@@ -965,24 +965,6 @@ void disableVkInput(ISurfaceRender* sr) {
   LOGFLF(LogLevel::info, "disableVkInput: done");
 }
 
-// ── ASS/PGS 字幕画布层(§3.4): CanvasRender 稳定前端, 无图返回空 ──
-
-ICanvasLayer* enableRenderCanvas(ISurfaceRender* sr) {
-  VkVideoRender* vkRender = getVkVideoRender(sr);
-  if (!vkRender) {
-    return nullptr;
-  }
-  return vkRender->enableRenderCanvas();
-}
-
-void disableRenderCanvas(ISurfaceRender* sr) {
-  VkVideoRender* vkRender = getVkVideoRender(sr);
-  if (!vkRender) {
-    return;
-  }
-  vkRender->disableRenderCanvas();
-}
-
 #else  // !AVOX_ENABLE_VULKAN
 
 bool enableVkOutput(ISurfaceRender* sr, int32_t w, int32_t h) {
@@ -1004,13 +986,23 @@ bool enableVkInput(ISurfaceRender* sr, int32_t w, int32_t h) {
 }
 bool setVkInputHandle(ISurfaceRender* sr, const VkSharedHandle* handle) { return false; }
 void disableVkInput(ISurfaceRender* sr) {}
-ICanvasLayer* enableRenderCanvas(ISurfaceRender* sr) {
-  (void)sr;
-  return nullptr;
-}
-void disableRenderCanvas(ISurfaceRender* sr) { (void)sr; }
 
 #endif  // AVOX_ENABLE_VULKAN
+
+// ── ASS/PGS 字幕画布层(§3.4): lane 路由分派(字幕画布多后端渲染计划 P0)。
+// ISurfaceRender 公开头不加虚口, 经 SurfaceRenderVk 多态(WindowRender 链
+// 同属它)按 lane 分流: lane=0 VK 图内 / lane=1 平台腿 ──
+
+ICanvasLayer* enableRenderCanvas(ISurfaceRender* sr) {
+  SurfaceRenderVk* render = dynamic_cast<SurfaceRenderVk*>(sr);
+  return render ? render->enableRenderCanvas() : nullptr;
+}
+
+void disableRenderCanvas(ISurfaceRender* sr) {
+  if (SurfaceRenderVk* render = dynamic_cast<SurfaceRenderVk*>(sr)) {
+    render->disableRenderCanvas();
+  }
+}
 
 void addSurfaceRenderOb(ISurfaceRender* surfaceRender, ISurfaceRenderOb* ob) {
   WindowRender* render = static_cast<WindowRender*>(surfaceRender);
