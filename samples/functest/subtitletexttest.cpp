@@ -232,9 +232,12 @@ int main(int argc, char* argv[]) {
   // 看引擎日志 canvas 变体痕迹("canvas variant on ... pq:1")
   const bool doNative = std::getenv("SUBTEXT_NATIVE") != nullptr &&
                         std::getenv("SUBTEXT_NATIVE")[0] == '1';
+  // SUBTEXT_WINVK=1: 窗口+VK 车道(panvox 默认拓扑: 真窗口呈现, VK 图内合成)
+  const bool doWinVk = std::getenv("SUBTEXT_WINVK") != nullptr &&
+                       std::getenv("SUBTEXT_WINVK")[0] == '1';
   void* nativeWnd = nullptr;
 #ifdef _WIN32
-  if (doNative) {
+  if (doNative || doWinVk) {
     WNDCLASSEXW wc = {};
     wc.cbSize = sizeof(wc);
     wc.lpfnWndProc = DefWindowProcW;
@@ -260,6 +263,10 @@ int main(int argc, char* argv[]) {
     // 原生车道: 先定 lane 再挂面(setVulkan 对已有面直接 return), yuv out 走
     // 平台渲染器原生回读(onFrame 照常交付)
     sr->setVulkan(false);
+    sr->setSurface(nativeWnd);
+    sr->enableYuvOut(YuvType::yuv420P);
+  } else if (doWinVk && nativeWnd) {
+    // 窗口+VK 车道(panvox 拓扑): VK 图内合成后经互操作上屏, yuv out 走 VK 管线
     sr->setSurface(nativeWnd);
     sr->enableYuvOut(YuvType::yuv420P);
   } else {
@@ -318,6 +325,27 @@ int main(int argc, char* argv[]) {
   for (int i = 0; i < seconds; ++i) {
     pump();
     std::this_thread::sleep_for(std::chrono::seconds(1));
+  }
+
+  // SUBTEXT_SWITCH=<次数>: 内封字幕轨循环切换压测(切轨崩溃复现, 1003)
+  const int switchCount =
+      std::getenv("SUBTEXT_SWITCH") ? std::atoi(std::getenv("SUBTEXT_SWITCH")) : 0;
+  bool switchAlive = switchCount <= 0;
+  if (switchCount > 0) {
+    for (int i = 0; i < switchCount; ++i) {
+      player->setSubtitleTrack(i % 2);
+      std::printf("switch %d -> track %d\n", i, i % 2);
+      const int64_t pre = ob.frames;
+      for (int t = 0; t < 20 && ob.frames < pre + 3; ++t) {
+        pump();
+        std::this_thread::sleep_for(std::chrono::milliseconds(150));
+      }
+      pump();
+      std::this_thread::sleep_for(std::chrono::milliseconds(600));
+    }
+    std::lock_guard<std::mutex> lock(ob.mtx);
+    switchAlive = ob.frames > 0;  // 活着走到这即未崩
+    std::printf("switch phase done, frames=%lld\n", (long long)ob.frames);
   }
 
   // 可选 seek 相位: SUBTEXT_SEEK=1 (对白内 2s 带字 / 空档 9s 无字)
@@ -400,8 +428,8 @@ int main(int argc, char* argv[]) {
   // 原生模式像素判据豁免(known gap): 窗口原生车道的 yuv 回读(mapStagingFrame)
   // 恒交黑帧(2026-10-03 实证, 屏幕直呈有字幕而回读全黑, 独立既有账), subFrames
   // 判据不可用 —— 像素真值由屏幕抓取包装(驱动脚本)承担
-  const bool ok = loadOk && ob.frames >= 30 && (doNative || ob.subFrames >= 10) &&
-                  seekOk && hdrOk;
+  const bool ok = loadOk && ob.frames >= 30 && switchAlive &&
+                  (doNative || ob.subFrames >= 10) && seekOk && hdrOk;
   std::printf(
       "[AVOX][TEST] case=subtext result=%s loadOk=%d seekOk=%d frames=%lld "
       "subFrames=%lld hdrOk=%d hdrEvents=%lld hdr=%d\n",
