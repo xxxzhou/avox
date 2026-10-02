@@ -92,6 +92,10 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 - **多声道 AAC(5.1+)整轨静音(音轨在、画面正常、无 buffering, 日志缺 `setDesc` 行) → 已修(fdk-aac 输出缓冲定长 10240B 不足 6ch×1024, 每帧 `8204` 风暴; 见播放中分册)**: fdk 初始化成功故不触发 openFailed 回退链而 FFmpeg 车道永不接管; 首帧恒有一条 `error:5` 是无害噪声勿与风暴混判
 - **顶部细条彩带闪烁 → 片源病, 非引擎(换源才能根治)**
 - **DV Profile 5 颜色与 VLC/系统播放器不一致(自己品红/紫、别家青绿) → 非引擎问题: P5 基础层=IPTPQc2 且容器无色彩标签, 不做 DV 反变换的播放器按 BT.709 直出必然偏色; 自己日志 `[dovi] dispatch valid=1` 即正确(判据/复现配方见分册)**; 同日复核实测另发现的 P5 偏暗欠饱和(DV 输出未走 tone map)**已修(1002, 四腿 `doviEnable==1` 时按 PQ 消费输出)**: 修后 `ubo transfer:0` 属正常(打印的是源标签), 验收数字见分册
+- **DV 片之后播非 DV 片发红/发粉(DV 整形状态跨 open 残留; 拖窗跨 HDR/SDR 屏也会触发) → 已修(1002, 开流复位空 DoviMeta; 见播放中分册)**: 非 DV 流不派发 DV 元数据故旧状态常驻, 判据 = 非 DV 开流日志应见 `setDoviMeta valid=0`
+- **无色彩标签的 HDR 片不出 HDR 徽章 + 画面发灰(Netflix Open Content「P3PQ」家族) → 非引擎问题: 文件无 primaries/transfer/matrix 也无 SEI, 引擎只能记 gamma/bt709, 徽章按源 trc 出故不出; 不做自动猜测(会误伤暗调 SDR), 需要时加手动「按 HDR 播」override(判据见分册)**
+- **报「无声」先查容器有没有音轨(Netflix Open Content 测试片族整族无音轨) → 非播放器病(1002): 判据 = 引擎日志 `trackReady no audio track` + media_info 档案 `"a": []`; 反证用带 TrueHD 的片跑通全链(见分册)**
+- **报「没画面」先量片头亮度+首个 GOP(Netflix 高帧率片: 开头黑场淡入 + 首 GOP 10.24s → 前 10s 内拖条回落 0:00 黑帧, `seek landed:0 target:8000`) → 非引擎问题(1002, 判据/复现见分册)**
 - **点播放/拖进度条后整 UI 冻死(低 CPU+无 .ips+`sample` 全采样锁同一栈) → 锁序反转死锁, Apple 专属(macOS/iOS) → 已修 466a928**: IOSAudioRender 同把 `mtx` 护缓冲+CoreAudio 句柄, onClose/pause/setVolume 持锁调 AudioOutputUnitStop/Start/SetParameter 等 HAL 锁, 实时 `renderCallback` 持 HAL 锁抢 `mtx` → AB-BA; `renderCallback` 改 `try_lock` + CoreAudio 调用全移锁外。判据/二进制验收见本文「锁序反转死锁」条。
 
 **App 内模型下载「满进度重来」(AI 字幕/画质模型的下载卡)**: 进度反复跑满→清零重下 = 清单 sha256 与发布 asset 失配 → 下载器每源**完整下载后**才 hashMismatch 换源重下(无续传、当时零日志)。102 定谳: stt-sense-voice.zip 4/24 重传后字节变(实测 11152a86)≠三份清单烤的 01cd4398, 主源组三条源全废靠 HF 备用组落地; 修=三份清单同哈希(avox a287502 + panvox 173a719)+ 失败路径落 `model-fetch:` 日志行(-Log 可见)。诊断铁证 = 真机 `curl -sL` 拉 zip 实算 sha 对清单; Windows 不暴露此族因模型由部署配方预铺, 不走 app 内下载器。
