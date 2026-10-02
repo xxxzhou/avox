@@ -31,6 +31,7 @@ add_executable(avox_tests
   ${AVOX_TESTS_SRC}/test_subcandidates.cpp
   ${AVOX_TESTS_SRC}/test_ptsflattener.cpp
   ${AVOX_TESTS_SRC}/test_pocrestamper.cpp
+  ${AVOX_TESTS_SRC}/test_audioleveler.cpp
   ${AVOX_TESTS_SRC}/log_sink.cpp
   # 被测源码 (自包含编译)
   ${AVOX_SRC}/module/AvoxMath.cpp
@@ -55,6 +56,9 @@ add_executable(avox_tests
   ${AVOX_SRC}/video/PtsFlattener.cpp
   # 被测 TU (丢ctts的B帧流POC重排, 纯逻辑, 依赖 H264Parse/H265Parse/PacketBuf)
   ${AVOX_SRC}/video/PocRestamper.cpp
+  # 被测 TU (播放响度均衡: BS.1770 计量 + 增益级, 自包含无音频模块依赖)
+  ${AVOX_SRC}/audio/LoudnessMeter.cpp
+  ${AVOX_SRC}/audio/AudioLeveler.cpp
   ${AVOX_SRC}/module/Json.cpp   # parserJson
   ${AVOX_SRC}/module/Time.cpp   # timeStampMS / localTimeStampMS / timeTick
 )

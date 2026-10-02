@@ -132,6 +132,19 @@ void MediaPlayer::onOptionChange(const char* key, ArgType option) {
   } else if (equalsIgnoreCase(key, AVOX_MP_VIDEO_DECODER_NAME_STR)) {
     videoDecoderName = getString(key);
     LOGFLF(LogLevel::info, "option:", key, " change:", videoDecoderName);
+  } else if (equalsIgnoreCase(key, AVOX_MP_AUDIO_NORMALIZE_BOOL) ||
+             equalsIgnoreCase(key, AVOX_MP_AUDIO_NORMALIZE_TARGET_DOUBLE)) {
+    if (equalsIgnoreCase(key, AVOX_MP_AUDIO_NORMALIZE_BOOL)) {
+      bAudioNormalize = getBool(key);
+    } else {
+      audioNormalizeTarget = getDouble(key);
+    }
+    LOGFLF(LogLevel::info, "option:", key, " normalize:", bAudioNormalize,
+           " target:", audioNormalizeTarget);
+    // 下发到在播音轨即时生效(未起播时 ARenderTask::start 读到新值)
+    auto optCmd =
+        createCommand<MPCommandType::Option>(OptionData{std::string(key), option});
+    mpCommands.enqueueWait(optCmd);
   }
 }
 
@@ -1898,6 +1911,17 @@ void MediaPlayer::cmdOption(OptionCommandPtr cmd) {
   // 给挂载的OptionOb对象通知变化
   // OptionData& data = cmd->getData();
   // MPOP::dispatch(&IOptionOb::onOptionChange, data.key.c_str(), data.option);
+  // 响度均衡开关下发到在播音轨(track 生死都在播放器线程, 故走命令线程);
+  // getAudioRender 是接口指针, 具体对象恒为 AudioRender 派生(平台 AudioOutput)
+  for (const auto& track : audioTracks) {
+    if (!track) {
+      continue;
+    }
+    AudioRender* render = dynamic_cast<AudioRender*>(track->getAudioRender());
+    if (render) {
+      render->setAudioNormalize(bAudioNormalize, audioNormalizeTarget);
+    }
+  }
 }
 
 void MediaPlayer::cmdSetWindow(SetWindowCommandPtr cmd) {}

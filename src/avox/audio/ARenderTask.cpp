@@ -25,6 +25,11 @@ void ARenderTask::start(class AudioTrack* context) {
   renderDesc = trackContext->getDecodeDesc();
   frameMs = trackContext->getFrameMS();
   if (audioRender) {
+    // 响度均衡: 播放链路按播放器选项启用(默认开); 采集/RTC/转码不经本对象
+    const bool bNormalize = mediaPlayer ? mediaPlayer->getAudioNormalize() : false;
+    const double targetLufs =
+        mediaPlayer ? mediaPlayer->getAudioNormalizeTarget() : -18.0;
+    audioRender->setAudioNormalize(bNormalize, targetLufs);
     audioRender->setDesc(renderDesc, frameMs);
   }
   // 开始渲染

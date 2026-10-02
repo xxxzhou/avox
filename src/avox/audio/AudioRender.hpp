@@ -40,6 +40,12 @@ class AVOX_EXPORT AudioRender : public IAudioRender, public IAudioProcessOb {
   std::shared_ptr<AudioTap> audioTap;
   // tap 满队列策略(唯一真相源):tap 未创建时只存此,创建时据此初始化
   bool bTapBlock = false;
+  // 播放响度均衡(默认关, 只有播放链路显式开); 计量/增益都在用户音量之前
+  bool bAudioNormalize = false;
+  double audioNormalizeTarget = -18.0;
+  std::unique_ptr<class AudioLeveler> audioLeveler = nullptr;
+  // 护 leveler 指针(选项可在控制线程改, 渲染线程每帧取用)
+  std::mutex levelerMtx;
   // tap 延迟打开:openTap 时 desc 未就绪则缓存参数,setDesc 后自动 open
   bool bTapPending = false;
   AudioDesc pendingTapOutDesc = {};
@@ -50,6 +56,8 @@ class AVOX_EXPORT AudioRender : public IAudioRender, public IAudioProcessOb {
   virtual void onInit() {}
   virtual void onRender(const AvoxData& frame) {}
   virtual void onClose() {}
+  // desc 就绪后按开关建/重建 leveler(调用方持 levelerMtx)
+  void createAudioLevelerLocked();
 
  public:
   void setDesc(AudioDesc desc, int32_t frameMs = 40);
@@ -72,6 +80,8 @@ class AVOX_EXPORT AudioRender : public IAudioRender, public IAudioProcessOb {
   virtual float getVolume() override { return 1.0f; };
   virtual void enableAec(const AudioAec& aec) override;
   virtual void disableAec() override;
+  // 播放响度均衡开关(EBU R128 实时慢收敛); 播放链路按播放器选项调用, 其余链路不启用
+  void setAudioNormalize(bool bEnable, double targetLufs = -18.0);
   // IAudioRender tap
   virtual void openTap(const AudioDesc& outDesc, int32_t frameMs) override;
   virtual void closeTap() override;

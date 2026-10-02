@@ -2,6 +2,7 @@
 
 #include "../module/AvoxManager.hpp"
 #include "../player/AudioTrack.hpp"
+#include "AudioLeveler.hpp"
 
 namespace avox {
 
@@ -28,6 +29,11 @@ void AudioRender::setDesc(AudioDesc desc_, int32_t frameMs_) {
   frameSize = getAudioFrameSize(desc, frameMs);
   LOGFLF(LogLevel::info, "initProcess:", initProcess, " src desc: ", desc,
          " frameMs:", frameMs, " framesize:", frameSize);
+  // 响度均衡按新 desc 重建(新流=重新收敛)
+  {
+    std::lock_guard<std::mutex> lk(levelerMtx);
+    createAudioLevelerLocked();
+  }
   onInit();
   // 延迟 tap:desc 就绪后自动 open
   if (bTapPending) {
@@ -38,6 +44,11 @@ void AudioRender::setDesc(AudioDesc desc_, int32_t frameMs_) {
 void AudioRender::close() {
   onClose();
   frameSize = 0;
+  // 锁放在设备关闭之后: 渲染线程可能正持锁处理, 不跨 onClose 持锁防互等
+  std::lock_guard<std::mutex> lk(levelerMtx);
+  if (audioLeveler) {
+    audioLeveler->reset();
+  }
 }
 
 void AudioRender::setTapBlock(bool b) {
@@ -71,6 +82,39 @@ void AudioRender::onAudioProcess(const AvoxAFrame& frame) {
 void AudioRender::enableAec(const AudioAec& aec) { enableProcess = true; }
 
 void AudioRender::disableAec() { enableProcess = false; }
+
+void AudioRender::setAudioNormalize(bool bEnable, double targetLufs) {
+  std::lock_guard<std::mutex> lk(levelerMtx);
+  bAudioNormalize = bEnable;
+  audioNormalizeTarget = targetLufs;
+  if (!bEnable) {
+    audioLeveler.reset();
+    return;
+  }
+  createAudioLevelerLocked();
+}
+
+void AudioRender::createAudioLevelerLocked() {
+  if (!bAudioNormalize) {
+    audioLeveler.reset();
+    return;
+  }
+  if (!desc.bValid()) {
+    // desc 未就绪: setDesc 时会再建
+    audioLeveler.reset();
+    return;
+  }
+  if (!audioLeveler) {
+    audioLeveler = std::make_unique<AudioLeveler>();
+  }
+  if (!audioLeveler->init(desc, audioNormalizeTarget)) {
+    audioLeveler.reset();
+    log(LogLevel::warn, "audio normalize bypass, unsupported desc: ", desc);
+    return;
+  }
+  LOGFLF(LogLevel::info, "audio normalize on, target:", audioNormalizeTarget,
+         " LUFS, desc: ", desc);
+}
 
 void AudioRender::openTap(const AudioDesc& outDesc, int32_t frameMs) {
   if (frameSize <= 0) {
@@ -146,9 +190,18 @@ void AudioRender::removeTapOb(IAudioTapOb* ob) {
 }
 
 void AudioRender::render(const AvoxData& frame, int64_t pts) {
+  // 播放响度均衡: 输出走归一化缓冲, 不动原帧(相机录制/复用同一原始帧)
+  AvoxData normalized = {};
+  const AvoxData* out = &frame;
+  {
+    std::lock_guard<std::mutex> lk(levelerMtx);
+    if (audioLeveler && audioLeveler->process(frame.data, frame.size, normalized)) {
+      out = &normalized;
+    }
+  }
   if (initProcess) {
     AvoxAFrame inData = {};
-    inData.buffer = frame;
+    inData.buffer = *out;
     inData.pts = pts;
     audioProcess->process(inData);
     return;
@@ -158,7 +211,7 @@ void AudioRender::render(const AvoxData& frame, int64_t pts) {
     return;
   }
   if (!closeOutput) {
-    onRender(frame);
+    onRender(*out);
   }
   // tap:深拷贝入队(在处理/设备之后,取 post-3A 帧);快照锁外 push(T18)
   std::shared_ptr<AudioTap> tap;
@@ -167,7 +220,7 @@ void AudioRender::render(const AvoxData& frame, int64_t pts) {
     tap = audioTap;
   }
   if (tap && tap->bOpen()) {
-    tap->push(frame, pts);
+    tap->push(*out, pts);
   }
 }
 

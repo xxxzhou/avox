@@ -33,6 +33,10 @@ namespace avox {
 // 播放器主时钟类型 0=none 1=audio(默认) 2=video 3=external
 // 音频 PTS 异常(数据量与时间对应不上)的流可切到 video 绕过
 #define AVOX_MP_SYNC_TYPE_INT "mp.synctype"
+// 播放响度均衡(EBU R128 实时慢收敛): 0=关 1=开(默认); 仅播放链路消费
+#define AVOX_MP_AUDIO_NORMALIZE_BOOL "mp.audio.normalize"
+// 响度均衡目标响度 LUFS(默认 -18)
+#define AVOX_MP_AUDIO_NORMALIZE_TARGET_DOUBLE "mp.audio.normalize.target"
 // IMediaPlayer里的getOption设置的key
 #define AVOX_MP_IO_TIMEOUT_MS_INT "io.timeout.ms"
 // HTTP 自定义请求头, CRLF 分隔的 "Key: value" 行(云盘直链要带

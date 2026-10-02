@@ -139,6 +139,9 @@ class MediaPlayer : public IMediaPlayer,
   bool bLogDFrame = false;
   // 是否记录渲染帧信息
   bool bLogRFrame = false;
+  // 播放响度均衡(mp.audio.normalize, 默认开)与目标响度 LUFS, 播放链路消费
+  bool bAudioNormalize = true;
+  double audioNormalizeTarget = -18.0;
 
  protected:
   // 直播模式下，是否开启低延迟，数据太多会自动快播
@@ -239,6 +242,9 @@ class MediaPlayer : public IMediaPlayer,
   bool seekable() { return ioSource && ioSource->seekType() != SeekType::none; }
   bool logDFrame() { return bLogDFrame; }
   bool logRFrame() { return bLogRFrame; }
+  // 播放响度均衡开关与目标响度(ARenderTask 起播时消费)
+  bool getAudioNormalize() { return bAudioNormalize; }
+  double getAudioNormalizeTarget() { return audioNormalizeTarget; }
 
  public:
   virtual IOption* getOption() override;

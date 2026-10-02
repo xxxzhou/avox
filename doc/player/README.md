@@ -25,6 +25,7 @@ avox 播放器 (IMediaPlayer/ISourcePlayer) 相关文档总索引。架构总览
 | [播放器功能](core/播放器功能.md) | 软硬解切换、Seek |
 | [Seek落点与精确seek](core/Seek落点与精确seek.md) | IDR闸三档入口、mp.seek.precise、seek冻结修复 |
 | [播放器时间](core/播放器时间.md) | 音视频同步、倍速播放、低延迟 |
+| [播放响度均衡](core/播放响度均衡.md) | EBU R128 实时归一(mp.audio.normalize)、目标响度与峰值护栏 |
 | [播放器埋点](core/播放器埋点.md) | 埋点系统设计 |
 
 ## decode/ — 解码与渲染
