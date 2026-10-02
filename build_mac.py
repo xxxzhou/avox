@@ -52,8 +52,8 @@ if __name__ == "__main__":
         build_common.build_module("sherpa-onnx", onlyMake, SHERPA_CMAKE_ARGS)
     if not build_common.check_module_sentencepiece():
         build_common.build_module("sentencepiece", onlyMake, SPM_CMAKE_ARGS)
-    # Agent/Tool 仅 Windows, 其他平台关闭; AVOX_CMAKE_ARGS 可透传额外参数
-    extra_args = "-DAVOX_ENABLE_AGENT=OFF -DAVOX_ENABLE_CLI=OFF -DAVOX_ENABLE_SWIG=OFF"
+    # Agent 开(AI字幕翻译腿依赖; OpenSSL 走 homebrew openssl@3); CLI/SWIG 关
+    extra_args = "-DAVOX_ENABLE_AGENT=ON -DAVOX_ENABLE_CLI=OFF -DAVOX_ENABLE_SWIG=OFF"
     if AVOX_CMAKE_ARGS:
         extra_args = f"{extra_args} {AVOX_CMAKE_ARGS}"
     extra_args = f"{extra_args} -DAVOX_DIST_FLAVOR={DIST_FLAVOR}"
