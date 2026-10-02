@@ -9,7 +9,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 ## 0. 前置事实
 - **双仓同级**(panvox 宿主 / avox 引擎): Win `D:\Work\github\{panvox,avox}`; Mac `/Volumes/PSSD/work/github/`(另有部署克隆 `~/development/panvox`); Linux/WSL `~/github/`。编译/部署配方见 panvox 仓 `docs/avox-build-and-deploy.md`(启动闸/部署脚本/新鲜度闸门, 要重编先读 §2/§3)。
 - **通道**: 本机通常是 Win 开发机; `ssh mac`/`ssh pc` 双向免密; Android 真机经 Win `adb`; iOS 模拟器经 Mac `xcrun simctl`; **Linux = Win 本机里的 WSL(Ubuntu), 不是独立目标机**, 经 `wsl bash -c '...'` 进场, 仓库在 WSL 内 `~/github/{panvox,avox}`。先 `uname` 确认落在哪台, 目标≠本机才过 SSH/adb。**Win 目标过 ssh 起 GUI app 会落在不可见会话** —— app 级复现让用户手起, 引擎级复现走免窗的 engine_play_test。
-- **数据目录**: Win `%APPDATA%\panvox\`; **Mac 真位 = 沙盒容器 `~/Library/Containers/com.panvox.panvox/Data/Documents/panvox/`**(裸 `~/Library/Application Support/com.panvox.panvox/` 只有残缺旧位, 0926 两案实证)。关键文件: `sources.json`(源配置 id/kind/origin/user/pass/root/token —— **明文凭据**)、`history.json`(键=源id+路径 → title/position/duration/updated)、`media_info.json`(播放档案: at=ms epoch / via=thumb|playback / 轨道表, ready/playing 才落档 —— **重建用户操作时间线最可靠, 某片有档=引擎当时 open 成功过, 卡点就在其后**)、`local_library.json` / `scan_index.json`(文件清单)、`unplayable.json`(打不开下墙记录)、`freeze/`(冻结名片)。
+- **数据目录**: Win `%APPDATA%\panvox\`; **Mac 真位两看(102 定谳: 沙盒态随构建变过)**: 当前安装位构建**无沙盒 entitlement**(`codesign -d --entitlements - ~/Applications/panvox.app | grep -c sandbox` = 0), 真位 = 裸 `~/Library/Application Support/com.panvox.panvox/`; 9/24–9/26 旧沙盒构建才写容器 `~/Library/Containers/com.panvox.panvox/Data/…`。拿不准就 `codesign` 数 sandbox + 两路径比 mtime, 新者为真位(102 曾按过期的「容器真位」口径扑空)。关键文件: `sources.json`(源配置 id/kind/origin/user/pass/root/token —— **明文凭据**)、`history.json`(键=源id+路径 → title/position/duration/updated)、`media_info.json`(播放档案: at=ms epoch / via=thumb|playback / 轨道表, ready/playing 才落档 —— **重建用户操作时间线最可靠, 某片有档=引擎当时 open 成功过, 卡点就在其后**)、`local_library.json` / `scan_index.json`(文件清单)、`unplayable.json`(打不开下墙记录)、`freeze/`(冻结名片); 模型缓存 = 真位 `models/`(Application Support 侧, app 内 ModelFetcher 下载落位)。
 
 ## 1. 流程
 0. **先对表版本**(防"改了没编/没部署, 查的全是已修掉的"): 日志首行 banner(`avox version:... commit_hash:X build_time:Y`)对比 `git -C <avox仓> log -1`; 落后 HEAD 或启动闸打「install 落后 HEAD」→ 先重编引擎+部署(部署文档 §2/§3)再排查; 其余平台闸门见文档 §4。**banner 的 commit_hash 是 configure 时烤的会失真**, 精确判"修复是否编入"用 dll 考古(§3)。
@@ -91,6 +91,8 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 - 全片每秒周期跳帧(TrueHD 碎片轨) → 已修 c3f92b0
 - **顶部细条彩带闪烁 → 片源病, 非引擎(换源才能根治)**
 - **点播放/拖进度条后整 UI 冻死(低 CPU+无 .ips+`sample` 全采样锁同一栈) → 锁序反转死锁, Apple 专属(macOS/iOS) → 已修 466a928**: IOSAudioRender 同把 `mtx` 护缓冲+CoreAudio 句柄, onClose/pause/setVolume 持锁调 AudioOutputUnitStop/Start/SetParameter 等 HAL 锁, 实时 `renderCallback` 持 HAL 锁抢 `mtx` → AB-BA; `renderCallback` 改 `try_lock` + CoreAudio 调用全移锁外。判据/二进制验收见本文「锁序反转死锁」条。
+
+**App 内模型下载「满进度重来」(AI 字幕/画质模型的下载卡)**: 进度反复跑满→清零重下 = 清单 sha256 与发布 asset 失配 → 下载器每源**完整下载后**才 hashMismatch 换源重下(无续传、当时零日志)。102 定谳: stt-sense-voice.zip 4/24 重传后字节变(实测 11152a86)≠三份清单烤的 01cd4398, 主源组三条源全废靠 HF 备用组落地; 修=三份清单同哈希(avox a287502 + panvox 173a719)+ 失败路径落 `model-fetch:` 日志行(-Log 可见)。诊断铁证 = 真机 `curl -sL` 拉 zip 实算 sha 对清单; Windows 不暴露此族因模型由部署配方预铺, 不走 app 内下载器。
 
 **网络环境(本机代理/TUN, 非引擎病)** —— 修法在引擎外, 故全文留本文常驻
 - IPTV/m3u 列表与国内流普遍慢、超时、周期 buffering, 而 NAS/局域网源全正常 → 先查本机 TUN 接管: `route print` 见 Meta Tunnel/Wintun + `tasklist` 见 verge-mihomo(Clash Verge)= 全机流量过代理。**对照法: `curl` 默认路由 vs `curl --interface <物理网卡IP>` 直连**(0923 实锤 CCTV1 列表 TUN 19s→直连 1s; 0926 复测首响 3.2s vs 1.2s); 修法 = Clash 给国内直播域名加 DIRECT 规则或关 TUN, 不动引擎。**绑定源地址法在部分环境只是绕路成功, 直连腿 000 时先核对绑定语义再下结论**。
