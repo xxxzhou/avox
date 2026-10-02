@@ -376,8 +376,10 @@ Dx11CSVideoRender::Dx11CSVideoRender() {
 ICanvasLayer* Dx11CSVideoRender::enableRenderCanvas() {
   // lane=0 本腿输出是 VK 对接面: 禁挂(双重字幕+字幕被超分), 由 VK canvas 层负责
   if (bVkOutput) {
+    LOGFLF(LogLevel::info, "canvas attach refused: vkOut lane");
     return nullptr;
   }
+  LOGFLF(LogLevel::info, "canvas attach: dx11 leg");
   bCanvasWanted = true;
   return canvasRender.get();
 }
@@ -387,6 +389,7 @@ void Dx11CSVideoRender::disableRenderCanvas() { bCanvasWanted = false; }
 // 渲染线程: 挂/摘同步(宿主侧只置 wanted, 层实例归渲染线程)
 void Dx11CSVideoRender::syncCanvasLayer() {
   if (bCanvasWanted && !canvasLayer) {
+    LOGFLF(LogLevel::info, "dxcanvas layer create");
     canvasLayer = std::make_unique<DxCanvasLayer>();
     canvasRender->setCanvasLayer(canvasLayer.get());
   } else if (!bCanvasWanted && canvasLayer) {
@@ -497,6 +500,7 @@ void Dx11CSVideoRender::releaseGraph() {
   bDvProgramTried = false;
   canvasShader.Reset();
   canvasDvShader.Reset();
+  canvasSampler.Reset();
   bCanvasProgramTried = false;
   bCanvasDvProgramTried = false;
   // 画布纹理/参数常量随设备资源一起失效: 解绑层, contentStale 走宿主重传
@@ -907,16 +911,53 @@ ID3D11ComputeShader* Dx11CSVideoRender::selectShader(bool allowDv) {
   } else {
     base = ensureDvProgram() ? dvShader.Get() : computeShader.Get();
   }
+  // prepareAndBind 无条件调: 首调才完成画布 reset+建图前来件回灌(visible 依赖
+  // 它, 门序反了互为前提内容永远进不来); 内部 !hasContent 即 false, 空窗/
+  // 无字幕仍走 base 变体(零字幕零影响不受影响)
   const bool bCanvasFrame =
-      canvasLayer && canvasLayer->visible() &&
-      canvasLayer->prepareAndBind(device, d3dcontext.Get(), imageWidth,
-                                  imageHeight,
-                                  !bVkOutput && bTargetPassthrough);
-  if (!bCanvasFrame || !ensureCanvasProgram(bDv)) {
+      canvasLayer && canvasLayer->prepareAndBind(device, d3dcontext.Get(),
+                                                  imageWidth, imageHeight,
+                                                  !bVkOutput &&
+                                                      bTargetPassthrough);
+  static bool bCanvasDiagLogged = false;
+  if (!bCanvasFrame) {
+    if (!bCanvasDiagLogged && canvasLayer && canvasLayer->visible()) {
+      // visible 但 prepare 失败: 资源/编码层问题, 留一次性痕迹
+      bCanvasDiagLogged = true;
+      LOGFLF(LogLevel::warn, "canvas prepare failed, fallback (visible=1)");
+    }
     return base;
+  }
+  if (!ensureCanvasProgram(bDv)) {
+    if (!bCanvasDiagLogged) {
+      bCanvasDiagLogged = true;
+      LOGFLF(LogLevel::warn, "canvas program unavailable, fallback");
+    }
+    return base;
+  }
+  if (!bCanvasDiagLogged) {
+    bCanvasDiagLogged = true;
+    LOGFLF(LogLevel::info, "canvas variant on, dv:", bDv ? 1 : 0,
+           " pq:", (!bVkOutput && bTargetPassthrough) ? 1 : 0);
   }
   ID3D11ComputeShader* want = bDv ? canvasDvShader.Get() : canvasShader.Get();
   if (want) {
+    // canvas 线性采样器(SampleLevel 用 s0): 不绑则 release 下采样恒 0,
+    // source-over 退化为直通(字幕不可见的静默失败)
+    if (!canvasSampler) {
+      D3D11_SAMPLER_DESC sd = {};
+      sd.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+      sd.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
+      sd.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
+      sd.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+      sd.ComparisonFunc = D3D11_COMPARISON_NEVER;
+      sd.MaxLOD = D3D11_FLOAT32_MAX;
+      device->CreateSamplerState(&sd, &canvasSampler);
+    }
+    if (canvasSampler) {
+      ID3D11SamplerState* s = canvasSampler.Get();
+      d3dcontext->CSSetSamplers(0, 1, &s);
+    }
     ID3D11ShaderResourceView* cSrv = canvasLayer->srv();
     d3dcontext->CSSetShaderResources(2, 1, &cSrv);
     ID3D11Buffer* cBuf = canvasLayer->paramBuffer();

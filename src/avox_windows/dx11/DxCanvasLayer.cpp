@@ -2,11 +2,18 @@
 
 #include <cstring>
 
+#include "avox/module/LogHelper.hpp"
 #include "avox/subtitle/CanvasBlendMath.hpp"
 
 namespace avox {
 
 void DxCanvasLayer::updateCanvas(const AssCanvas& canvas) {
+  static bool bDiagLogged = false;
+  if (!bDiagLogged) {
+    bDiagLogged = true;
+    LOGFLF(LogLevel::info, "dxcanvas first content: ", canvas.width, "x",
+           canvas.height, " at ", canvas.x, ",", canvas.y);
+  }
   state.updateCanvas(canvas);
 }
 
@@ -20,6 +27,13 @@ void DxCanvasLayer::setCanvasTransform(float scale, float offsetX,
 bool DxCanvasLayer::prepareAndBind(ID3D11Device* device,
                                    ID3D11DeviceContext* context,
                                    int32_t frameW, int32_t frameH, bool pq) {
+  static bool bDiagLogged = false;
+  if (!bDiagLogged) {
+    bDiagLogged = true;
+    LOGFLF(LogLevel::info, "dxcanvas prepare first: frame=", frameW, "x",
+           frameH, " hasContent=", state.hasContent() ? 1 : 0,
+           " pending=", state.hasPending() ? 1 : 0);
+  }
   if (!device || !context || frameW <= 0 || frameH <= 0) {
     return false;
   }

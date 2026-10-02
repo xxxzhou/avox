@@ -69,6 +69,7 @@ class Dx11CSVideoRender : public VideoRender, public Dx11Context {
   std::atomic<bool> bCanvasWanted{false};
   MComPtr<ID3D11ComputeShader> canvasShader;
   MComPtr<ID3D11ComputeShader> canvasDvShader;
+  MComPtr<ID3D11SamplerState> canvasSampler;
   bool bCanvasProgramTried = false;
   bool bCanvasDvProgramTried = false;
 
