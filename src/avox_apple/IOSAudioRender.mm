@@ -95,16 +95,10 @@ void IOSAudioRender::onInit() {
   renderDesc.channels = 2;  // iOS 立体声输出
   renderDesc.format = AudioFormat::AVOX_AUDIO_FLT;  // iOS 使用浮点格式
 #else
-  // macOS 无音频会话, 沿用输入描述(DefaultOutput 内部转换到设备格式), TODO: 查询设备默认采样率
+  // macOS 无音频会话, 先按输入描述兜底, AU 创建后按设备真实格式覆盖
   renderDesc.sampleRate = desc.sampleRate;
   renderDesc.channels = desc.channels;
   renderDesc.format = desc.format;
-#endif
-
-#ifdef AVOX_ENABLE_FFMPEG
-  if (!resample->init(desc, renderDesc)) {
-    LOGFLF(LogLevel::warn, "resample init failed");
-  }
 #endif
 
   // 创建 Audio Unit(iOS 为 RemoteIO, macOS 为 DefaultOutput)
@@ -130,6 +124,32 @@ void IOSAudioRender::onInit() {
     LOGFLF(LogLevel::warn, "Failed to create audio unit: %d", status);
     return;
   }
+
+#if !TARGET_OS_IPHONE
+  // 对齐 WASAPI GetMixFormat 语义: 以输出设备真实声道/采样率为下混目标。
+  // 多声道直接设给 AU 时 AUHAL 按序直通, C(对白)/环绕声道被丢 —— FC 占
+  // 96% 的素材只剩音乐环境声 (1002 实测); 查询失败按立体声兜底
+  AudioStreamBasicDescription deviceFormat = {};
+  UInt32 formatSize = sizeof(deviceFormat);
+  if (AudioUnitGetProperty(audioUnit, kAudioUnitProperty_StreamFormat,
+                           kAudioUnitScope_Output, 0, &deviceFormat,
+                           &formatSize) == noErr &&
+      deviceFormat.mChannelsPerFrame > 0) {
+    renderDesc.channels = deviceFormat.mChannelsPerFrame;
+    renderDesc.sampleRate = (int32_t)deviceFormat.mSampleRate;
+    if (deviceFormat.mFormatFlags & kAudioFormatFlagIsFloat) {
+      renderDesc.format = AudioFormat::AVOX_AUDIO_FLT;
+    }
+  } else {
+    renderDesc.channels = 2;
+  }
+#endif
+
+#ifdef AVOX_ENABLE_FFMPEG
+  if (!resample->init(desc, renderDesc)) {
+    LOGFLF(LogLevel::warn, "resample init failed");
+  }
+#endif
 
   // 设置输出格式
   AudioStreamBasicDescription outputFormat = audioFormatToASBD(renderDesc, renderDesc.sampleRate);
