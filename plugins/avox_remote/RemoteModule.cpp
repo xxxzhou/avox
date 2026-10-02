@@ -43,4 +43,11 @@ bool RemoteModule::loadModule(IOption* option) {
 
 AVOX_REGISTER_MODULE(RemoteModule, avox_remote)
 
+#if AVOX_ENABLE_STATIC && !defined(AVOX_PLUGIN_BUILDING)
+// iOS 静态并档锚点: 注册器是全局 ctor 对象, 无引用的归档成员不被链接器拉取;
+// 宿主 shim 引用本符号把 RemoteModule.o(连同注册器)拖进链接闭包 (10/2)。
+// 仅静态核编译存在(动态插件编 AVOX_PLUGIN_BUILDING 走 NewModule 导出分支)。
+extern "C" void avox_remote_static_anchor() {}
+#endif
+
 }

@@ -246,7 +246,28 @@ if(WIN32)
   list(APPEND AVOX_SOURCE avox/module/AvoxVersion.rc)
 endif()
 
+# iOS 真机: avox_remote 静态并档 (10/2)。仅设备 sysroot——模拟器无 libsmb2/webrtc
+# 预编译, 其他平台插件模式不变。TLS 由 WebRTC 归档的 BoringSSL 提供(同 mac 插件
+# 路线), OpenSSL 只取头; libsmb2 iOS 预编译在库仓。注册器是全局 ctor 对象, 无引用
+# 不进归档闭包 — 由 panvox iOS shim 引用 avox_remote_static_anchor() 强拉。
+# sysroot 大小写不定(iPhoneOS27.0.sdk), 转小写后排除模拟器。
+string(TOLOWER "${CMAKE_OSX_SYSROOT}" _avox_ios_sysroot_l)
+if(IOS AND NOT _avox_ios_sysroot_l MATCHES "iphonesimulator")
+    find_package(OpenSSL QUIET)
+    find_package(Libsmb2 QUIET)
+    find_package(WebRTC QUIET)
+    if(OPENSSL_FOUND AND Libsmb2_FOUND AND WEBRTC_FOUND)
+        add_sub_path(../plugins/avox_remote AVOX_HEADER AVOX_SOURCE)
+        include_directories(${PROJECT_SOURCE_DIR}/3rdparty/cpp-httplib ${OPENSSL_INCLUDE_DIRS} ${LIBSMB2_INCLUDE_DIRS})
+        add_definitions(-DAVOX_REMOTE_DAV=1 -DAVOX_REMOTE_SMB=1)
+        list(APPEND AVOX_LINK_LIBRARIES ${LIBSMB2_LIBRARIES} ${WEBRTC_LIBRARIES})
+        message(STATUS "iOS: avox_remote 静态并档 (smb+dav, BoringSSL TLS)")
+    else()
+        message(STATUS "iOS: avox_remote 并档条件不足 (openssl=${OPENSSL_FOUND} libsmb2=${Libsmb2_FOUND} webrtc=${WEBRTC_FOUND})")
+    endif()
+endif()
 add_library(avox ${AVOX_DLL_TYPE} ${AVOX_SOURCE} ${AVOX_HEADER})
+
 target_compile_options(avox PRIVATE ${COMPILE_OPTIONS_DEFAULT})
 message(STATUS "AVOX_LINK_LIBRARIES: ${AVOX_LINK_LIBRARIES}")
 
