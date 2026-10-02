@@ -129,7 +129,7 @@ void PacketBuf::append(const PacketBuf& packet) {
   size = newSize;
 }
 
-int32_t PacketBuf::getNaluType(VCodecId codeId) {
+int32_t PacketBuf::getNaluType(VCodecId codeId) const {
   if (buff.size() <= prefixSize) {
     return 0;
   }
@@ -140,6 +140,65 @@ int32_t PacketBuf::getNaluType(VCodecId codeId) {
     return (buff[prefixSize] >> 1) & 0x3f;
   }
   return 0;
+}
+
+// 参数集id提取: 同id才允许替换。同一条流可有多个不同id的PPS/SPS并存
+// (微信导出HEVC实测: IDR切片用pps_id=0、非IDR切片用pps_id=1, 缺一个
+// 解码全灭), 按类型整体替换会挤掉另一个id → extradata缺一半参数集。
+// id取法: h265 VPS/SPS = nal头后u(4); h265 PPS = 头后ue(v);
+//         h264 SPS = 头后跳profile/constraints/level 3字节ue(v); h264 PPS = ue(v)
+static int32_t paramSetId(VCodecId codecId, const PacketBuf& buf) {
+  int32_t left = buf.size - buf.prefixSize;
+  const uint8_t* p = buf.buff.data() + buf.prefixSize;
+  if (left < 4) {
+    return -1;
+  }
+  if (codecId == VCodecId::h265) {
+    uint8_t type = (p[0] >> 1) & 0x3F;
+    if (type == 32 || type == 33) {
+      return p[2] & 0x0F;
+    }
+    // h265 PPS: ue(v)在2字节nal头之后
+    p += 2;
+    left -= 2;
+  } else if (codecId == VCodecId::h264) {
+    // h264 nal头1字节; SPS的ue(v)还要再跳profile/constraints/level 3字节
+    uint8_t type = p[0] & 0x1F;
+    p += 1;
+    left -= 1;
+    if (type == 7) {
+      p += 3;
+      left -= 3;
+    }
+  }
+  int32_t bitPos = 0;
+  auto readBit = [&]() -> int32_t {
+    if ((bitPos >> 3) >= left) {
+      return -1;
+    }
+    int32_t bit = (p[bitPos >> 3] >> (7 - (bitPos & 7))) & 1;
+    bitPos++;
+    return bit;
+  };
+  int32_t zeros = 0;
+  while (readBit() == 0) {
+    zeros++;
+    if (zeros > 16) {
+      return -1;
+    }
+  }
+  if (zeros == 0) {
+    return 0;
+  }
+  int32_t tail = 0;
+  for (int32_t i = 0; i < zeros; ++i) {
+    int32_t bit = readBit();
+    if (bit < 0) {
+      return -1;
+    }
+    tail = (tail << 1) | bit;
+  }
+  return (1 << zeros) - 1 + tail;
 }
 
 ConfigAddType addConfigPacket(std::vector<PacketBuf>& configPackets,
@@ -153,23 +212,30 @@ ConfigAddType addConfigPacket(std::vector<PacketBuf>& configPackets,
     return bufSize == dataSize &&
            std::memcmp(buf.buff.data()+buf.prefixSize, data.buff.data()+buf.prefixSize, dataSize) == 0;
   };
+  // 检查是否已存在相同配置数据
   bool bHaveData =
       std::any_of(configPackets.begin(), configPackets.end(), sameDataFunc);
-  // 检查是否已存在相同配置数据
   if (!bHaveData) {
-    bool bUpdate = false;
-    PacketBuf buf(data);
+    int32_t newId = paramSetId(codecId, data);
     for (int32_t i = 0; i < configPackets.size(); ++i) {
-      if (configPackets[i].getNaluType(codecId) == buf.getNaluType(codecId)) {
-        configPackets[i] = buf;
-        bUpdate = true;
-        return ConfigAddType::update;
+      if (configPackets[i].getNaluType(codecId) != data.getNaluType(codecId)) {
+        continue;
       }
+      // 同类型但id不同(如双PPS)的参数集并存保留, 只有同id才是内容更新
+      if (newId >= 0 && paramSetId(codecId, configPackets[i]) != newId) {
+        continue;
+      }
+      PacketBuf buf(data);
+      configPackets[i] = buf;
+      return ConfigAddType::update;
     }
-    if (!bUpdate) {
-      configPackets.push_back(buf);
-      return ConfigAddType::add;
+    // 防病态流(参数集内容逐IDR轮换)无限增长
+    if (configPackets.size() >= 16) {
+      return ConfigAddType::duplicate;
     }
+    PacketBuf buf(data);
+    configPackets.push_back(buf);
+    return ConfigAddType::add;
   }
   return ConfigAddType::duplicate;
 }

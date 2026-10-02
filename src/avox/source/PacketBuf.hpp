@@ -38,7 +38,7 @@ class AVOX_EXPORT PacketBuf {
   // packet是视频包
   void append(const AvoxPacket& packet);
   void append(const PacketBuf& packet);
-  int32_t getNaluType(VCodecId codeId);
+  int32_t getNaluType(VCodecId codeId) const;
 
   bool configType() {
     PackType packType = (PackType)packtype;

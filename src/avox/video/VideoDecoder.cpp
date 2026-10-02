@@ -95,6 +95,12 @@ bool VideoDecoder::parseConfigs() {
       return false;
     }
     for (auto& buf : configPackets) {
+      // SPS(7)/PPS(8)以外的NAL(SEI/AUD)跳过: 混入的SEI整段判失败会让
+      // params回退srcDesc, 与先前采信的SPS尺寸打架 → 误判updateSize硬解重置
+      int32_t naluType = buf.getNaluType(codecId);
+      if (naluType != 7 && naluType != 8) {
+        continue;
+      }
       if (!h264Parse->parse(buf.buff.data(), buf.size)) {
         AvoxPacket packet = getPacket(buf);
         uint8_t nalu = getH264NalUnit(packet.data.data + packet.prefixSize);
@@ -126,6 +132,11 @@ bool VideoDecoder::parseConfigs() {
       return false;
     }
     for (auto& buf : configPackets) {
+      // VPS(32)/SPS(33)/PPS(34)以外的NAL(SEI/AUD)跳过, 理由同h264分支
+      int32_t naluType = buf.getNaluType(codecId);
+      if (naluType != 32 && naluType != 33 && naluType != 34) {
+        continue;
+      }
       if (!h265Parse->parse(buf.buff.data(), buf.size)) {
         AvoxPacket packet = getPacket(buf);
         uint8_t nalu = getH265NalUnit(packet.data.data + packet.prefixSize);
@@ -141,8 +152,21 @@ bool VideoDecoder::parseConfigs() {
     H265PpsPtr pps = h265Context->ppsSet[0];
     if (vps && sps && pps) {
       // 从SPS获取分辨率信息
-      params.width = sps->pic_width_in_luma_samples;
-      params.height = sps->pic_height_in_luma_samples;
+      // conformance window裁剪: SPS编码尺寸(如544)对齐显示尺寸(如540),
+      // 否则与srcDesc的显示尺寸差会被误判成尺寸变化 → 硬解重置清空包队列
+      uint32_t subW = 1, subH = 1;
+      if (sps->chroma_format_idc == 1) {
+        subW = 2;
+        subH = 2;
+      } else if (sps->chroma_format_idc == 2) {
+        subW = 2;
+      }
+      params.width = (int32_t)(sps->pic_width_in_luma_samples -
+                               (sps->conf_win_left_offset +
+                                sps->conf_win_right_offset) * subW);
+      params.height = (int32_t)(sps->pic_height_in_luma_samples -
+                                (sps->conf_win_top_offset +
+                                 sps->conf_win_bottom_offset) * subH);
       params.yuvType = getYuvType(sps->chroma_format_idc);
       // 位深处理
       params.yBitDepth = sps->bit_depth_luma_minus8 + 8;

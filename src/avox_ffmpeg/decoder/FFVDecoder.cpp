@@ -87,6 +87,7 @@ DecodeResult FFVDecoder::onPreDecoder() {
     }
     AvoxData extradataBuf = {extradata.data(), (int32_t)extradata.size(), true};
     log(LogLevel::info, "ffmpeg decoder extradata size:", extradataBuf);
+    log(LogLevel::info, "video config packets:", (int32_t)configPackets.size());
     // extradata包含SPS,PPS等编码信息
     codecCtx->extradata_size = extradata.size();
     codecCtx->extradata =

@@ -81,6 +81,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 - seek 后长冻(GOP≥20s IDR 稀疏) → **未修**(a02)
 
 **播放中** → [`references/病族-播放中.md`](references/病族-播放中.md)
+- **黑屏有声 + `[FF][hevc] PPS id out of range` 风暴(手机/微信导出 HEVC 双 PPS 流) → 已修(1003, 见播放中分册)**: addConfigPacket 同类型替换丢掉另一 id 的 PPS(IDR 与非IDR切片各用 pps_id=0/1 缺一不可); 叠加水印 SEI 混入 parseConfigs 整段判失败 → SPS 544x960 vs 容器 540x960 误判 updateSize 硬解重置。判据: 参考解码器软/硬解全通 + 引擎拼的 hvcC 数组数少于文件真值 → 别往 avcodec/渲染层查
 - **显示格时间戳截断族(VT 独有)**: A 每几秒跳 → 79abb44 / B 同类片仍每 2s 跳 → 已修 0927 / C seek 后持续抖 → 已修 0927
 - 后向 seek 后画面脱离音轨 → 已修 24ff54d(全平台)
 - 全片零规律散点跳画 + `Invalid NAL unit size` 风暴 → 已修 e409b32
