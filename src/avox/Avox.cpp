@@ -500,30 +500,45 @@ std::wstring utf8TWstring(const std::string& str) {
                                  str.size(), &ret[0], len);
   ret.resize(size);
 #else
-  size_t len = str.length();
-  std::vector<wchar_t> dest(len, 0);
-  int dest_len = 0;
-  for (int i = 0; i < len; i++, dest_len++) {
-    // ansi
-    if (str[i] <= 127) {
-      dest[dest_len] = str[i];
-    } else if ((str[i] & 0xF0) == 0xC0) {
-      // 2byte
-      dest[dest_len] = ((str[i] & 0x1F) << 6) + (str[i + 1] & 0x3F);
+  // wchar_t 为 4 字节(mac/Linux), 逐码点直解; char 在 mac/Linux-x64 有符号,
+  // 必须先转 unsigned 再比较取位 —— 否则 >=0x80 的字节全部满足 <=127 落进
+  // ASCII 分支, 每个 UTF-8 字节变一个负值乱码点, CJK 整行渲染成 .notdef 方框
+  std::wstring ret;
+  const size_t len = str.length();
+  ret.reserve(len);
+  size_t i = 0;
+  while (i < len) {
+    const unsigned char c = static_cast<unsigned char>(str[i]);
+    if (c < 0x80) {
+      ret.push_back(static_cast<wchar_t>(c));
       i += 1;
-    } else if ((str[i] & 0xF0) == 0xE0) {
-      // 3byte
-      dest[dest_len] = ((str[i] & 0x0F) << 12) + ((str[i + 1] & 0x3F) << 6) +
-                       (str[i + 2] & 0x3F);
+    } else if ((c & 0xE0) == 0xC0 && i + 1 < len) {
+      // 2byte
+      ret.push_back(static_cast<wchar_t>(
+          ((c & 0x1F) << 6) +
+          (static_cast<unsigned char>(str[i + 1]) & 0x3F)));
       i += 2;
+    } else if ((c & 0xF0) == 0xE0 && i + 2 < len) {
+      // 3byte
+      ret.push_back(static_cast<wchar_t>(
+          ((c & 0x0F) << 12) +
+          ((static_cast<unsigned char>(str[i + 1]) & 0x3F) << 6) +
+          (static_cast<unsigned char>(str[i + 2]) & 0x3F)));
+      i += 3;
+    } else if ((c & 0xF8) == 0xF0 && i + 3 < len) {
+      // 4byte: wchar_t 4 字节可直存码点
+      ret.push_back(static_cast<wchar_t>(
+          ((c & 0x07) << 18) +
+          ((static_cast<unsigned char>(str[i + 1]) & 0x3F) << 12) +
+          ((static_cast<unsigned char>(str[i + 2]) & 0x3F) << 6) +
+          (static_cast<unsigned char>(str[i + 3]) & 0x3F)));
+      i += 4;
     } else {
-      // ignore 4byte
-      log(LogLevel::warn, "Can't change utf8 4byte characters");
-      return L"";
+      // 非法/截断序列: U+FFFD 逐字节占位, 不再整串丢弃(不打日志防 GBK 整文件刷屏)
+      ret.push_back(static_cast<wchar_t>(0xFFFD));
+      i += 1;
     }
   }
-  std::wstring ret;
-  ret.assign(dest.data(), dest_len);
 #endif
   return ret;
 }
@@ -539,67 +554,30 @@ std::string utf8TString(const std::wstring& wstr) {
   WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, &wstr[0], wstr.size(),
                       &ret[0], size, NULL, NULL);
 #else
-  int source_len = wstr.length();
-  std::vector<char> dest(source_len * 3 + 1, 0);
-  const wchar_t* source = wstr.c_str();
-  int dest_len = 0;
-  for (int i = 0; i < source_len; i++) {
-    if (wstr[i] <= 0x7F) {
-      dest[dest_len] = wstr[i];
-      dest_len++;
-    } else if (wstr[i] >= 0x80 && wstr[i] <= 0x7FF) {
-      wchar_t tmp = wstr[i];
-      char first = 0, second = 0, third = 0;
-      for (int j = 0; j < 3; j++) {
-        wchar_t tmp_quota = tmp % 16;
-        switch (j) {
-          case 0:
-            third = tmp_quota;
-            break;
-          case 1:
-            second = tmp_quota;
-            break;
-          case 2:
-            first = tmp_quota;
-            break;
-        }
-        tmp /= 16;
-      }
-
-      dest[dest_len] = 0xC0 + (first << 2) + (second >> 2);
-      dest[dest_len + 1] = 0x80 + (((second % 8) % 4) << 4) + third;
-      dest_len += 2;
-    } else if (wstr[i] >= 0x800 && wstr[i] <= 0xFFFF) {
-      wchar_t tmp = wstr[i];
-      char first = 0, second = 0, third = 0, fourth = 0;
-      for (int j = 0; j < 4; j++) {
-        wchar_t tmp_quota = tmp % 16;
-        switch (j) {
-          case 0:
-            fourth = tmp_quota;
-            break;
-          case 1:
-            third = tmp_quota;
-            break;
-          case 2:
-            second = tmp_quota;
-            break;
-          case 3:
-            first = tmp_quota;
-            break;
-        }
-        tmp /= 16;
-      }
-      dest[dest_len] = 0xE0 + first;
-      dest[dest_len + 1] = 0x80 + second << 2 + third >> 2;
-      dest[dest_len + 2] = 0x80 + (((third % 8) % 4) << 4) + fourth;
-      dest_len += 3;
+  // wchar_t 为 4 字节(mac/Linux), 逐码点直编; 原实现按十六进制半字节硬拼
+  // UTF-8(且 2/3 字节公式与运算符优先级均错), 还原字节流整体损坏
+  std::string ret;
+  ret.reserve(wstr.size() * 3);
+  for (const wchar_t wc : wstr) {
+    const unsigned int cp = static_cast<unsigned int>(wc);
+    if (cp < 0x80) {
+      ret += static_cast<char>(cp);
+    } else if (cp < 0x800) {
+      ret += static_cast<char>(0xC0 | (cp >> 6));
+      ret += static_cast<char>(0x80 | (cp & 0x3F));
+    } else if (cp < 0x10000) {
+      ret += static_cast<char>(0xE0 | (cp >> 12));
+      ret += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+      ret += static_cast<char>(0x80 | (cp & 0x3F));
+    } else if (cp <= 0x10FFFF) {
+      ret += static_cast<char>(0xF0 | (cp >> 18));
+      ret += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+      ret += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+      ret += static_cast<char>(0x80 | (cp & 0x3F));
     } else {
+      ret += "\xEF\xBF\xBD";  // 非法码点 → U+FFFD
     }
   }
-  dest[dest_len++] = '\0';
-  std::string ret;
-  ret.assign(dest.data(), dest_len);
 #endif
   return ret;
 }
