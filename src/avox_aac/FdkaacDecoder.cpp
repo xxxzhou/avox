@@ -68,7 +68,11 @@ DecodeResult FdkaacDecoder::onPreDecoder() {
     handle = nullptr;
     return DecodeResult::openFailed;
   }
-  decodeBuffer.resize(10240);
+  // 输出缓冲按最坏布局预留: 声道至少 8(含 PS/MPS 上混余量), 帧长上限 2048
+  // (HE-AAC SBR 帧长翻倍)。定长 10240B 仅 5120 样本, 6 声道×1024 即不足,
+  // DecodeFrame 每帧 AAC_DEC_OUTPUT_BUFFER_TOO_SMALL 致 5.1 AAC 整轨静音
+  const int32_t maxChannels = confChannel > 8 ? confChannel : 8;
+  decodeBuffer.resize(static_cast<size_t>(maxChannels) * 2048 * sizeof(INT_PCM));
   // 获取流信息
   CStreamInfo* streamInfo = aacDecoder_GetStreamInfo(handle);
   // 初始化采样率和声道（可能在首次解码后才准确，特别是 HE-AAC）
@@ -177,17 +181,16 @@ DecodeResult FdkaacDecoder::decode(const AvoxPacket& packet) {
 }
 
 void FdkaacDecoder::flush() {
-  if (handle) {
+  if (handle && !decodeBuffer.empty()) {
     // FDK AACDEC_FLUSH 需多次调用才能清空内部缓冲(HE-AAC 可缓冲 30+ 帧), 直至返回 AAC_DEC_NOT_ENOUGH_BITS
     UINT flags = AACDEC_FLUSH;
-    std::vector<uint8_t> flushBuffer(10240);
-    INT_PCM* outputBuffer = reinterpret_cast<INT_PCM*>(flushBuffer.data());
+    INT_PCM* outputBuffer = reinterpret_cast<INT_PCM*>(decodeBuffer.data());
+    const INT flushSamples = static_cast<INT>(decodeBuffer.size() / sizeof(INT_PCM));
     AAC_DECODER_ERROR err = AAC_DEC_OK;
     int flushCount = 0;
     // 最多 flush 100 次，避免无限循环
     while (flushCount < 10) {
-      err = aacDecoder_DecodeFrame(handle, outputBuffer,
-                                    flushBuffer.size() / sizeof(INT_PCM), flags);
+      err = aacDecoder_DecodeFrame(handle, outputBuffer, flushSamples, flags);
       flushCount++;
       if (err == AAC_DEC_NOT_ENOUGH_BITS || err == AAC_DEC_TRANSPORT_SYNC_ERROR) {
         // 解码器内部缓冲区已清空

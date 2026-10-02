@@ -89,6 +89,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 - 花屏伴 rtp 丢包 → 网络; 从 P 起解不自愈 → 落点缺参考
 - `[FF][mlp] Stream parameters not seen` 刷屏 + 位置 18 倍慢放 → 已修 96e205b+f58bc94
 - 全片每秒周期跳帧(TrueHD 碎片轨) → 已修 c3f92b0
+- **多声道 AAC(5.1+)整轨静音(音轨在、画面正常、无 buffering, 日志缺 `setDesc` 行) → 已修(fdk-aac 输出缓冲定长 10240B 不足 6ch×1024, 每帧 `8204` 风暴; 见播放中分册)**: fdk 初始化成功故不触发 openFailed 回退链而 FFmpeg 车道永不接管; 首帧恒有一条 `error:5` 是无害噪声勿与风暴混判
 - **顶部细条彩带闪烁 → 片源病, 非引擎(换源才能根治)**
 - **点播放/拖进度条后整 UI 冻死(低 CPU+无 .ips+`sample` 全采样锁同一栈) → 锁序反转死锁, Apple 专属(macOS/iOS) → 已修 466a928**: IOSAudioRender 同把 `mtx` 护缓冲+CoreAudio 句柄, onClose/pause/setVolume 持锁调 AudioOutputUnitStop/Start/SetParameter 等 HAL 锁, 实时 `renderCallback` 持 HAL 锁抢 `mtx` → AB-BA; `renderCallback` 改 `try_lock` + CoreAudio 调用全移锁外。判据/二进制验收见本文「锁序反转死锁」条。
 
