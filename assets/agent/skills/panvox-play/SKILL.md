@@ -36,7 +36,11 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 
 **Android**(adb): `adb install -r app/build/app/outputs/flutter-apk/app-release.apk`; `adb logcat -c && adb logcat -v time -s avox:V flutter:V`(引擎 tag=avox, Dart tag=flutter); 蜂窝网"全源打不开"先 `adb shell svc wifi enable`(历史陷阱)。
 
-**iOS**: 模拟器 `xcrun simctl launch --console-pty booted com.panvox.panvox` 收 stdout; 真机无控制台, 靠用户复述 + 降级到 Mac/Win 复现。
+**iOS**(模拟器 `xcrun simctl launch --console-pty booted com.panvox.panvox`; **真机 10/3 已打通, 不必再靠复述**):
+- 抓**引擎**stdout: `xcrun devicectl device process launch --device <udid> --console --terminate-existing --activate com.panvox.panvox`, 用 `script -q <file> <cmd>` 落地 + 定时 `pkill -INT -f 'device process launch'` 收尾(INT 转发给 app)。原生行齐全: `state from`/`io open result`/`io error,code:`/`[metrics] io open_input_ms`/`[FF]`; 真机 udid 用 `xcrun devicectl list devices`。
+- **Dart 的 print 不在 iOS 进程 stdout**(上面只见原生行), 且 **`-Log` 不可达**: Flutter iOS 不给 Dart 传 argv/env(`Platform.environment`/`main(args)` 恒空, 真机实证), 故 `-Log` 开关与 `AppLog` 进程内档都开不起来 —— 要 Dart 侧留痕只能改代码加容器文件开关(同 iOS 插件 `pwt.txt` 先例, 需重编+重装)。`log stream --device-name` / `log collect` 被本机沙箱挡(`log: Cannot run while sandboxed`), 别试。
+- **无头复刻"点卡"链**: 容器 `Documents/panvox/autoplay.txt` 第 1 行喂 **history.json 的身份键(哈希)**, 第 3 行 `player-re` → AppShell 走 `_openPickedFile(hash, resume:true)` = 与墙卡/启动续播同链(`_history.refFor` → `_resolveRef`)。⚠️ 该通道**不带 `ref`** ⇒ 落 `FileRef.local`, 壳层直链重试链不触发: 只能看到「首开失败」, 看不到「失败后又播起来」——要验后者必须手点 UI。
+- 数据档直读: `devicectl device info files --domain-type appDataContainer --domain-identifier com.panvox.panvox --username mobile --subdirectory Documents/panvox`; 拉档 `device copy from ... --user mobile`(**info 是 `--username`、copy 是 `--user`**, 混用报 Unknown option)。
 
 **Linux/WSL**(= Win 本机里的 WSL Ubuntu, `wsl bash -c` 进场): 仓库在 WSL 内 `~/github/{panvox,avox}`; 起 app `~/github/panvox/app/build/linux/x64/release/bundle/panvox 2>&1 | tee /tmp/panvox-run.log`, **必须普通用户**(WSLg 下 root 连不上用户 Wayland socket)。wsl.exe 实操: 复杂命令写 .sh 进去跑(引号经 Win 层易被吃), 路径用 wslpath 转, 脚本忌 CRLF, **stderr 提示常是乱码**, 以正常输出为准。画面恒走 frame_poll CPU 车道, 与 Win/mac 硬解车道不可直接互推; 引擎构建车道归夜班 openclaw 会话, 动手前 `ps aux | grep build_linux` 确认没人编别抢树。
 
@@ -60,6 +64,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 
 **open/起播** → [`references/病族-open.md`](references/病族-open.md)
 - 容器头解析失败(EBML…) → 拿到非容器(假 mkv/改后缀 FLV) → 源端假片, §1.2 体检定真身
+- **点卡/启动续播「先闪无法打开该文件, 随后自己正常播」→ 首开喂给引擎的是非 URL(库内裸路径/身份键), 已定位(1003, 见 open 分册)**: webdav/http 源卡面传的是 `sourcePath`/`item.id`(裸库内路径), 而 `_openPickedFile` 只给 SMB(`smbEnginePlayUrl`)与云盘(CloudLinks)换真直链, **webdav 缺这一跳** → `engine.open('/sata1-…/x.avi')`; 引擎 `avformat_open_input failed error[-2]: No such file or directory` + `io error,code:100` → shim 哨兵 → Dart 即刻 failed(浮层) → 壳层 `_onEngineForRetry` 800ms 后 `_retryWithFreshUrl`→`_resolveRef` 拼真 URL 重开 → 正常播。**判据 = 日志 `io open result: success msg:` 打的是路径/哈希而非 `http://`**; SMB 源不中此族(有 `smbEnginePlayUrl`)。
 - **Mac VT 起播全帧 `-12909` 风暴(resync 循环无效, 黑屏只有声) → 多 slice 流被逐 slice 包直喂 VT; 已修 AU 重组+让道软解(1002 定谳, 见 open 分册)**
 - **wmv3 拒播/有声无画 → 已修 ee8bf7b(0927)**
 - open 后卡死(`partial file` 风暴 + misland EOF + `clock-leak guard seek(0)` 死循环) → **0926 定谳未修**
@@ -82,6 +87,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 
 **播放中** → [`references/病族-播放中.md`](references/病族-播放中.md)
 - **黑屏有声 + `[FF][hevc] PPS id out of range` 风暴(手机/微信导出 HEVC 双 PPS 流) → 已修(1003, 见播放中分册)**: addConfigPacket 同类型替换丢掉另一 id 的 PPS(IDR 与非IDR切片各用 pps_id=0/1 缺一不可); 叠加水印 SEI 混入 parseConfigs 整段判失败 → SPS 544x960 vs 容器 540x960 误判 updateSize 硬解重置。判据: 参考解码器软/硬解全通 + 引擎拼的 hvcC 数组数少于文件真值 → 别往 avcodec/渲染层查
+- **iOS 真机「全黑不出画」与「出画一两秒后定格」→ 已修(1003, 修在 panvox 侧, 见播放中分册)**: 两病灶分开——全黑 = `CAMetalLayer.drawableSize` 恒 0×0(挂进 Flutter 平台视图后 UIKit 的 bounds×scale 自动同步失效, MoltenVK 建了链却无 drawable 可出), 修 = `layoutSubviews` 显式钉 `bounds×contentsScale`; 出画后定格 = 治「层内容不上屏」加的 `presentsWithTransaction=YES` 在**无 runloop 的渲染线程**上等不到 Core Animation 事务(Flutter UI 一静止就没人提交), 修 = 改回关。判据: 引擎侧 `tick present`/`rw-in` 全 30fps 稳态 + `mtl cb: status 4 err:none`(排除 GPU PageFault) + `vk-in record` 只 1 条(排除图重建) ⇒ **渲染在跑、只是没人提交事务上屏**; 同机 A/B 8/8(pwt.txt 切开关, 关=抓帧差异 769860 在更新 / 开=差异 0 定格)
 - **显示格时间戳截断族(VT 独有)**: A 每几秒跳 → 79abb44 / B 同类片仍每 2s 跳 → 已修 0927 / C seek 后持续抖 → 已修 0927
 - 后向 seek 后画面脱离音轨 → 已修 24ff54d(全平台)
 - 全片零规律散点跳画 + `Invalid NAL unit size` 风暴 → 已修 e409b32

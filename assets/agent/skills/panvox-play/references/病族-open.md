@@ -1,10 +1,13 @@
 # 病族案卷 · open / 起播
 
-> 状态: 有效 · 上次核对: 2026-10-01 · 权威源: -
+> 状态: 有效 · 上次核对: 2026-10-03 · 权威源: -
 > panvox-play skill 的案卷分册: SKILL.md §4 只放一行式索引, 签名对上后再来本文读根因/判据/验收。
 > 配套: `../SKILL.md`(流程与日志判读) · `病族-seek.md` · `病族-播放中.md`
 
 - 容器头解析失败(EBML header parsing failed 等) → 拿到非容器: 假 mkv(.torrent)/改后缀 FLV → 源端假片, §1.2 体检定真身。
+- **点卡/启动续播「先弹无法打开该文件, 随后自己正常播」→ 首开喂进引擎的是非 URL, 已定位(2026-10-03, iOS 真机)**: 现象是**闪一下错误浮层就进正片**, 每张卡都中(不是某部片的事)。根因链: 墙卡/最近卡传的是 `MediaItem.sourcePath`(`local_library` 的库内路径, 如 `/sata1-…/迅雷下载/团鬼/団鬼六 繩責.avi`)或 `item.id`(history 身份键哈希), 而 `AppShell._openPickedFile` 只对 **SMB**(`smbEnginePlayUrl`)和**云盘**(`CloudLinks`)把非 URL 换成真直链, **webdav/http 源没有这一跳** → `engine.open(裸路径)`; 引擎侧 `IOParseFF.cpp:481 reopenInput avformat_open_input failed error[-2]: No such file or directory` + `MediaPlayer.cpp:332 onError av source error:other msg:open input failed` + `io error,code:100`; shim 的 `onIoError` 只在开相转发 → Dart `_onEngineIoError` **即刻 failed(不等 15s 看门狗)** → 播放页全遮挡浮层; 800ms 后壳层 `_onEngineForRetry` → `_retryWithFreshUrl` → `_resolveRef`(webdav lister `resolvePlayable`) 拼出 `http://user:pass@host:port/…` 重开 → 正常播。
+  **判据(真机实测行)**: `io open result: success msg: /sata1-…/x.avi`(或哈希) = 病; 同片喂完整 URL 则 `io open result: success msg: http://…` 且 `io open_input_ms` 千毫秒级进 ready/playing(该片 1479ms, 无任何失败行) = 健。**SMB 源不中此族**(卡面路径先过 `smbEnginePlayUrl` 内联凭据), 故「只在 iOS 见到」多半是源种类不同(webdav 5005 vs SMB 445), 不是平台差。
+  **修法**: `_openPickedFile` 在 `openUrl` 无 `://` 且 `fileRef` 挂着远程源时, 先 `await _resolveRef(fileRef)` 取真直链再 open(与重试链同一解析口), 别让非 URL 进引擎。复现配方见 `../SKILL.md` §2 iOS(autoplay.txt 喂身份键/裸路径 + `devicectl --console` 抓引擎行)。
 - **wmv3 拒播/有声无画 → 已修 ee8bf7b(0927)**: 根因不在 FFVDecoder —— MediaPlayer::onPacket 视频分支 `data.size<=4` 垃圾包闸把 4 字节 vconfig(序列头)整包丢掉(aconfig 无此闸故音频 config 照到); 修 = vconfig 豁免尺寸闸。签名: `io open success` + 流信息正常(wmv3+wma2) + `avcodec_open2 failed -1094995529` 且**无任何 [FF][wmv3] 行**(extradata 空即静默拒, vc1_decode_init 形态) → 永不到 playing; 或音频代打到 playing 而 video 帧队列恒 0。**判据: 4 字节序列头全拒、5 字节同库可播**(看 `add video config data:` 字节数, 拒 `0x4FF11A01` / 成 `0x4FF1080100`, 0927 夜巡 6 片实锤)。签名仍见 = 查部署位修态。
 - open 后卡死: `partial file` ×数千同秒 + `seg fetch seek misland got:-541478725(AVERROR_EOF)` + Dart `clock-leak guard seek(0)` 死循环 → 服务端时变收尾连接污染 http filesize 认知(干净 EOF 只在 off≥filesize, 无 "Stream ends prematurely" ERROR 行是判据) → eof 闩 + seek 败路径不清闩 → 段断供雪崩(**0926 定谳未修**; 修法 = seek 败清闩 + EOF 未到真尾重建通道)。**先 curl 全文件顺序流验源端再对表**; 时变, 复现不出别翻案。
 - http 直链 open 卡 10 分钟+ = 迅雷逐 GOP 落盘 mp4(数千 mdat, FFmpeg 顶层扫描每 mdat 一次断连重连) → 已修 39aa4aa(http 预扫 + AVSEEK_SIZE 谎报早退)。
