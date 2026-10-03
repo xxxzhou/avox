@@ -27,14 +27,45 @@ WHITELIST=(--disable-everything
   --enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,aac_adtstoasc,extract_extradata)
 APPLE=(--enable-hwaccels --enable-videotoolbox --enable-zlib)
 
+# libdav1d(BSD-2, 非 LGPL): AV1 软解。FFmpeg 原生 av1 解码器是 hwaccel-only
+# 包装(av1dec.c: 无 hwaccel 即 AVERROR(ENOSYS)), 无 dav1d 时"软解"名解不出
+# 帧 —— 缩略图/转码链(rec.hard.decode=0)每包报错刷屏(1003 定案)。检出同级
+# dav1d 树($SRC_DIR/../dav1d/out-$TARGET)即自动挂上, 缺席不启用(行为同旧)。
+# ⚠️ dav1d 版本须与 WebRTC 归档自带那份同源(avox_library 的 libwebrtc 静态链
+# 里已含 dav1d, 最终链接由它供符号; 现为 1.5.1-5-g8d956180)。换版本前先核
+# WebRTC 侧 dav1d_version(), 否则 libdav1d 包装与实现 ABI 不一致。
+DAV1D_PREFIX=${DAV1D_PREFIX:-"$SRC_DIR/../dav1d/out-$TARGET"}
+DAV1D_ARGS=()
+if [ -f "$DAV1D_PREFIX/lib/libdav1d.a" ]; then
+  export PKG_CONFIG_PATH="$DAV1D_PREFIX/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+  DAV1D_ARGS=(--enable-libdav1d --extra-cflags="-I$DAV1D_PREFIX/include"
+              --extra-ldflags="-L$DAV1D_PREFIX/lib")
+  for i in "${!WHITELIST[@]}"; do
+    case "${WHITELIST[$i]}" in
+      --enable-decoder=*) WHITELIST[$i]="${WHITELIST[$i]},libdav1d" ;;
+    esac
+  done
+  echo "== libdav1d: $DAV1D_PREFIX =="
+else
+  echo "== libdav1d 缺席($DAV1D_PREFIX): AV1 软解不可用(仅硬解可播) =="
+fi
+
 BUILD_DIR="$SRC_DIR/build-$TARGET"
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 
-CONF_COMMON=("$SRC_DIR/configure" --prefix="$OUT" "${APPLE[@]}" "${COMMON_DISABLE[@]}" "${WHITELIST[@]}")
+CONF_COMMON=("$SRC_DIR/configure" --prefix="$OUT" "${APPLE[@]}" "${COMMON_DISABLE[@]}" "${WHITELIST[@]}" "${DAV1D_ARGS[@]}")
 
 if [ "$TARGET" = "macos" ]; then
   set -- "${CONF_COMMON[@]}" --enable-static --disable-shared --enable-pic --enable-securetransport
+elif [ "$TARGET" = "iossim" ]; then
+  # iOS 模拟器 slice(Apple Silicon arm64): 产物落 out-iossim, 与
+  # 3rdparty/library/ios/ffmpeg-sim 对应; 最低版本与既有 sim slice 对齐(15.0)
+  SDK=$(xcrun -sdk iphonesimulator --show-sdk-path)
+  set -- "${CONF_COMMON[@]}" --enable-static --disable-shared --enable-pic
+  set -- "${@}" --enable-cross-compile --target-os=darwin --arch=arm64
+  set -- "${@}" --cc="xcrun -sdk iphonesimulator clang" --sysroot="$SDK"
+  set -- "${@}" --extra-cflags="-mios-simulator-version-min=15.0" --extra-ldflags="-mios-simulator-version-min=15.0"
 else
   SDK=$(xcrun -sdk iphoneos --show-sdk-path)
   set -- "${CONF_COMMON[@]}" --enable-static --disable-shared --enable-pic

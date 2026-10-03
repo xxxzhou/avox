@@ -51,6 +51,19 @@ bool VDecoderTask::start(class VideoTrack* context) {
       (bHard && !sOverrideName.empty()) ? sOverrideName.c_str() : nullptr;
   const char* sName = sOverride ? sOverride : getDefaultDecoderName(codecId, bHard);
   const char* sFallback = bHard ? getDefaultDecoderName(codecId, false) : nullptr;
+  // AV1 软解归一(1003, 同 AMediaSource): 构建带 dav1d 时软解走 libdav1d
+  if (!sOverride && codecId == VCodecId::av1) {
+    for (size_t i = 0; i < decodes.size(); ++i) {
+      if (decodes[i].desc.name == AVOX_FF_LIBDAV1D_DECODER) {
+        if (bHard) {
+          sFallback = AVOX_FF_LIBDAV1D_DECODER;
+        } else {
+          sName = AVOX_FF_LIBDAV1D_DECODER;
+        }
+        break;
+      }
+    }
+  }
   if (sFallback && strcmp(sFallback, sName) == 0) {
     sFallback = nullptr;
   }

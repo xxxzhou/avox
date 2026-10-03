@@ -255,6 +255,14 @@ void AMediaSource::onPacket(const AvoxPacket& packet) {
           LOGFLF(LogLevel::info, "open video decoder success");
           videoDecoder->dispatch(&IVideoDecoderOb::onVideoDesc);
           bOpenVDecoder = true;
+        } else if (result == DecodeResult::openFailed) {
+          // 车道从没出过帧且连续喂包失败(FFDecoder 判据)= 解码车道死(如无软解
+          // 构建下的 AV1: 每包 ENOSYS)。停喂并按源错误上报 —— 否则整片喂完,
+          // 每包 4 行报错(1003 实测 4 个缩略图 job 刷 22 万行/约 2 小时)。
+          LOGFLF(LogLevel::error, "video decode lane dead, stop feeding:", uri);
+          videoDecoder->removeObserver(this);
+          videoDecoder.reset();
+          onError(AVError::decodeLaneDead, "video decode lane dead");
         }
       }
       break;
@@ -297,6 +305,17 @@ bool AMediaSource::initVideoDecoder(VCodecId codecId, const VideoDesc& srcDesc,
   const char* sOverride =
       (bHard && !videoDecoderName.empty()) ? videoDecoderName.c_str() : nullptr;
   const char* sName = sOverride ? sOverride : getDefaultDecoderName(codecId, bHard);
+  // AV1 软解归一(1003): 构建带 dav1d 时软解名指 "libdav1d" —— 注册名即 FFmpeg
+  // 名, FFVDecoder 按名可查; 原生 "av1" 是 hwaccel-only 包装, 无 hwaccel 时
+  // 每包 ENOSYS 解不出帧(缩略图/转码链实证)。缺席保持旧行为。
+  if (!sOverride && !bHard && codecId == VCodecId::av1) {
+    for (size_t i = 0; i < decodes.size(); ++i) {
+      if (decodes[i].desc.name == AVOX_FF_LIBDAV1D_DECODER) {
+        sName = AVOX_FF_LIBDAV1D_DECODER;
+        break;
+      }
+    }
+  }
   // 硬解备选: 主路失败先试vulkan(未注册自动跳过); 覆盖点名时跳过, 保证机器无关回软解
   const char* sVulkan = nullptr;
   if (bHard && !sOverride) {

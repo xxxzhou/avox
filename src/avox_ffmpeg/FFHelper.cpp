@@ -2,6 +2,7 @@
 
 #include "FFExport.h"
 #include "avox/module/AvoxManager.hpp"
+#include "avox/player/AVTrack.hpp"
 #include "decoder/FFADecoder.hpp"
 #include "decoder/FFVDecoder.hpp"
 #include "decoder/FFVkDecoder.hpp"
@@ -15,10 +16,21 @@ void regFFCodec() {
   RegFunc ffCodecReg = {
       "ffmpeg codec regedit", []() {
         avformat_network_init();
+        // AV1 软解归一(1003): FFmpeg 原生 av1 是 hwaccel-only 包装(无 hwaccel
+        // 即 AVERROR(ENOSYS), 上游自陈不支持 native decode); 构建带 dav1d 时
+        // 让 "av1" 名指给 libdav1d —— 选型/回退链只认 "av1", 无需逐处改。
+        const bool bHasDav1d =
+            avcodec_find_decoder_by_name("libdav1d") != nullptr;
         void* codec_iterator = nullptr;
         const AVCodec* codec;
         // 遍历所有解码器
         while ((codec = av_codec_iterate(&codec_iterator))) {
+          // dav1d 在场时丢弃 hwaccel-only 的原生 av1(解不出帧), 由下方归一的
+          // "av1"=libdav1d 顶替; dav1d 缺席保持旧行为。
+          if (bHasDav1d && codec->id == AV_CODEC_ID_AV1 &&
+              strcmp(codec->name, "av1") == 0) {
+            continue;
+          }
           // log(LogLevel::info, "found codec:", codec->name, " type:",
           // codec->type);
           if (av_codec_is_decoder(codec)) {
@@ -34,6 +46,9 @@ void regFFCodec() {
               AvoxManager::Get().vDecoders.regInitFunc(
                   ffVCodec(codec->id), vdesc,
                   [codec]() -> VideoDecoder* { return new FFVDecoder(); });
+              // AV1 软解归一(1003): 原生 "av1" 是 hwaccel-only 包装, 构建带
+              // dav1d 时它已被上方跳过, 选型层(AMediaSource/VDecoderTask)把
+              // 软解名指到 "libdav1d"(注册名即 FFmpeg 名, FFVDecoder 按名可查)。
               // log(LogLevel::info, "decoder video:", codec->name,
               //     " codecId:", codec->id, " hardwrar:", vdesc.bHardware);
             }

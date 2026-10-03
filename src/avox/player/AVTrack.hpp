@@ -25,6 +25,12 @@ namespace avox {
 #ifndef AVOX_FF_AV1_DECODER
 #define AVOX_FF_AV1_DECODER "av1"
 #endif
+// 真软解 AV1(FFmpeg libdav1d 包装): 构建带 dav1d 时软解名指它 —— 原生 "av1"
+// 是 hwaccel-only 包装(无 hwaccel 即 ENOSYS), 名与 FFmpeg 注册名一致故
+// FFVDecoder 按名可查(1003 缩略图风暴定修)
+#ifndef AVOX_FF_LIBDAV1D_DECODER
+#define AVOX_FF_LIBDAV1D_DECODER "libdav1d"
+#endif
 #ifndef AVOX_FF_PRORES_DECODER
 // = FFmpeg 侧注册名(regFFCodec 用 codec->name), 与 AVOX_FF_VP9_DECODER 同款约定
 #define AVOX_FF_PRORES_DECODER "prores"

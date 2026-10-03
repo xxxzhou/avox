@@ -9,7 +9,8 @@
 
 namespace avox {
 
-#define AVOX_MAP_AV_ERROR(XX)              \
+#define AVOX_MAP_AV_ERROR(XX)                    \
+  XX(decodeLaneDead, -9, "decode lane dead")     \
   XX(deviceClose, -8, "device close")     \
   XX(deviceDisable, -7, "devcie disable") \
   XX(deviceError, -6, "devcie error")     \

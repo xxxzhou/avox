@@ -483,6 +483,13 @@ void TranscodeRecorder::onError(AVError error, const char* msg) {
   if (state == RecorderState::completed || state == RecorderState::failed) {
     return;
   }
+  // 解码车道死(如无软解构建的 AV1): 属失败, 不能按"完成"收尾 —— 产物无帧,
+  // 上层按完成拿到的就是坏缩略图(1003); 与状态无关一律落 failed。
+  if (error == AVError::decodeLaneDead) {
+    setRecState(RecorderState::failed);
+    RDOB::dispatch(&IRecorderOb::onIoError, error, msg);
+    return;
+  }
   // 录制中读到netTimeout/eof = 源自然结束(对端断流无EOF/服务端正常BYE),
   // 按完成收尾: 编码线程耗尽队列后正常关muxer并回调onComplete
   if (state == RecorderState::recording) {
