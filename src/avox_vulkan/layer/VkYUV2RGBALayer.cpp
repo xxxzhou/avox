@@ -107,6 +107,12 @@ void VkYUV2RGBALayer::onInitLayer() {
       path = "glsl/yuv2rgbaV5.comp.spv";
     }
   }
+  if (yuvType == YuvType::yuv422P10) {
+    // 平面式 4:2:2 10bit: 与 420P10 同走「字流字节视图」, 只是色度**全高**(入口函数不同)。
+    // 一份源码两变体(索引里用宏区分), 选法与 420 同款
+    path = (hdrMode == HdrMode::forceHDR) ? "glsl/yuv2rgbaV6HDR.comp.spv"
+                                          : "glsl/yuv2rgbaV6.comp.spv";
+  }
   fprintf(stderr, "[yuv2rgba] onInitLayer variant=%s yuvType=%d\n",
           path.c_str(), (int)yuvType);
   shader->loadShaderModule(path);
@@ -126,6 +132,14 @@ void VkYUV2RGBALayer::onInitLayer() {
     inFormats[0].imageType = ImageType::rgba8;
     outFormats[0].height = inFormats[0].height * 4 / 3;
     // 一个线程处理四个点
+    sizeX = divUp(outFormats[0].width, 2 * groupX);
+    sizeY = divUp(outFormats[0].height, 2 * groupY);
+  } else if (paramet == YuvType::yuv422P10) {
+    // 输入侧: 与 420P10 同(字流按 width 连排的 RGBA8 字节视图, 由 VkInputLayer 建)。
+    // 输出高 = 输入高 —— 字行数 2h(Y h 行 + U/V 各 h/2 行) → 字节视图高 h,
+    // 基类 initLayer 已按输入填好 outFormats 长宽, 无需像 420P10 那样 ×4/3 换算
+    inFormats[0].imageType = ImageType::rgba8;
+    // 一个线程处理四个点(2x2, 与 V5 同 dispatch 形状)
     sizeX = divUp(outFormats[0].width, 2 * groupX);
     sizeY = divUp(outFormats[0].height, 2 * groupY);
   } else if (paramet == YuvType::yuv422P ||
@@ -154,7 +168,8 @@ void VkYUV2RGBALayer::onInitLayer() {
   // 直通变体输出格式收口(G4): 上面共用归一化段会按输入类型把 outFormats[0]
   // 重置成 rgba8, 故 16F 覆盖必须放在它之后 —— 否则 yuv2rgbaHDR 写出的 >1 线性
   // 值进 8bit 纹理被钳 1.0, 高光全丢。仅 HDR 变体(10bit + forceHDR)需要
-  if ((paramet == YuvType::yuv420P10 || paramet == YuvType::p010) &&
+  if ((paramet == YuvType::yuv420P10 || paramet == YuvType::p010 ||
+       paramet == YuvType::yuv422P10) &&
       hdrMode == HdrMode::forceHDR) {
     outFormats[0].imageType = ImageType::rgba16f;
   }

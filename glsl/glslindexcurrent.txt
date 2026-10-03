@@ -6,6 +6,8 @@ yuv2rgbaV1.comp
 yuv2rgbaV2.comp
 yuv2rgbaV3.comp
 yuv2rgbaV5.comp
+yuv2rgbaV6.comp
+yuv2rgbaV6.comp yuv2rgbaV6HDR.comp YUV2RGBA_HDR=1
 canvasBlend.comp
 canvasBlendHDR.comp
 vrProject.comp

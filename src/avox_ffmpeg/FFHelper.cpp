@@ -150,6 +150,11 @@ VCodecId ffVCodec(AVCodecID codecId) {
       return VCodecId::av1;
     case AV_CODEC_ID_SVQ3:
       return VCodecId::svq3;
+    case AV_CODEC_ID_PRORES:
+      // ProRes(Apple 母版格式): Matroska V_PRORES / MOV apch 等。
+      // 软解输出 AV_PIX_FMT_YUV422P10LE(→ YuvType::yuv422P10); 三平台均无固定
+      // 功能硬解(Apple 的 VT 可解, 但走引擎 IOSVDecoder 独立腿, 不在此注册)
+      return VCodecId::prores;
     default:
       return VCodecId::none;
   }
@@ -260,6 +265,8 @@ AVCodecID getFFCodecId(VCodecId codecId) {
       return AV_CODEC_ID_VP9;
     case VCodecId::av1:
       return AV_CODEC_ID_AV1;
+    case VCodecId::prores:
+      return AV_CODEC_ID_PRORES;
     default:
       return AV_CODEC_ID_NONE;
   }
