@@ -1077,6 +1077,10 @@ void IOParseFF::onRunTask() {
           break;
         }
       }
+      // 容器 codec_tag 透传(按内存序): ProRes 靠它定 profile ⇒ VT 的
+      // kCMVideoCodecType_AppleProRes*。MP4/MOV 的 stsd 里有; MKV 仅在
+      // CodecPrivate 恰为 4 字节时才有(本仓那支 ProRes 片没有 ⇒ 值为 0)
+      vdesc.desc.codecTag = (int32_t)st->codecpar->codec_tag;
       addVideoDesc(vdesc);
     } else if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO &&
                !bDisableAudio) {

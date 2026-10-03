@@ -119,6 +119,10 @@ struct VideoDesc {
   YuvType type = YuvType::other;
   // 颜色空间,随 VideoDesc 值拷贝流到 encoder
   ColorSpaceDesc colorSpace = {};
+  // 容器 codec_tag(四字节, 按内存序; 0 = 容器未给)。ProRes 靠它定 profile
+  // (apch/apcn/... ⇒ VT 的 kCMVideoCodecType_AppleProRes*); MKV 无 CodecPrivate
+  // 时容器不给(本仓那支 ProRes 片即如此), 由解码器按像素格式退化默认
+  int32_t codecTag = 0;
 };
 
 extern "C" {

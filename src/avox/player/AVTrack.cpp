@@ -331,6 +331,19 @@ const char* getDefaultDecoderName(VCodecId codecId, bool bHard) {
     //(FFmpeg 软解 AV1 需构建带 dav1d/libaom)
     return AVOX_FF_AV1_DECODER;
 #endif
+  } else if (codecId == VCodecId::prores) {
+#if defined(__APPLE__)
+    // ProRes: Apple 走 VideoToolbox(IOSVDecoder::onVaild 探测系统版本,
+    // 建不出会话/不支持时由 VDecoderTask 选型回退软解)。硬解直通能省掉
+    // 4K 422 的整帧软解开销(实测软解 ~34fps 已够播, 硬解主要省 CPU)
+    return bHard ? AVOX_IOS_PRORES_DECODER : AVOX_FF_PRORES_DECODER;
+#else
+    // ⚠️ Windows/Linux/Android **均无 ProRes 硬解**(不在 DXVA/VAAPI/MediaCodec
+    // 名单) ⇒ 恒软解。此处必须显式给出软解名: 否则会落到本函数末尾的
+    // AVOX_FF_H264_DECODER 兜底, 再靠 VDecoderTask「找不到名字用 decodes[0]」
+    // 侥幸选中 —— 那是隐式行为, 加新解码器时随时可能被撞坏
+    return AVOX_FF_PRORES_DECODER;
+#endif
   }
   return AVOX_FF_H264_DECODER;
 }

@@ -49,6 +49,40 @@ static VtAuClass classifyPacket(const AvoxPacket &packet, VCodecId vc) {
   return c;
 }
 
+// ProRes profile 四字节: FFmpeg 的 codec_tag 是**内存序**(MKTAG('a','p','c','h')
+// = 0x68637061), 而 CoreMedia 的 CMVideoCodecType 要**大端四字节**('apch'
+// = 0x61706368) ⇒ 比较用 MKTAG 形式, 返回值用大端形式 —— 与 FFmpeg
+// videotoolbox.c:950 的 `av_bswap32(avctx->codec_tag)` 同义。
+// 返回值字面量对应 kCMVideoCodecType_AppleProRes422Proxy/LT/422/HQ/4444/4444XQ
+#define AVOX_MKTAG(a, b, c, d)                          \
+  ((uint32_t)(a) | ((uint32_t)(b) << 8) | ((uint32_t)(c) << 16) | \
+   ((uint32_t)(d) << 24))
+#define AVOX_FOURCC(a, b, c, d)                          \
+  (((uint32_t)(a) << 24) | ((uint32_t)(b) << 16) | ((uint32_t)(c) << 8) | \
+   (uint32_t)(d))
+
+static OSType proresCodecTypeFromTag(int32_t codecTag) {
+  switch ((uint32_t)codecTag) {
+    case AVOX_MKTAG('a', 'p', 'c', 'o'):  // 422 Proxy
+      return AVOX_FOURCC('a', 'p', 'c', 'o');
+    case AVOX_MKTAG('a', 'p', 'c', 's'):  // 422 LT
+      return AVOX_FOURCC('a', 'p', 'c', 's');
+    case AVOX_MKTAG('a', 'p', 'c', 'n'):  // 422
+      return AVOX_FOURCC('a', 'p', 'c', 'n');
+    case AVOX_MKTAG('a', 'p', 'c', 'h'):  // 422 HQ
+      return AVOX_FOURCC('a', 'p', 'c', 'h');
+    case AVOX_MKTAG('a', 'p', '4', 'h'):  // 4444
+      return AVOX_FOURCC('a', 'p', '4', 'h');
+    case AVOX_MKTAG('a', 'p', '4', 'x'):  // 4444 XQ
+      return AVOX_FOURCC('a', 'p', '4', 'x');
+    default:
+      // 容器没给 fourcc(MKV 无 CodecPrivate 即如此) ⇒ 退化默认 **422 HQ**:
+      // 422 家族里最常用的一档。VT 自己会读帧头, 声明值主要用来定
+      // kCMVideoCodecType; 与 FFmpeg 的差别是它 default 会 bswap32(0)=0 直接失败
+      return AVOX_FOURCC('a', 'p', 'c', 'h');
+  }
+}
+
 void regIOSVDecoder() {
   RegFunc regFunc = {"ios video decoder init", []() {
                        // H264
@@ -88,6 +122,16 @@ void regIOSVDecoder() {
             VCodecId::av1, codecDesc, []() -> VideoDecoder * {
               return new IOSVDecoder();
             });
+        // ProRes(422/4444 家族): VT 自 macOS 10.13/iOS 11 起可硬解。profile
+        // fourcc 由容器 codec_tag 定(无则按像素格式退化, 见 onPreDecoder)
+        codecDesc = {};
+        codecDesc.name = AVOX_IOS_PRORES_DECODER;
+        codecDesc.bHardware = true;
+        codecDesc.vcodecId = VCodecId::prores;
+        AvoxManager::Get().vDecoders.regInitFunc(
+            VCodecId::prores, codecDesc, []() -> VideoDecoder * {
+              return new IOSVDecoder();
+            });
       }};
   AvoxManager::Get().initFuncs.push_back(regFunc);
 }
@@ -108,7 +152,13 @@ void IOSVDecoder::updateYuvFormat() {
     yuvFormat.width = dimensions.width;
     yuvFormat.height = dimensions.height;
     // x420 与 P010 同布局(16bit 字高位对齐 10bit), 渲染/导出侧按 p010 语义处理
-    yuvFormat.type = streamBitDepth == 10 ? YuvType::p010 : YuvType::nv12;
+    // ProRes 422 交付 x422(同为 16bit 字高位对齐, 但色度**全高**) ⇒ 报
+    // yuv422P10 以区别于 420 家族; 实际布局以帧回调的 pbType 为准(MetalRender
+    // 就是按 pbType 判 422 的), 本字段只作信息/日志用
+    yuvFormat.type = (codecDesc.vcodecId == VCodecId::prores)
+                         ? YuvType::yuv422P10
+                         : (streamBitDepth == 10 ? YuvType::p010
+                                                 : YuvType::nv12);
   }
 }
 
@@ -161,6 +211,23 @@ bool IOSVDecoder::onVaild() {
       LOGFLF(LogLevel::warn, "av1 hardware decode not supported on this device");
       return false;
     }
+  }
+  if (codecDesc.vcodecId == VCodecId::prores) {
+    // ProRes: 帧自描述, 无 avcc/hvcc 语义, 整包直喂 VT
+    bMustVcc = false;
+#if TARGET_OS_OSX
+    const float kProresMinVersion = 10.13f;
+#else
+    const float kProresMinVersion = 11.0f;
+#endif
+    if (version < kProresMinVersion) {
+      LOGFLF(LogLevel::warn, "ios version :", version,
+             " not support prores decoder");
+      return false;
+    }
+    // 具体 profile 的硬解能力在建会话前判不了(要 fourcc 才知道是 apch 还是
+    // ap4h), 不做 VTIsHardwareDecodeSupported 预检 —— 交给会话创建失败后
+    // 由 VDecoderTask 回退软解
   }
   return true;
 }
@@ -351,6 +418,22 @@ DecodeResult IOSVDecoder::onPreDecoder() {
     if (extensions) {
       CFRelease(extensions);
     }
+  } else if (codecDesc.vcodecId == VCodecId::prores) {
+    // ProRes: 无带外参数集, 宽高采信容器侧 srcDesc(经 parseConfigs 填充);
+    // kCMVideoCodecType 由 profile fourcc 定, 取值见 proresCodecTypeFromTag
+    // (容器 codec_tag 优先, 缺则默认 apch —— 本仓那支 ProRes MKV 走默认)
+    if (!parseConfigs() || params.width <= 0 || params.height <= 0) {
+      LOGFLF(LogLevel::warn, "prores missing valid dimensions in container");
+      return DecodeResult::noConfig;
+    }
+    // 422 家族恒 10bit(4444 家族是 12bit, 本次不做, 见 422 方案 §八 第 1 条)
+    streamBitDepth = 10;
+    const OSType codecType = proresCodecTypeFromTag(srcDesc.codecTag);
+    LOGFLF(LogLevel::info, "prores vt codec type:", (int32_t)codecType,
+           " from codecTag:", (int32_t)srcDesc.codecTag);
+    status = CMVideoFormatDescriptionCreate(kCFAllocatorDefault, codecType,
+                                            params.width, params.height, nullptr,
+                                            &videoFormatDescription);
   }
   if (status != errSecSuccess || !videoFormatDescription) {
     LOGFLF(LogLevel::warn,
@@ -387,6 +470,11 @@ DecodeResult IOSVDecoder::onPreDecoder() {
        codecDesc.vcodecId == VCodecId::av1) &&
       streamBitDepth == 10) {
     dstFmt = kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange;
+  }
+  // ProRes 422 家族交 x422(4:2:2 10bit biplanar, 色度平面**全高**), 与上面
+  // h265/av1 的 x420 不同族 —— 渲染侧据此走 422 的 UV 纹理高(见 MetalRender)
+  if (codecDesc.vcodecId == VCodecId::prores && streamBitDepth == 10) {
+    dstFmt = kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange;
   }
   NSDictionary *attr = [NSDictionary
       dictionaryWithObjectsAndKeys: [NSNumber numberWithInt:dstFmt],
