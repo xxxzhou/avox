@@ -345,4 +345,136 @@ TEST_CASE("p010: 归一化打包 — 右移对齐低10位 + UV拆分, bTightlyPa
     CHECK(v[i] == (uint16_t)(uvSrc[2 * i + 1] >> 6));
   }
 }
+
+// 平面式 4:2:2 10bit(yuv422P10)布局契约: 2 样本/像素 = 4B/像素, 色度**全高**。
+// 「色度高度」是 4:2:2 与 4:2:0 的**唯一**差别, 也是三腿渲染路径把 h/2 改成 h 的全部依据。
+// ProRes 等解出来的 AV_PIX_FMT_YUV422P10LE 即此格式(⚠️ 与打包式 uyvy422_10B 布局不兼容)。
+
+TEST_CASE("422P10: 枚举值与平面判定") {
+  // 值只增不改不删(X-Macro 进 SWIG 绑定层, 老宿主按整数读)
+  CHECK((int)YuvType::yuv422P10 == 12);
+  CHECK(bVPlaneFormat(YuvType::yuv422P10));
+  CHECK(std::strcmp(getYuvTypeStr(YuvType::yuv422P10), "yuv422P10") == 0);
+}
+
+TEST_CASE("422P10: 帧大小 4B/像素 + 紧排判定(半宽全高)") {
+  const int w = 6, h = 4;
+  const int yPitch = w * 2;  // 2 字节/样本
+  const int uvPitch = w;     // 半宽 × 2 字节
+  std::vector<uint8_t> mem((size_t)yPitch * h + 2 * (size_t)uvPitch * h);
+  YUVFrame frame = {};
+  frame.format = {w, h, YuvType::yuv422P10};
+  frame.data[0] = mem.data();
+  frame.data[1] = mem.data() + (size_t)yPitch * h;
+  frame.data[2] = frame.data[1] + (size_t)uvPitch * h;
+  frame.stride[0] = yPitch;
+  frame.stride[1] = uvPitch;
+  frame.stride[2] = uvPitch;
+
+  // 4B/像素: Y(2B) + U(1B) + V(1B)
+  CHECK(getYuvFrameSize(frame.format, frame.stride[0]) == 4 * w * h);
+  CHECK((int)mem.size() == 4 * w * h);
+  // 紧排: uvWidthDiv=2(半宽), uvHeightDiv=1(**全高**, 不是 420 的 2)
+  CHECK(bTightlyPacked(frame));
+
+  // 同尺寸 420P10 只占 3B/像素 —— 两者差别只在色度高度, 不在 Y 面
+  YUVFrame f420 = frame;
+  f420.format.type = YuvType::yuv420P10;
+  CHECK(getYuvFrameSize(f420.format, f420.stride[0]) == 3 * w * h);
+}
+
+TEST_CASE("422P10: ImageFormat 往返 — r16 视图高 2h") {
+  const int w = 6, h = 4;
+  const int yPitch = w * 2;
+  YUVFrame frame = {};
+  frame.format = {w, h, YuvType::yuv422P10};
+  frame.stride[0] = yPitch;
+  frame.stride[1] = w;
+  frame.stride[2] = w;
+
+  ImageFormat im = {};
+  yuv2ImageFormat(frame, im);
+  CHECK(im.imageType == ImageType::r16);  // 10bit → 16bit 字视图
+  CHECK(im.width == w);
+  CHECK(im.height == 2 * h);  // 2 样本/像素 → 字行数 = 2h
+  CHECK(im.rowPitch == yPitch);
+
+  YUVFormat back = {};
+  image2YUVFormat(im, YuvType::yuv422P10, back);
+  CHECK(back.width == w);
+  CHECK(back.height == h);  // 往返一致
+  CHECK(back.type == YuvType::yuv422P10);
+}
+
+TEST_CASE("422P10: 装箱出口 [Y|U|V] 紧排, 色度全高且末行不丢(含奇高)") {
+  const int w = 6;
+  const int yPitch = w * 2;
+  const int uvPitch = w;
+  for (int h : {4, 5}) {  // 5 = 奇高边界: 420 半高实现在这里丢末行/错 V 基址
+    std::vector<uint8_t> ySrc((size_t)yPitch * h);
+    std::vector<uint8_t> uSrc((size_t)uvPitch * h);
+    std::vector<uint8_t> vSrc((size_t)uvPitch * h);
+    for (int r = 0; r < h; ++r) {
+      std::memset(ySrc.data() + (size_t)r * yPitch, 0x80 + r, yPitch);
+      std::memset(uSrc.data() + (size_t)r * uvPitch, 0x10 + r, uvPitch);
+      std::memset(vSrc.data() + (size_t)r * uvPitch, 0x30 + r, uvPitch);
+    }
+    YUVFrame frame = {};
+    frame.format = {w, h, YuvType::yuv422P10};
+    frame.data[0] = ySrc.data();
+    frame.data[1] = uSrc.data();
+    frame.data[2] = vSrc.data();
+    frame.stride[0] = yPitch;
+    frame.stride[1] = uvPitch;
+    frame.stride[2] = uvPitch;
+
+    std::vector<uint8_t> out((size_t)4 * w * h);
+    copyPlaneYUV2TightlyBuffer(frame, out.data());
+    CHECK(std::memcmp(out.data(), ySrc.data(), (size_t)yPitch * h) == 0);
+    const uint8_t* uOut = out.data() + (size_t)yPitch * h;
+    const uint8_t* vOut = uOut + (size_t)uvPitch * h;  // V 紧随 U(全高色度面)
+    for (int r = 0; r < h; ++r) {
+      CHECK(uOut[(size_t)r * uvPitch] == 0x10 + r);
+      CHECK(vOut[(size_t)r * uvPitch] == 0x30 + r);
+    }
+    // 末行必须在: 420 的半高实现(uv_height = h/2)会把它整行丢掉
+    CHECK(uOut[(size_t)(h - 1) * uvPitch] == 0x10 + h - 1);
+    CHECK(vOut[(size_t)(h - 1) * uvPitch] == 0x30 + h - 1);
+  }
+}
+
+TEST_CASE("422P10: SwVideoBuffer form/to 往返(真实消费路径)") {
+  const int w = 6, h = 4;
+  const int yPitch = w * 2;
+  const int uvPitch = w;
+  std::vector<uint8_t> mem((size_t)4 * w * h);
+  YUVFrame frame = {};
+  frame.format = {w, h, YuvType::yuv422P10};
+  frame.data[0] = mem.data();
+  frame.data[1] = mem.data() + (size_t)yPitch * h;
+  frame.data[2] = frame.data[1] + (size_t)uvPitch * h;
+  frame.stride[0] = yPitch;
+  frame.stride[1] = uvPitch;
+  frame.stride[2] = uvPitch;
+  for (int r = 0; r < h; ++r) {
+    std::memset(frame.data[1] + (size_t)r * uvPitch, 0x50 + r, uvPitch);
+    std::memset(frame.data[2] + (size_t)r * uvPitch, 0x60 + r, uvPitch);
+  }
+  SwVideoBuffer buf;
+  buf.form(frame, false);  // 紧排连续 → 引用不拷贝
+  CHECK(buf.bDataRef());
+  CHECK(buf.getImageFormat().height == 2 * h);  // r16 视图
+  YUVFrame out = {};
+  ImageBuffer tmp;
+  REQUIRE(buf.to(out, &tmp));
+  CHECK(out.format.type == YuvType::yuv422P10);
+  CHECK(out.format.height == h);
+  CHECK(out.stride[1] == uvPitch);
+  CHECK(out.data[2] - out.data[1] == uvPitch * h);  // V 基址 = 全高色度面
+  for (int r = 0; r < h; ++r) {
+    CHECK(out.data[1][(size_t)r * uvPitch] == 0x50 + r);
+    CHECK(out.data[2][(size_t)r * uvPitch] == 0x60 + r);
+  }
+}
+
 }  // namespace avox

@@ -325,6 +325,12 @@ YuvType ffYuvType(AVPixelFormat format) {
     case AV_PIX_FMT_YUV420P10LE:
     case AV_PIX_FMT_YUV420P10BE:
       return YuvType::yuv420P10;
+    case AV_PIX_FMT_YUV422P10LE:
+    case AV_PIX_FMT_YUV422P10BE:
+      // **平面式** 4:2:2 10bit(ProRes 等解出来的就是这个): Y/U/V 三平面, 色度全高。
+      // ⚠️ 勿与打包式 uyvy422_10B 混(那是 2 像素/5 字节的 UYVY 交错布局, 本函数
+      //    从不产出它); 两者布局不兼容, 误映射即花屏/绿屏
+      return YuvType::yuv422P10;
     case AV_PIX_FMT_P010LE:
     case AV_PIX_FMT_P010BE:
       // 硬解 10bit(VAAPI 下载后/D3D11)的半平面格式
@@ -456,6 +462,12 @@ AVPixelFormat getFFVideoFormat(YuvType type) {
     case YuvType::yuv444P:
       return AV_PIX_FMT_YUV444P;
     case YuvType::uyvy422_10B:
+      // ⚠️ 已知不对称(独立小账): uyvy422_10B 是**打包式**布局, 却映到**平面**的
+      // YUV422P10LE, 与 yuv2rgbaV3.comp 期望的打包布局对不上; 且 ffYuvType()
+      // 无反向项。修前先确认全仓无消费方, 勿顺手改
+      return AV_PIX_FMT_YUV422P10LE;
+    case YuvType::yuv422P10:
+      // 平面式 4:2:2 10bit, 与 ffYuvType() 的 YUV422P10LE 项对称
       return AV_PIX_FMT_YUV422P10LE;
     case YuvType::yuv420P10:
       return AV_PIX_FMT_YUV420P10LE;

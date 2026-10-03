@@ -10,7 +10,10 @@
 namespace avox {
 
 // name,value,group,group size,str
-// groupsize/group = 每像素字节系数(rowPitch 按字节计); 10bit 为 2B 像素 1.5 平面 = 1.5,
+// groupsize/group = getYuvFrameSize 的乘数(rowPitch 按字节计)。对平面格式它等价于
+// 「每像素样本数」: 420P10=1.5、422P10=2(4B/像素)、422P=2、420P=1.5、444P=3。
+// ⚠️ 本表语义历史上并不自洽(packed 的 uyvy422_10B 记的是字节/像素 2.5), 加新类型
+//   务必按消费点逐个实算 + 单测钉死, 别照抄直觉值。
 // 曾误写 3(2B 像素被重复计入), getYuvFrameSize 高估 2 倍 -> 渲染侧 bufferSize 契约误判黑屏
 #define AVOX_MAP_YUV(XX)                   \
   XX(gray, 0, 1, 1, "gray")               \
@@ -24,7 +27,8 @@ namespace avox {
   XX(uyvy422_10B, 8, 2, 5, "uyvy422_10B") \
   XX(yuv420P10, 9, 4, 6, "yuv420P10")     \
   XX(p010, 11, 4, 6, "p010")              \
-  XX(yuyv422A, 10, 2, 4, "yuyv422A")
+  XX(yuyv422A, 10, 2, 4, "yuyv422A")      \
+  XX(yuv422P10, 12, 2, 4, "yuv422P10")
 
 enum class YuvType : int32_t {
   other = -1,

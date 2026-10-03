@@ -71,7 +71,8 @@ bool bVPlaneFormat(YuvType yuvType) {
   // NV12是半平面,YUV420的变种,UV是交叉
   if (yuvType == YuvType::yuv420P || yuvType == YuvType::yuv422P ||
       yuvType == YuvType::yuv444P || yuvType == YuvType::nv12 ||
-      yuvType == YuvType::yuv420P10 || yuvType == YuvType::p010) {
+      yuvType == YuvType::yuv420P10 || yuvType == YuvType::p010 ||
+      yuvType == YuvType::yuv422P10) {
     return true;
   }
   return false;
@@ -101,6 +102,11 @@ void yuv2ImageFormat(const YUVFrame& yuvFrame, ImageFormat& format) {
         yuvFormat.type == YuvType::p010) {
       format.imageType = ImageType::r16;
       format.height = yuvFormat.height * 3 / 2;
+    } else if (yuvFormat.type == YuvType::yuv422P10) {
+      // 平面式 4:2:2 10bit: 2 样本/像素 = 4B/像素。r16 视图行距 2w ⇒ 字行数 = 2h
+      // (Y h 行 + U/V 各 h/2 行, 按 width 连排); 与 420P10 的 h*3/2 同理
+      format.imageType = ImageType::r16;
+      format.height = yuvFormat.height * 2;
     } else {
       format.imageType = ImageType::r8;
       format.height = yuvFormat.height * groupsize / group;
@@ -141,6 +147,9 @@ void image2YUVFormat(const ImageFormat& imFormat, YuvType yuvType,
     // yuv420P10/p010: ImageFormat height = 1620, 需要转换回 YUVFormat height = 1080
     // height * 2/3 = 1620 * 2/3 = 1080
     format.height = imFormat.height * 2 / 3;
+  } else if (yuvType == YuvType::yuv422P10) {
+    // 反解 yuv2ImageFormat: r16 视图高 2h(2 样本/像素) → YUVFormat 高 h
+    format.height = imFormat.height / 2;
   } else if (bVPlaneFormat(yuvType)) {
     // 平面格式，长度变化
     format.height = imFormat.height * group / groupsize;
@@ -161,8 +170,10 @@ bool bTightlyPacked(const YUVFrame& frame) {
   if (frame.format.type == YuvType::yuv420P ||
       frame.format.type == YuvType::yuv422P ||
       frame.format.type == YuvType::yuv444P ||
-      frame.format.type == YuvType::yuv420P10) {
-    // 获取比例：420P(w/2, h/2), 422P(w/2, h), 444P(w, h)
+      frame.format.type == YuvType::yuv420P10 ||
+      frame.format.type == YuvType::yuv422P10) {
+    // 获取比例：420P(w/2, h/2), 422P(w/2, h), 422P10(w/2, h), 444P(w, h)
+    // stride 均按字节: 10bit 的 w/2 样本 = w 字节, 故与 8bit 422P 同形
     int32_t uvWidthDiv = (frame.format.type == YuvType::yuv444P) ? 1 : 2;
     int32_t uvHeightDiv = (frame.format.type == YuvType::yuv420P ||
                            frame.format.type == YuvType::yuv420P10)
@@ -194,8 +205,9 @@ bool bTightlyPacked(const YUVFrame& frame) {
 void copyPlaneYUV2TightlyBuffer(const YUVFrame& frame, uint8_t* bfdata) {
   int32_t height = frame.format.height;
   int32_t yrowpitch = std::max(frame.format.width, frame.stride[0]);
-  // yuv420P10每像素2字节,需要乘以像素大小
-  if (frame.format.type == YuvType::yuv420P10) {
+  // yuv420P10/yuv422P10每像素2字节,需要乘以像素大小
+  if (frame.format.type == YuvType::yuv420P10 ||
+      frame.format.type == YuvType::yuv422P10) {
     yrowpitch = std::max(frame.format.width * 2, frame.stride[0]);
   }
   uint64_t y_logic_size = (uint64_t)yrowpitch * height;
@@ -234,9 +246,12 @@ void copyPlaneYUV2TightlyBuffer(const YUVFrame& frame, uint8_t* bfdata) {
       fprintf(stderr, "[p010copy] y0=%03x y639=%03x u0=%03x v0=%03x\n",
               ydst[0], ydst[639], udst[0], vdst[0]);
     }
-  } else if (frame.format.type == YuvType::yuv420P10) {
+  } else if (frame.format.type == YuvType::yuv420P10 ||
+             frame.format.type == YuvType::yuv422P10) {
     int32_t uv_pitch = yrowpitch / 2;
-    int32_t uv_height = height / 2;
+    // 420: 色度半高; 422: 色度**全高**(4:2:2 垂直不降采样)
+    int32_t uv_height =
+        (frame.format.type == YuvType::yuv422P10) ? height : height / 2;
     uint64_t uv_size_dst = (uint64_t)uv_pitch * uv_height;
     for (int p = 1; p <= 2; ++p) {
       uint8_t* dst = bfdata + y_logic_size + (p - 1) * uv_size_dst;
@@ -319,6 +334,15 @@ bool image2YUVFrame(IImageBuffer* buffer, YUVFrame& yuvFrame, YuvType yuvType) {
     if (yuvType == YuvType::p010) {
       yuvFrame.format.type = YuvType::yuv420P10;
     }
+  } else if (yuvType == YuvType::yuv422P10) {
+    // 4:2:2 10bit: 每样本 2 字节, 色度半宽**全高**(与 420P10 的半高色度相反)
+    int32_t uvPitch = rowPitch / 2;
+    int32_t uvHeight = yuvFrame.format.height;
+    int32_t halfUvSize = uvPitch * uvHeight;
+    yuvFrame.data[1] = yuvFrame.data[0] + ysize;
+    yuvFrame.stride[1] = uvPitch;
+    yuvFrame.data[2] = yuvFrame.data[1] + halfUvSize;
+    yuvFrame.stride[2] = uvPitch;
   } else if (yuvType == YuvType::nv12) {
     // NV12: UV交错起始=Y面末尾, 行距与Y一致
     yuvFrame.data[1] = yuvFrame.data[0] + ysize;
