@@ -105,6 +105,16 @@ void Dx11Window::onTickWin() {
   // 调用(WindowRender.cpp:323), 与 Present 同一临界区, 消除宿主线程拆交换链的
   // 竞态 A。翻转窗口内双端都停旧口径 = 过渡帧不出值域错配
   applyPendingHdr();
+  // 窗口观察者下发(§4.2 统一检查点): 本窗口原先**不派发** onRenderWindow ⇒
+  // WindowRender::onRenderWindow 从不执行 ⇒ pVideoRender->renderWindow(window)
+  // 从不调用 ⇒ targetWindow 恒空 ⇒ CPU 帧腿(软解)恒 "no window device" 而失败
+  // (ProRes 等无硬解编解码器恒走 CPU 帧)。VkWindow(:251)/Dx12Window(:193) 都派发,
+  // 本处补齐。
+  // ⚠️ 必须在下面 `if (!sharedTexture) return;` **之前** —— 首帧正是靠它把窗口交给
+  // 渲染器, 渲染器才能建图产出共享纹理(否则先有鸡, 永远到不了下面)。
+  // 本函数由 WindowRender::run() 持 mtx 调用; 观察者侧(renderWindow → setTargetWindow)
+  // 只写指针 + 读 hdrPassthroughActive() 原子位, 不取 mtx ⇒ 无死锁(与 applyPendingHdr 同理)。
+  dispatch(&IWindowOb::onRenderWindow);
   // 初始化 shader
   if (!bInitShader) {
     initShader();
