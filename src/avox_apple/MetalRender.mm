@@ -686,22 +686,15 @@ void MetalRender::publishCpuFrame(CVImageBufferRef imageBuffer) {
   OSType pbType = CVPixelBufferGetPixelFormatType(imageBuffer);
   // x420 与 nv12 同为 biplanar, packed 视图约定一致(r8/r16 + height*3/2)
   const bool bTenBit = isTenBitPixelFormat(pbType);
-  // ⚠️ x422 的 CPU 读回面**未做**(packed 视图约定是 height*2 而非 height*3/2,
-  // 且交付类型尚无对应 YuvType) ⇒ 在此明确拒绝并落日志, 别静默按 4:2:0 约定
-  // 打包出错图。归 422 方案 §八 第 4 条(读回面挂账)
-  if (isX422PixelFormat(pbType)) {
-    static std::once_flag onceX422;
-    std::call_once(onceX422, [] {
-      LOGFLF(LogLevel::warn,
-             "cpu yuv out x422 readback not supported yet (packed h*2), skip");
-    });
-    publishedTick = renderTick;
-    return;
-  }
-  // 交付类型随真实 pb 走: x420 → p010, 否则 nv12。getCpuFrameBuffer 据此
-  // 上报, 不再硬编码 —— 否则 10bit 硬解帧会被谎报成 nv12 (yuvout-h264-hi10p
-  // 哨兵在 macOS 实证 type-mismatch: VideoToolbox 能解 High10, 帧是 P010)
-  cpuPublishedType = bTenBit ? YuvType::p010 : YuvType::nv12;
+  // x422(4:2:2 10bit): 色度平面**全高** ⇒ packed 约定是 height*2 而非 height*3/2,
+  // 且样本是 16bit 字**高位**对齐(<<6) ⇒ 读回时逐样 >>6 转回**低对齐** yuv422P10
+  const bool b422 = isX422PixelFormat(pbType);
+  // 交付类型随真实 pb 走: x420 → p010, x422 → yuv422P10(低对齐), 否则 nv12。
+  // getCpuFrameBuffer 据此上报, 不再硬编码 —— 否则 10bit 硬解帧会被谎报成 nv12
+  // (yuvout-h264-hi10p 哨兵在 macOS 实证 type-mismatch: VideoToolbox 能解 High10,
+  // 帧是 P010)
+  cpuPublishedType = b422 ? YuvType::yuv422P10
+                          : (bTenBit ? YuvType::p010 : YuvType::nv12);
   if (!bTenBit &&
       pbType != kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange &&
       pbType != kCVPixelFormatType_420YpCbCr8BiPlanarFullRange) {
@@ -745,6 +738,45 @@ void MetalRender::publishCpuFrame(CVImageBufferRef imageBuffer) {
       return;
     }
     cpuPb = imageBuffer;
+    // x422(4:2:2 10bit, 色度**全高**): 交付**低对齐** yuv422P10 —— packed 布局
+    // [Y(w*2 字节 × h 行)][UV(w*2 字节 × h 行)], 行距 w*2, 总高 2h
+    // (与 yuv2ImageFormat(422P10) 的 r16 视图一致)。pb 里是 <<6 的高位对齐,
+    // 故必须逐样 >>6(10bit 无损), 不能像 x420 那样零拷贝。
+    // 选低对齐而非新增 YuvType::x422: yuv422P10 是既有类型, 全仓布局助手/消费者
+    // 都认它, 不必再教每个 switch 一个新值
+    if (b422) {
+      const int32_t w = (int32_t)CVPixelBufferGetWidth(imageBuffer);
+      const size_t dstPitch = (size_t)w * 2;
+      const size_t yBytes = dstPitch * (size_t)yHeight;
+      const size_t uvBytes = dstPitch * (size_t)yHeight;
+      if (cpuPack.size() < yBytes + uvBytes) {
+        cpuPack.resize(yBytes + uvBytes);
+      }
+      for (int32_t r = 0; r < yHeight; ++r) {
+        const uint16_t* s = (const uint16_t*)(yBase + (size_t)r * yPitch);
+        uint16_t* d = (uint16_t*)(cpuPack.data() + (size_t)r * dstPitch);
+        for (int32_t c = 0; c < w; ++c) {
+          d[c] = (uint16_t)(s[c] >> 6);
+        }
+      }
+      uint8_t* uvDst = cpuPack.data() + yBytes;
+      for (int32_t r = 0; r < yHeight; ++r) {
+        const uint16_t* s = (const uint16_t*)(uvBase + (size_t)r * uvPitch);
+        uint16_t* d = (uint16_t*)(uvDst + (size_t)r * dstPitch);
+        for (int32_t c = 0; c < w; ++c) {
+          d[c] = (uint16_t)(s[c] >> 6);
+        }
+      }
+      ImageFormat fmt422 = {};
+      fmt422.width = w;
+      fmt422.height = yHeight * 2;
+      fmt422.imageType = ImageType::r16;
+      fmt422.rowPitch = (int32_t)dstPitch;
+      cpuBuffer.setData(cpuPack.data(), fmt422, false);
+      bCpuPublished = true;
+      publishedTick = renderTick;
+      return;
+    }
     ImageFormat fmt = {};
     fmt.width = (int32_t)CVPixelBufferGetWidth(imageBuffer);
     fmt.height = yHeight + uvHeight;
