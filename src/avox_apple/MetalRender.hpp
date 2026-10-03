@@ -89,6 +89,13 @@ private:
   void createTextureCache();
   void closePipelineState();
   void closeTextureCache();
+  // 纹理缓存退场票(10/3 崩溃定谳): CVMetalTexture 的 finalize 要回写它所属的
+  // cache, 而帧纹理活到命令缓冲完成 —— 缓存若先 CFRelease, completion 线程即
+  // 空指针崩(bufferBackingNotInUse→CFArrayAppendValue(NULL), 两份 .ips 同栈)。
+  // 故缓存改为"在飞帧计数归零才真正释放", 状态堆上共享(完成回调不持 this)。
+  struct CacheRetire;
+  std::shared_ptr<CacheRetire> cacheRetire;
+  void retireCacheTexture();
 
  public:
   void renderCVPixelBuffer(CVImageBufferRef imageBuffer);

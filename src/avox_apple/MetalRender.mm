@@ -2,6 +2,7 @@
 #include "MetalWindow.hpp"
 #include "avox/module/AvoxManager.hpp"
 #include "avox/video/ColorSpace.hpp"
+#include <cstdio>
 #include <iostream>
 
 #import <MetalKit/MetalKit.h>
@@ -351,8 +352,16 @@ void regIOSVRender() {
   AvoxManager::Get().initFuncs.push_back(metalRenderReg);
 }
 
+// 纹理缓存退场状态: 在飞命令缓冲计数 + 待释放缓存, 堆上共享(完成回调不持 this)
+struct MetalRender::CacheRetire {
+  std::mutex mtx;
+  int inflight = 0;
+  CVMetalTextureCacheRef pending = nullptr;
+};
+
 MetalRender::MetalRender() {
   renderType = RenderType::Metal;
+  cacheRetire = std::make_shared<CacheRetire>();
   updateColorMat();
   canvasRender = std::make_unique<CanvasRender>();
 }
@@ -972,12 +981,18 @@ void MetalRender::createPipelineState() {
 }
 
 void MetalRender::createTextureCache() {
-  CVReturn err = CVMetalTextureCacheCreate(kCFAllocatorDefault, nullptr, device,
-                                           nullptr, &cacheTexture);
-  if (err != kCVReturnSuccess) {
-    LOGFLF(LogLevel::warn, "failed to create texture cache");
+  // 缓存与 device 同生命周期(CacheRetire): 仅首次创建, 图重建(翻格式/改尺寸)
+  // 只换下面的 IO 面 —— 随图重建缓存会把它从在飞帧纹理脚下抽走
+  if (!cacheTexture) {
+    CVReturn err = CVMetalTextureCacheCreate(kCFAllocatorDefault, nullptr, device,
+                                             nullptr, &cacheTexture);
+    if (err != kCVReturnSuccess) {
+      LOGFLF(LogLevel::warn, "failed to create texture cache");
+    }
   }
-  CVMetalTextureCacheFlush(cacheTexture, 0);
+  if (cacheTexture) {
+    CVMetalTextureCacheFlush(cacheTexture, 0);
+  }
   // 创建 IOSurface 属性字典
   NSDictionary *surfaceProps = @{
     (id)kIOSurfaceWidth : @(imageFormat.width),
@@ -1010,13 +1025,39 @@ void MetalRender::closePipelineState() {
 void MetalRender::closeTextureCache() {
   if (cacheTexture) {
     CVMetalTextureCacheFlush(cacheTexture, 0);
-    CFRelease(cacheTexture);
+    // 不在此 CFRelease: 在飞帧纹理的 finalize 会回写 cache, 见 retireCacheTexture
+    retireCacheTexture();
     cacheTexture = nullptr;
   }
   if (ioSurface) {
     CFRelease(ioSurface);
     ioSurface = nullptr;
     outputTexture = nil;
+  }
+}
+
+// 缓存退场: 无在飞帧立即释放; 有则挂起, 由最后一个命令缓冲完成回调兑现
+void MetalRender::retireCacheTexture() {
+  if (!cacheTexture) {
+    return;
+  }
+  CVMetalTextureCacheRef cache = cacheTexture;
+  bool releaseNow = false;
+  int inflight = 0;
+  {
+    std::lock_guard<std::mutex> lock(cacheRetire->mtx);
+    inflight = cacheRetire->inflight;
+    if (inflight == 0) {
+      releaseNow = true;
+    } else {
+      cacheRetire->pending = cache;
+    }
+  }
+  if (releaseNow) {
+    CFRelease(cache);
+  } else {
+    // 旧实现此路径直接 CFRelease → 在飞帧纹理 finalize 时崩; 打出即命中过险境
+    LOGFLF(LogLevel::info, "texture cache retire deferred, inflight:", inflight);
   }
 }
 
@@ -1178,6 +1219,22 @@ void MetalRender::renderCVPixelBuffer(CVImageBufferRef imageBuffer) {
              metalLayer ? " dev:" : "", metalLayer ? (metalLayer.device ? 1 : 0) : -1);
       return;
     }
+    // 层格式漂移守卫(10/3 花屏定谳): 宿主重挂平台视图(layer)会把它重置回
+    // RGBA8Unorm(SDR), 而引擎直通态(bF16Pipeline/16F 管线)不变 —— 16F 管线
+    // 绘进 8bit 目标 = Metal 未定义行为, 画面炸成彩色条带(帧转储实证: 管线
+    // f16=1 而目标 4B/px)。每帧核一次实际目标格式, 不符即回写层配置并弃本帧
+    // (层格式对下一个 drawable 才生效, 弃帧避免再画一张坏图)。
+    if (metalLayer && targetTexture) {
+      const bool bTargetF16 =
+          (targetTexture.pixelFormat == MTLPixelFormatRGBA16Float);
+      if (bTargetF16 != bF16Pipeline) {
+        LOGFLF(LogLevel::warn, "layer format drift: target f16:",
+               bTargetF16 ? 1 : 0, " pipeline f16:", bF16Pipeline ? 1 : 0,
+               " -> re-apply layer config");
+        applyLayerHdrConfig(metalLayer, bF16Pipeline);
+        return;
+      }
+    }
     id<MTLTexture> yTexture = nil;
     id<MTLTexture> uvTexture = nil;
     CVMetalTextureRef yTextureRef = nullptr;
@@ -1207,6 +1264,88 @@ void MetalRender::renderCVPixelBuffer(CVImageBufferRef imageBuffer) {
     const bool bTenBit = isTenBitPixelFormat(pbType);
     // 4:2:2 色度平面**全高**(h), 4:2:0 是半高(h/2)
     const bool b422 = isX422PixelFormat(pbType);
+    // 花屏定位探针(10/3): 帧/渲染参数仅在"首帧或变化"时打一行, 稳态零噪声。
+    // 判读: 帧尺寸(pb 实际) vs fmt(渲染器认知) 不一致 = 几何错配; layer/target
+    // 尺寸或 f16/transfer/hdrMode 与画面对不上 = 层/管线格式错配。
+    char pbTag[5] = {0};
+    pbTag[0] = (char)((pbType >> 24) & 0xFF);
+    pbTag[1] = (char)((pbType >> 16) & 0xFF);
+    pbTag[2] = (char)((pbType >> 8) & 0xFF);
+    pbTag[3] = (char)(pbType & 0xFF);
+    const int tw = targetTexture ? (int)targetTexture.width : -1;
+    const int th = targetTexture ? (int)targetTexture.height : -1;
+    const int lw = metalLayer ? (int)metalLayer.drawableSize.width : -1;
+    const int lh = metalLayer ? (int)metalLayer.drawableSize.height : -1;
+    // 层像素格式(70=RGBA8Unorm SDR / 115=RGBA16Float EDR): 与管线 f16 不符即花屏
+    const int lfmt = metalLayer ? (int)metalLayer.pixelFormat : -1;
+    const int f16 = bF16Pipeline ? 1 : 0;
+    const int tr = (int)cs.transfer;
+    const int hm = (int)hdrMode;
+    bool bParamsChanged = false;
+    {
+      static int lastFw = -1, lastFh = -1, lastFmt = -1, lastTw = -1, lastTh = -1;
+      static int lastLw = -1, lastLh = -1, lastF16 = -1, lastTr = -1, lastHm = -1;
+      static int lastLfmt = -2;
+      if ((int)width != lastFw || (int)height != lastFh ||
+          (int)pbType != lastFmt || tw != lastTw || th != lastTh ||
+          lw != lastLw || lh != lastLh || f16 != lastF16 || tr != lastTr ||
+          hm != lastHm || lfmt != lastLfmt) {
+        lastFw = (int)width; lastFh = (int)height; lastFmt = (int)pbType;
+        lastTw = tw; lastTh = th; lastLw = lw; lastLh = lh;
+        lastF16 = f16; lastTr = tr; lastHm = hm; lastLfmt = lfmt;
+        bParamsChanged = true;
+        LOGFLF(LogLevel::info, "metal diag: frame:", (int)width, "x", (int)height,
+               " pb:", pbTag, " tenBit:", bTenBit ? 1 : 0, " b422:", b422 ? 1 : 0,
+               " fmt:", imageFormat.width, "x", imageFormat.height,
+               " target:", tw, "x", th, " layer:", lw, "x", lh,
+               " lfmt:", lfmt, " f16:", f16, " transfer:", tr, " hdrMode:", hm);
+      }
+    }
+    // 帧转储探针(10/3 花屏定位, env AVOX_METAL_DUMP=<dir>): 每条流参数变化起的
+    // 头 12 帧转储"解码输入 pb 平面 + 渲染目标纹理", 复现后直接比对输入/输出,
+    // 定位错在采样/合成哪一步。默认不设 env 时零开销(仅一次 getenv)。
+    static const char* dumpDir = getenv("AVOX_METAL_DUMP");
+    static int dumpLeft = 0;
+    static int dumpSeq = 0;
+    std::string dumpOutPath;
+    if (dumpDir) {
+      if (bParamsChanged) {
+        dumpLeft = 12;
+      }
+      if (dumpLeft > 0) {
+        dumpLeft--;
+        dumpSeq++;
+        char inPath[512];
+        snprintf(inPath, sizeof(inPath), "%s/f%03d_%zux%zu_%s_in.planes",
+                 dumpDir, dumpSeq, width, height, pbTag);
+        FILE* fi = fopen(inPath, "wb");
+        if (fi) {
+          CVPixelBufferLockBaseAddress(imageBuffer, kCVPixelBufferLock_ReadOnly);
+          const size_t planeN = CVPixelBufferGetPlaneCount(imageBuffer);
+          const uint32_t planes = (uint32_t)planeN;
+          fwrite(&planes, sizeof(planes), 1, fi);
+          for (size_t pl = 0; pl < planeN; pl++) {
+            const uint8_t* base =
+                (const uint8_t*)CVPixelBufferGetBaseAddressOfPlane(imageBuffer, pl);
+            uint64_t rb = (uint64_t)CVPixelBufferGetBytesPerRowOfPlane(imageBuffer, pl);
+            uint64_t ph = (uint64_t)CVPixelBufferGetHeightOfPlane(imageBuffer, pl);
+            fwrite(&rb, sizeof(rb), 1, fi);
+            fwrite(&ph, sizeof(ph), 1, fi);
+            if (base) {
+              fwrite(base, 1, (size_t)(rb * ph), fi);
+            }
+          }
+          CVPixelBufferUnlockBaseAddress(imageBuffer, kCVPixelBufferLock_ReadOnly);
+          fclose(fi);
+        }
+        char outPath[512];
+        snprintf(outPath, sizeof(outPath), "%s/f%03d_%dx%d_out.rgba",
+                 dumpDir, dumpSeq, tw, th);
+        dumpOutPath = outPath;
+        LOGFLF(LogLevel::info, "metal dump: n:", dumpSeq, " in:", inPath,
+               " out:", outPath, " fmt:", tw, "x", th, " f16:", f16);
+      }
+    }
     // 创建 Y 平面纹理
     CVReturn err = CVMetalTextureCacheCreateTextureFromImage(
         kCFAllocatorDefault, cacheTexture, imageBuffer, nullptr,
@@ -1324,6 +1463,29 @@ void MetalRender::renderCVPixelBuffer(CVImageBufferRef imageBuffer) {
       }
     }
     [commandEncoder endEncoding];
+    // 帧转储(调试): 渲染目标回读到共享 buffer, 完成回调里落盘
+    id<MTLBuffer> dumpBuf = nil;
+    if (!dumpOutPath.empty()) {
+      const NSUInteger bpp =
+          (targetTexture.pixelFormat == MTLPixelFormatRGBA16Float) ? 8 : 4;
+      const NSUInteger rowBytes = (NSUInteger)targetTexture.width * bpp;
+      dumpBuf = [device newBufferWithLength:rowBytes * targetTexture.height
+                                    options:MTLResourceStorageModeShared];
+      if (dumpBuf) {
+        id<MTLBlitCommandEncoder> blitEnc = [commandBuffer blitCommandEncoder];
+        [blitEnc copyFromTexture:targetTexture
+                     sourceSlice:0
+                     sourceLevel:0
+                    sourceOrigin:MTLOriginMake(0, 0, 0)
+                      sourceSize:MTLSizeMake(targetTexture.width,
+                                             targetTexture.height, 1)
+                        toBuffer:dumpBuf
+               destinationOffset:0
+          destinationBytesPerRow:rowBytes
+        destinationBytesPerImage:rowBytes * targetTexture.height];
+        [blitEnc endEncoding];
+      }
+    }
     // 渲染线程无 RunLoop, 隐式 CA 事务可能不下刷; 显式事务逐帧 flush。
     // 2026-09-24 实测未观测到差异(present 节奏本就是干净 25fps), 属理论保险
     [CATransaction begin];
@@ -1337,6 +1499,16 @@ void MetalRender::renderCVPixelBuffer(CVImageBufferRef imageBuffer) {
     // 探针只打首 3 帧与出错帧(成功心跳不上日志, mac 的 -Log 面保持干净)
     static int cbProbeN = 0;
     ++cbProbeN;
+    // 在飞登记: 完成回调递减, 归零时兑现 retireCacheTexture 挂起的缓存释放
+    // (状态 shared_ptr 捕获, 完成回调不持 this — 渲染器析构后回调仍可安全兑现)
+    auto retireState = cacheRetire;
+    {
+      std::lock_guard<std::mutex> lock(retireState->mtx);
+      retireState->inflight++;
+    }
+    NSString* dumpFile =
+        dumpOutPath.empty() ? nil
+                            : [NSString stringWithUTF8String:dumpOutPath.c_str()];
     [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> cb) {
       const bool bErr = cb.error != nil;
       if (bErr || cbProbeN <= 3) {
@@ -1345,9 +1517,28 @@ void MetalRender::renderCVPixelBuffer(CVImageBufferRef imageBuffer) {
                " err:", cb.error ? cb.error.localizedDescription.UTF8String : "none",
                " n:", cbProbeN);
       }
+      // 纹理先释放(其 finalize 要回写 cache), 再递减在飞计数
       if (uvTextureRef) CFRelease(uvTextureRef);
       if (yTextureRef) CFRelease(yTextureRef);
       CFRelease(imageBuffer);
+      if (dumpBuf && dumpFile) {
+        FILE* fo = fopen(dumpFile.UTF8String, "wb");
+        if (fo) {
+          fwrite([dumpBuf contents], 1, [dumpBuf length], fo);
+          fclose(fo);
+        }
+      }
+      CVMetalTextureCacheRef toRetire = nullptr;
+      {
+        std::lock_guard<std::mutex> lock(retireState->mtx);
+        if (--retireState->inflight == 0 && retireState->pending) {
+          toRetire = retireState->pending;
+          retireState->pending = nullptr;
+        }
+      }
+      if (toRetire) {
+        CFRelease(toRetire);
+      }
     }];
     [commandBuffer commit];
     [CATransaction commit];
