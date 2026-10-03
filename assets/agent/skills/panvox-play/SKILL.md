@@ -66,6 +66,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 - 容器头解析失败(EBML…) → 拿到非容器(假 mkv/改后缀 FLV) → 源端假片, §1.2 体检定真身
 - **点卡/启动续播「先闪无法打开该文件, 随后自己正常播」→ 首开喂给引擎的是非 URL(库内裸路径/身份键), 已定位(1003, 见 open 分册)**: webdav/http 源卡面传的是 `sourcePath`/`item.id`(裸库内路径), 而 `_openPickedFile` 只给 SMB(`smbEnginePlayUrl`)与云盘(CloudLinks)换真直链, **webdav 缺这一跳** → `engine.open('/sata1-…/x.avi')`; 引擎 `avformat_open_input failed error[-2]: No such file or directory` + `io error,code:100` → shim 哨兵 → Dart 即刻 failed(浮层) → 壳层 `_onEngineForRetry` 800ms 后 `_retryWithFreshUrl`→`_resolveRef` 拼真 URL 重开 → 正常播。**判据 = 日志 `io open result: success msg:` 打的是路径/哈希而非 `http://`**; SMB 源不中此族(有 `smbEnginePlayUrl`)。
 - **Mac VT 起播全帧 `-12909` 风暴(resync 循环无效, 黑屏只有声) → 多 slice 流被逐 slice 包直喂 VT; 已修 AU 重组+让道软解(1002 定谳, 见 open 分册)**
+- **ProRes(及一切白名单外编码)「打开有声无画面」→ 未修(1003 定谳, 见 open 分册)**: 引擎编码映射是白名单 —— `FFHelper.cpp` 的 `ffVCodec()` 无 `AV_CODEC_ID_PRORES` 分支 → `VCodecId::none` → `VideoTrack::setTrackDesc` 打 `unsupported codec -1` 即 return(不建解码任务/不启渲染), 音频轨照常。**FFmpeg 侧已编入 prores 解码器, 纯引擎映射缺口**; 判据 = `add video track: invalid-…` + 整段无 `video track create`/`video decode create`。修完映射还要看 4:2:2 10bit 像素格式(`ffYuvType` 无 `YUV422P10LE`); 改造方案见 [doc/plan/gpu/422-10bit解码与呈现方案.md](../../../../doc/plan/gpu/422-10bit解码与呈现方案.md)。
 - **wmv3 拒播/有声无画 → 已修 ee8bf7b(0927)**
 - open 后卡死(`partial file` 风暴 + misland EOF + `clock-leak guard seek(0)` 死循环) → **0926 定谳未修**
 - http 直链 open 卡 10 分钟+ = 迅雷逐 GOP 落盘 mp4 → 已修 39aa4aa
