@@ -32,7 +32,7 @@ cbuffer CBParameters : register(b0)
 {
     int   width;         // 输出RGBA宽
     int   height;        // 输出RGBA高
-    int   yuvType;       // 0=nv12 1=p010
+    int   yuvType;       // 0=nv12 1=p010 2=yuv422P10
     int   transfer;      // YuvTransfer 声明序: 0=gamma 1=linear 2=pq 3=hlg
     float4x4 colorMat;   // offset 16: YUV(limited)->RGB, setColorSpace 注入
     float maxLuminance;  // 内容峰值亮度 nits
@@ -235,6 +235,26 @@ float4 p010Point(uint2 pix, float a) {
     return float4(saturate(processColor(float3(r, g, b))), a);
 }
 
+// yuv422P10: 与 p010Point 同款 16-bit 视图采样, **唯一差别是色度平面全高**
+// (4:2:2 垂直不降采样) ⇒ UV 行号取 pix.y, 不除 2。BT.2020 tv-range 展开与矩阵同款。
+// 注: 不注入 DV 分支 —— 422P10 只来自 CPU 帧腿(软解), 而该腿恒用非 DV 变体
+// (renderCpuFrame → selectShader(false)); 且 %%DV_BRANCH%% 占位符在 buildShaderSource
+// 里只替换**第一处**, 放第二份会留下未替换的字面量导致编译失败
+float4 p422Point(uint2 pix, float a) {
+    float k = 65535.0 / 64.0 / 1023.0;
+    float y = yTex.Load(int3(pix, 0)).r * k;
+    float2 uvRaw = uvTex.Load(int3(pix.x / 2, pix.y, 0)).rg;
+    float u = uvRaw.x * k - 0.5;
+    float v = uvRaw.y * k - 0.5;
+    float yy = saturate((y - 64.0 / 1023.0) / (876.0 / 1023.0));
+    float uu = u * (876.0 / 896.0);
+    float vv = v * (876.0 / 896.0);
+    float r = yy + 1.4746 * vv;
+    float g = yy - 0.164553 * uu - 0.571353 * vv;
+    float b = yy + 1.8814 * uu;
+    return float4(saturate(processColor(float3(r, g, b))), a);
+}
+
 [numthreads(16, 16, 1)]
 void main(uint2 DTid : SV_DispatchThreadID)
 {
@@ -247,6 +267,18 @@ void main(uint2 DTid : SV_DispatchThreadID)
         float4 o2 = p010Point(uint2(DTid.x*2+1, DTid.y*2), 1.0f);
         float4 o3 = p010Point(uint2(DTid.x*2, DTid.y*2+1), 1.0f);
         float4 o4 = p010Point(uint2(DTid.x*2+1, DTid.y*2+1), 1.0f);
+        outTex[int2(DTid.x*2, DTid.y*2)] = o1;
+        outTex[int2(DTid.x*2+1, DTid.y*2)] = o2;
+        outTex[int2(DTid.x*2, DTid.y*2+1)] = o3;
+        outTex[int2(DTid.x*2+1, DTid.y*2+1)] = o4;
+        return;
+    }
+    if (yuvType == 2) {
+        // yuv422P10(软解 CPU 帧腿): 色度平面全高, UV 纹理高 = 帧高
+        float4 o1 = p422Point(uint2(DTid.x*2, DTid.y*2), 1.0f);
+        float4 o2 = p422Point(uint2(DTid.x*2+1, DTid.y*2), 1.0f);
+        float4 o3 = p422Point(uint2(DTid.x*2, DTid.y*2+1), 1.0f);
+        float4 o4 = p422Point(uint2(DTid.x*2+1, DTid.y*2+1), 1.0f);
         outTex[int2(DTid.x*2, DTid.y*2)] = o1;
         outTex[int2(DTid.x*2+1, DTid.y*2)] = o2;
         outTex[int2(DTid.x*2, DTid.y*2+1)] = o3;
@@ -510,9 +542,11 @@ void Dx11CSVideoRender::releaseGraph() {
   }
   // CPU 帧腿上游纹理随图释放(重建时按新尺寸/格式重造)
   inTexture.Reset();
+  inTextureUV.Reset();
   yView.Reset();
   uvView.Reset();
   cpuInFormat = DXGI_FORMAT_UNKNOWN;
+  cpuInYuv = YuvType::other;
   cpuDevice = nullptr;
   // 释放回读资源,映射指针一并失效
   if (bStagingMapped && d3dcontext) {
@@ -529,7 +563,10 @@ void Dx11CSVideoRender::releaseGraph() {
 // 与硬解腿「解码设备→窗口设备」的跨设备句柄共享路径互不干扰)
 bool Dx11CSVideoRender::initGraphCpu(const YUVFrame& frame) {
   const YuvType yuvType = frame.format.type;
-  const bool b10 = yuvType == YuvType::yuv420P10;
+  // b422: 平面式 4:2:2 10bit(ProRes 等软解帧); 色度平面**全高** ⇒ UV 另起纹理
+  const bool b422 = yuvType == YuvType::yuv422P10;
+  // 10bit 家族: 每样本 2 字节, 上传纹理用 16bit 视图
+  const bool b10 = yuvType == YuvType::yuv420P10 || b422;
   if ((yuvType != YuvType::yuv420P && !b10) || !frame.data[0]) {
     static std::once_flag once;
     std::call_once(once, [yuvType] {
@@ -558,9 +595,9 @@ bool Dx11CSVideoRender::initGraphCpu(const YUVFrame& frame) {
   }
   const bool bNeedReset = bResetFlag.exchange(false);
   // 设备变了 / 宿主请求重建 / 输入格式换了 / 尺寸换了 → 全部重建图
+  // (输入格式判据用 cpuInYuv: 422 是「Y 面 + 独立 UV 面」两张纹理, 单个 DXGI_FORMAT 表达不了)
   if (computeShader && (bNeedReset || cpuDevice != wdDevice ||
-                        cpuInFormat != (b10 ? DXGI_FORMAT_P010
-                                            : DXGI_FORMAT_NV12) ||
+                        cpuInYuv != yuvType ||
                         imageWidth != (uint32_t)width ||
                         imageHeight != (uint32_t)height)) {
     releaseGraph();
@@ -570,8 +607,10 @@ bool Dx11CSVideoRender::initGraphCpu(const YUVFrame& frame) {
   }
   setDevice(wdDevice);
   cpuDevice = wdDevice;
-  cpuInFormat = b10 ? DXGI_FORMAT_P010 : DXGI_FORMAT_NV12;
-  // NV12/P010 上传纹理: 与解码纹理同为两平面视图(r8 / r16), CS 分支按格式选
+  cpuInYuv = yuvType;
+  cpuInFormat = b422 ? DXGI_FORMAT_R16_UNORM
+                     : (b10 ? DXGI_FORMAT_P010 : DXGI_FORMAT_NV12);
+  // Y 面纹理: NV12/P010 是与 UV 共用的双平面纹理; 422 只装 Y(R16_UNORM), UV 另起一张
   D3D11_TEXTURE2D_DESC tdesc = {};
   tdesc.Width = (UINT)width;
   tdesc.Height = (UINT)height;
@@ -599,13 +638,34 @@ bool Dx11CSVideoRender::initGraphCpu(const YUVFrame& frame) {
     LOGFLF(LogLevel::warn, "dx11 cs cpu create y srv failed");
     return false;
   }
-  srvDesc.Format = b10 ? DXGI_FORMAT_R16G16_UNORM : DXGI_FORMAT_R8G8_UNORM;
-  if (FAILED(device->CreateShaderResourceView(inTexture.Get(), &srvDesc,
-                                              &uvView))) {
-    LOGFLF(LogLevel::warn, "dx11 cs cpu create uv srv failed");
-    return false;
+  if (b422) {
+    // 4:2:2: UV 面**全高**(h, 不是 h/2) ⇒ NV12/P010 的双平面视图表达不了,
+    // 独立一张 R16G16_UNORM(w/2 × h)。横向色度仍是 2:1(半宽)
+    D3D11_TEXTURE2D_DESC uvDesc = tdesc;
+    uvDesc.Width = (UINT)(width / 2);
+    uvDesc.Height = (UINT)height;
+    uvDesc.Format = DXGI_FORMAT_R16G16_UNORM;
+    if (FAILED(device->CreateTexture2D(&uvDesc, nullptr,
+                                       inTextureUV.GetAddressOf()))) {
+      LOGFLF(LogLevel::warn, "dx11 cs cpu create 422 uv texture failed");
+      return false;
+    }
+    srvDesc.Format = DXGI_FORMAT_R16G16_UNORM;
+    if (FAILED(device->CreateShaderResourceView(inTextureUV.Get(), &srvDesc,
+                                                &uvView))) {
+      LOGFLF(LogLevel::warn, "dx11 cs cpu create 422 uv srv failed");
+      return false;
+    }
+  } else {
+    srvDesc.Format = b10 ? DXGI_FORMAT_R16G16_UNORM : DXGI_FORMAT_R8G8_UNORM;
+    if (FAILED(device->CreateShaderResourceView(inTexture.Get(), &srvDesc,
+                                                &uvView))) {
+      LOGFLF(LogLevel::warn, "dx11 cs cpu create uv srv failed");
+      return false;
+    }
   }
-  // 走硬解同款 desc 语义: CS 按 yuvDesc.Format 选 P010 分支并做 tone map
+  // 走硬解同款 desc 语义: CS 分支由 cpuInYuv 选(nv12/p010/422)并做 tone map;
+  // Format 仅供既有硬解消费面(422 时填 Y 面的 R16_UNORM, 语义上不代表「输入纹理」)
   yuvDesc = {};
   yuvDesc.Width = (UINT)width;
   yuvDesc.Height = (UINT)height;
@@ -625,15 +685,60 @@ bool Dx11CSVideoRender::uploadCpuPlanes(const YUVFrame& frame) {
   if (!inTexture || !d3dcontext) {
     return false;
   }
+  const int32_t width = frame.format.width;
+  const int32_t height = frame.format.height;
+  const int32_t cw = width / 2;
+  // 4:2:2: 色度平面**全高**; 且 Y/UV 分属两张纹理(见 initGraphCpu)
+  const bool b422 = frame.format.type == YuvType::yuv422P10;
+  const int32_t uvH = b422 ? height : height / 2;
+  if (b422) {
+    if (!inTextureUV) {
+      return false;
+    }
+    D3D11_MAPPED_SUBRESOURCE mY = {};
+    D3D11_MAPPED_SUBRESOURCE mUV = {};
+    if (FAILED(d3dcontext->Map(inTexture.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0,
+                               &mY))) {
+      LOGFLF(LogLevel::warn, "dx11 cs cpu upload map y failed");
+      return false;
+    }
+    if (FAILED(d3dcontext->Map(inTextureUV.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0,
+                               &mUV))) {
+      LOGFLF(LogLevel::warn, "dx11 cs cpu upload map uv failed");
+      d3dcontext->Unmap(inTexture.Get(), 0);
+      return false;
+    }
+    // Y 面: 逐样 <<6(10bit 低对齐 → 16bit 高对齐, 与 P010 同语义)
+    for (int32_t r = 0; r < height; ++r) {
+      const uint16_t* src =
+          (const uint16_t*)(frame.data[0] + (size_t)r * frame.stride[0]);
+      uint16_t* d = (uint16_t*)mY.pData + (size_t)r * (mY.RowPitch / 2);
+      for (int32_t c = 0; c < width; ++c) {
+        d[c] = (uint16_t)(src[c] << 6);
+      }
+    }
+    // UV 面: 全高 uvH 行(不是 h/2), U/V 交错
+    for (int32_t r = 0; r < uvH; ++r) {
+      const uint16_t* u =
+          (const uint16_t*)(frame.data[1] + (size_t)r * frame.stride[1]);
+      const uint16_t* v =
+          (const uint16_t*)(frame.data[2] + (size_t)r * frame.stride[2]);
+      uint16_t* d = (uint16_t*)mUV.pData + (size_t)r * (mUV.RowPitch / 2);
+      for (int32_t c = 0; c < cw; ++c) {
+        d[2 * c] = (uint16_t)(u[c] << 6);
+        d[2 * c + 1] = (uint16_t)(v[c] << 6);
+      }
+    }
+    d3dcontext->Unmap(inTextureUV.Get(), 0);
+    d3dcontext->Unmap(inTexture.Get(), 0);
+    return true;
+  }
   D3D11_MAPPED_SUBRESOURCE mapped = {};
   if (FAILED(d3dcontext->Map(inTexture.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0,
                              &mapped))) {
     LOGFLF(LogLevel::warn, "dx11 cs cpu upload map failed");
     return false;
   }
-  const int32_t width = frame.format.width;
-  const int32_t height = frame.format.height;
-  const int32_t cw = width / 2;
   const int32_t ch = height / 2;
   const bool b10 = frame.format.type == YuvType::yuv420P10;
   uint8_t* dstY = (uint8_t*)mapped.pData;
@@ -688,7 +793,10 @@ void Dx11CSVideoRender::renderCpuFrame(const YUVFrame& frame) {
     bParamsDirty = false;
     constData.width = (int32_t)imageWidth;
     constData.height = (int32_t)imageHeight;
-    constData.yuvType = (yuvDesc.Format == DXGI_FORMAT_P010) ? 1 : 0;
+    // CS 分支由 cpuInYuv 选(nv12=0 / p010=1 / yuv422P10=2); 不能用 yuvDesc.Format
+    // 反推 —— 422 是双纹理, yuvDesc.Format 填的是 Y 面的 R16_UNORM
+    constData.yuvType = (cpuInYuv == YuvType::yuv422P10) ? 2
+                        : (cpuInYuv == YuvType::yuv420P10) ? 1 : 0;
     constData.transfer = (int32_t)cs.transfer;
     constData.maxLuminance = (float)hdrPeakNits(hdrMeta);
     constData.sdrWhiteNits = 100.0f;

@@ -37,6 +37,10 @@ class Dx11CSVideoRender : public VideoRender, public Dx11Context {
   MComPtr<ID3D11Texture2D> inTexture = nullptr;
   MComPtr<ID3D11ShaderResourceView> yView = nullptr;
   MComPtr<ID3D11ShaderResourceView> uvView = nullptr;
+  // CPU 帧腿的**独立 UV 纹理**(仅 yuv422P10 用): NV12/P010 是「单纹理双平面视图」,
+  // 但 4:2:2 的色度平面**全高**, 这两种 DXGI 格式表达不了 ⇒ 另起一张
+  // R16G16_UNORM(w/2 × h), uvView 指向它
+  MComPtr<ID3D11Texture2D> inTextureUV = nullptr;
   uint32_t imageWidth = 0;
   uint32_t imageHeight = 0;
   D3D11_TEXTURE2D_DESC yuvDesc = {};
@@ -58,8 +62,12 @@ class Dx11CSVideoRender : public VideoRender, public Dx11Context {
   int32_t stagingWidth = 0;
   int32_t stagingHeight = 0;
   // CPU 帧腿(G9): cpuIn 时输入不是解码纹理, 自建 NV12/P010 上传纹理当 CS 源。
-  // 值 = 该纹理的 DXGI 格式(NV12/P010), UNKNOWN 表示非 CPU 建图
+  // 值 = 该纹理的 DXGI 格式(NV12/P010; yuv422P10 时是 Y 面的 R16_UNORM),
+  // UNKNOWN 表示非 CPU 建图
   DXGI_FORMAT cpuInFormat = DXGI_FORMAT_UNKNOWN;
+  // CPU 帧腿输入的 YuvType。单 DXGI_FORMAT 表达不了「双纹理的 422」⇒ 重建判据与
+  // CS 的 yuvType 常量都以本字段为准(不要再用 cpuInFormat 反推)
+  YuvType cpuInYuv = YuvType::other;
   // CPU 帧腿的 D3D11 设备(取自呈现窗口, 渲染线程持有; 非拥有, 不 Release)
   ID3D11Device* cpuDevice = nullptr;
   // 字幕画布(字幕画布多后端渲染计划 §5.1): 宿主持前端(wanted 标志), 渲染线程
