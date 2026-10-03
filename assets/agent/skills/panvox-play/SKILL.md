@@ -120,6 +120,12 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 
 ## 5. 引擎级复现与探针
 - `tools/engine_play_test.exe`(须与 avox.dll 同目录, `tools/build_engine_play_test.bat` 出; `engine_play_test <url> [sec=8] [hard=1] [vulk=1]`, 免窗可过 ssh); 或 avox_cli play(加载 avox-cli skill: `-io ffmpeg`/`-transport tcp`/`-log-packet`/`-log-decode`/`-loglevel verbose`)。
+  **★ 不打扰用户正在用的 panvox 做端到端验证(2026-10-03 实操, 推荐)**: 探针是免窗的, 只要把「引擎 install 的 dll + `assets/glsl` + 探针 exe」凑到一个**沙箱外的临时目录**(如 `/d/tmp/t6/`)就能跑, 完全绕开 panvox 与它的数据目录:
+  ① 编探针: `build_engine_play_test.bat` **是 LF-only**(cmd 会静默不执行) → 自己写一份 **CRLF** bat(vcvars64 + `cl … /I<avox install>/include /link /LIBPATH:<avox install>/AMD64/Release avox.lib`), 产物丢 `/d/tmp/`;
+  ② 凑运行时: `cp <avox install>/AMD64/Release/*.dll` + `cp -r .../assets` 到该临时目录(**`assets/glsl` 必须带**, 漏 shader = 建管线失败);
+  ③ 跑: `engine_play_test.exe "<file>" 8 0 1`(`vulk=1` = VK 腿, `hard=0` 强制软解)。
+  ⚠️ **判读陷阱**: **`frames=N` 涨 ≠ 出画** —— 渲染腿拒帧时探针仍会把**原始帧透传**给离屏回调, 计数照涨。**必须交叉看三条**: ① 有无 `[yuv2rgba] onInitLayer variant=…` 行(渲染层真建了); ② `[RESULT]` 里的输出**尺寸**(`h*1.5` = 渲染后转 yuv420P; `h*2` = 原始 422P10 的 r16 视图, 即**没渲染**); ③ 有无 `… yuv type not support:<n>` 之类的拒帧 warn。
+  ⚠️ **别拿旧 dll 当基线对照**: 旧 avox.dll(哪怕只差几周)配新探针会 **ABI 不兼容挂死**(实测 Sep-25 dll 跑 5 分钟无输出)。要比基线就用同一套构建。
 - **seektest**(samples/functest): `seektest <url> <秒> <前缀> [-hard]`, 判定行 `[AVOX][TEST] result=PASS`; 验续播/seek 修复必备(判读见 §3)。
 - **seekstorm**(samples/functest): `seekstorm <url> [count=24] [intervalMs=120]`, 密集连发 seek 复刻拖进度条; 判定 = 风暴后回 playing + 末 5s 帧计数推进。单次 seektest 绿但用户拖动冻 → 用它。
 - **stutterprobe**(samples/functest): 帧到达间隔 + buffering 段 + pos 推进, 验供给类修复; 判定要帧数下限防空判。
