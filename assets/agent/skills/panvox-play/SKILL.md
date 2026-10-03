@@ -87,6 +87,8 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 - seek 后长冻(GOP≥20s IDR 稀疏) → **未修**(a02)
 
 **播放中** → [`references/病族-播放中.md`](references/病族-播放中.md)
+- **mac 切流彩色马赛克(偶发; 拖新片/切 HDR↔SDR 后) → 已修 a5af7c7(1003, 见播放中分册)**: 层格式漂移——宿主重挂平台视图把 CAMetalLayer 重置回 8bit(SDR) 而引擎 16F 直通管线不变 ⇒ 16F 绘进 8bit 目标 = Metal 未定义行为; 判据 = 日志 `layer format drift: target f16:0 pipeline f16:1`(画面红/蓝/绿色带+噪点且冻结; 帧级转储 env `AVOX_METAL_DUMP` 可实证"输入干净/输出颜色炸开且几何对齐"); 修后每帧自愈
+- **mac 切流/关闭闪退 → 已修 a5af7c7(1003, 见播放中分册)**: `.ips` 同栈定案(`renderCVPixelBuffer` 完成 block → `CVMetalTextureCache::bufferBackingNotInUse` 空指针); 修后日志 `texture cache retire deferred` = 命中原崩溃窗口且安全兑现, 排 crash 先查 `~/Library/Logs/DiagnosticReports/panvox-*.ips`
 - **黑屏有声 + `[FF][hevc] PPS id out of range` 风暴(手机/微信导出 HEVC 双 PPS 流) → 已修(1003, 见播放中分册)**: addConfigPacket 同类型替换丢掉另一 id 的 PPS(IDR 与非IDR切片各用 pps_id=0/1 缺一不可); 叠加水印 SEI 混入 parseConfigs 整段判失败 → SPS 544x960 vs 容器 540x960 误判 updateSize 硬解重置。判据: 参考解码器软/硬解全通 + 引擎拼的 hvcC 数组数少于文件真值 → 别往 avcodec/渲染层查
 - **iOS 真机「全黑不出画」与「出画一两秒后定格」→ 已修(1003, 修在 panvox 侧, 见播放中分册)**: 两病灶分开——全黑 = `CAMetalLayer.drawableSize` 恒 0×0(挂进 Flutter 平台视图后 UIKit 的 bounds×scale 自动同步失效, MoltenVK 建了链却无 drawable 可出), 修 = `layoutSubviews` 显式钉 `bounds×contentsScale`; 出画后定格 = 治「层内容不上屏」加的 `presentsWithTransaction=YES` 在**无 runloop 的渲染线程**上等不到 Core Animation 事务(Flutter UI 一静止就没人提交), 修 = 改回关。判据: 引擎侧 `tick present`/`rw-in` 全 30fps 稳态 + `mtl cb: status 4 err:none`(排除 GPU PageFault) + `vk-in record` 只 1 条(排除图重建) ⇒ **渲染在跑、只是没人提交事务上屏**; 同机 A/B 8/8(pwt.txt 切开关, 关=抓帧差异 769860 在更新 / 开=差异 0 定格)
 - **显示格时间戳截断族(VT 独有)**: A 每几秒跳 → 79abb44 / B 同类片仍每 2s 跳 → 已修 0927 / C seek 后持续抖 → 已修 0927
