@@ -28,19 +28,22 @@ struct VkReg {
     if (volkInitialize() == VK_SUCCESS) {
       return;
     }
-#if defined(__APPLE__) && defined(IOS) && !TARGET_OS_SIMULATOR
-    // iOS 真机(10/3): MoltenVK 以动态框架随宿主内嵌(独立命名空间 — 静态 .a
-    // 曾与 volk 全局指针变量撞名炸链接), 无 LC_LOAD 引用, 此处显式 dlopen 后
-    // 经 RTLD_DEFAULT 取 vkGetInstanceProcAddr 自举 volk; 缺框架仍落 Metal
-    // 原生腿(非致命)。
+#if defined(__APPLE__) && TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR
+    // iOS 真机: MoltenVK 随宿主以动态框架内嵌(静态 .a 会与 volk 全局指针撞名),
+    // 按 @rpath 显式 dlopen 后用它取符号自举; 静态链入(符号在进程全局)时兜
+    // RTLD_DEFAULT; 两路皆无仍落 Metal 原生腿(非致命)。
+    PFN_vkGetInstanceProcAddr gipa = nullptr;
     if (void* mvk = dlopen("@rpath/MoltenVK.framework/MoltenVK", RTLD_NOW | RTLD_LOCAL)) {
-      (void)mvk;
-      if (auto gipa = reinterpret_cast<PFN_vkGetInstanceProcAddr>(
-              dlsym(RTLD_DEFAULT, "vkGetInstanceProcAddr"))) {
-        volkInitializeCustom(gipa);
-        LOGFLF(LogLevel::info, "volk bootstrapped via MoltenVK framework");
-        return;
-      }
+      gipa = reinterpret_cast<PFN_vkGetInstanceProcAddr>(dlsym(mvk, "vkGetInstanceProcAddr"));
+    }
+    if (!gipa) {
+      gipa = reinterpret_cast<PFN_vkGetInstanceProcAddr>(
+          dlsym(RTLD_DEFAULT, "vkGetInstanceProcAddr"));
+    }
+    if (gipa) {
+      volkInitializeCustom(gipa);
+      LOGFLF(LogLevel::info, "volk bootstrapped via MoltenVK framework");
+      return;
     }
 #endif
     LOGFLF(LogLevel::warn, "volkInitialize failed");

@@ -59,7 +59,10 @@ if(APPLE)
         endif()
         # 复制 MoltenVK 库到构建目录
         # /Users/zhouxin/VulkanSDK/1.4.313.0/iOS/lib/MoltenVK.xcframework
-        file(COPY ${Vulkan_MoltenVK_LIBRARY} DESTINATION "${CMAKE_INSTALL_PREFIX}")
+        # 先解软链再拷: Homebrew/新版 SDK 的 libMoltenVK.dylib 是符号链接, 直拷会让
+        # install 目录留一个指向本机路径的链接(换机部署、免窗探针加载不到)
+        get_filename_component(VULKAN_MVK_REAL "${Vulkan_MoltenVK_LIBRARY}" REALPATH)
+        file(COPY ${VULKAN_MVK_REAL} DESTINATION "${CMAKE_INSTALL_PREFIX}")
     elseif(IOS)
         # iOS 不链接 MoltenVK(见上, 宿主 App 自带), SDK 构建只需 volk/khronos 头, 缺 SDK 不阻塞
         message(STATUS "iOS: MoltenVK not found, skip (runtime provided by host app)")
