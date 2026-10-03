@@ -390,7 +390,11 @@ DecodeResult IOSVDecoder::onPreDecoder() {
   }
   NSDictionary *attr = [NSDictionary
       dictionaryWithObjectsAndKeys: [NSNumber numberWithInt:dstFmt],
-          (id)kCVPixelBufferPixelFormatTypeKey, nil];
+          (id)kCVPixelBufferPixelFormatTypeKey,
+      // Metal 兼容位(10/3): CVMetalTextureCache 采样此池 buffer, 缺键的
+      // IOSurface 映射在 iOS 真机 GPU 采样即 PageFault(mac 宽松不显)
+      [NSNumber numberWithBool:YES], (id)kCVPixelBufferMetalCompatibilityKey,
+          nil];
   LOGFLF(LogLevel::info, "creating ios vt decompression session");
   status = VTDecompressionSessionCreate(
       kCFAllocatorDefault, videoFormatDescription, nullptr,

@@ -3,6 +3,10 @@
 #include <algorithm>
 #include <cstring>
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 #include "../geometry/VkGeometryLayer.hpp"
 #include "avox/AvoxVideo.h"
 #include "avox/module/AvoxManager.hpp"
@@ -856,8 +860,20 @@ void VkVideoRender::renderWindow(Window* window) {
     VkImage vkImage = vkContext->getTexture();
     VkCommandBuffer cmd = vkContext->getCommandBuffer();
 
+    // 黑屏定位探针(10/3, 节流, **仅 iOS**): **进门即打**。上一轮探针只打在早退
+    // 分支里, 「零日志」因此无法区分「没被调」与「调了且成功」—— 结论就栽在这。
+    // 平台门: 属 iOS 黑屏定位脚手架, 其他平台(含 macOS)日志面保持原样
+    const bool bGraphReady = graph && outputLayer && graph->resourceReady();
+#if defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+    static int rwProbeN = 0;
+    if ((++rwProbeN <= 3) || (rwProbeN % 300) == 0) {
+      LOGFLF(LogLevel::info, "rw-in n:", rwProbeN, " graph:", graph ? 1 : 0,
+             " out:", outputLayer ? 1 : 0, " ready:", bGraphReady ? 1 : 0,
+             " cmd:", cmd ? 1 : 0, " tex:", vkImage ? 1 : 0);
+    }
+#endif
     // 未初始化或重置中，只做布局转换，不渲染内容
-    if (!graph || !outputLayer || !graph->resourceReady()) {
+    if (!bGraphReady) {
       // 将图像从 UNDEFINED 转换到 PRESENT_SRC_KHR，避免验证错误
       changeLayout(cmd, vkImage, VK_IMAGE_LAYOUT_UNDEFINED,
                    VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,

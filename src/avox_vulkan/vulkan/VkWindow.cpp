@@ -3,6 +3,10 @@
 #include <array>
 #include <cstring>
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 #include "avox/module/AvoxManager.hpp"
 
 namespace avox {
@@ -178,6 +182,16 @@ void VkWindow::onTickWin() {
   if (!vkSurface) {
     return;
   }
+  if (!swapChain) {
+    // 面晚到自愈: iOS 挂面常早于平台视图首帧布局(extent 0 建不了链), 布局
+    // 到位后在此按节流补建; 建成当帧先返回, 下帧起正常出图
+    if ((++swapchainRetryCount & 15) != 1) {
+      return;
+    }
+    createSwipChain();
+    return;
+  }
+  swapchainRetryCount = 0;
   // HighClock clock = {};
 
   // 非阻塞检查 fence 状态，如果 GPU 还没完成，跳过这一帧
@@ -195,9 +209,9 @@ void VkWindow::onTickWin() {
   // 方案②(§3.4.1): 呈现面翻转落在此处 —— 与下面的 acquire/submit/present 同一
   // 临界区(且 GPU fence 已确保上一帧完成), 双端同帧切, 过渡帧不出值域错配
   applyPendingHdr();
-  vkAcquireNextImageKHR(vkDevice, swapChain, UINT64_MAX,
-                        presentCompletes[currentFrame], VK_NULL_HANDLE,
-                        &currentImage);
+  VkResult acquireRet = vkAcquireNextImageKHR(
+      vkDevice, swapChain, UINT64_MAX, presentCompletes[currentFrame],
+      VK_NULL_HANDLE, &currentImage);
   // log(LogLevel::info, "vk windows cost 1:", clock.recordLast());
   vkResetCommandBuffer(cmdBuffers[currentFrame], 0);
   vkBeginCommandBuffer(cmdBuffers[currentFrame], &cmdBufferBeginInfo);
@@ -281,6 +295,18 @@ void VkWindow::onTickWin() {
   unLockCommand();
   // log(LogLevel::info, "vk windows cost 4:", clock.recordLast());
   AVOX_VULKAN_LOG(result, "vkQueuePresentKHR");
+  // 黑屏定位探针(节流, 仅 iOS): present 结果 + 画进交换链图的观察者数, 区分
+  // 「present 败/无观察者画窗/Metal 输入腿断流」三类; 其他平台日志面保持原样
+#if defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+  if ((++presentProbeCount % 150) == 1) {
+    LOGFLF(LogLevel::info, "tick present:", (int)result,
+           " acq:", (int)acquireRet, " img:", (int)currentImage,
+           " observers:", empty() ? 0 : 1);
+  }
+#else
+  (void)presentProbeCount;
+  (void)acquireRet;
+#endif
   if (result == VK_ERROR_OUT_OF_DATE_KHR) {
     // onChangeSize();
   }
@@ -355,6 +381,16 @@ void VkWindow::initVkSurface(ILinuxSurface* x11Surface)
 {
   VkResult ret = VK_SUCCESS;
   LOGFLF(LogLevel::info, "vk init surface");
+  // 重挂面(换片同播放器再来一个视频): 旧 surface 连同其 swapchain 必须先拆。
+  // swapchain 归属创建它的 surface, 把旧面上的 swapchain 当 oldSwapchain 传给
+  // 新面的 swapchain 是 VUID 违例 —— MoltenVK iOS 直接拒建, 而后方的
+  // vkGetSwapchainImagesKHR 不查 create 结果就对空句柄解引用必崩(10/3 真机
+  // 二挂 SIGSEGV 定谳)。swapchain 拆完旧面才可拆(销毁序要求)。
+  if (vkSurface != VK_NULL_HANDLE) {
+    releaseSwapChain();
+    vkDestroySurfaceKHR(vkInstance, vkSurface, nullptr);
+    vkSurface = VK_NULL_HANDLE;
+  }
 #if defined(_WIN32)
   VkWin32SurfaceCreateInfoKHR surfaceCreateInfo = {};
   surfaceCreateInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
@@ -547,8 +583,9 @@ void VkWindow::applyPendingHdr() {
   // renderpass 挂着旧格式, 换面必须跟着重建(视频路径是 compute+copy, 保持一致)
   vkDestroyRenderPass(vkDevice, renderPass, nullptr);
   createRenderPass();
-  reSwapChainBefore();
-  reSwapChainAfter();
+  if (reSwapChainBefore()) {
+    reSwapChainAfter();
+  }
   unLockCommand();
   bHdrActive = hdrNow;
   LOGFLF(LogLevel::info, "hdr passthrough swapchain:", hdrNow ? 1 : 0);
@@ -556,12 +593,31 @@ void VkWindow::applyPendingHdr() {
 
 void VkWindow::createSwipChain() {
   // 得到imagecount
-  reSwapChainBefore();
+  if (!reSwapChainBefore()) {
+    return;
+  }
   // 创建swapchain以及对应的image
   reSwapChainAfter();
 }
 
-void VkWindow::reSwapChainBefore() {
+void VkWindow::releaseSwapChain() {
+  for (size_t i = 0; i < views.size(); i++) {
+    vkDestroyImageView(vkDevice, views[i], nullptr);
+  }
+  for (size_t i = 0; i < frameBuffers.size(); i++) {
+    vkDestroyFramebuffer(vkDevice, frameBuffers[i], nullptr);
+  }
+  if (swapChain != VK_NULL_HANDLE) {
+    vkDestroySwapchainKHR(vkDevice, swapChain, nullptr);
+    swapChain = VK_NULL_HANDLE;
+  }
+  views.clear();
+  frameBuffers.clear();
+  images.clear();
+  imageCount = 0;
+}
+
+bool VkWindow::reSwapChainBefore() {
   VkSwapchainKHR oldSwapchain = swapChain;
   // Get physical device surface properties and formats
   VkSurfaceCapabilitiesKHR surfCapabilities;
@@ -605,6 +661,15 @@ void VkWindow::reSwapChainBefore() {
   // 得到交换链要求的长宽,surface大小变动后,要重新获得
   wdWidth = swapchainExtent.width;
   wdHeight = swapchainExtent.height;
+  // 面未布局(iOS 挂面早于首帧 layout 时 drawableSize 可为 0): 建链必败, 直接收
+  if (swapchainExtent.width == 0 || swapchainExtent.height == 0) {
+    LOGFLF(LogLevel::warn, "surface extent is 0, skip swapchain rebuild");
+    return false;
+  }
+  LOGFLF(LogLevel::info, "swapchain extent:", (int)swapchainExtent.width,
+         "x", (int)swapchainExtent.height,
+         " fmt:", (int)format.format,
+         " minImages:", (int)surfCapabilities.minImageCount);
   // present需要支持FIFO
   VkPresentModeKHR swapchainPresentMode = VK_PRESENT_MODE_FIFO_KHR;
   if (!vsync) {
@@ -681,9 +746,16 @@ void VkWindow::reSwapChainBefore() {
     swapchainInfo.queueFamilyIndexCount = 2;
     swapchainInfo.pQueueFamilyIndices = queueFamilyIndices;
   }
-  AVOX_VULKAN_LOG(
-      vkCreateSwapchainKHR(vkDevice, &swapchainInfo, nullptr, &swapChain),
-      "create swapchain failed");
+  VkResult createRet =
+      vkCreateSwapchainKHR(vkDevice, &swapchainInfo, nullptr, &swapChain);
+  AVOX_VULKAN_LOG(createRet, "create swapchain failed");
+  if (createRet != VK_SUCCESS) {
+    // 建败不续走: 空句柄进 vkGetSwapchainImagesKHR 是真机 SIGSEGV 崩点。
+    // 同面重建(尺寸/HDR)时恢复旧链归属保住陈帧降级; 全新面(重挂已拆旧链)
+    // 则留在空链态, onTickWin 的空链闸只跳帧不再深入
+    swapChain = oldSwapchain;
+    return false;
+  }
   // 自动销毁老的资源,重新生成
   depthTex = std::make_unique<VkTexture>();
   depthTex->setVkContext(this);
@@ -708,8 +780,13 @@ void VkWindow::reSwapChainBefore() {
   AVOX_VULKAN_LOG(
       vkGetSwapchainImagesKHR(vkDevice, swapChain, &imageCount, images.data()),
       "get swapchain images failed");
+  if (imageCount == 0) {
+    LOGFLF(LogLevel::warn, "swapchain image count is 0");
+    return false;
+  }
   views.resize(imageCount);
   frameBuffers.resize(imageCount);
+  return true;
 }
 
 void VkWindow::reSwapChainAfter() {

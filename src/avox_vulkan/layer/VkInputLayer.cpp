@@ -8,6 +8,8 @@
 #include "avox_egl/GLESContext.hpp"
 #endif
 #ifdef __APPLE__
+#include <TargetConditionals.h>
+
 #include "avox_apple/MetalContext.hpp"
 #endif
 
@@ -169,6 +171,17 @@ void VkInputLayer::onInitPipe() {
 
 void VkInputLayer::onCommand() {
   VkCommandBuffer cmd = getCurrentCmdBuffer();
+  // 黑屏定位探针(10/3, **仅 iOS**): 记录期车道点名 —— 录进 cmd 的是哪条路
+  // (gpu 互操作 / cpu 上传 / pipe)决定整场输入源, 每次建图只打一行。
+  // 平台门: 属 iOS 黑屏定位脚手架, 其他平台日志面保持原样
+#if defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+  LOGFLF(LogLevel::info, "vk-in record: bUsePipe:", bUsePipe ? 1 : 0,
+         " bGpu:", bGpuInput ? 1 : 0, " bCpu:", bCpuInput ? 1 : 0,
+         " inFmt:", inFormats.empty() ? -1 : (int)inFormats[0].imageType,
+         " inSize:", inFormats.empty() ? -1 : inFormats[0].width,
+         "x", inFormats.empty() ? -1 : inFormats[0].height,
+         " bByteView:", bByteView ? 1 : 0);
+#endif
   // VkDevice-VkDevice 交互: 从导入的 sharedImage 读取
   if (bVkInterop && sharedImage && sharedImage->isValid()) {
     VkImage importImage = sharedImage->getImage();
@@ -275,6 +288,38 @@ bool VkInputLayer::onFrame() {
       inBuffer->upload(cpuBuffer->getPointer());
     }
     bDateUpdate = false;
+    // 黑屏定位探针(10/3, 节流, **仅 iOS**): 上传真值 —— 源(解码帧)与目的(vk
+    // 缓冲)各统计一次。目的恒全零=帧没喂进图(上传断); 源全零=解码帧本身黑;
+    // 两者都非零则输入腿无罪, 黑在下游(yuv2rgba/blit/交换链)。
+    // 平台门是硬要求: 本探针要整帧遍历求和(1080p 一帧 ~800 万次), 非 iOS
+    // 平台没有定位需求, 不能白吃这份 CPU
+#if defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+    static int32_t sUpProbe = 0;
+    if ((++sUpProbe % 60) == 1) {
+      int32_t n = bByteView ? cpuDataBytes : getImageSize(inFormats[0]);
+      const uint8_t* src = (const uint8_t*)cpuBuffer->getPointer();
+      const uint8_t* dst = (const uint8_t*)inBuffer->getCpuData();
+      uint32_t sSum = 0, dSum = 0;
+      uint8_t sMn = 255, sMx = 0, dMn = 255, dMx = 0;
+      for (int32_t i = 0; i < n; i++) {
+        uint8_t v = src[i];
+        sSum += v;
+        if (v < sMn) sMn = v;
+        if (v > sMx) sMx = v;
+        if (dst) {
+          uint8_t w = dst[i];
+          dSum += w;
+          if (w < dMn) dMn = w;
+          if (w > dMx) dMx = w;
+        }
+      }
+      LOGFLF(LogLevel::info, "cpu-up n:", sUpProbe, " bytes:", n,
+             " src sum:", sSum, " min:", (int)sMn, " max:", (int)sMx,
+             " dst sum:", dSum, " min:", (int)dMn, " max:", (int)dMx,
+             " dstPtr:", dst ? 1 : 0, " bCpu:", bCpuInput ? 1 : 0,
+             " bGpu:", bGpuInput ? 1 : 0);
+    }
+#endif
     return true;
   }
   return false;

@@ -53,6 +53,10 @@ private:
   VkClearValue clearValues[2];
   bool focused = false;
   bool vsync = false;
+  // 面晚到自愈: 挂面时 layer 未布局建链失败, onTickWin 按此节流补建
+  int swapchainRetryCount = 0;
+  // 黑屏定位探针节流计数
+  int presentProbeCount = 0;
 #ifdef __ONLY_LINUX__
   // 宿主未传窗口时SDK自建的X11窗口(对齐win32的createWin32Window行为),
   // 生命周期归本类, onPreTick 里代为泵事件
@@ -132,7 +136,12 @@ private:
 
   void createSwipChain();
 
-  void reSwapChainBefore();
+  // 拆交换链及视图/FBO(重挂面换 surface 前、异常防护共用); 不动 renderPass
+  void releaseSwapChain();
+
+  // false = 面未就绪(extent 0/建链失败/0 图), 调用方必须跳过 reSwapChainAfter
+  // (否则首个 attach 上 depthTex 还是空, FBO 解引用即崩, 10/3 真机定谳)
+  bool reSwapChainBefore();
 
   void reSwapChainAfter();
 

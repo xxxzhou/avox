@@ -4,6 +4,10 @@
 #include <windows.h>
 #endif
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 #include "VkPipeGraph.hpp"
 #include "../share/VkSharedRender.hpp"
 #ifdef __ANDROID__
@@ -290,7 +294,21 @@ void VkOutputLayer::onCommand() {
 }
 
 void VkOutputLayer::outputGpuData(IRenderContext* context) {
-  if (!context || !vkPipeGraph->resourceReady()) {
+  // 黑屏定位探针(10/3, 节流, **仅 iOS**): **进门即打**(理由同
+  // VkVideoRender::renderWindow —— 只打早退分支则「没被调」与「调了且成功」
+  // 不可分)。平台门: 属 iOS 黑屏定位脚手架, 其他平台日志面保持原样
+  // 注意 context 前置: resourceReady() 末段要调 vkGetEventStatus, 原式
+  // `!context || !resourceReady()` 靠短路在 context 空时不碰它 —— 这里必须
+  // 保持同一短路口径, 否则其他平台白多一次驱动调用
+  const bool bOgReady = context && vkPipeGraph->resourceReady();
+#if defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+  static int ogProbeN = 0;
+  if ((++ogProbeN <= 3) || (ogProbeN % 300) == 0) {
+    log(LogLevel::info, "og-in n:", ogProbeN, " ctx:", context ? 1 : 0,
+        " ready:", bOgReady ? 1 : 0, " inTexs:", (int)inTexs.size());
+  }
+#endif
+  if (!bOgReady) {
     return;
   }
   if (context->getRenderType() == RenderType::Vulkan) {
@@ -298,6 +316,12 @@ void VkOutputLayer::outputGpuData(IRenderContext* context) {
     // 同 VkDevice 窗口显示渲染结果,拿到窗口的commandbuffer
     if (vkRender->getCommandBuffer()) {
       if (inTexs.empty() || !inTexs[0] || !inTexs[0]->image) {
+#if defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+        if (ogProbeN <= 3 || (ogProbeN % 300) == 0) {
+          log(LogLevel::warn, "outputGpuData no-intex n:", ogProbeN,
+              " size:", (int)inTexs.size());
+        }
+#endif
         return;
       }
       // GPU输出

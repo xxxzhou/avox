@@ -581,6 +581,10 @@ void MetalRender::renderCpuFrame(const YUVFrame &frame) {
       &kCFTypeDictionaryValueCallBacks);
   CFDictionarySetValue(pbAttrs, kCVPixelBufferIOSurfacePropertiesKey, ioProps);
   CFRelease(ioProps);
+  // Metal 兼容位(10/3 GPU 页故障定谳): 缺此键时 CVMetalTextureCache 映射
+  // "成功"但纹理布局无效, GPU 一采样即 PageFault(mac 宽松, iOS 必炸)
+  CFDictionarySetValue(pbAttrs, kCVPixelBufferMetalCompatibilityKey,
+                       kCFBooleanTrue);
   CVPixelBufferRef pb = nullptr;
   CVReturn status = CVPixelBufferCreate(
       kCFAllocatorDefault, width, height,
@@ -1069,6 +1073,12 @@ void MetalRender::renderCVPixelBuffer(CVImageBufferRef imageBuffer) {
   // CADisplayLink）中执行，且没有手动包裹 @autoreleasepool 这些对象只有在主线程
   // RunLoop 结束时才会释放。
   @autoreleasepool {
+    // 图自愈(10/3 iOS 黑屏): 窗口面重建/直通态翻转释放图后, 若无人再走
+    // vaildAndInitGraph, cache/pipeline/target 残 nil 即整段黑屏(逐帧被下方
+    // 参数门拒)。每帧先保活图, 已就绪时本调用零开销(首行早退)。
+    if (!vaildAndInitGraph()) {
+      return;
+    }
     static const bool bVsyncAlign = [] {
       const char* e = getenv("AVOX_VSYNC_ALIGN");
       return !e || strcmp(e, "0") != 0;
@@ -1089,12 +1099,17 @@ void MetalRender::renderCVPixelBuffer(CVImageBufferRef imageBuffer) {
     if (!imageBuffer || !cacheTexture || !pipelineState || !targetTexture) {
       // 点名哪一环缺失(iOS 黑屏排查 10/3): imageBuffer=解码帧, cache/pipeline=
       // vaildAndInitGraph 产物, target=层 drawable(nextDrawable 可返 nil)或
-      // 离屏 outputTexture
+      // 离屏 outputTexture; 层真值(bounds/drawableSize/device)一并点名
       LOGFLF(LogLevel::warn, "Invalid parameters for rendering img:",
              imageBuffer ? 1 : 0, " cache:", cacheTexture ? 1 : 0,
              " pipeline:", pipelineState ? 1 : 0,
              " target:", targetTexture ? 1 : 0,
-             " layer:", metalLayer ? 1 : 0);
+             " layer:", metalLayer ? 1 : 0,
+             metalLayer ? " bounds:" : "", metalLayer ? (int)metalLayer.bounds.size.width : -1,
+             metalLayer ? "x" : "", metalLayer ? (int)metalLayer.bounds.size.height : -1,
+             metalLayer ? " dw:" : "", metalLayer ? (int)metalLayer.drawableSize.width : -1,
+             metalLayer ? "x" : "", metalLayer ? (int)metalLayer.drawableSize.height : -1,
+             metalLayer ? " dev:" : "", metalLayer ? (metalLayer.device ? 1 : 0) : -1);
       return;
     }
     id<MTLTexture> yTexture = nil;
@@ -1103,6 +1118,24 @@ void MetalRender::renderCVPixelBuffer(CVImageBufferRef imageBuffer) {
     CVMetalTextureRef uvTextureRef = nullptr;
     size_t width = CVPixelBufferGetWidth(imageBuffer);
     size_t height = CVPixelBufferGetHeight(imageBuffer);
+    // 黑屏定位探针(10/3, 节流, 仅 iOS — VK 车道无 layer 时本函数把解码帧画进
+    // outputTexture(VK 图的输入面), 断流即上游黑屏; mac 日志面保持原样)
+#if TARGET_OS_IPHONE
+    static int inProbeN = 0;
+    if ((++inProbeN % 90) == 1) {
+      LOGFLF(LogLevel::info, "metal in-frame:", inProbeN,
+             " size:", (int)width, "x", (int)height,
+             " toLayer:", metalLayer ? 1 : 0);
+    }
+#endif
+    // 帧源生命周期(10/3): 帧源 CVPixelBuffer 与 CVMetalTextureRef 活到命令缓冲
+    // 完成再放行 — iOS VT 解码器缓冲池回收极快, 引擎原在 renderCVPixelBuffer
+    // 返回后即回收帧, 排队中的 GPU 可能读到已解绑的 IOSurface。按 API 契约属
+    // 正确的生命周期纪律, 保留为防御性加固。
+    // ⚠️ 当日「PageFault → 后续提交被 GPU 忽略 = 两车道黑屏总根因」的假设已被
+    // mtl cb: 探针否证(status 4 err:none, 整轮无错误帧), 不是黑屏根因; 真根因
+    // 见 panvox app/ios/PanvoxNative/PanvoxNativePlugin.mm layoutSubviews 注释。
+    CFRetain(imageBuffer);
     // x420(Main10)平面为16bit字高位对齐10bit(P010布局), 采样走 R16/RG16 UNORM
     OSType pbType = CVPixelBufferGetPixelFormatType(imageBuffer);
     bool bTenBit = pbType == kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange ||
@@ -1114,9 +1147,9 @@ void MetalRender::renderCVPixelBuffer(CVImageBufferRef imageBuffer) {
         0, &yTextureRef);
     if (err == kCVReturnSuccess) {
       yTexture = CVMetalTextureGetTexture(yTextureRef);
-      CFRelease(yTextureRef);
     } else {
       LOGFLF(LogLevel::warn, "failed to create y texture");
+      CFRelease(imageBuffer);
       return;
     }
     // 创建 UV 平面纹理
@@ -1126,9 +1159,10 @@ void MetalRender::renderCVPixelBuffer(CVImageBufferRef imageBuffer) {
         height / 2, 1, &uvTextureRef);
     if (err == kCVReturnSuccess) {
       uvTexture = CVMetalTextureGetTexture(uvTextureRef);
-      CFRelease(uvTextureRef);
     } else {
       LOGFLF(LogLevel::warn, "failed to create uv texture");
+      if (yTextureRef) CFRelease(yTextureRef);
+      CFRelease(imageBuffer);
       return;
     }
     id<MTLCommandBuffer> commandBuffer = [getCommandQueue() commandBuffer];
@@ -1170,12 +1204,18 @@ void MetalRender::renderCVPixelBuffer(CVImageBufferRef imageBuffer) {
     [commandEncoder setFragmentBytes:&params length:sizeof(params) atIndex:0];
     // 颜色矩阵(行优先 16 浮点): 替换 shader 旧硬编码 BT.601, 尊重 cs.standard/range
     [commandEncoder setFragmentBytes:colorMatData length:sizeof(colorMatData) atIndex:1];
-    // DV 整形区(场景级, buffer 2): 有效才下发, 无 DV 时 shader 分支不进
-    if (doviUbo.doviEnable == 1) {
-      [commandEncoder setFragmentBytes:&doviUbo.doviEnable
-                                length:sizeof(doviUbo) - offsetof(ColorYuvUBO, doviEnable)
-                                atIndex:2];
-    }
+    // DV 整形区(场景级, buffer 2): shader 声明了 constant DoviParams& 未绑时
+    // iOS 驱动无零页兜底(地址 0 一碰即 GPU PageFault, 10/3 真机二分定谳:
+    // no-sample 全绿、加 draw 即炸), 故恒绑。绑定起点必须是 DV 区段
+    // (&doviEnable = ColorYuvUBO offset 96 起, 与 shader DoviParams 同布局,
+    // 原实现即此口径); 无 DV 时绑同区段全零块
+    static const ColorYuvUBO doviZero{};
+    const ColorYuvUBO* doviBind =
+        doviUbo.doviEnable == 1 ? &doviUbo : &doviZero;
+    [commandEncoder setFragmentBytes:&doviBind->doviEnable
+                              length:sizeof(*doviBind) -
+                                     offsetof(ColorYuvUBO, doviEnable)
+                             atIndex:2];
     // 设置纹理
     [commandEncoder setFragmentTexture:yTexture atIndex:0];
     [commandEncoder setFragmentTexture:uvTexture atIndex:1];
@@ -1225,6 +1265,23 @@ void MetalRender::renderCVPixelBuffer(CVImageBufferRef imageBuffer) {
     if (metalLayer && drawable) {
       [commandBuffer presentDrawable:drawable];
     }
+    // 帧源生命周期收口(10/3): y/uv CVMetalTextureRef 与
+    // CFRetain 过的 imageBuffer 都活到命令缓冲完成, completedHandler 统一放行。
+    // 探针只打首 3 帧与出错帧(成功心跳不上日志, mac 的 -Log 面保持干净)
+    static int cbProbeN = 0;
+    ++cbProbeN;
+    [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> cb) {
+      const bool bErr = cb.error != nil;
+      if (bErr || cbProbeN <= 3) {
+        LOGFLF(bErr ? LogLevel::warn : LogLevel::info, "mtl cb:",
+               (int)cb.status,
+               " err:", cb.error ? cb.error.localizedDescription.UTF8String : "none",
+               " n:", cbProbeN);
+      }
+      if (uvTextureRef) CFRelease(uvTextureRef);
+      if (yTextureRef) CFRelease(yTextureRef);
+      CFRelease(imageBuffer);
+    }];
     [commandBuffer commit];
     [CATransaction commit];
     // 实验观测: commit 时刻相对 vsync 边界的相位(对齐后应聚集在 0~几 ms)
