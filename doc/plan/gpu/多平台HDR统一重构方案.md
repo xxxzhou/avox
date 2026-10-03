@@ -153,7 +153,7 @@ v2 增量: 新增 `HdrMode::vkHDR(3)`。**归一化必须按 lane 分岔, 不能
 | G6 | 硬解失败无事件上报(只有 `fallback to software` 日志)——v2 后换道非恢复必需, 上报保留用于徽章实态/降级 UX | FFDx11Decoder/宿主 | ✅ R5 撤销(分册 §6.4.1) |
 | G7 | mac VK 窗 MoltenVK 无 EDR(恒 SDR 呈现)→「硬解 fail→VK 接手真 HDR」在 mac 不可达; mac 场景② 改落原生腿(§1.3) | VkWindow(mac) | R3 评估 |
 | G8 | Android HDR 呈现面口(EGL/Flutter 桥均无 HDR) | EglVideoRender / VkWindow(Flutter) | R4 另批 |
-| G9 | Win 原生腿不吃 CPU 帧(cpuIn 不建图) | Dx11CSVideoRender | ✅ R1 已落地 |
+| G9 | Win 原生腿不吃 CPU 帧(cpuIn 不建图) | Dx11CSVideoRender | ✅ R1 已落地。⚠️ **2026-10-03 订正**: 落地后该腿**仍恒失败** —— `Dx11Window` 从不派发 `IWindowOb::onRenderWindow`(`VkWindow:251`/`Dx12Window:193` 都派发) ⇒ `WindowRender::onRenderWindow` 从不执行 ⇒ `VideoRender::targetWindow` 恒 null ⇒ `initGraphCpu` 恒 `no window device, skip`。**故本项此前只到「代码就绪」, 从未真跑通**(与 §十 末「代码就绪但未验」一致)。已修 `888c156`(`onTickWin` 内补 `dispatch`, 置于 `sharedTexture` 早退之前), 顺带首次激活该腿的 `checkTargetPassthrough()` 统一检查点; 4K ProRes 422P10 软解实测 15/15 截图有画。详见 [422 方案](422-10bit解码与呈现方案.md) §5.7 |
 | G10 | 链F 升样层缺失: VK 无「rgba8 PQ 码→16F 线性」EOTF 层。**前置依赖**: 链F 输入侧(VkInputLayer 导入 D3D11 共享纹理)需要 `ImageType::rgba10` 在 `getVkFormat` 有映射(VkHelper.cpp:344, 现缺→`VK_FORMAT_UNDEFINED`)——即三处映射是 G10 的**硬前置** | avox_vulkan 新层 | ✅ **主体+Win/Android 已落**(`VkPqUpsampleLayer`+`pqUpsample.comp` 已接入 graph; Win CS 与 Android `EglVideoRender` forceHDR 分支均产「PQ 码原样」rgba8); **mac 转独立缺口**(分册 §6.3) |
 | G11 | **VK 交平台 GPU 资源的格式闸未含 16F**(**仅 `setVulkan(false)` 路径**): `VkOutputLayer::onCommand:184` `bCanMapGpu = (rgba8\|\|bgra8)` ⇒ HDR 出 rgba16f 时整段 interop 跳过。**第二层**: 三处映射亦无 16F。**受限面**: **panvox 不受影响**(走 `setVulkan(true)`→VkWindow 原生窗直渲); 仅影响用平台资源交帧的消费者(Unity/Avalonia/vulkantest 样例) | VkOutputLayer.cpp:184 + 三映射 | R2 补(低优先); 详见 §十 D5 |
 
