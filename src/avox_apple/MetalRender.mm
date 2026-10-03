@@ -555,14 +555,19 @@ void MetalRender::renderGpuFrame(const GpuFrame &frame) {
 // IOSurface-backed NV12 pb(Y 按 stride 收紧, U/V 交织)后走硬解同款绘制。
 // 每帧新建 pb 对齐 VT 出帧节奏, 复用同 pb 会与未完帧的 GPU 读并发写
 void MetalRender::renderCpuFrame(const YUVFrame &frame) {
-  // 10bit 平面(yuv420P10)收 P010 pb 走既有 bTenBit 采样; 只收 8bit 会让
-  // DV/HDR10 软解帧静默全丢, 离屏抓帧恒黑(dv-l1gate mac 实证)
-  const bool b10 = frame.format.type == YuvType::yuv420P10;
-  if ((frame.format.type != YuvType::yuv420P && !b10) || !frame.data[0]) {
+  // 10bit 平面收 16bit pb 走既有 bTenBit 采样; 只收 8bit 会让 DV/HDR10 软解帧
+  // 静默全丢, 离屏抓帧恒黑(dv-l1gate mac 实证)。
+  // 4:2:2 10bit(yuv422P10, ProRes 等): CoreVideo 无 4:2:2 的 420 家族 pb 类型,
+  // 但有 x422 ⇒ **直接建 x422 pb**, 整条复用 renderCVPixelBuffer(色度全高由
+  // isX422PixelFormat 在 UV 纹理高度处处理), 无需自建 MTLTexture 对与新绘制入口
+  const YuvType yuvType = frame.format.type;
+  const bool b422 = yuvType == YuvType::yuv422P10;
+  const bool b10 = yuvType == YuvType::yuv420P10 || b422;
+  if ((yuvType != YuvType::yuv420P && !b10) || !frame.data[0]) {
     static std::once_flag once;
-    std::call_once(once, [&frame] {
+    std::call_once(once, [yuvType] {
       LOGFLF(LogLevel::warn, "metal cpu frame yuv type not support:",
-             (int32_t)frame.format.type);
+             (int32_t)yuvType);
     });
     return;
   }
@@ -586,10 +591,12 @@ void MetalRender::renderCpuFrame(const YUVFrame &frame) {
   CFDictionarySetValue(pbAttrs, kCVPixelBufferMetalCompatibilityKey,
                        kCFBooleanTrue);
   CVPixelBufferRef pb = nullptr;
+  // 4:2:2 走 x422(色度全高); 4:2:0 10bit 走 x420; 8bit 走 nv12
   CVReturn status = CVPixelBufferCreate(
       kCFAllocatorDefault, width, height,
-      b10 ? kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
-          : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+      b422 ? kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange
+           : (b10 ? kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
+                  : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange),
       pbAttrs, &pb);
   CFRelease(pbAttrs);
   if (status != kCVReturnSuccess || !pb) {
@@ -621,7 +628,8 @@ void MetalRender::renderCpuFrame(const YUVFrame &frame) {
       }
     }
     const int32_t cw = width / 2;
-    const int32_t ch = height / 2;
+    // 色度高: 4:2:0 半高; 4:2:2 **全高**(x422 的 UV 平面就是 h 行)
+    const int32_t ch = b422 ? height : height / 2;
     for (int32_t r = 0; r < ch; ++r) {
       const uint16_t *u =
           (const uint16_t *)(frame.data[1] + (size_t)r * frame.stride[1]);
@@ -656,14 +664,40 @@ void MetalRender::renderCpuFrame(const YUVFrame &frame) {
   CFRelease(pb);
 }
 
+// 4:2:2 10bit biplanar(x422/xf22): ProRes 等 4:2:2 源的 VT 输出, 或本文件为
+// 软解 CPU 帧自建的 pb。与 4:2:0 的**唯一**差别是色度平面**全高**(h, 不是 h/2)
+// ⇒ 建 UV 纹理与 packed 视图都要按此取高; 片元着色器不受影响(同一归一化 texCoord,
+// UV 纹理高取 h 时自动落对色度行)。
+static bool isX422PixelFormat(OSType t) {
+  return t == kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange ||
+         t == kCVPixelFormatType_422YpCbCr10BiPlanarFullRange;
+}
+// 10bit 家族(x420/x422 皆 16bit 字高位对齐 10bit, 采样走 R16/RG16 UNORM)
+static bool isTenBitPixelFormat(OSType t) {
+  return t == kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange ||
+         t == kCVPixelFormatType_420YpCbCr10BiPlanarFullRange ||
+         isX422PixelFormat(t);
+}
+
 void MetalRender::publishCpuFrame(CVImageBufferRef imageBuffer) {
   if (!imageBuffer || publishedTick == renderTick) {
     return;
   }
   OSType pbType = CVPixelBufferGetPixelFormatType(imageBuffer);
   // x420 与 nv12 同为 biplanar, packed 视图约定一致(r8/r16 + height*3/2)
-  bool bTenBit = pbType == kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange ||
-                 pbType == kCVPixelFormatType_420YpCbCr10BiPlanarFullRange;
+  const bool bTenBit = isTenBitPixelFormat(pbType);
+  // ⚠️ x422 的 CPU 读回面**未做**(packed 视图约定是 height*2 而非 height*3/2,
+  // 且交付类型尚无对应 YuvType) ⇒ 在此明确拒绝并落日志, 别静默按 4:2:0 约定
+  // 打包出错图。归 422 方案 §八 第 4 条(读回面挂账)
+  if (isX422PixelFormat(pbType)) {
+    static std::once_flag onceX422;
+    std::call_once(onceX422, [] {
+      LOGFLF(LogLevel::warn,
+             "cpu yuv out x422 readback not supported yet (packed h*2), skip");
+    });
+    publishedTick = renderTick;
+    return;
+  }
   // 交付类型随真实 pb 走: x420 → p010, 否则 nv12。getCpuFrameBuffer 据此
   // 上报, 不再硬编码 —— 否则 10bit 硬解帧会被谎报成 nv12 (yuvout-h264-hi10p
   // 哨兵在 macOS 实证 type-mismatch: VideoToolbox 能解 High10, 帧是 P010)
@@ -1136,10 +1170,11 @@ void MetalRender::renderCVPixelBuffer(CVImageBufferRef imageBuffer) {
     // mtl cb: 探针否证(status 4 err:none, 整轮无错误帧), 不是黑屏根因; 真根因
     // 见 panvox app/ios/PanvoxNative/PanvoxNativePlugin.mm layoutSubviews 注释。
     CFRetain(imageBuffer);
-    // x420(Main10)平面为16bit字高位对齐10bit(P010布局), 采样走 R16/RG16 UNORM
+    // x420(Main10)/x422(4:2:2)平面均为16bit字高位对齐10bit, 采样走 R16/RG16 UNORM
     OSType pbType = CVPixelBufferGetPixelFormatType(imageBuffer);
-    bool bTenBit = pbType == kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange ||
-                   pbType == kCVPixelFormatType_420YpCbCr10BiPlanarFullRange;
+    const bool bTenBit = isTenBitPixelFormat(pbType);
+    // 4:2:2 色度平面**全高**(h), 4:2:0 是半高(h/2)
+    const bool b422 = isX422PixelFormat(pbType);
     // 创建 Y 平面纹理
     CVReturn err = CVMetalTextureCacheCreateTextureFromImage(
         kCFAllocatorDefault, cacheTexture, imageBuffer, nullptr,
@@ -1152,11 +1187,11 @@ void MetalRender::renderCVPixelBuffer(CVImageBufferRef imageBuffer) {
       CFRelease(imageBuffer);
       return;
     }
-    // 创建 UV 平面纹理
+    // 创建 UV 平面纹理(色度高: 4:2:0 半高 / 4:2:2 **全高**)
     err = CVMetalTextureCacheCreateTextureFromImage(
         kCFAllocatorDefault, cacheTexture, imageBuffer, nullptr,
         bTenBit ? MTLPixelFormatRG16Unorm : MTLPixelFormatRG8Unorm, width / 2,
-        height / 2, 1, &uvTextureRef);
+        b422 ? height : height / 2, 1, &uvTextureRef);
     if (err == kCVReturnSuccess) {
       uvTexture = CVMetalTextureGetTexture(uvTextureRef);
     } else {
