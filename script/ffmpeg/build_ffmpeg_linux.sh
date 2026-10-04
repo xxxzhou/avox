@@ -1,6 +1,6 @@
 #!/bin/bash
 # FFmpeg 9.x Linux x64 白名单构建 (LGPL, 与 Windows minsize / Android 同源)
-# 差异: 无 MediaFoundation 软编(h264_mf/hevc_mf, 硬编留待 vaapi), 软编仅内置 aac;
+# 差异: 无 MediaFoundation 软编(h264_mf/hevc_mf 是 Windows 系统组件), 软编仅内置 aac;
 #       TLS 走系统 OpenSSL(libssl-dev), 补齐 android 缺的 https/rtmps;
 #       x86asm 关(nasm 未装, 与 windows 一致, 追求极致解码性能可装 nasm 后去掉)
 # 白名单含 2026-09 NAS 老媒体扩展 + webm/无损等常用 LGPL 软解,
@@ -8,6 +8,10 @@
 # 2026-09-18 硬解补齐: --enable-vulkan + vulkan hwaccel(FFVkDecoder 备选硬解),
 #       并补编此前缺失的 vaapi hwaccel(缺它时 FFVADecoder 实际逐帧静默回退软解);
 #       构建依赖: libvulkan-dev(运行时 libvulkan.so.1 由驱动/系统包自带)
+# 2026-10-05 硬编补齐: vaapi 编码器(h264_vaapi/hevc_vaapi, FFVaapiEncoder 用,
+#       FFmpeg 原生 LGPL) + vp9/av1_vaapi hwaccel + --enable-libdrm
+#       (DRM_PRIME 解码映射的前提, hwcontext_vaapi/vulkan 的 drm 分支全在其内;
+#       构建依赖追加 libdrm-dev)
 # 用法 (在 WSL/Ubuntu 里, 源码目录方式):
 #   ./build_ffmpeg_linux.sh [源码目录] [输出目录]
 # 例:
@@ -38,13 +42,14 @@ cd "$BUILD_DIR"
   --enable-zlib \
   --enable-openssl \
   --enable-vulkan \
+  --enable-libdrm \
   --disable-everything \
   --enable-protocol=file,http,https,tcp,udp,rtp,rtmp,rtmps,tls,srtp,crypto,data,pipe \
   --enable-demuxer=mov,matroska,flv,live_flv,mpegts,hls,avi,asf,aac,mp3,ogg,wav,rtsp,sdp,ac3,rm,mpegps,mpegvideo,flac,ape,amr,dsf,srt,ass,webvtt,microdvd,sami,subviewer,subviewer1,realtext,pjs,mpl2,jacosub,vplayer,stl,vobsub,sup,aiff,caf,w64,au,tta,wv,shorten,tak,mpc,mpc8,dts,eac3,xwma,ivf,swf,image2,image2pipe,rawvideo,concat \
   --enable-muxer=mp4,mov,flv,mpegts,matroska,adts \
   --enable-decoder=h264,hevc,dovi_rpudec,aac,mp3,opus,ac3,pcm_alaw,pcm_mulaw,pcm_s16le,pcm_s24le,mpeg1video,mpeg2video,mpeg4,h263,flv,wmv1,wmv2,wmv3,vc1,rv10,rv20,rv30,rv40,cook,sipr,atrac3,wmav1,wmav2,wmapro,pcm_s16be,vp8,vp9,av1,theora,mjpeg,mjpegb,dvvideo,prores,msmpeg4v1,msmpeg4v2,msmpeg4v3,vorbis,flac,dca,eac3,mp2,amrnb,amrwb,adpcm_ms,adpcm_ima_wav,adpcm_g726,adpcm_g726le,alac,ape,aac_latm,pcm_dvd,pcm_bluray,dsd_lsbf,dsd_msbf,mlp,truehd,pgssub,movtext,ass,ssa,subrip,srt,webvtt,dvbsub,dvdsub,text,h261,h263i,h263p,vp6,vp6a,vp6f,svq1,svq3,cinepak,indeo3,indeo4,indeo5,qtrle,rpza,smc,cscd,tscc,tscc2,truemotion1,truemotion2,fraps,utvideo,lagarith,hap,magicyuv,ffv1,huffyuv,ffvhuff,msrle,msvideo1,mszh,zmbv,flashsv,flashsv2,dnxhd,cfhd,cllc,hq_hqa,hqx,cavs,avs,vvc,rawvideo,bitpacked,v210,v210x,yuv4,png,apng,gif,webp,bmp,mp1,gsm,gsm_ms,nellymoser,speex,ilbc,wavpack,tta,shorten,tak,als,mpc7,mpc8,qdm2,qdmc,on2avc,imc,mace3,mace6,twinvq,truespeech,atrac1,atrac3p,atrac9,dss_sp,wmavoice,wmalossless,xma1,xma2,evrc,qcelp,g728,g729,mp3on4,siren,comfortnoise,aptx,aptx_hd,sbc,s302m,dolby_e \
-  --enable-encoder=aac \
-  --enable-hwaccel=h264_vaapi,hevc_vaapi,h264_vulkan,hevc_vulkan,vp9_vulkan,av1_vulkan \
+  --enable-encoder=aac,h264_vaapi,hevc_vaapi \
+  --enable-hwaccel=h264_vaapi,hevc_vaapi,vp9_vaapi,av1_vaapi,h264_vulkan,hevc_vulkan,vp9_vulkan,av1_vulkan \
   --enable-parser=h264,hevc,aac,opus,ac3,mpegaudio,mpegvideo,mpeg4video,vc1,vp8,vp9,av1,vorbis,flac,dca,aac_latm,amr,mjpeg \
   --enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,aac_adtstoasc,extract_extradata \
   ${EXTRA_FLAGS:-}
