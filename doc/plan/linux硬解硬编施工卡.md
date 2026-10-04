@@ -25,8 +25,11 @@
 - [x] **P1-b** FFVaapiEncoder + 四处接线 —— 完成（7a4aed0, Windows 构建+ctest 绿）；
       preset 分发**有意未加**: vaapi 默认按 bit_rate 走 VBR, 字符串 profile 下发是 MF 同款
       EINVAL 坑; `rec.hard.encode=false` 在 Linux 无软编兜底(白名单物理无视频软编) → 待拍板 D5
-- [ ] **P1-c** Linux 侧编译/ctest 验证 —— 进行中（看门狗已启动 6e4db12 基线构建 PID 292,
-      完成后同步 725156d 增量编 FFVaapiEncoder + ctest + 软解冒烟）
+- [ ] **P1-c** Linux 侧编译/ctest 验证 —— **主会话持有会话构建中（第3次尝试）**（日志
+      `~/avox-build-1005.log`，ctest `~/avox-ctest-1005.log`）。**看门狗勿重复启动构建**。
+      前2次失败已根治: ①swap 未挂(已 `swapon /swapfile`) ②**AudioRender.hpp 的
+      `unique_ptr<class AudioLeveler>` 前向声明 hack 致 gcc 报 incomplete type
+      （既有跨平台断裂, Windows 靠陈旧 obj 掩护, 已直包修复 c6ca9bd）**
 - [ ] **Windows 回归** play_regress --offline（P0-2 动了共享解码路径，本轮收尾前跑一次）
 - [ ] **真机验收** rec-transcode 出片/参数对照 —— 阻塞于无真 Linux 机，标注待真机即可
 
@@ -48,6 +51,11 @@
   从 ~/ffmpeg-out-linux/lib `cp -L` 回填，**保持文件名/soname 不变**；
   自检: `grep -a h264_vaapi libavcodec.so*` 有命中 + `grep -ldrm libavutil.pc`。
 - 限流应对: 模型限流（错误1302/429）时 sleep 90s 再试；**不开并行子代理**，单线程推进。
+- **WSL 三个坑（1005夜实测）**: ①VM 空闲约 8s 即回收，detached(no setsid也没用)后台构建会被
+  反复挂起假活(时钟慢一小时=累计挂起)甚至腰斩——**长构建必须用持会话后台任务跑**
+  （ZCode 的 run_in_background Bash 持 wsl.exe 会话即可）；②swap 不随 VM 启动自动挂:
+  `wsl -u_root swapon /swapfile`（fstab 在, swapon -a 不跑），不挂则 15G 裸跑双 cc1plus 必 OOM；
+  ③WSL 时钟会漂(慢约1小时)，读日志时间戳以 Windows 侧为准。
 
 ## 每轮工作循环
 
