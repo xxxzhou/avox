@@ -311,6 +311,10 @@ const char* getDefaultDecoderName(VCodecId codecId, bool bHard) {
     // Apple 走 VideoToolbox(IOSVDecoder::onVaild 探测 VTIsHardwareDecodeSupported,
     // 不支持时由 VDecoderTask 选型回退软解)
     return bHard ? AVOX_IOS_VP9_DECODER : AVOX_FF_VP9_DECODER;
+#elif defined(__ONLY_LINUX__)
+    // Linux 走 Vulkan Video(FFVkDecoder::onVaild 探测 FFmpeg 侧 vulkan hwaccel
+    // 编入, 驱动无 video 队列时由选型链运行期 openFailed 回退软解)
+    return bHard ? AVOX_FFVULKAN_VP9_DECODER : AVOX_FF_VP9_DECODER;
 #else
     // 注册名来自 regFFCodec 的 codec->name
     return AVOX_FF_VP9_DECODER;
@@ -326,6 +330,10 @@ const char* getDefaultDecoderName(VCodecId codecId, bool bHard) {
     // hwaccel-only 包装, 无 dav1d 构建下"软解"名实际解不出帧, 无硬解块的
     // 机器 AV1 暂不可播
     return bHard ? AVOX_FFDX11_AV1_DECODER : AVOX_FF_AV1_DECODER;
+#elif defined(__ONLY_LINUX__)
+    // Linux 走 Vulkan Video(探测与降级同 vp9); 软解名在无 dav1d 构建下
+    // 解不出帧, vulkan 腿失败时 AV1 整体不可播(与现状一致, 待 dav1d 接入)
+    return bHard ? AVOX_FFVULKAN_AV1_DECODER : AVOX_FF_AV1_DECODER;
 #else
     // 其他平台暂无 AV1 硬解车道, 注册名来自 regFFCodec 的 codec->name
     //(FFmpeg 软解 AV1 需构建带 dav1d/libaom)

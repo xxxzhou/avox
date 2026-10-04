@@ -48,8 +48,16 @@ DecodeResult FFDecoder::decodePacket(const AvoxPacket &packet) {
         return DecodeResult::complete;
       }
       if (ret == AVERROR(EAGAIN)) {
+        recvFailStreak = 0;
         return gotFrame ? DecodeResult::success : DecodeResult::dataNoReady;
       } else {
+        recvFailStreak++;
+        // 未出过帧的连续收帧失败=车道打不开, 立即openFailed让上层降级,
+        // 不吃满首帧看门狗; 已出过帧的保持原行为(交看门狗)
+        if (!bDecodedEver && recvFailStreak >= kSendFailOpenFailLimit) {
+          AVOX_FFMEPG_LOG_RETURN(ret, DecodeResult::openFailed,
+                                 "avcodec_receive_frame failed, lane open fail");
+        }
         AVOX_FFMEPG_LOG(ret, "avcodec_receive_frame failed");
         break;
       }
@@ -65,6 +73,7 @@ DecodeResult FFDecoder::decodePacket(const AvoxPacket &packet) {
     av_frame_unref(avFrame.get());
     gotFrame = true;
     bDecodedEver = true;
+    recvFailStreak = 0;
   }
   return gotFrame ? DecodeResult::success : DecodeResult::dataNoReady;
 }

@@ -45,6 +45,8 @@ namespace avox {
 #define AVOX_IOS_PRORES_DECODER "ios prores decoder"
 #define AVOX_FFVULKAN_H264_DECODER "ff_h264_vulkan"
 #define AVOX_FFVULKAN_H265_DECODER "ff_hevc_vulkan"
+#define AVOX_FFVULKAN_VP9_DECODER "ff_vp9_vulkan"
+#define AVOX_FFVULKAN_AV1_DECODER "ff_av1_vulkan"
 #define AVOX_FFDX11_H264_DECODER "ff_h264_dx11"
 #define AVOX_FFDX11_H265_DECODER "ff_hevc_dx11"
 #define AVOX_FFDX11_VP9_DECODER "ff_vp9_dx11"

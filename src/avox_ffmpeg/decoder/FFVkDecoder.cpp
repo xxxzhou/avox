@@ -1,10 +1,11 @@
 #include "FFVkDecoder.hpp"
 
 #include "avox/module/AvoxManager.hpp"
-// AVOX_FFVULKAN_H264/H265_DECODER 常量
+// AVOX_FFVULKAN_H264/H265/VP9/AV1_DECODER 常量
 #include "avox/player/AVTrack.hpp"
 
 #if AVOX_ENABLE_VULKAN && !defined(__APPLE__)
+#include <libavcodec/avcodec.h>
 #include <libavutil/hwcontext.h>
 #endif
 
@@ -17,6 +18,26 @@ namespace avox {
 void regFFVkDecoder() {}
 
 #else
+
+namespace {
+// FFmpeg 是否为该编码编入了 vulkan hwaccel(hwconfig 表里找 VULKAN 像素格式)
+bool hasVulkanHwaccel(AVCodecID codecId) {
+  const AVCodec* codec = avcodec_find_decoder(codecId);
+  if (!codec) {
+    return false;
+  }
+  for (int i = 0;; ++i) {
+    const AVCodecHWConfig* config = avcodec_get_hw_config(codec, i);
+    if (!config) {
+      return false;
+    }
+    if ((config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX) &&
+        config->pix_fmt == AV_PIX_FMT_VULKAN) {
+      return true;
+    }
+  }
+}
+}  // namespace
 
 void regFFVkDecoder() {
   RegFunc regFunc = {"ffmpeg vulkan video decoder init", []() {
@@ -38,6 +59,28 @@ void regFFVkDecoder() {
                        AvoxManager::Get().vDecoders.regInitFunc(
                            VCodecId::h265, codecDesc,
                            []() -> VideoDecoder* { return new FFVkDecoder(); });
+#if defined(__ONLY_LINUX__)
+                       // VP9/AV1: Linux Vulkan Video 车道(P0 补齐, 仅 Linux 注册,
+                       // Win/And 各有原生车道不动); onVaild 探测 hwaccel 编入,
+                       // 驱动级能力靠运行期 openFailed 上浮降级
+                       codecDesc = {};
+                       codecDesc.name = AVOX_FFVULKAN_VP9_DECODER;
+                       codecDesc.codecId = AVCodecID::AV_CODEC_ID_VP9;
+                       codecDesc.bHardware = true;
+                       codecDesc.vcodecId = VCodecId::vp9;
+                       AvoxManager::Get().vDecoders.regInitFunc(
+                           VCodecId::vp9, codecDesc,
+                           []() -> VideoDecoder* { return new FFVkDecoder(); });
+                       // AV1
+                       codecDesc = {};
+                       codecDesc.name = AVOX_FFVULKAN_AV1_DECODER;
+                       codecDesc.codecId = AVCodecID::AV_CODEC_ID_AV1;
+                       codecDesc.bHardware = true;
+                       codecDesc.vcodecId = VCodecId::av1;
+                       AvoxManager::Get().vDecoders.regInitFunc(
+                           VCodecId::av1, codecDesc,
+                           []() -> VideoDecoder* { return new FFVkDecoder(); });
+#endif
                      }};
   AvoxManager::Get().initFuncs.push_back(regFunc);
 }
@@ -59,6 +102,15 @@ bool FFVkDecoder::onVaild() {
   }
   if (!hwBuffer) {
     LOGFLF(LogLevel::warn, "vulkan hwBuffer is null, skip vulkan decoder");
+    return false;
+  }
+  // vp9/av1 先确认 FFmpeg 侧 vulkan hwaccel 已编入(白名单缺项时车道必不可用);
+  // 驱动是否有 video decode 队列在运行期由 openFailed 上浮降级(P2 再补 caps 探测)
+  if ((codecDesc.vcodecId == VCodecId::vp9 ||
+       codecDesc.vcodecId == VCodecId::av1) &&
+      !hasVulkanHwaccel((AVCodecID)codecDesc.codecId)) {
+    LOGFLF(LogLevel::warn, "vulkan hwaccel not compiled for vcodec:",
+           (int32_t)codecDesc.vcodecId, ", skip vulkan decoder");
     return false;
   }
   return true;

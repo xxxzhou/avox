@@ -23,9 +23,12 @@ protected:
   int64_t preVPts = 0;
   // 未出过帧的连续喂包失败计数: 达到阈值判车道打不开(openFailed), 上层瞬时降级
   int32_t sendFailStreak = 0;
+  // 未出过帧的连续收帧失败计数(非EAGAIN/EOF错误): 收帧侧的车道打不开形态,
+  // 硬件会话类故障(如vulkan会话建失败)多在receive侧报错而非send侧
+  int32_t recvFailStreak = 0;
   // 是否成功解出过帧
   bool bDecodedEver = false;
-  // 喂包失败判open失败的连续次数阈值, 留余量容忍偶发ENOMEM
+  // 收/发失败判open失败的连续次数阈值, 留余量容忍偶发错误
   static constexpr int32_t kSendFailOpenFailLimit = 3;
 
 protected:
