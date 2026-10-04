@@ -117,6 +117,8 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 
 **mac 插件自包含纪律(第二插件案, 10/2)**: mac 插件是 `-undefined dynamic_lookup` 构建, 其 UND 在 RTLD_LOCAL dlopen 的平面查找下**看不到自己 LC_LOAD 的依赖 dylib** → 插件依赖的第三方符号必须静态吞入插件内(libsmb2/SSL 系 = WebRTC 归档的 BoringSSL + 系统 Security.framework; 注意 darwin 预编译件按 BoringSSL 编, 这些名字在 BoringSSL 是真函数, 别拿 OpenSSL 3 静态库去接——3.x 里它们是宏, 符号不存在)。引擎 rebuild 会连带重链插件, 依赖面可能静默变化, 插件加载失败先 `otool -L` + `nm -u` 重验。
 
+**iOS「AI 字幕」按下即败 `dlsym(RTLD_DEFAULT, pvx_aisub_start): symbol not found` → iOS shim TU 漏挂 aisub, 已修(10/5, panvox 77b600f)**: 三端管线在 `pvx_aisub.inc`(panvox_native.cpp 与 mac TU 已挂), iOS TU 只含 apple_common 漏了它 → 包内无符号; 引擎腿本身 10/2 已静态并档(sherpa/onnx/translation, 启动日志 `avox_sherpa: regedit module success` 即在)。修=panvox_native_ios.cpp 补 include + deploy_ios_runtime.sh 补 **NO_AGENT 自动闸**(nm libavox.a 缺 createAgentHost 即 -DPANVOX_NO_AGENT——iOS install 头文件在/库符号不在的失配会炸链接, mac 脚本同款)。限界: AVOX_ENABLE_AGENT=OFF 的构建翻译段编译期剔除, 识别照常出原语言 SRT(iOS 与 mac 同款缺席); 模型不打包, App 内下载落 `<AppSupport>/models`(启动 pvx_set_models_root 注入)。判据 = `nm -gU Runner.app/Runner | grep pvx_aisub`; `PANVOX_AISUB_E2E` 探针在 iOS 不可达(Dart 读不到 env, 无头验证只能桌面)。
+
 **网络环境(本机代理/TUN, 非引擎病)** —— 修法在引擎外, 故全文留本文常驻
 - IPTV/m3u 列表与国内流普遍慢、超时、周期 buffering, 而 NAS/局域网源全正常 → 先查本机 TUN 接管: `route print` 见 Meta Tunnel/Wintun + `tasklist` 见 verge-mihomo(Clash Verge)= 全机流量过代理。**对照法: `curl` 默认路由 vs `curl --interface <物理网卡IP>` 直连**(0923 实锤 CCTV1 列表 TUN 19s→直连 1s; 0926 复测首响 3.2s vs 1.2s); 修法 = Clash 给国内直播域名加 DIRECT 规则或关 TUN, 不动引擎。**绑定源地址法在部分环境只是绕路成功, 直连腿 000 时先核对绑定语义再下结论**。
 - 免费聚合清单(live.zbds 类)两大常态别当 app 病: ①大量「频道」= 点播循环(HTTP-FLV 服务端把整剧/整片循环推流, 0926 抽样 542 频道 107 个循环体, metshop 一台 66 个 —— 循环是内容本身, 永不完播); ②死链/整台服务器超时常态(145 台流服务器抽样过半 8s 无响应)。
