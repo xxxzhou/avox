@@ -6,6 +6,7 @@
 
 #include "../audio/AudioFrame.hpp"
 #include "../player/Player.hpp"
+#include "AudioLeveler.hpp"
 #include "AudioProcess.hpp"
 #include "AudioTap.hpp"
 
@@ -43,7 +44,7 @@ class AVOX_EXPORT AudioRender : public IAudioRender, public IAudioProcessOb {
   // 播放响度均衡(默认关, 只有播放链路显式开); 计量/增益都在用户音量之前
   bool bAudioNormalize = false;
   double audioNormalizeTarget = -18.0;
-  std::unique_ptr<class AudioLeveler> audioLeveler = nullptr;
+  std::unique_ptr<AudioLeveler> audioLeveler = nullptr;
   // 护 leveler 指针(选项可在控制线程改, 渲染线程每帧取用)
   std::mutex levelerMtx;
   // tap 延迟打开:openTap 时 desc 未就绪则缓存参数,setDesc 后自动 open
