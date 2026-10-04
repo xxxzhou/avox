@@ -14,7 +14,8 @@
       AVTrack 宏与选型分支 —— 完成，同上验证（Windows 侧 FFVkDecoder 逐字节同源编译过）
 - [x] **P1-a①** FFmpeg 白名单脚本改齐（encoder h264/hevc_vaapi + hwaccel vp9/av1_vaapi +
       --enable-libdrm）—— 完成；libdrm-dev 已装入 WSL（wsl -u root apt-get，04:00）
-- [ ] **P1-a②** WSL FFmpeg 重编 —— <待启动/进行中/完成，产物回填情况写这里>
+- [ ] **P1-a②** WSL FFmpeg 重编 —— **进行中**（04:20 后台启动，日志 `~/ffmpeg-build-1005.log`；
+      收割判据: 日志尾部 `== 完成`；随后按「环境事实·产物回填」回填并做 grep 自检）
 - [ ] **P1-b** FFVaapiEncoder + 四处接线 —— 未开始（任务卡见下）
 - [ ] **P1-c** Linux 侧编译/ctest 验证 —— 未开始（依赖 P1-a② 产物回填 + P1-b）
 - [ ] **真机验收** rec-transcode 出片/参数对照 —— 阻塞于无真 Linux 机，标注待真机即可
@@ -95,3 +96,7 @@
 - **2026-10-05 03:34-04:10 第一轮（主会话）**: P0 两项落地并验证（FFDecoder recvFailStreak 上浮;
   FFVk vp9/av1 Linux 车道+hwaccel 探测; AVTrack 宏/选型），Windows 构建 RC=0 + ctest 2/2 绿;
   FFmpeg 白名单脚本补齐（P1-a①）; libdrm-dev 装入 WSL; 施工卡建立。P1-a② FFmpeg 重编由本轮启动后台跑。
+- **2026-10-05 04:15-04:25 第一轮续**: 三笔推送 c55fd23/129d1fb/6e4db12; 看门狗
+  automation-ea887959 建立（*/30, 9 轮至 08:30）; WSL ~/github/avox 加 win remote 同步到 6e4db12
+  （12 个 .so 脏项经 diff 证实与主分支内容零差异, reset 安全）; 04:20 FFmpeg 重编后台启动
+  （setsid nohup → ~/ffmpeg-build-1005.log, configure 已起）。
