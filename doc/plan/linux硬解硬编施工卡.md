@@ -54,8 +54,11 @@
 - **WSL 三个坑（1005夜实测）**: ①VM 空闲约 8s 即回收，detached(no setsid也没用)后台构建会被
   反复挂起假活(时钟慢一小时=累计挂起)甚至腰斩——**长构建必须用持会话后台任务跑**
   （ZCode 的 run_in_background Bash 持 wsl.exe 会话即可）；②swap 不随 VM 启动自动挂:
-  `wsl -u_root swapon /swapfile`（fstab 在, swapon -a 不跑），不挂则 15G 裸跑双 cc1plus 必 OOM；
-  ③WSL 时钟会漂(慢约1小时)，读日志时间戳以 Windows 侧为准。
+  `wsl -u_root swapon /swapfile`（fstab 在, swapon -a 不跑），不挂则 15G 裸跑双 cc1plus 必 OOM，
+  且 -j4 并发四个 -O2 巨型 TU(测试壳包整模块源)连 swap 都能击穿——**avox 主构建用 -j2 稳**；
+  ③WSL 时钟会漂(慢约1小时)，读日志时间戳以 Windows 侧为准；④**新增源文件后 GLOB 缓存不刷新**
+  （configure 不自动重跑）——`touch CMakeLists.txt` 再 build 触发重配置，否则链接期
+  undefined reference（本次 regFFVaapiEncoder 即中招）。
 
 ## 每轮工作循环
 
