@@ -7,9 +7,9 @@
 > 夜班窗口 2026-10-05 03:40 → 08:30，看门狗每 30 分钟一轮；**08:30 及以后的轮次只做终态收尾
 > （汇总+遗留清单），不再新增改动**。每轮开工先读本文「状态一览」，收工必更新本文并 commit。
 >
-> **当前主刀: 主会话（持续工作模式，04:25 起）**——看门狗轮次遇此标记时**降级为只读巡检**:
-> 只做时间检查、后台任务收割/巡检（FFmpeg 重编日志、WSL 构建状态）、台账更新，**不做代码改动、
-> 不抢任务**；主会话收工时会把本行改写为「看门狗接手」。
+> **当前主刀: 看门狗接手（05:10 主会话收官）**——剩余轮次按「每轮工作循环」自主推进:
+> 可做项只剩 Windows 回归收尾/文档收尾; P0-P1 代码面已全绿, P2 需用户拍板排期后再动。
+> 08:30 轮照旧写终态。
 
 ## 状态一览（每轮更新）
 
@@ -25,13 +25,22 @@
 - [x] **P1-b** FFVaapiEncoder + 四处接线 —— 完成（7a4aed0, Windows 构建+ctest 绿）；
       preset 分发**有意未加**: vaapi 默认按 bit_rate 走 VBR, 字符串 profile 下发是 MF 同款
       EINVAL 坑; `rec.hard.encode=false` 在 Linux 无软编兜底(白名单物理无视频软编) → 待拍板 D5
-- [ ] **P1-c** Linux 侧编译/ctest 验证 —— **主会话持有会话构建中（第3次尝试）**（日志
-      `~/avox-build-1005.log`，ctest `~/avox-ctest-1005.log`）。**看门狗勿重复启动构建**。
-      前2次失败已根治: ①swap 未挂(已 `swapon /swapfile`) ②**AudioRender.hpp 的
-      `unique_ptr<class AudioLeveler>` 前向声明 hack 致 gcc 报 incomplete type
-      （既有跨平台断裂, Windows 靠陈旧 obj 掩护, 已直包修复 c6ca9bd）**
-- [ ] **Windows 回归** play_regress --offline（P0-2 动了共享解码路径，本轮收尾前跑一次）
-- [ ] **真机验收** rec-transcode 出片/参数对照 —— 阻塞于无真 Linux 机，标注待真机即可
+- [x] **P1-c** Linux 侧编译/ctest 验证 —— **完成（05:05）**:
+      ①构建绿: FFVaapiEncoder.cpp.o 编过+libavox.so 链接成功（第5次尝试, 排障链=
+      swap未挂→OOM→AudioLeveler断裂→GLOB缓存, 全记「环境事实」）;
+      ②ctest: 112 用例 111 过, 唯挂 `test_videobuffer.cpp:337` P010 归一化打包断言
+      **15 处——既有 Linux/gcc13 差异, 与本夜改动零交集（打包代码 VideoBuffer.cpp 未动,
+      Windows 同测试全绿）**, 待另案; ③冒烟: linuxtest 播 selfcheck 素材
+      `ready→playing` 出帧, 无设备降级链逐级实测过（FFVADecoder onVaild 拒→选型链
+      fallback→FFVkDecoder→lavapipe 无 VK_KHR_video_decode_queue→组内降软解→正常播）,
+      `ffmpeg vaapi video encoder init` 注册确认
+- [x] **Windows 回归** play_regress --offline —— **85 过 / 3 挂（dav-open-list,
+      dav-broken-resume, dav-outage-resume=既有 4dav 挂家族）/ 37 跳, 零新增回归**
+- [ ] **真机验收** rec-transcode 出片/参数对照 + vp9/av1 Vulkan Video 硬解 +
+      P2 前置观测 —— 阻塞于无真 Linux 机（Intel 核显优先, 需 /dev/dri + iHD）
+- [ ] **D5 拍板（新增）**: `rec.hard.encode=false` 时 Linux 无视频软编兜底（白名单物理无
+      libx264/libx265）, 现状=回退到 regFFCodec 自动注册的无 hw_device_ctx 通用 FFVEncoder
+      必 openFailed——要不要在选型层显式禁掉软编名/给明确错误
 
 ## 环境事实（已核实，勿重查）
 
@@ -120,7 +129,9 @@
   automation-ea887959 建立（*/30, 9 轮至 08:30）; WSL ~/github/avox 加 win remote 同步到 6e4db12
   （12 个 .so 脏项经 diff 证实与主分支内容零差异, reset 安全）; 04:20 FFmpeg 重编后台启动
   （setsid nohup → ~/ffmpeg-build-1005.log, configure 已起）。
-- **2026-10-05 04:25-05:00 第一轮三段（主会话持续工作, 看门狗已降级只读巡检）**:
-  FFmpeg 首次 configure 失败定位（vulkan 1.3.275<1.3.277, CPATH 配方解决）; FFVaapiEncoder
-  落地+四处接线 7a4aed0（Windows 绿）; 产物回填 725156d（h264_vaapi/-ldrm 双自检过）;
-  施工卡加「当前主刀」双开守卫。P1-c 等 PID 292 基线构建完成后增量。
+- **2026-10-05 04:25-05:10 第一轮三段（主会话持续工作）**: FFmpeg 首次 configure 失败定位
+  （vulkan 1.3.275<1.3.277, CPATH 配方解决）→ 重编完成; FFVaapiEncoder 落地+四处接线 7a4aed0
+  （Windows 绿）+ pts 顺序修正 5f65893; 产物回填 725156d（h264_vaapi/-ldrm 双自检过）;
+  顺带根治两桩既有断裂: AudioRender.hpp incomplete type（c6ca9bd, Linux 编译红/Windows
+  陈旧 obj 掩护）; WSL 排障链 swap/VM回收/GLOB 缓存全数记档; Linux 构建+ctest+冒烟收官,
+  Windows 回归 85P/3dav 既有挂零回归。主刀移交看门狗。
