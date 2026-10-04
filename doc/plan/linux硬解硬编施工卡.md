@@ -6,20 +6,29 @@
 > 方案: [linux硬解硬编与VK管线对齐方案](linux硬解硬编与VK管线对齐方案.md)（v2，三路评审已并入）。
 > 夜班窗口 2026-10-05 03:40 → 08:30，看门狗每 30 分钟一轮；**08:30 及以后的轮次只做终态收尾
 > （汇总+遗留清单），不再新增改动**。每轮开工先读本文「状态一览」，收工必更新本文并 commit。
+>
+> **当前主刀: 主会话（持续工作模式，04:25 起）**——看门狗轮次遇此标记时**降级为只读巡检**:
+> 只做时间检查、后台任务收割/巡检（FFmpeg 重编日志、WSL 构建状态）、台账更新，**不做代码改动、
+> 不抢任务**；主会话收工时会把本行改写为「看门狗接手」。
 
 ## 状态一览（每轮更新）
 
 - [x] **P0-2** FFDecoder 收帧失败上浮 openFailed —— 完成，Windows 构建+ctest 2/2 绿
 - [x] **P0-1** FFVkDecoder 注册 vp9/av1（`__ONLY_LINUX__` 门）+ hasVulkanHwaccel 探测 +
-      AVTrack 宏与选型分支 —— 完成，同上验证（Windows 侧 FFVkDecoder 逐字节同源编译过）
+      AVTrack 宏与选型分支 —— 完成，同上验证
 - [x] **P1-a①** FFmpeg 白名单脚本改齐（encoder h264/hevc_vaapi + hwaccel vp9/av1_vaapi +
-      --enable-libdrm）—— 完成；libdrm-dev 已装入 WSL（wsl -u root apt-get，04:00）
-- [ ] **P1-a②** WSL FFmpeg 重编 —— **进行中**（04:20 后台启动，日志 `~/ffmpeg-build-1005.log`；
-      收割判据: 日志尾部 `== 完成`；随后按「环境事实·产物回填」回填并做 grep 自检）
-- [ ] **P1-b** FFVaapiEncoder + 四处接线 —— 未开始（任务卡见下）
-- [ ] **P1-c** Linux 侧编译/ctest 验证 —— 未开始（依赖 P1-a② 产物回填 + P1-b）
+      --enable-libdrm）—— 完成；libdrm-dev 已装入 WSL
+- [x] **P1-a②** WSL FFmpeg 重编 —— **完成**（04:45 前后收官, -j16 约15分钟; 产物已回填并
+      推送 725156d; 自检: libavcodec 含 h264_vaapi ✓, libavutil.pc 含 -ldrm ✓）。
+      **坑**: 系统 libvulkan 1.3.275 < FFmpeg 9.0.1 要求 1.3.277, 必须按脚本头部配方带
+      `CPATH=$HOME/ffdeps/usr/include:/mnt/d/Work/github/avox/3rdparty/khronos` 重编
+- [x] **P1-b** FFVaapiEncoder + 四处接线 —— 完成（7a4aed0, Windows 构建+ctest 绿）；
+      preset 分发**有意未加**: vaapi 默认按 bit_rate 走 VBR, 字符串 profile 下发是 MF 同款
+      EINVAL 坑; `rec.hard.encode=false` 在 Linux 无软编兜底(白名单物理无视频软编) → 待拍板 D5
+- [ ] **P1-c** Linux 侧编译/ctest 验证 —— 进行中（看门狗已启动 6e4db12 基线构建 PID 292,
+      完成后同步 725156d 增量编 FFVaapiEncoder + ctest + 软解冒烟）
+- [ ] **Windows 回归** play_regress --offline（P0-2 动了共享解码路径，本轮收尾前跑一次）
 - [ ] **真机验收** rec-transcode 出片/参数对照 —— 阻塞于无真 Linux 机，标注待真机即可
-- [ ] **Windows 回归** play_regress --offline（P0-2 动了共享解码路径，建议本轮起跑一次）
 
 ## 环境事实（已核实，勿重查）
 
@@ -100,3 +109,7 @@
   automation-ea887959 建立（*/30, 9 轮至 08:30）; WSL ~/github/avox 加 win remote 同步到 6e4db12
   （12 个 .so 脏项经 diff 证实与主分支内容零差异, reset 安全）; 04:20 FFmpeg 重编后台启动
   （setsid nohup → ~/ffmpeg-build-1005.log, configure 已起）。
+- **2026-10-05 04:25-05:00 第一轮三段（主会话持续工作, 看门狗已降级只读巡检）**:
+  FFmpeg 首次 configure 失败定位（vulkan 1.3.275<1.3.277, CPATH 配方解决）; FFVaapiEncoder
+  落地+四处接线 7a4aed0（Windows 绿）; 产物回填 725156d（h264_vaapi/-ldrm 双自检过）;
+  施工卡加「当前主刀」双开守卫。P1-c 等 PID 292 基线构建完成后增量。
