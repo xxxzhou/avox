@@ -189,7 +189,8 @@ VK 输出图 (P3) ──vkGetMemoryFdKHR 导出 dmabuf→ 组 AVDRMFrameDescript
 1. FFVaapiEncoder + 四处接线 + 白名单重编（§2.2；重编产物同步更新
    `3rdparty/library/linux/ffmpeg`，验收项加「CONFIG_LIBDRM=1 与新 encoder 在包里」检查）。
 2. 解锁矩阵: 摘除 `../avox-test/script/testenv/play_regress.py:114-117` `LINUX_OFFLINE_SKIP`
-   的 rec-transcode 两项（ANDROID_OFFLINE_SKIP 的同名项别动）。
+   的 rec-transcode 两项（ANDROID_OFFLINE_SKIP 的同名项别动）。**勘误(1005夜)**: CI release.yml
+   的 Linux runner 无 /dev/dri，摘出必红——离线子集保持跳过，仅真机环境本地解锁验收。
 3. 验收: 真机 rec-transcode-* 出片，码率/参数与 Windows h264_mf 对照合理；无设备环境明确失败
    可见（陷阱B 验收项）；离线矩阵全绿。
 
