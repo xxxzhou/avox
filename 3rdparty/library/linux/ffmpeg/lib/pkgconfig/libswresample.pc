@@ -1,7 +1,7 @@
-prefix=/home/zhouxin/github/ffmpeg/out-linux-x64
+prefix=/home/zhouxin/ffmpeg-out-linux
 exec_prefix=${prefix}
-libdir=/home/zhouxin/github/ffmpeg/out-linux-x64/lib
-includedir=/home/zhouxin/github/ffmpeg/out-linux-x64/include
+libdir=/home/zhouxin/ffmpeg-out-linux/lib
+includedir=/home/zhouxin/ffmpeg-out-linux/include
 
 Name: libswresample
 Description: FFmpeg audio resampling library

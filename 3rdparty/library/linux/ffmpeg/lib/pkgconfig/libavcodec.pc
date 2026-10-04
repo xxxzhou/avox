@@ -1,7 +1,7 @@
-prefix=/home/zhouxin/github/ffmpeg/out-linux-x64
+prefix=/home/zhouxin/ffmpeg-out-linux
 exec_prefix=${prefix}
-libdir=/home/zhouxin/github/ffmpeg/out-linux-x64/lib
-includedir=/home/zhouxin/github/ffmpeg/out-linux-x64/include
+libdir=/home/zhouxin/ffmpeg-out-linux/lib
+includedir=/home/zhouxin/ffmpeg-out-linux/include
 
 Name: libavcodec
 Description: FFmpeg codec library
@@ -10,5 +10,5 @@ Requires:
 Requires.private: libswresample >= 7.1.101, libavutil >= 61.1.101
 Conflicts:
 Libs: -L${libdir}  -lavcodec 
-Libs.private: -pthread -lm -latomic -lva -lz
+Libs.private: -pthread -lm -latomic -lz -lva
 Cflags: -I${includedir}

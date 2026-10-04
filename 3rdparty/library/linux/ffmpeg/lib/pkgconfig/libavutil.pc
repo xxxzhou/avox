@@ -1,7 +1,7 @@
-prefix=/home/zhouxin/github/ffmpeg/out-linux-x64
+prefix=/home/zhouxin/ffmpeg-out-linux
 exec_prefix=${prefix}
-libdir=/home/zhouxin/github/ffmpeg/out-linux-x64/lib
-includedir=/home/zhouxin/github/ffmpeg/out-linux-x64/include
+libdir=/home/zhouxin/ffmpeg-out-linux/lib
+includedir=/home/zhouxin/ffmpeg-out-linux/include
 
 Name: libavutil
 Description: FFmpeg utility library
@@ -10,5 +10,5 @@ Requires:
 Requires.private: 
 Conflicts:
 Libs: -L${libdir}  -lavutil 
-Libs.private: -lva-drm -lva -lva-x11 -lva -lm -lz -lssl -lcrypto -lva -latomic -pthread -lX11
+Libs.private: -lva-drm -lva -lva-x11 -lva -lm -lz -ldrm -lssl -lcrypto -lva -latomic -pthread -lX11
 Cflags: -I${includedir}
