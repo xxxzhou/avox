@@ -90,6 +90,8 @@ extern void regPulseAudioRender();
 #ifdef AVOX_ENABLE_FFMPEG
 // Linux平台FFmpeg VAAPI硬解(输出CPU NV12帧, 走软解链路)
 extern void regFFVADecoder();
+// Linux平台FFmpeg VAAPI硬编(h264/hevc_vaapi)
+extern void regFFVaapiEncoder();
 #endif
 #endif
 
@@ -192,6 +194,7 @@ void AvoxManager::init() {
 #ifdef __ONLY_LINUX__
 #ifdef AVOX_ENABLE_FFMPEG
   regFFVADecoder();
+  regFFVaapiEncoder();
 #endif
 #ifdef AVOX_ENABLE_PULSE
   regPulseAudioRender();

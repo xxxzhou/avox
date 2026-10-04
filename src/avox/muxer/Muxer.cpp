@@ -42,6 +42,10 @@ const char* getDefaultEncoderName(VCodecId codecId, bool bHard) {
 #elif __APPLE__
     // h264_qsv h264_vulkan h264 libx264
     return bHard ? AVOX_IOS_H264_ENCODER : AVOX_FF_H264_ENCODER;
+#elif defined(__ONLY_LINUX__)
+    // Linux 硬编走 VAAPI(FFVaapiEncoder), 软编兜底名由渠道注入
+    //(Linux 白名单无视频软编, 兜底未命中时 openFailed 明确报错)
+    return bHard ? AVOX_FFVAAPI_H264_ENCODER : AVOX_FF_H264_ENCODER;
 #else
     // h264_qsv h264_vulkan h264 libx264
     return bHard ? AVOX_FFDX11_H264_ENCODER : AVOX_FF_H264_ENCODER;
@@ -54,6 +58,9 @@ const char* getDefaultEncoderName(VCodecId codecId, bool bHard) {
 #elif __APPLE__
     // hevc_qsv hevc_vulkan hevc libx264
     return bHard ? AVOX_IOS_H265_ENCODER : AVOX_FF_H265_ENCODER;
+#elif defined(__ONLY_LINUX__)
+    // Linux 硬编走 VAAPI(同 h264)
+    return bHard ? AVOX_FFVAAPI_H265_ENCODER : AVOX_FF_H265_ENCODER;
 #else
     // hevc_qsv hevc_vulkan hevc libx265 AVOX_FFVULKAN_H265_ENCODER
     // AVOX_FFDX11_H265_ENCODER
