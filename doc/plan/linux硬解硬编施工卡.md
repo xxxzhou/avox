@@ -122,6 +122,10 @@
 
 ## 变更日志（每轮追加）
 
+- **2026-10-05 05:05 看门狗巡检轮**: 全绿无待办——仓/远端同步 3ad2eb5, WSL 树 c6ca9bd=
+  代码 HEAD（仅差纯文档提交）, 清掉仓根杂散 `~ffmpeg-build-1005.log`（04:13 被引号弄坏的
+  启动命令残留）。**后续空闲轮次（06:00-08:00）无需重复巡检, 直接空转, 08:30 轮写终态**。
+
 - **2026-10-05 03:34-04:10 第一轮（主会话）**: P0 两项落地并验证（FFDecoder recvFailStreak 上浮;
   FFVk vp9/av1 Linux 车道+hwaccel 探测; AVTrack 宏/选型），Windows 构建 RC=0 + ctest 2/2 绿;
   FFmpeg 白名单脚本补齐（P1-a①）; libdrm-dev 装入 WSL; 施工卡建立。P1-a② FFmpeg 重编由本轮启动后台跑。
