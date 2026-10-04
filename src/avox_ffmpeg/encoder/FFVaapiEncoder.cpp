@@ -128,8 +128,9 @@ DecodeResult FFVaapiEncoder::encode(const YUVFrame& yframe) {
   frame->format = AV_PIX_FMT_VAAPI;
   frame->width = yframe.format.width;
   frame->height = yframe.format.height;
-  frame->pts = yframe.pts;
   int32_t ret = av_hwframe_get_buffer(codecCtx->hw_frames_ctx, frame.get(), 0);
+  // pts 在 get_buffer 之后设: 该调用会按池属性重写帧字段
+  frame->pts = yframe.pts;
   if (ret < 0) {
     AVOX_FFMEPG_LOG(ret, "vaapi av_hwframe_get_buffer failed");
     return DecodeResult::dataError;
