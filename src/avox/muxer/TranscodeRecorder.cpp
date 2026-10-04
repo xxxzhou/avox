@@ -10,7 +10,10 @@
 namespace avox {
 
 TranscodeRecorder::TranscodeRecorder() {
-  surfaceRender = std::make_unique<SurfaceRenderVk>();
+  // 与 MediaPlayer 同构: WindowRender 直接管理原生腿与 VK 腿的 GPU 资源交接
+  // (NV12→RGBA 在原生腿做, 结果交 VK 图)。离屏(bOffSurface)无窗口、不 start
+  // 刷新线程, 行为等同 SurfaceRenderNative + 完整交接。
+  surfaceRender = std::make_unique<WindowRender>();
   audioRender = std::make_unique<AudioRender>();
   taskName = "transcode recorder";
   // 设定
@@ -435,12 +438,31 @@ void TranscodeRecorder::onGpuFrame(const GpuFrame& frame, int32_t trackId) {
   if (bSeeking.load() || !running()) {
     return;
   }
-  // 空输出:交给vulkan处理后对外(render自动dispatch onFrame),不入编码队列
+  // 与 onVideoFrame 同构: 先过渲染双腿(原生 NV12→RGBA, 交 VK 图), 回读时
+  // VK 腿出 CPU YUV / 原生腿 staging 回读; 空输出时 render 内 onRenderOut
+  // 已 dispatch onFrame 对外, 不入编码队列
+  surfaceRender->render(frame);
+  updateProgress();
   if (bNoOutput) {
-    surfaceRender->render(frame);
     return;
   }
-  vFrameQueue.enqueueWait<GpuFrame>(frame, copyBufGpu);
+  // 增强模式: 图已出 rgba, 与 onVideoFrame 同路
+  if (qenhancer && rgbaBuffer) {
+    static const bool noQueue = std::getenv("ENH_NOQUEUE") != nullptr;
+    if (noQueue) {
+      return;
+    }
+    RgbaFrameRef ref = {rgbaBuffer.get(), frame.pts, frame.dts};
+    vFrameQueue.enqueueWait<RgbaFrameRef>(ref, copyBufRgba);
+    return;
+  }
+  // 硬解帧经渲染腿回读为 packed CPU YUV 入队(队列恒为 SwVideoBuffer),
+  // 编码线程 processVideo 按 SwVideoBuffer 消费, 不做 GPU 容器直塞
+  YUVFrame yframe = {};
+  if (!surfaceRender->getCpuFrame(yframe)) {
+    return;
+  }
+  vFrameQueue.enqueueWait<YUVFrame>(yframe, copyBufHost);
 }
 
 void TranscodeRecorder::onAudioFrame(const AvoxAFrame& frame, int32_t trackId) {

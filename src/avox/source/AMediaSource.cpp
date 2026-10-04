@@ -292,6 +292,21 @@ void AMediaSource::onPacket(const AvoxPacket& packet) {
 
 bool AMediaSource::initVideoDecoder(VCodecId codecId, const VideoDesc& srcDesc,
                                     bool bHard) {
+  return initVideoDecoderTried(codecId, srcDesc, bHard, /*bTriedHard=*/false,
+                               /*bTriedSoft=*/false);
+}
+
+// 解码器选型的候选链(与播放器腿 VDecoderTask 同构): 先主路, 失败逐级下沉/上浮。
+// 硬软互备 + 已试过的不重试(防硬→软→硬 无限递归)。抽帧腿(IRecorder)默认软解,
+// 此前软解名缺注册时直接失败 —— Windows AV1(只有硬解可用, libdav1d 缺席)即此症。
+bool AMediaSource::initVideoDecoderTried(VCodecId codecId,
+                                         const VideoDesc& srcDesc, bool bHard,
+                                         bool bTriedHard, bool bTriedSoft) {
+  if (bHard) {
+    bTriedHard = true;
+  } else {
+    bTriedSoft = true;
+  }
   if (!AvoxManager::Get().vDecoders.hasObjectId(codecId)) {
     LOGFLF(LogLevel::warn, "no find video codec:", codecId);
     return false;
@@ -305,16 +320,22 @@ bool AMediaSource::initVideoDecoder(VCodecId codecId, const VideoDesc& srcDesc,
   const char* sOverride =
       (bHard && !videoDecoderName.empty()) ? videoDecoderName.c_str() : nullptr;
   const char* sName = sOverride ? sOverride : getDefaultDecoderName(codecId, bHard);
-  // AV1 软解归一(1003): 构建带 dav1d 时软解名指 "libdav1d" —— 注册名即 FFmpeg
-  // 名, FFVDecoder 按名可查; 原生 "av1" 是 hwaccel-only 包装, 无 hwaccel 时
-  // 每包 ENOSYS 解不出帧(缩略图/转码链实证)。缺席保持旧行为。
+  // AV1 软解车道可用性判定(1003): FFmpeg 原生 "av1" 是 hwaccel-only 包装, 无
+  // hwaccel 上下文即每包 AVERROR(ENOSYS)。构建带 dav1d 时注册表才有真正能解帧的
+  // 软解器 "libdav1d"(FFHelper 归一注册名), 此时软解名改指它; 注册表没有 dav1d
+  // (如 Windows 无该库)则 AV1 软解车道不存在, 直接上浮硬解 —— 旧行为会落回原生
+  // "av1" 空壳, 每包 ENOSYS 解不出帧(缩略图/转码链实证)。
+  bool bSoftAv1Unusable = false;
   if (!sOverride && !bHard && codecId == VCodecId::av1) {
+    bool bHasDav1d = false;
     for (size_t i = 0; i < decodes.size(); ++i) {
       if (decodes[i].desc.name == AVOX_FF_LIBDAV1D_DECODER) {
         sName = AVOX_FF_LIBDAV1D_DECODER;
+        bHasDav1d = true;
         break;
       }
     }
+    bSoftAv1Unusable = !bHasDav1d;
   }
   // 硬解备选: 主路失败先试vulkan(未注册自动跳过); 覆盖点名时跳过, 保证机器无关回软解
   const char* sVulkan = nullptr;
@@ -340,7 +361,20 @@ bool AMediaSource::initVideoDecoder(VCodecId codecId, const VideoDesc& srcDesc,
   if (!bHitName && sOverride) {
     // 覆盖名未注册: 不落首项兜底, 直接回软解重选
     LOGFLF(LogLevel::warn, "override decoder ", sName, " not register, try soft");
-    return initVideoDecoder(codecId, srcDesc, false);
+    return initVideoDecoderTried(codecId, srcDesc, false, bTriedHard, bTriedSoft);
+  }
+  // 软解车道不可用: 名查不到, 或该编码的软解器实际解不出帧(AV1 空壳)。上浮硬解重选
+  // —— 该编码本端只有硬解可用时(Windows AV1 即此), 软解设置也能出图。硬解已试过
+  // 则放弃(防硬→软→硬 无限递归)。
+  if ((!bHitName || bSoftAv1Unusable) && !bHard) {
+    if (bTriedHard) {
+      LOGFLF(LogLevel::warn, "soft decoder ", sName,
+             " unusable and hard already tried, give up");
+      return false;
+    }
+    LOGFLF(LogLevel::warn, "soft decoder ", sName,
+           " not register or unusable, try hard decode");
+    return initVideoDecoderTried(codecId, srcDesc, true, bTriedHard, bTriedSoft);
   }
   auto& vDecode = decodes[sIndex];
   videoDecoder = std::unique_ptr<VideoDecoder>(vDecode.initFunc());
@@ -373,9 +407,13 @@ bool AMediaSource::initVideoDecoder(VCodecId codecId, const VideoDesc& srcDesc,
           break;
         }
       }
-      return initVideoDecoder(codecId, srcDesc, false);
+      if (bTriedSoft) return false;
+      return initVideoDecoderTried(codecId, srcDesc, false, bTriedHard,
+                                   bTriedSoft);
     }
-    return false;
+    // 软解建不出/不支持(setContext 失败): 上浮硬解兜底(硬解已试过则放弃)
+    if (bTriedHard) return false;
+    return initVideoDecoderTried(codecId, srcDesc, true, bTriedHard, bTriedSoft);
   }
   LOGFLF(LogLevel::info, "create video decode success");
   return true;

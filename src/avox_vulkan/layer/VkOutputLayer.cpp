@@ -426,6 +426,13 @@ bool VkOutputLayer::fetchData(IImageBuffer* buffer) {
   if (!vkPipeGraph || !vkPipeGraph->resourceReady()) {
     return false;
   }
+  // 输入尚未流动起来: 本层输出纹理的内容来自「上一次submit消费的输入纹理」。
+  // 图刚重建时输入纹理是新的空纹理, 首帧submit消费的就是它 —— 读回即全默认
+  // 值(10bit YUV(0,0,0)经 BT.2020 矩阵 offset 列 = 纯绿 (0,94,0) 而非黑)。
+  // 帧数不足时拒读, 让调用方下一轮重试(与 screenShot 的重试循环天然契合)。
+  if (vkPipeGraph->framesRendered() < 3) {
+    return false;
+  }
   if (inTexs.size() <= 0 || !inTexs[0]) {
     return false;
   }

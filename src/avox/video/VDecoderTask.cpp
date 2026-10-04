@@ -51,8 +51,12 @@ bool VDecoderTask::start(class VideoTrack* context) {
       (bHard && !sOverrideName.empty()) ? sOverrideName.c_str() : nullptr;
   const char* sName = sOverride ? sOverride : getDefaultDecoderName(codecId, bHard);
   const char* sFallback = bHard ? getDefaultDecoderName(codecId, false) : nullptr;
-  // AV1 软解归一(1003, 同 AMediaSource): 构建带 dav1d 时软解走 libdav1d
+  // AV1 软解归一(1003, 同 AMediaSource): 构建带 dav1d 时软解走 libdav1d;
+  // 注册表没有 dav1d(如 Windows 无该库)则原生 "av1" 是 hwaccel-only 空壳, 无
+  // hwaccel 上下文每包 ENOSYS ⇒ 软解车道不存在, 首选直接改硬解名(空壳能建能
+  // setContext, 挂备路永远不会被试到, 必须换主路)。
   if (!sOverride && codecId == VCodecId::av1) {
+    bool bHasDav1d = false;
     for (size_t i = 0; i < decodes.size(); ++i) {
       if (decodes[i].desc.name == AVOX_FF_LIBDAV1D_DECODER) {
         if (bHard) {
@@ -60,8 +64,13 @@ bool VDecoderTask::start(class VideoTrack* context) {
         } else {
           sName = AVOX_FF_LIBDAV1D_DECODER;
         }
+        bHasDav1d = true;
         break;
       }
+    }
+    if (!bHard && !bHasDav1d) {
+      sName = getDefaultDecoderName(codecId, true);
+      sFallback = nullptr;
     }
   }
   if (sFallback && strcmp(sFallback, sName) == 0) {

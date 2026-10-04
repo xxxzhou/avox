@@ -5,8 +5,8 @@
 #include "../module/JsonOption.hpp"
 #include "../module/Ringbuffer.hpp"
 #include "../source/AMediaSource.hpp"
-#include "../video/SurfaceRenderVk.hpp"
 #include "../video/VideoFrame.hpp"
+#include "../video/WindowRender.hpp"
 #include "RawMuxer.hpp"
 
 namespace avox {
@@ -34,7 +34,9 @@ class TranscodeRecorder : public IRecorder,
   AVSource* ioSource = nullptr;
   // 编码器+IO目的
   std::unique_ptr<RawMuxer> muxer;
-  std::unique_ptr<SurfaceRenderVk> surfaceRender;
+  // 与 MediaPlayer 同构: WindowRender 是 SurfaceRenderNative 的超集, 硬解 NV12
+  // 走原生腿转 RGBA 再交 VK(GpuContext 交接), 离屏(bOffSurface)时无窗口无刷新线程
+  std::unique_ptr<WindowRender> surfaceRender;
   // 裸 AudioRender(无设备输出),用于 AudioTap 读取音频数据
   std::unique_ptr<AudioRender> audioRender;
   RecorderState state = RecorderState::none;

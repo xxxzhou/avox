@@ -119,6 +119,9 @@ class AMediaSource : public RawSource,
 
  private:
   bool initVideoDecoder(VCodecId codecId, const VideoDesc& srcDesc, bool bHard);
+  // 带已试标记的选型递归内核: 硬软互备, 防止硬→软→硬 无限递归。
+  bool initVideoDecoderTried(VCodecId codecId, const VideoDesc& srcDesc,
+                             bool bHard, bool bTriedHard, bool bTriedSoft);
   bool initAudioDecoder(ACodecId codecId, const AudioDesc& srcDesc);
   // 某 track 声明了却一直没来首包,超时后降级该 track
   void resolveTrackWaitTimeout();

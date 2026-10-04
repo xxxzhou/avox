@@ -181,6 +181,8 @@ void VkPipeGraph::run() {
 
 void VkPipeGraph::onReset() {
   vkLayers.clear();
+  // 重建即清零: 新图的纹理全是新的空纹理, 帧数从 0 起算
+  renderEpoch = 0;
   // 告诉别的线程,需要等待资源重新生成
   vkResetEvent(vkDevice, outEvent);
   // 重置所有命令缓冲区（commandCount=1时自然只重置一个）
@@ -280,6 +282,8 @@ void VkPipeGraph::onRun() {
   vkWaitForFences(vkDevice, 1, &cmdFences[currentCmdIndex], VK_TRUE,
                   UINT64_MAX);
   // log(LogLevel::info, "vk pipe cost 4:", clock.recordLast());
+  // 本帧已提交: 记数(抓帧侧据此判「输入是否已流动起来」, 见 renderEpoch 注释)
+  ++renderEpoch;
   // 层是否有CPU数据输出
   for (auto* layer : vkLayers) {
     layer->onFrame();

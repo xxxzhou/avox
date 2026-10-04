@@ -239,13 +239,6 @@ void copyPlaneYUV2TightlyBuffer(const YUVFrame& frame, uint8_t* bfdata) {
         v[i] = (uint16_t)(src[2 * i + 1] >> 6);
       }
     }
-    // 取证探针(限1次): 归一化出口应为低对齐 yuv420P10 形态
-    // (锚点素材期望 y[0]=0x000 y[639]=0x3ff u[0]=0x200 v[0]=0x200)
-    static int32_t sP010CopyProbe = 0;
-    if (sP010CopyProbe++ < 1) {
-      fprintf(stderr, "[p010copy] y0=%03x y639=%03x u0=%03x v0=%03x\n",
-              ydst[0], ydst[639], udst[0], vdst[0]);
-    }
   } else if (frame.format.type == YuvType::yuv420P10 ||
              frame.format.type == YuvType::yuv422P10) {
     int32_t uv_pitch = yrowpitch / 2;
