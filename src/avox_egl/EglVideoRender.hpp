@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <memory>
+#include <mutex>
 
 #include "GLESContext.hpp"
 #include "avox/module/RunTask.hpp"
@@ -47,6 +48,21 @@ protected:
   int32_t transferAttr = 0;
   int32_t peakNitsAttr = 0;
   int32_t sdrWhiteAttr = 0;
+  // DV 整形(1005): Y2Y 变体程序 —— `samplerExternal2DY2YEXT` 采样拿**未经驱动
+  // 色彩转换的原始 YUV**(GL_EXT_YUV_target), 在 shader 内跑与 VK V5/DX11 CS
+  // 同源的 DV 链(reshape→ycc_to_rgb→PQ→LMS→回编码 PQ)。OES 常规采样拿到的已是
+  // 驱动 YUV→RGB 结果(YCbCr 域丢失), 故 DV 必须换采样器类型 = 换程序
+  DoviMeta doviMeta;
+  std::atomic<bool> bDovValid{false};
+  std::atomic<bool> bDvUboDirty{false};  // 场景级: 只在元数据变时重传 UBO
+  std::mutex dvMtx;      // doviMeta 跨线程(播放线程写/渲染线程取, 场景级)
+  uint32_t glDvProgram = 0;
+  uint32_t dvUboBuf = 0;
+  int32_t dvPosAttr = 0;
+  int32_t dvUvAttr = 0;
+  int32_t dvTexAttr = 0;
+  uint32_t dvUboBlock = 0;
+  bool bDvUnsupported = false;  // 编译/链接失败(无 EXT_YUV_target)后不再重试
 
 protected:
   virtual void onSetSurface() override;
@@ -58,7 +74,7 @@ protected:
   virtual void setColorSpace(const ColorSpaceDesc& c) override;
   virtual void setHdrMeta(const HdrMeta& meta) override;
   virtual void setHdrMode(HdrMode mode) override;
-  // EGL 腿暂不消费 DV 整形(OES 域限制), 只留探针观测元数据到达链路
+  // DV 整形消费点(1005): 原 OES 域限制已由 GL_EXT_YUV_target 的 Y2Y 采样解除
   virtual void setDoviMeta(const DoviMeta& meta) override;
 
 public:
@@ -77,6 +93,11 @@ private:
   void syncCanvasLayer();
   // canvas 第二 draw 程序(惰性首挂才建, 零字幕会话零 GL 对象)
   bool ensureCanvasProgram();
+  // DV 变体程序(Y2Y 采样): 惰性首见 DV 帧才建; 无 EXT_YUV_target 则置
+  // bDvUnsupported 回落常规程序(画面同旧行为, 不报错刷屏)
+  bool ensureDvProgram();
+  // DV UBO 上传(场景级脏标记驱动, 与 VK/DX11 共用 packDoviUbo)
+  void uploadDvUbo();
 
  private:
   // 字幕画布: 宿主持前端(wanted 标志), 渲染线程持层实例

@@ -124,6 +124,203 @@ static const GLfloat uvs[] = {
     0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f,
 };
 
+// ---------- DV 变体程序(1005): Y2Y 采样 + shader 内 DV 整形链 ----------
+// 常规 OES 采样拿到的已是驱动 YUV→RGB 的结果(YCbCr 域丢失, reshape 无从谈起);
+// GL_EXT_YUV_target 的 `__samplerExternal2DY2YEXT` 采样**不做色彩转换**, shader
+// 直接拿到原始 YUV(Y,Cb,Cr) → 与 VK yuv2rgbaV5.comp / DX11 CS 同一套 DV 数学
+// (reshape→ycc_to_rgb→PQ 线性→LMS→回编码 PQ BT.2020) 后接 tone map。
+// 需 ESSL3('#version 300 es' + in/out + UBO);无该扩展的设备编译失败 → 回落常规程序
+static const char* DvVertexShaderString = R"(#version 300 es
+in vec2 position;
+in vec2 uv;
+out highp vec2 textureCoordinate;
+void main()
+{
+    gl_Position = vec4(position, 0.0, 1.0);
+    // 与 VertexShaderString 同口径(有窗口)
+    textureCoordinate = uv;
+}
+)";
+static const char* DvVertexShaderString1 = R"(#version 300 es
+in vec2 position;
+in vec2 uv;
+out highp vec2 textureCoordinate;
+void main()
+{
+    gl_Position = vec4(position, 0.0, 1.0);
+    // 与 VertexShaderString1 同口径(渲染到 FBO/对接面, y 倒置)
+    textureCoordinate = vec2(uv.x, 1.0 - uv.y);
+}
+)";
+
+// std140 布局与 ColorYuvUBO(2848B, ColorSpace.hpp 有 static_assert)逐字段对齐;
+// DV 区字段名/展平法一律照抄 yuv2rgbaV5.comp(同一 packDoviUbo 打包)
+static const char* DvFragmentShaderString = R"(#version 300 es
+#extension GL_EXT_YUV_target : require
+precision highp float;
+in highp vec2 textureCoordinate;
+uniform __samplerExternal2DY2YEXT oesYuv;
+layout(std140) uniform DvUbo
+{
+	int width;
+	int height;
+	int yuvType;
+	int transfer;
+	mat4 colorMat;
+	float maxLuminance;
+	float sdrWhiteNits;
+	int hdrMode;
+	int _pad;
+	int doviEnable;
+	int _dv0;
+	int _dv1;
+	int _dv2;
+	vec4 dvPivots[7];
+	vec4 dvPoly[18];
+	vec4 dvMmr[132];
+	ivec4 dvIdc[6];
+	vec4 dvNumPivots;
+	vec4 dvNl[3];
+	vec4 dvNlOff;
+	vec4 dvLm[3];
+} ubo;
+out vec4 fragColor;
+
+vec3 pqToLinear(vec3 n) {
+	const float m1 = 0.1593017578125;
+	const float m2 = 78.84375;
+	const float c1 = 0.8359375;
+	const float c2 = 18.8515625;
+	const float c3 = 18.6875;
+	vec3 p = pow(clamp(n, vec3(0.0), vec3(1.0)), vec3(1.0 / m2));
+	vec3 num = max(p - c1, vec3(0.0));
+	return pow(num / (c2 - c3 * p), vec3(1.0 / m1));
+}
+
+vec3 linearToPq(vec3 lin) {
+	const float m1 = 0.1593017578125;
+	const float m2 = 78.84375;
+	const float c1 = 0.8359375;
+	const float c2 = 18.8515625;
+	const float c3 = 18.6875;
+	vec3 p = pow(max(lin, vec3(0.0)), vec3(m1));
+	vec3 e = (vec3(c1) + vec3(c2) * p) / (vec3(1.0) + vec3(c3) * p);
+	return pow(e, vec3(m2));
+}
+
+vec3 hlgToLinear(vec3 e) {
+	vec3 t = clamp(e, vec3(0.0), vec3(1.0));
+	vec3 lo = t * t / 3.0;
+	vec3 hi = (exp((t - 0.55991073) / 0.17883277) + 0.28466892) / 12.0;
+	vec3 scene = mix(lo, hi, step(vec3(0.5), t));
+	float ys = dot(scene, vec3(0.2627, 0.6780, 0.0593));
+	return scene * pow(max(ys, 1e-6), 0.2);
+}
+
+// BT.2390 观感取向(与 V5 同源): 锚(sdrWhite)下近似线性, 超锚按内容峰值软压
+vec3 toneMap(vec3 lin) {
+	float dstN = max(ubo.sdrWhiteNits, 1.0);
+	float white = max(ubo.maxLuminance, dstN) / dstN;
+	vec3 d = max(lin * 10000.0 / dstN, vec3(0.0));
+	vec3 t = d * (1.0 + d / (white * white)) / (1.0 + d);
+	return clamp(t, vec3(0.0), vec3(1.0));
+}
+
+vec3 bt2020ToBt709(vec3 c) {
+	return max(mat3(
+		1.6605, -0.1246, -0.0182,
+		-0.5876, 1.1329, -0.1006,
+		-0.0728, -0.0083, 1.1187) * c, vec3(0.0));
+}
+
+vec3 linearToBt709(vec3 c) {
+	vec3 lo = c * 4.5;
+	vec3 hi = 1.099 * pow(max(c, vec3(0.0)), vec3(0.45)) - 0.099;
+	return mix(lo, hi, step(vec3(0.018), c));
+}
+
+float dvPivot(int idx) { return ubo.dvPivots[idx >> 2][idx & 3]; }
+float dvPoly(int idx)  { return ubo.dvPoly[idx >> 2][idx & 3]; }
+float dvMmr(int idx)   { return ubo.dvMmr[idx >> 2][idx & 3]; }
+int   dvIdc(int idx)   { return ubo.dvIdc[idx >> 2][idx & 3]; }
+
+// 单组件曲线: pivot 段选 → poly Horner / mmr 交叉项展开(与 V5 逐行同源)
+float dvReshapeComp(int c, vec3 sig, float s) {
+	int base = c * 8;
+	int sel = -1;
+	for (int i = 0; i < 8; i++) {
+		if (dvIdc(base + i) == 0) break;
+		if (i == 7 || s < dvPivot(c * 9 + i + 1)) { sel = i; break; }
+	}
+	if (sel < 0) {
+		return s;
+	}
+	int idc = dvIdc(base + sel);
+	if (idc == 1) {
+		int pf = (base + sel) * 3;
+		return (dvPoly(pf + 2) * s + dvPoly(pf + 1)) * s + dvPoly(pf);
+	}
+	int order = idc - 16;
+	int p = (base + sel) * 22;
+	int np = int(ubo.dvNumPivots[c]);
+	float acc = dvMmr(p);
+	vec4 sigX = vec4(sig.x * sig.y, sig.x * sig.z, sig.y * sig.z,
+	                 sig.x * sig.y * sig.z);
+	acc += dot(vec3(dvMmr(p + 1), dvMmr(p + 2), dvMmr(p + 3)), sig);
+	acc += dot(vec4(dvMmr(p + 4), dvMmr(p + 5), dvMmr(p + 6), dvMmr(p + 7)), sigX);
+	if (order >= 2) {
+		vec3 sig2 = sig * sig;
+		vec4 sigX2 = sigX * sigX;
+		acc += dot(vec3(dvMmr(p + 8), dvMmr(p + 9), dvMmr(p + 10)), sig2);
+		acc += dot(vec4(dvMmr(p + 11), dvMmr(p + 12), dvMmr(p + 13), dvMmr(p + 14)), sigX2);
+		if (order >= 3) {
+			acc += dot(vec3(dvMmr(p + 15), dvMmr(p + 16), dvMmr(p + 17)), sig2 * sig);
+			acc += dot(vec4(dvMmr(p + 18), dvMmr(p + 19), dvMmr(p + 20), dvMmr(p + 21)), sigX2 * sigX);
+		}
+	}
+	return clamp(acc, dvPivot(c * 9), dvPivot(c * 9 + np - 1));
+}
+
+// DV 全链: reshape → ycc_to_rgb(PQ 域) → PQ 线性 → LMS 合成阵 → 回编码 PQ BT.2020
+vec3 dvProcess(vec3 yuv) {
+	vec3 sig = clamp(yuv, vec3(0.0), vec3(1.0));
+	sig = vec3(dvReshapeComp(0, sig, sig.r), dvReshapeComp(1, sig, sig.g),
+	           dvReshapeComp(2, sig, sig.b));
+	mat3 nl = mat3(ubo.dvNl[0].xyz, ubo.dvNl[1].xyz, ubo.dvNl[2].xyz);
+	vec3 rgb = nl * (sig - ubo.dvNlOff.xyz);
+	vec3 lin = pqToLinear(rgb);
+	mat3 lm = mat3(ubo.dvLm[0].xyz, ubo.dvLm[1].xyz, ubo.dvLm[2].xyz);
+	return linearToPq(lm * lin);
+}
+
+// DV 链输出恒为 PQ BT.2020, 与容器标签无关(P5 无标签 transfer=0)
+vec3 processColor(vec3 rgb) {
+	if (ubo.hdrMode == 2) {
+		return rgb;
+	}
+	int xfer = (ubo.doviEnable == 1) ? 2 : ubo.transfer;
+	if (xfer == 2) {
+		vec3 lin = pqToLinear(rgb);
+		lin = toneMap(lin);
+		lin = bt2020ToBt709(lin);
+		return linearToBt709(lin);
+	}
+	if (xfer == 3) {
+		vec3 lin = hlgToLinear(rgb) * 0.1;
+		lin = toneMap(lin);
+		lin = bt2020ToBt709(lin);
+		return linearToBt709(lin);
+	}
+	return rgb;
+}
+
+void main() {
+	// Y2Y: 原始 YUV(驱动不做 YUV→RGB), 直接进 DV 整形链
+	vec3 yuv = texture(oesYuv, textureCoordinate).rgb;
+	fragColor = vec4(clamp(processColor(dvProcess(yuv)), 0.0, 1.0), 1.0);
+}
+)";
+
 // 字幕画布第二 draw 程序(字幕画布多后端渲染计划 §5.3): GLES 腿无 HDR 呈现面,
 // 恒 SDR gamma 域, 语义与 VK canvasBlend.comp 同源。顶点布局与主 program 同构
 // (position vec4 + uv vec2, 复用 verts/uvs 指针); premultiplied source-over
@@ -375,11 +572,74 @@ void EglVideoRender::setHdrMeta(const HdrMeta& meta) {
 }
 
 void EglVideoRender::setDoviMeta(const DoviMeta& meta) {
-  // 探针走 stderr: DV 整形链目前 EGL 腿未消费(OES 采样后 YCbCr 域已丢失,
-  // reshape 无法在 RGB 上做), 先立观测点确认元数据到达链路
+  // 探针走 stderr: DV 整形链取证点(元数据到达 + 有效态)
   fprintf(stderr, "[egl] setDoviMeta valid=%d pivots=%d/%d/%d\n",
           (int)meta.valid, (int)meta.comp[0].numPivots,
           (int)meta.comp[1].numPivots, (int)meta.comp[2].numPivots);
+  {
+    std::lock_guard<std::mutex> lk(dvMtx);
+    doviMeta = meta;
+  }
+  // 有效态翻转驱动程序选择(Y2Y 变体 ↔ 常规); 场景级更新只需重传 UBO
+  bDovValid.store(meta.valid);
+  bDvUboDirty.store(true);
+}
+
+// DV 变体程序: 首见 DV 帧才建(零 DV 会话零 GL 对象, 与 canvas 程序同策略)。
+// 必须在渲染线程且 context current 时调用。
+bool EglVideoRender::ensureDvProgram() {
+  if (glDvProgram > 0) {
+    return true;
+  }
+  if (bDvUnsupported) {
+    return false;
+  }
+  glDvProgram = createGLProgram(surface ? DvVertexShaderString
+                                        : DvVertexShaderString1,
+                                DvFragmentShaderString);
+  if (glDvProgram == 0) {
+    // 无 GL_EXT_YUV_target(或 Y2Y 采样不被支持): 回落常规 OES 程序, 不反复重试
+    bDvUnsupported = true;
+    LOGFLF(LogLevel::warn,
+           "[egl] DV(Y2Y) program failed, fallback to OES path (no render shape)");
+    return false;
+  }
+  dvPosAttr = glGetAttribLocation(glDvProgram, "position");
+  dvUvAttr = glGetAttribLocation(glDvProgram, "uv");
+  dvTexAttr = glGetUniformLocation(glDvProgram, "oesYuv");
+  dvUboBlock = glGetUniformBlockIndex(glDvProgram, "DvUbo");
+  glUniformBlockBinding(glDvProgram, dvUboBlock, 0);
+  glGenBuffers(1, &dvUboBuf);
+  glBindBuffer(GL_UNIFORM_BUFFER, dvUboBuf);
+  glBufferData(GL_UNIFORM_BUFFER, sizeof(ColorYuvUBO), nullptr, GL_DYNAMIC_DRAW);
+  glBindBuffer(GL_UNIFORM_BUFFER, 0);
+  glBindBufferBase(GL_UNIFORM_BUFFER, 0, dvUboBuf);
+  LOGFLF(LogLevel::info, "[egl] DV(Y2Y) program ready, uboBlock:",
+         (int32_t)dvUboBlock, " size:", (int32_t)sizeof(ColorYuvUBO));
+  return true;
+}
+
+// DV UBO 上传(场景级): 与 VK/DX11 共用 packDoviUbo, 故三腿同源
+void EglVideoRender::uploadDvUbo() {
+  DoviMeta meta;
+  {
+    std::lock_guard<std::mutex> lk(dvMtx);
+    meta = doviMeta;
+  }
+  // 2848B: 场景级(非每帧), 栈上构造无妨
+  ColorYuvUBO uboData = {};
+  uboData.transfer = (int32_t)cs.transfer;
+  uboData.hdrMode = (int32_t)hdrMode;
+  uboData.maxLuminance = (float)hdrPeakNits(hdrMeta);
+  uboData.sdrWhiteNits = 100.0f;
+  packDoviUbo(uboData, meta);
+  glBindBuffer(GL_UNIFORM_BUFFER, dvUboBuf);
+  glBufferData(GL_UNIFORM_BUFFER, sizeof(ColorYuvUBO), &uboData,
+               GL_DYNAMIC_DRAW);
+  glBindBuffer(GL_UNIFORM_BUFFER, 0);
+  glBindBufferBase(GL_UNIFORM_BUFFER, 0, dvUboBuf);
+  LOGFLF(LogLevel::info, "[egl] DV ubo upload doviEnable:", uboData.doviEnable,
+         " peak:", uboData.maxLuminance, " hdrMode:", uboData.hdrMode);
 }
 
 void EglVideoRender::setHdrMode(HdrMode mode) { hdrMode = mode; }
@@ -469,18 +729,36 @@ void EglVideoRender::useProgram(uint32_t oesId) {
   // 激活纹理
   glActiveTexture(GL_TEXTURE0);
   glBindTexture(GL_TEXTURE_EXTERNAL_OES, oesId);
+  // DV 流走 Y2Y 变体(原始 YUV 采样 + shader 内 DV 整形链, 与 VK/DX11/Metal 同源);
+  // 无 EXT_YUV_target 的设备 ensureDvProgram 失败 → 回落常规 OES 程序(旧行为)
+  uint32_t videoProgram = glProgram;
+  int32_t vPosAttr = posAttr;
+  int32_t vUvAttr = uvAttr;
+  const bool bDvDraw = bDovValid.load() && ensureDvProgram();
+  if (bDvDraw) {
+    videoProgram = glDvProgram;
+    vPosAttr = dvPosAttr;
+    vUvAttr = dvUvAttr;
+  }
   // 设置可编程管线参数
-  glUseProgram(glProgram);
-  glUniform1i(extAttr, 0);
-  // 颜色/HDR参数每帧下发(免脏标记); SDR内容 uTransfer=gamma 走直通, 行为零变化
-  glUniform1i(hdrModeAttr, (int)hdrMode);
-  glUniform1i(transferAttr, (int)cs.transfer);
-  glUniform1f(peakNitsAttr, (float)hdrPeakNits(hdrMeta));
-  glUniform1f(sdrWhiteAttr, 100.0f);
-  glEnableVertexAttribArray(posAttr);
-  glVertexAttribPointer(posAttr, 2, GL_FLOAT, false, 0, (void*)(verts));
-  glEnableVertexAttribArray(uvAttr);
-  glVertexAttribPointer(uvAttr, 2, GL_FLOAT, false, 0, (void*)(uvs));
+  glUseProgram(videoProgram);
+  if (bDvDraw) {
+    if (bDvUboDirty.exchange(false)) {
+      uploadDvUbo();
+    }
+    glUniform1i(dvTexAttr, 0);
+  } else {
+    glUniform1i(extAttr, 0);
+    // 颜色/HDR参数每帧下发(免脏标记); SDR内容 uTransfer=gamma 走直通, 行为零变化
+    glUniform1i(hdrModeAttr, (int)hdrMode);
+    glUniform1i(transferAttr, (int)cs.transfer);
+    glUniform1f(peakNitsAttr, (float)hdrPeakNits(hdrMeta));
+    glUniform1f(sdrWhiteAttr, 100.0f);
+  }
+  glEnableVertexAttribArray(vPosAttr);
+  glVertexAttribPointer(vPosAttr, 2, GL_FLOAT, false, 0, (void*)(verts));
+  glEnableVertexAttribArray(vUvAttr);
+  glVertexAttribPointer(vUvAttr, 2, GL_FLOAT, false, 0, (void*)(uvs));
   // 渲染
   glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
   // 字幕画布第二 draw(lane=1 呈现腿, 字幕画布多后端渲染计划 §5.3):
@@ -511,12 +789,12 @@ void EglVideoRender::useProgram(uint32_t oesId) {
       glDisableVertexAttribArray(canvasPosAttr);
       glDisableVertexAttribArray(canvasUvAttr);
       glBindTexture(GL_TEXTURE_2D, 0);
-      glUseProgram(glProgram);
+      glUseProgram(videoProgram);
     }
   }
   //
-  glDisableVertexAttribArray(posAttr);
-  glDisableVertexAttribArray(uvAttr);
+  glDisableVertexAttribArray(vPosAttr);
+  glDisableVertexAttribArray(vUvAttr);
   glBindTexture(GL_TEXTURE_EXTERNAL_OES, 0);
   // 如果没有设置窗口，则渲染到FBO上
   if (!surface) {
@@ -553,6 +831,17 @@ void EglVideoRender::closeProgram() {
     glDeleteProgram(glProgram);
     glProgram = 0;
   }
+  // DV 变体程序与 UBO 随 context 释放; bDvUnsupported 复位(新 context 重新判定)
+  if (glDvProgram) {
+    glDeleteProgram(glDvProgram);
+    glDvProgram = 0;
+  }
+  if (dvUboBuf) {
+    glDeleteBuffers(1, &dvUboBuf);
+    dvUboBuf = 0;
+  }
+  bDvUnsupported = false;
+  bDvUboDirty.store(true);
   if (textureId) {
     glDeleteTextures(1, &textureId);
     textureId = 0;
