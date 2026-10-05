@@ -263,6 +263,13 @@ if(IOS AND NOT _avox_ios_sysroot_l MATCHES "iphonesimulator")
         # 保活表开关(ModuleMgr.cpp): 把注册器所在 .o 拖进归档闭包
         add_definitions(-DAVOX_STATIC_MODULE_REMOTE=1)
         list(APPEND AVOX_LINK_LIBRARIES ${LIBSMB2_LIBRARIES} ${WEBRTC_LIBRARIES})
+        # BoringSslCompat.cpp 必须按 OpenSSL 语义读头(它补的是 BoringSSL 的 ctrl
+        # 缺口); Agent 开启后全局搜索路径把 BoringSSL 头排到了 OpenSSL 前, 命令行
+        # -I 前置压回(优先于 target HEADER_SEARCH_PATHS)。
+        if(OPENSSL_INCLUDE_DIR)
+            set_source_files_properties(${PROJECT_SOURCE_DIR}/plugins/avox_remote/BoringSslCompat.cpp PROPERTIES
+                COMPILE_FLAGS "-I${OPENSSL_INCLUDE_DIR}")
+        endif()
         message(STATUS "iOS: avox_remote 静态并档 (smb+dav, BoringSSL TLS)")
     else()
         message(STATUS "iOS: avox_remote 并档条件不足 (openssl=${OPENSSL_FOUND} libsmb2=${Libsmb2_FOUND} webrtc=${WEBRTC_FOUND})")

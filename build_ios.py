@@ -83,8 +83,11 @@ if __name__ == "__main__":
                     continue  # 判据目录自身, 递归 glob 扫到时跳过
                 shutil.copy2(src, dst)
         ai_enabled = build_common.check_module_sherpa() and build_common.check_module_sentencepiece()
-    # Agent/Tool 仅 Windows, 其他平台关闭
-    extra_args = "-DAVOX_ENABLE_AGENT=OFF -DAVOX_ENABLE_CLI=OFF -DAVOX_ENABLE_SWIG=OFF"
+    # Agent 开(iOS 翻译腿同 mac: TLS 走 webrtc 归档里的 BoringSSL, 符号静态全在
+    # libwebrtc_nosym.a(nm T _SSL_new 实证; nosym 只是防跨 .so 重导出, 静态链入无碍),
+    # 头在 avox_library/src/third_party/boringssl —— 与 mac 同一条 AVOX_AGENT_USE_BORINGSSL
+    # 路线, 不需要 OpenSSL); CLI/SWIG 关。缺 BoringSSL 头时 AVOXOptions 自动降级关 Agent。
+    extra_args = "-DAVOX_ENABLE_AGENT=ON -DAVOX_ENABLE_CLI=OFF -DAVOX_ENABLE_SWIG=OFF"
     # AI 开时三旗标齐开 (AVOXOptions find_package 三家+全局头/宏, 缺库逐项自动 OFF);
     # 关时维持旧行为 (iOS 无 ORT 预编译时代的硬关)。vulkan 保持开: volk 动态加载只需
     # 头文件, VULKAN_SDK 未设时自动用本机 SDK 的 macOS 目录, MoltenVK 不随 INTERFACE

@@ -5,6 +5,21 @@
 
 #include <openssl/ssl.h>
 
+// 两套头都读不顺: BoringSSL 头把 OpenSSL ctrl 宏钉成 doesnt_exist 雷(ssl.h
+// 5995-6036, 本文件恰要补的就是 ctrl 缺口), OpenSSL 3.x 头又把 setter 做成
+// SSL_ctrl 函数式宏(转发即自递归)。统一解干净后按 OpenSSL ctrl 层数值手工钉,
+// 转发到 BoringSSL 真函数(webrtc 归档内, nm 实证)。
+#undef SSL_CTRL_SET_TLSEXT_HOSTNAME
+#undef SSL_CTRL_SET_MIN_PROTO_VERSION
+#undef SSL_CTRL_SET_MAX_PROTO_VERSION
+#undef SSL_CTRL_OPTIONS
+#undef SSL_CTRL_CLEAR_OPTIONS
+#define SSL_CTRL_SET_TLSEXT_HOSTNAME 55
+#define SSL_CTRL_SET_MIN_PROTO_VERSION 123
+#define SSL_CTRL_SET_MAX_PROTO_VERSION 124
+#define SSL_CTRL_OPTIONS 32
+#define SSL_CTRL_CLEAR_OPTIONS 33
+
 #include <cstdint>
 
 // OpenSSL 3.x 头把这些 setter 做成 SSL_ctrl 宏, BoringSSL 是真函数 —
@@ -16,13 +31,6 @@
 #undef SSL_set_max_proto_version
 #undef SSL_CTX_set_min_proto_version
 #undef SSL_CTX_set_max_proto_version
-
-#ifndef SSL_CTRL_OPTIONS
-#define SSL_CTRL_OPTIONS 32
-#endif
-#ifndef SSL_CTRL_CLEAR_OPTIONS
-#define SSL_CTRL_CLEAR_OPTIONS 33
-#endif
 
 extern "C" {
 
