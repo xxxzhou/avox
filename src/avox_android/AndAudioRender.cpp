@@ -175,12 +175,21 @@ bool AndAudioRender::empty() {
 }
 
 int32_t AndAudioRender::getQueueMS() {
-  // 阻塞写下缓冲常满, 以缓冲深度为准; 硬编码 80 会把深缓冲(7.1≈160ms)的
-  // 音频钟系统性报快 80ms, 过 50ms 阈值即触发逐帧微重采样=可闻抖动
-  if (!audioTrack || frameSize <= 0 || desc.sampleRate <= 0) {
+  if (!audioTrack || desc.sampleRate <= 0) {
     return 80;
   }
-  return (int32_t)((int64_t)frameSize * 1000 / desc.sampleRate);
+  JNIEnv* env = AvoxManager::Get().getEnv();
+  if (!env || !jmAudioTrack.getPendingFrames) {
+    return 80;
+  }
+  // 真实 pending = 已写-已播: 重采样修正会改变它, 时钟环有反馈才收敛;
+  // 常数估值(80/缓冲深)无反馈, diff 一旦越阈即永久逐帧重采样=杂音
+  int32_t pending =
+      env->CallIntMethod(audioTrack, jmAudioTrack.getPendingFrames);
+  if (pending < 0) {
+    return 80;
+  }
+  return (int32_t)((int64_t)pending * 1000 / desc.sampleRate);
 }
 
 bool AndAudioRender::full() {

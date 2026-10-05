@@ -134,6 +134,9 @@ jint getAudiotrackFields() {
   if (nullptr == jmAudioTrack.getFrameSize) {
     goto FUNC_EXIT;
   }
+  // 可缺: 旧宿主 Java 无此方法时 getQueueMS 走回退, 不致命
+  jmAudioTrack.getPendingFrames =
+      env->GetMethodID(classAudioTrack, "GetPendingFrames", "()I");
   jmAudioTrack.audioTrackClass = (jclass)env->NewGlobalRef(classAudioTrack);
   result = JNI_OK;
 FUNC_EXIT:

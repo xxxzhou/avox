@@ -44,6 +44,7 @@ struct AndAudioTrack {
   jmethodID destroy;
   jmethodID getPosition;
   jmethodID getFrameSize;
+  jmethodID getPendingFrames;
 };
 
 struct AndAudioRecord {
