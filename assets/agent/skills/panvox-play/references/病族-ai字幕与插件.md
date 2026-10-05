@@ -1,0 +1,15 @@
+# 病族案卷 · AI 字幕/插件/模型装配
+
+> 状态: 有效 · 上次核对: 2026-10-06 · 权威源: -
+> panvox-play skill 的案卷分册: SKILL.md §4 只放一行式索引, 签名对上后再来本文读根因/判据/验收。
+> 配套: `../SKILL.md`(流程与日志判读) · `病族-open.md` · `病族-seek.md` · `病族-播放中.md`
+
+- **App 内模型下载「满进度重来」(AI 字幕/画质模型的下载卡)**: 进度反复跑满→清零重下 = 清单 sha256 与发布 asset 失配 → 下载器每源**完整下载后**才 hashMismatch 换源重下(无续传、当时零日志)。102 定谳: stt-sense-voice.zip 4/24 重传后字节变(实测 11152a86)≠三份清单烤的 01cd4398, 主源组三条源全废靠 HF 备用组落地; 修=三份清单同哈希(avox a287502 + panvox 173a719)+ 失败路径落 `model-fetch:` 日志行(-Log 可见)。诊断铁证 = 真机 `curl -sL` 拉 zip 实算 sha 对清单; Windows 不暴露此族因模型由部署配方预铺, 不走 app 内下载器。
+
+- **mac 插件腿 dlopen 失败(「STT plugin unavailable」/ 字幕降级 no-op 等)**: mac 引擎静态链入 shim, **只拉被引用的归档成员** → 插件 dlopen(RTLD_NOW 全量解析)要的引擎符号若 shim 自身无引用就不在 dylib 里(10/2 定谳: AudioTts::setSpeaker)。修=deploy_macos_runtime.sh 链接行按部署插件 `nm -u | grep -o __ZN4avox*` 逐 `-u` 钉链(f7a1ee0); 诊断三板斧: ①裸 ctypes dlopen 插件看首个缺符号 ②引擎 RTLD_GLOBAL 后再 dlopen(模拟 app) ③nm -gU shim 对缺符号。
+
+- **mac 插件自包含纪律(第二插件案, 10/2)**: mac 插件是 `-undefined dynamic_lookup` 构建, 其 UND 在 RTLD_LOCAL dlopen 的平面查找下**看不到自己 LC_LOAD 的依赖 dylib** → 插件依赖的第三方符号必须静态吞入插件内(libsmb2/SSL 系 = WebRTC 归档的 BoringSSL + 系统 Security.framework; 注意 darwin 预编译件按 BoringSSL 编, 这些名字在 BoringSSL 是真函数, 别拿 OpenSSL 3 静态库去接——3.x 里它们是宏, 符号不存在)。引擎 rebuild 会连带重链插件, 依赖面可能静默变化, 插件加载失败先 `otool -L` + `nm -u` 重验。
+
+- **iOS「AI 字幕」按下即败 `dlsym(RTLD_DEFAULT, pvx_aisub_start): symbol not found` → iOS shim TU 漏挂 aisub, 已修(10/5, panvox 77b600f)**: 三端管线在 `pvx_aisub.inc`(panvox_native.cpp 与 mac TU 已挂), iOS TU 只含 apple_common 漏了它 → 包内无符号; 引擎腿本身 10/2 已静态并档(sherpa/onnx/translation, 启动日志 `avox_sherpa: regedit module success` 即在)。修=panvox_native_ios.cpp 补 include + deploy_ios_runtime.sh 补 **NO_AGENT 自动闸**(nm libavox.a 缺 createAgentHost 即 -DPANVOX_NO_AGENT——iOS install 头文件在/库符号不在的失配会炸链接, mac 脚本同款)。限界: AVOX_ENABLE_AGENT=OFF 的构建翻译段编译期剔除, 识别照常出原语言 SRT(iOS 与 mac 同款缺席); 模型不打包, App 内下载落 `<AppSupport>/models`(启动 pvx_set_models_root 注入)。判据 = `nm -gU Runner.app/Runner | grep pvx_aisub`; `PANVOX_AISUB_E2E` 探针在 iOS 不可达(Dart 读不到 env, 无头验证只能桌面)。
+
+- **AI 字幕报「打开失败: open timeout/failed」先定引擎侧还是喂入侧(10/5 iOS 真机定谳)**: 该文案出自 shim `pvx_aisub.inc` open 段(recorder open 受理后 60s 未达 recording 或到 failed), STT 模型缺报的是另一文案(`STT model files missing`/-3)。**引擎侧无病对照法(推荐, 不动手机)**: mac 装 build install 树链一个 30 行 C 探针(createRecorder(true)+setVideoCodec(none)+`io.http.persistent=1`+open(直链, tmp.mp4)+等 recording; 头 `src/avox/AvoxMuxer.h`, 库 libavox/avformat/avcodec/avutil/swresample/fdk-aac/freetype/volk+mk_api+系统框架, dav1d 缺符号用 `-Wl,-undefined,dynamic_lookup` 悬空, rpath 指 install 树)——mac 572ms RECORDING 即证引擎×直链通。**喂入侧高发族=合成身份键放行(已修 panvox df9a1f4)**: 「继续观看」入口 `watch_history.refFor` 曾漏接 playable ⇒ FileRef.playable 缺省=path=`jf://itemId`(§六301 合成键), `smbEnginePlayUrlForRef` 原样放行 ⇒ 引擎 avformat 不认 jf 协议必败; 墙卡/详情页入口(mock.dart fileRef playable=id=直链)不病。判据 = 手机 history.json 条目 `p` 以 `jf://` 开头且用户从继续观看进。修 = refFor 接 playable + `smbEnginePlayUrlForSource` 加 jf:// 回解分支(§六312 streamUrlStatic 一份口径)。同族前科: WebDAV 身份路径放行(10/2 修)——**「身份键/裸路径直接喂引擎」这一族已三次**, 新入口接引擎直读一律过 `smbEnginePlayUrlForSource` 并先核路径形态。iOS 真机取证走 autoplay 第 3 行 `aisub` 版式(见 `../SKILL.md` §2)。

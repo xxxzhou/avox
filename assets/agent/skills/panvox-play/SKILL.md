@@ -1,6 +1,6 @@
 ---
 name: panvox-play
-description: panvox 播放问题端到端排查:用户报"某平台+某片源+某现象"(打不开/卡顿/花屏/无声/字幕/崩溃)时加载。自动定位目标设备(本机/ssh mac/ssh pc/adb),从 panvox 数据缓存定位片源并先验真身,带 -Log 复现(对齐用户实际续播路径),按日志行先对已知病族索引再定根因(源端/网络/app/引擎)。**§4 只是一行式病族索引(签名→结论→修态),根因/判据/验收在 `references/病族-{open,seek,播放中}.md` 按需读**。仅 panvox 应用问题用本 skill;手头只有一条裸 URL 要验播放走 avox-cli。
+description: panvox 播放问题端到端排查:用户报"某平台+某片源+某现象"(打不开/卡顿/花屏/无声/字幕/崩溃)时加载。自动定位目标设备(本机/ssh mac/ssh pc/adb),从 panvox 数据缓存定位片源并先验真身,带 -Log 复现(对齐用户实际续播路径),按日志行先对已知病族索引再定根因(源端/网络/app/引擎)。**§4 只是一行式病族索引(签名→结论→修态),根因/判据/验收在 `references/病族-{open,seek,播放中,ai字幕与插件}.md` 按需读**。仅 panvox 应用问题用本 skill;手头只有一条裸 URL 要验播放走 avox-cli。
 whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕异常/投屏/崩溃等)且需实际复现取日志时。用户已给日志路径只要分析→analyze-log;只要截图找字点击→avox-cli。
 ---
 
@@ -66,13 +66,13 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 
 **open/起播** → [`references/病族-open.md`](references/病族-open.md)
 - 容器头解析失败(EBML…) → 拿到非容器(假 mkv/改后缀 FLV) → 源端假片, §1.2 体检定真身
-- **点卡/启动续播「先闪无法打开该文件, 随后自己正常播」→ 首开喂给引擎的是非 URL(库内裸路径/身份键), 已定位(1003, 见 open 分册)**: webdav/http 源卡面传的是 `sourcePath`/`item.id`(裸库内路径), 而 `_openPickedFile` 只给 SMB(`smbEnginePlayUrl`)与云盘(CloudLinks)换真直链, **webdav 缺这一跳** → `engine.open('/sata1-…/x.avi')`; 引擎 `avformat_open_input failed error[-2]: No such file or directory` + `io error,code:100` → shim 哨兵 → Dart 即刻 failed(浮层) → 壳层 `_onEngineForRetry` 800ms 后 `_retryWithFreshUrl`→`_resolveRef` 拼真 URL 重开 → 正常播。**判据 = 日志 `io open result: success msg:` 打的是路径/哈希而非 `http://`**; SMB 源不中此族(有 `smbEnginePlayUrl`)。
-- **Mac VT 起播全帧 `-12909` 风暴(resync 循环无效, 黑屏只有声) → 多 slice 流被逐 slice 包直喂 VT; 已修 AU 重组+让道软解(1002 定谳, 见 open 分册)**
-- **ProRes(及一切白名单外编码)「打开有声无画面」→ 已修(1003 定谳并同日修完, 见 open 分册)**: 引擎编码映射是白名单 —— `FFHelper.cpp` 的 `ffVCodec()` 无 `AV_CODEC_ID_PRORES` 分支 → `VCodecId::none` → `VideoTrack::setTrackDesc` 打 `unsupported codec -1` 即 return(不建解码任务/不启渲染), 音频轨照常。**FFmpeg 侧已编入 prores 解码器, 纯引擎映射缺口**; 判据 = `add video track: invalid-…` + 整段无 `video track create`/`video decode create`。修法 = 补编码映射 + **新增平面式 4:2:2 10bit 像素格式** + 三腿呈现路径; **VK 腿与原生 D3D11 腿已实测出画**(`8f5a60b`→`888c156`), Metal/VT 腿待 mac 验证。方案见 [doc/plan/gpu/422-10bit解码与呈现方案.md](../../../../doc/plan/gpu/422-10bit解码与呈现方案.md)。
-- **wmv3 拒播/有声无画 → 已修 ee8bf7b(0927)**
+- 点卡/启动续播「先闪无法打开该文件, 随后自己正常播」→ 首开喂引擎的是非 URL(webdav/http 源缺换直链一跳, SMB 不中) → 已定位(1003, 修法见分册); 判据 = `io open result: success msg:` 打的是裸路径/哈希而非 `http://`
+- Mac VT 起播全帧 `-12909` 风暴(resync 循环无效, 黑屏只有声) → 多 slice 流被逐 slice 包直喂 VT; 已修 AU 重组+让道软解(1002)
+- ProRes(及一切白名单外编码)「打开有声无画面」→ 编码映射白名单缺口(有 `add video track: invalid-…` 而无 `video decode create`), 已修(1003); VK/D3D11 腿实测出画, Metal/VT 腿待 mac 验; 方案见 [doc/plan/gpu/422-10bit解码与呈现方案.md](../../../../doc/plan/gpu/422-10bit解码与呈现方案.md)
+- wmv3 拒播/有声无画 → 已修 ee8bf7b(0927)
 - open 后卡死(`partial file` 风暴 + misland EOF + `clock-leak guard seek(0)` 死循环) → **0926 定谳未修**
 - http 直链 open 卡 10 分钟+ = 迅雷逐 GOP 落盘 mp4 → 已修 39aa4aa
-- **open 慢≠败 / AVI 慢开两族(申报大小≠实际、ODML indx) → 已修 ce86db8+271db52+393f954(0927)**
+- open 慢≠败 / AVI 慢开两族(申报大小≠实际、ODML indx) → 已修 ce86db8+271db52+393f954(0927)
 - 开片即崩(avsubtitle_free 栈, PGS 字幕) → 已修 c08adb4
 - 网络源硬解首帧慢被 5s 看门狗误杀 → 已修 2c2444b
 
@@ -89,12 +89,12 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 - seek 后长冻(GOP≥20s IDR 稀疏) → **未修**(a02)
 
 **播放中** → [`references/病族-播放中.md`](references/病族-播放中.md)
-- **iOS 软解 AV1/10bit 横带撕裂+绿线(行错位斜切, 声正常不卡) → 已修(1004, Video.cpp 三处未提交, 真机验收, 见播放中分册)**: VK 车道 10bit 字节视图假设紧排, 解码帧行距带 padding(FFmpeg 宽度对齐 960→1024 样本 ⇒ dav1d stride 2048≠1920)时 bTightlyPacked 比例判定误放行零拷贝 ⇒ padded 帧被当紧排读; 判据 = `[vkin] fmt …rowPitch=2048`(>width*2 即 padding) + `10bit byte-view: words 960x864`(≠1.5×h=810 即中招); 1920 整对齐宽不病, VT 硬解(metal 腿)不病, mac 不病; 修后 words 960x810
-- **mac 切流彩色马赛克(偶发; 拖新片/切 HDR↔SDR 后) → 已修 a5af7c7(1003, 见播放中分册)**: 层格式漂移——宿主重挂平台视图把 CAMetalLayer 重置回 8bit(SDR) 而引擎 16F 直通管线不变 ⇒ 16F 绘进 8bit 目标 = Metal 未定义行为; 判据 = 日志 `layer format drift: target f16:0 pipeline f16:1`(画面红/蓝/绿色带+噪点且冻结; 帧级转储 env `AVOX_METAL_DUMP` 可实证"输入干净/输出颜色炸开且几何对齐"); 修后每帧自愈
-- **mac 切流/关闭闪退 → 已修 a5af7c7(1003, 见播放中分册)**: `.ips` 同栈定案(`renderCVPixelBuffer` 完成 block → `CVMetalTextureCache::bufferBackingNotInUse` 空指针); 修后日志 `texture cache retire deferred` = 命中原崩溃窗口且安全兑现, 排 crash 先查 `~/Library/Logs/DiagnosticReports/panvox-*.ips`
-- **黑屏有声 + `[FF][hevc] PPS id out of range` 风暴(手机/微信导出 HEVC 双 PPS 流) → 已修(1003, 见播放中分册)**: addConfigPacket 同类型替换丢掉另一 id 的 PPS(IDR 与非IDR切片各用 pps_id=0/1 缺一不可); 叠加水印 SEI 混入 parseConfigs 整段判失败 → SPS 544x960 vs 容器 540x960 误判 updateSize 硬解重置。判据: 参考解码器软/硬解全通 + 引擎拼的 hvcC 数组数少于文件真值 → 别往 avcodec/渲染层查
-- **iOS 真机「全黑不出画」与「出画一两秒后定格」→ 已修(1003, 修在 panvox 侧, 见播放中分册)**: 两病灶分开——全黑 = `CAMetalLayer.drawableSize` 恒 0×0(挂进 Flutter 平台视图后 UIKit 的 bounds×scale 自动同步失效, MoltenVK 建了链却无 drawable 可出), 修 = `layoutSubviews` 显式钉 `bounds×contentsScale`; 出画后定格 = 治「层内容不上屏」加的 `presentsWithTransaction=YES` 在**无 runloop 的渲染线程**上等不到 Core Animation 事务(Flutter UI 一静止就没人提交), 修 = 改回关。判据: 引擎侧 `tick present`/`rw-in` 全 30fps 稳态 + `mtl cb: status 4 err:none`(排除 GPU PageFault) + `vk-in record` 只 1 条(排除图重建) ⇒ **渲染在跑、只是没人提交事务上屏**; 同机 A/B 8/8(pwt.txt 切开关, 关=抓帧差异 769860 在更新 / 开=差异 0 定格)
-- **显示格时间戳截断族(VT 独有)**: A 每几秒跳 → 79abb44 / B 同类片仍每 2s 跳 → 已修 0927 / C seek 后持续抖 → 已修 0927
+- iOS 软解 AV1/10bit 横带撕裂+绿线(行错位斜切, 声正常不卡) → 已修(1004, Video.cpp 三处, 真机验收); 判据 = `[vkin] …rowPitch=2048`(>width*2 即 padding) + `10bit byte-view: words 960x864`; 修后 words 960x810
+- mac 切流彩色马赛克(偶发; 拖新片/切 HDR↔SDR 后) → 已修 a5af7c7(1003); 判据 = `layer format drift: target f16:0 pipeline f16:1`
+- mac 切流/关闭闪退 → 已修 a5af7c7(1003); 排 crash 先查 `~/Library/Logs/DiagnosticReports/panvox-*.ips`, 修后 `texture cache retire deferred` = 命中过原崩溃窗口且安全兑现
+- 黑屏有声 + `[FF][hevc] PPS id out of range` 风暴(手机/微信导出 HEVC 双 PPS 流) → 已修(1003); 参考解码器软/硬解全通 + 引擎拼的 hvcC 数组数少于文件真值 → 别往 avcodec/渲染层查
+- iOS 真机「全黑不出画」与「出画一两秒后定格」→ 两个不同病灶别混判, 已修(1003, panvox 侧); 同机 A/B 用 `pwt.txt` 切开关 8/8 干净切分
+- 显示格时间戳截断族(VT 独有): A 每几秒跳 → 79abb44 / B 同类片仍每 2s 跳 → 已修 0927 / C seek 后持续抖 → 已修 0927
 - 后向 seek 后画面脱离音轨 → 已修 24ff54d(全平台)
 - 全片零规律散点跳画 + `Invalid NAL unit size` 风暴 → 已修 e409b32
 - 播放时间来回跳 + 无限 buffering(音轨锚文件头) → 已修 a0107be
@@ -102,30 +102,27 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 - 花屏伴 rtp 丢包 → 网络; 从 P 起解不自愈 → 落点缺参考
 - `[FF][mlp] Stream parameters not seen` 刷屏 + 位置 18 倍慢放 → 已修 96e205b+f58bc94
 - 全片每秒周期跳帧(TrueHD 碎片轨) → 已修 c3f92b0
-- **多声道 AAC(5.1+)整轨静音(音轨在、画面正常、无 buffering, 日志缺 `setDesc` 行) → 已修(fdk-aac 输出缓冲定长 10240B 不足 6ch×1024, 每帧 `8204` 风暴; 见播放中分册)**: fdk 初始化成功故不触发 openFailed 回退链而 FFmpeg 车道永不接管; 首帧恒有一条 `error:5` 是无害噪声勿与风暴混判
-- **Android TrueHD/DTS-HD(s32 位型)整轨满耳沙沙噪声(画面正常) + `audio speed resample failed … outsample:-26705` 每帧风暴 → 已修 6d600f5(1005, 见播放中分册)**: Java 侧 32bit 恒映射 FLOAT, s32 整型被当浮点读=全轨噪声; 修后日志有 `audio track device desc:flt-…` 且风暴归零; **格式修后仍闻杂音+全绿日志 → 二层泵(getQueueMS 硬编码 80 vs 7.1 深缓冲 160ms)已修 ddbb88f, 判泵挂起看 `audio sync resample out:` 限频行**; 验装机 APK 内引擎别信 jniLibs mtime(兄弟会话 worktree 重package会顶掉)
-- **顶部细条彩带闪烁 → 片源病, 非引擎(换源才能根治)**
-- **DV Profile 5 颜色与 VLC/系统播放器不一致(自己品红/紫、别家青绿) → 非引擎问题: P5 基础层=IPTPQc2 且容器无色彩标签, 不做 DV 反变换的播放器按 BT.709 直出必然偏色; 自己日志 `[dovi] dispatch valid=1` 即正确(判据/复现配方见分册)**; 同日复核实测另发现的 P5 偏暗欠饱和(DV 输出未走 tone map)**已修(1002, 四腿 `doviEnable==1` 时按 PQ 消费输出)**: 修后 `ubo transfer:0` 属正常(打印的是源标签), 验收数字见分册
-- **DV 片之后播非 DV 片发红/发粉(DV 整形状态跨 open 残留; 拖窗跨 HDR/SDR 屏也会触发) → 已修(1002, 开流复位空 DoviMeta; 见播放中分册)**: 非 DV 流不派发 DV 元数据故旧状态常驻, 判据 = 非 DV 开流日志应见 `setDoviMeta valid=0`
-- **无色彩标签的 HDR 片不出 HDR 徽章 + 画面发灰(Netflix Open Content「P3PQ」家族) → 非引擎问题: 文件无 primaries/transfer/matrix 也无 SEI, 引擎只能记 gamma/bt709, 徽章按源 trc 出故不出; 不做自动猜测(会误伤暗调 SDR), 需要时加手动「按 HDR 播」override(判据见分册)**
-- **报「无声」先查容器有没有音轨(Netflix Open Content 测试片族整族无音轨) → 非播放器病(1002): 判据 = 引擎日志 `trackReady no audio track` + media_info 档案 `"a": []`; 反证用带 TrueHD 的片跑通全链(见分册)**
-- **报「没画面」先量片头亮度+首个 GOP(Netflix 高帧率片: 开头黑场淡入 + 首 GOP 10.24s → 前 10s 内拖条回落 0:00 黑帧, `seek landed:0 target:8000`) → 非引擎问题(1002, 判据/复现见分册)**
-- **点播放/拖进度条后整 UI 冻死(低 CPU+无 .ips+`sample` 全采样锁同一栈) → 锁序反转死锁, Apple 专属(macOS/iOS) → 已修 466a928**: IOSAudioRender 同把 `mtx` 护缓冲+CoreAudio 句柄, onClose/pause/setVolume 持锁调 AudioOutputUnitStop/Start/SetParameter 等 HAL 锁, 实时 `renderCallback` 持 HAL 锁抢 `mtx` → AB-BA; `renderCallback` 改 `try_lock` + CoreAudio 调用全移锁外。判据/二进制验收见本文「锁序反转死锁」条。
-- **报「说话时没字幕」先分两族定归属(1002)**: ①**源轨段内缺词** —— 用 ffmpeg 抽该轨全量对表(`ffmpeg -i <url> -map 0:s:0 -f srt out.srt`, 按 60s 桶数 cue 找洞), 洞内音频能量与对白密集区同级(ebur128 I 差 <1 LU)即坐实片源缺词, 换源/AI 字幕才能治; WEB-DL 双语轨同一时间源会同洞。②**app 选轨链没跑**(重开同片族, 面板事后能列轨=轨快照已回但 _reloadSubtitles 先跑了读到 count=0 且无人补跑) → 已修 dacf754+57845bf(1002, 部署态核对 BUILD_INFO ≥ 10-02 13:07)。判据: 引擎日志有无 `cmdSetSubtitleTrack … selected:N` 行。⚠️ 复现注意: `PANVOX_AUTOPLAY` 走 playback_probe_page, **不跑字幕选轨链**(只认 `PANVOX_AUTOPLAY_SRT` 外挂路), 内封轨复现要么手点 UI 要么看正常路径日志; l2_panvox 字幕像素用例的截图法停在 A-4 纹理时代(tex 恒 0/整帧黑), FAIL 不构成引擎失效证据, 待重写采集腿
-- **iOS 全形态字幕不出(内封 PGS/ASS/SRT、外挂、AI 产物全无画面, 枚举/选轨全正常) → 已修(1005, 两仓未提交)**: iOS 构建原排除 avox_ass 插件 → libass overlay 通道缺席静默降级; 已按 AI 三件同款静态并档(avox src/CMakeLists + ModuleMgr 保活表 + deploy_ios_runtime 并 libass.a + podspec 补 CoreText), 真机 PGS 上屏验收; 判据/接线/坑见播放中分册
-- **iOS 汉字整行空心方框(tofu, 英文数字正常, 用户报「乱码」) → 已修(1005, avox 未提交; 真机验收)**: iOS libass 走 CoreText, 缺字形回退指向私有框架路径 `FontServices.framework/CorePrivate/PingFangUI.ttc`, app 沙箱打不开(逐字 `Error opening font … 0`) ⇒ 每汉字落 Helvetica .notdef 方框; 修 = 引擎 iOS 建字幕通道前喂 app 内置 CJK 字体(avox.bundle/fonts + simhei.ttf 作 defaultFont)。判据 = console `fontselect: (…, 700, 0) -> <Latin 字体>` + `Glyph 0x… not found`/`Error opening font …PingFangUI.ttc` 风暴三连(病), 修后 `-> SimHei, 0, SimHei` 且归零; **方框数=字符数(字体层)≠ 字节数(解码层, 见 mac tofu 条)**
-- **切音轨后音画不同步(音频前跳数秒)+ 字幕跟着乱闪 → 已修(1005, avox 未提交; 真机验收)**: 未选中音轨的包在播放期被**丢弃**(onPacket 门控), 切轨后新轨只能从**解复用读位**起收 = 领先播放位约一个缓冲深度(该片实测 4.7s, srcPos 16391 vs clock 11740) ⇒ 音频整段前跳、音画永久错位, 音频钟还会把主时钟拽跳(字幕按 `clock.clock()` 选 cue ⇒ 闪 2~3s)。修 = `cmdSetAudioTrack` 末尾按当前渲染位置重定位 `seek(renderTime)`(可 seek 源 + normalState, 同 setSpeed 撤 I 帧门闸先例)。判据: 病 = `audio track switched to:N` 后紧跟 `av not align ioDiff:~6s renderDiff:~4.6s` + `sync change,now sync:no`; 修后 = `audio switch re-position to render time:<ms>` 且无 align 行, 音视频轴对齐(<20ms)。代价 = 切轨瞬间 ~0.9s 冻结(重解码)+ 当前 cue 文本到下一 cue 才回(与普通拖进度条同一表现)。**无触摸复现(真机)**: `Documents/panvox/audiotrack_probe.txt` 第1行=音轨序号 第2行=延迟秒(见 SKILL §2 iOS 文件触发)
-- **字幕整行空心方框(tofu, 日中全灭、英文数字正常, mac) → 双层同症状, 均已修 d5a603b+6edc3c3(1002)**: ①字体层=FontCache 兜底链在新 macOS 命中 Helvetica(无 CJK); ②解码层=`utf8TWstring` 非 Win 分支有符号 char 误判→**每 UTF-8 字节一个框**(CJK 每字 3 框, 方框数=字节数即这层, Windows/Android 无感)。判据 = -Log `Loaded default font: …Helvetica.ttc`(病)/`Loaded bundled font: …simhei.ttf`(修后); **方框=字体/解码病, 错字/U+FFFD 菱形=编码病别混**; mac 外挂 srt 验收走 panvox 真实链路, subtitletexttest 在 mac 不渲染勿用(详见分册)
+- 多声道 AAC(5.1+)整轨静音(音轨在、画面正常、无 buffering, 日志缺 `setDesc` 行) → 已修(fdk-aac 输出缓冲定长 10240B 不足, 每帧 `8204` 风暴); 首帧恒一条 `error:5` 是无害噪声勿与风暴混判
+- Android TrueHD/DTS-HD(s32 位型)整轨满耳沙沙噪声 + `audio speed resample failed … outsample:-26705` 每帧风暴 → 已修 6d600f5(1005), 修后日志有 `audio track device desc:flt-…`; 仍闻杂音+全绿日志 → 二层泵(ddbb88f, 看 `audio sync resample out:` 限频行)/三层跨片转换闸残留(c57a6bd, 换片后 `convert:0` 才是干净态); 验装机 APK 内引擎别信 jniLibs mtime
+- 顶部细条彩带闪烁 → 片源病, 非引擎(换源才能根治)
+- DV Profile 5 颜色与 VLC/系统播放器不一致(自己品红/紫、别家青绿) → 非引擎: P5 基础层无色彩标签, 不做 DV 反变换必偏色; `[dovi] dispatch valid=1` 即正确; 偏暗欠饱和已修(1002, 四腿按 PQ 消费; 修后 `ubo transfer:0` 属正常)
+- DV 片之后播非 DV 片发红/发粉(状态跨 open 残留; 拖窗跨 HDR/SDR 屏也触发) → 已修(1002, 开流复位空 DoviMeta); 判据 = 非 DV 开流日志应见 `setDoviMeta valid=0`
+- 无色彩标签的 HDR 片不出 HDR 徽章 + 画面发灰(Netflix Open Content「P3PQ」家族) → 非引擎: 文件无 primaries/transfer/matrix 也无 SEI, 不做自动猜测(需要时加手动「按 HDR 播」override)
+- 报「无声」先查容器有没有音轨(Netflix Open Content 测试片族整族无音轨) → 非播放器病(1002); 判据 = `trackReady no audio track` + media_info `"a": []`
+- 报「没画面」先量片头亮度+首个 GOP(Netflix 高帧率族: 黑场淡入 + 首 GOP 10.24s, 前 10s 拖动落 0:00 黑帧) → 非引擎问题(1002)
+- 点播放/拖进度条后整 UI 冻死(低 CPU + 无 .ips + `sample` 全采样锁同一栈) → 锁序反转死锁, Apple 专属(macOS/iOS) → 已修 466a928
+- 报「说话时没字幕」先分两族: ①源轨段内缺词(ffmpeg 抽轨按 60s 桶找洞, ebur128 对能量)→换源/AI 字幕才能治; ②app 选轨链没跑 → 已修 dacf754+57845bf(1002); 判据 = 有无 `cmdSetSubtitleTrack … selected:N` 行; ⚠️ `PANVOX_AUTOPLAY` 不跑选轨链
+- iOS 全形态字幕不出(内封 PGS/ASS/SRT、外挂、AI 产物全无画面, 枚举/选轨全正常) → 已修(1005, iOS 构建排除 avox_ass 插件致 libass 通道缺席静默降级); 判据 = console `subtitle view: no libass plugin, track off`
+- iOS 汉字整行空心方框(tofu, 英文数字正常, 用户报「乱码」) → 已修(1005); 判据 = `fontselect: (…, 700, 0) -> <Latin 字体>` + `Error opening font …PingFangUI.ttc` 风暴; 修后 `-> SimHei`; 方框数=字符数(字体层)≠字节数(解码层, 见 mac tofu 条)
+- 切音轨后音画不同步(音频前跳数秒)+ 字幕跟着乱闪 → 已修(1005, 切轨后按渲染位置重定位); 判据 = `audio track switched to:N` 后紧跟 `av not align ioDiff:~6s`; 修后 = `audio switch re-position to render time:<ms>` 且无 align 行; 无触摸真机复现走 §2 `audiotrack_probe.txt`
+- 字幕整行空心方框(tofu, 日中全灭、英文数字正常, mac) → 双层同症状, 均已修 d5a603b+6edc3c3(1002); 判据 = -Log `Loaded default font: …Helvetica.ttc`(病)/`Loaded bundled font: …simhei.ttf`(修后); 方框=字体/解码病, 错字/U+FFFD 菱形=编码病别混
 
-**App 内模型下载「满进度重来」(AI 字幕/画质模型的下载卡)**: 进度反复跑满→清零重下 = 清单 sha256 与发布 asset 失配 → 下载器每源**完整下载后**才 hashMismatch 换源重下(无续传、当时零日志)。102 定谳: stt-sense-voice.zip 4/24 重传后字节变(实测 11152a86)≠三份清单烤的 01cd4398, 主源组三条源全废靠 HF 备用组落地; 修=三份清单同哈希(avox a287502 + panvox 173a719)+ 失败路径落 `model-fetch:` 日志行(-Log 可见)。诊断铁证 = 真机 `curl -sL` 拉 zip 实算 sha 对清单; Windows 不暴露此族因模型由部署配方预铺, 不走 app 内下载器。
-
-**mac 插件腿 dlopen 失败(「STT plugin unavailable」/ 字幕降级 no-op 等)**: mac 引擎静态链入 shim, **只拉被引用的归档成员** → 插件 dlopen(RTLD_NOW 全量解析)要的引擎符号若 shim 自身无引用就不在 dylib 里(10/2 定谳: AudioTts::setSpeaker)。修=deploy_macos_runtime.sh 链接行按部署插件 `nm -u | grep -o __ZN4avox*` 逐 `-u` 钉链(f7a1ee0); 诊断三板斧: ①裸 ctypes dlopen 插件看首个缺符号 ②引擎 RTLD_GLOBAL 后再 dlopen(模拟 app) ③nm -gU shim 对缺符号。
-
-**mac 插件自包含纪律(第二插件案, 10/2)**: mac 插件是 `-undefined dynamic_lookup` 构建, 其 UND 在 RTLD_LOCAL dlopen 的平面查找下**看不到自己 LC_LOAD 的依赖 dylib** → 插件依赖的第三方符号必须静态吞入插件内(libsmb2/SSL 系 = WebRTC 归档的 BoringSSL + 系统 Security.framework; 注意 darwin 预编译件按 BoringSSL 编, 这些名字在 BoringSSL 是真函数, 别拿 OpenSSL 3 静态库去接——3.x 里它们是宏, 符号不存在)。引擎 rebuild 会连带重链插件, 依赖面可能静默变化, 插件加载失败先 `otool -L` + `nm -u` 重验。
-
-**iOS「AI 字幕」按下即败 `dlsym(RTLD_DEFAULT, pvx_aisub_start): symbol not found` → iOS shim TU 漏挂 aisub, 已修(10/5, panvox 77b600f)**: 三端管线在 `pvx_aisub.inc`(panvox_native.cpp 与 mac TU 已挂), iOS TU 只含 apple_common 漏了它 → 包内无符号; 引擎腿本身 10/2 已静态并档(sherpa/onnx/translation, 启动日志 `avox_sherpa: regedit module success` 即在)。修=panvox_native_ios.cpp 补 include + deploy_ios_runtime.sh 补 **NO_AGENT 自动闸**(nm libavox.a 缺 createAgentHost 即 -DPANVOX_NO_AGENT——iOS install 头文件在/库符号不在的失配会炸链接, mac 脚本同款)。限界: AVOX_ENABLE_AGENT=OFF 的构建翻译段编译期剔除, 识别照常出原语言 SRT(iOS 与 mac 同款缺席); 模型不打包, App 内下载落 `<AppSupport>/models`(启动 pvx_set_models_root 注入)。判据 = `nm -gU Runner.app/Runner | grep pvx_aisub`; `PANVOX_AISUB_E2E` 探针在 iOS 不可达(Dart 读不到 env, 无头验证只能桌面)。
-
-**AI 字幕报「打开失败: open timeout/failed」先定引擎侧还是喂入侧(10/5 iOS 真机定谳)**: 该文案出自 shim `pvx_aisub.inc` open 段(recorder open 受理后 60s 未达 recording 或到 failed), STT 模型缺报的是另一文案(`STT model files missing`/-3)。**引擎侧无病对照法(推荐, 不动手机)**: mac 装 build install 树链一个 30 行 C 探针(createRecorder(true)+setVideoCodec(none)+`io.http.persistent=1`+open(直链, tmp.mp4)+等 recording; 头 `src/avox/AvoxMuxer.h`, 库 libavox/avformat/avcodec/avutil/swresample/fdk-aac/freetype/volk+mk_api+系统框架, dav1d 缺符号用 `-Wl,-undefined,dynamic_lookup` 悬空, rpath 指 install 树)——mac 572ms RECORDING 即证引擎×直链通。**喂入侧高发族=合成身份键放行(已修 panvox df9a1f4)**: 「继续观看」入口 `watch_history.refFor` 曾漏接 playable ⇒ FileRef.playable 缺省=path=`jf://itemId`(§六301 合成键), `smbEnginePlayUrlForRef` 原样放行 ⇒ 引擎 avformat 不认 jf 协议必败; 墙卡/详情页入口(mock.dart fileRef playable=id=直链)不病。判据 = 手机 history.json 条目 `p` 以 `jf://` 开头且用户从继续观看进。修 = refFor 接 playable + `smbEnginePlayUrlForSource` 加 jf:// 回解分支(§六312 streamUrlStatic 一份口径)。同族前科: WebDAV 身份路径放行(10/2 修)——**「身份键/裸路径直接喂引擎」这一族已三次**, 新入口接引擎直读一律过 `smbEnginePlayUrlForSource` 并先核路径形态。iOS 真机取证走 autoplay 第 3 行 `aisub` 版式(见 §2)。
+**AI 字幕/插件/模型装配** → [`references/病族-ai字幕与插件.md`](references/病族-ai字幕与插件.md)
+- App 内模型下载「满进度重来」(AI 字幕/画质模型反复重下) → 清单 sha256 与发布 asset 失配(完整下载后才 hashMismatch 换源), 已修三清单同哈希(avox a287502 + panvox 173a719); 铁证 = 真机 `curl -sL` 拉 zip 实算 sha 对清单
+- mac 插件腿 dlopen 失败(「STT plugin unavailable」/ 字幕降级 no-op) → mac 静态链只拉被引用归档成员, 部署脚本按符号 `-u` 钉链(f7a1ee0); 诊断三板斧见分册
+- mac 插件自包含纪律 → `-undefined dynamic_lookup` 插件的第三方依赖必须静态吞入(libsmb2/SSL 系 = WebRTC 的 BoringSSL, 别拿 OpenSSL 3 接——3.x 里是宏); 引擎 rebuild 后先 `otool -L` + `nm -u` 重验
+- iOS「AI 字幕」按下即败 `dlsym(RTLD_DEFAULT, pvx_aisub_start): symbol not found` → iOS shim TU 漏挂 aisub, 已修(panvox 77b600f); 判据 = `nm -gU Runner.app/Runner | grep pvx_aisub`
+- AI 字幕报「打开失败: open timeout/failed」→ 先分引擎侧 vs 喂入侧: 引擎侧无病用 mac 30 行探针对照法(572ms RECORDING = 引擎×直链通); 喂入侧高发族 = 「身份键/裸路径直接喂引擎」(已三前科: webdav 10/2、jf:// 合成键放行已修 df9a1f4); 判据 = 手机 history.json 条目 `p` 以 `jf://` 开头且从继续观看进
 
 **网络环境(本机代理/TUN, 非引擎病)** —— 修法在引擎外, 故全文留本文常驻
 - IPTV/m3u 列表与国内流普遍慢、超时、周期 buffering, 而 NAS/局域网源全正常 → 先查本机 TUN 接管: `route print` 见 Meta Tunnel/Wintun + `tasklist` 见 verge-mihomo(Clash Verge)= 全机流量过代理。**对照法: `curl` 默认路由 vs `curl --interface <物理网卡IP>` 直连**(0923 实锤 CCTV1 列表 TUN 19s→直连 1s; 0926 复测首响 3.2s vs 1.2s); 修法 = Clash 给国内直播域名加 DIRECT 规则或关 TUN, 不动引擎。**绑定源地址法在部分环境只是绕路成功, 直连腿 000 时先核对绑定语义再下结论**。

@@ -2,7 +2,7 @@
 
 > 状态: 有效 · 上次核对: 2026-10-03 · 权威源: -
 > panvox-play skill 的案卷分册: SKILL.md §4 只放一行式索引, 签名对上后再来本文读根因/判据/验收。
-> 配套: `../SKILL.md`(流程与日志判读) · `病族-seek.md` · `病族-播放中.md`
+> 配套: `../SKILL.md`(流程与日志判读) · `病族-seek.md` · `病族-播放中.md` · `病族-ai字幕与插件.md`
 
 - 容器头解析失败(EBML header parsing failed 等) → 拿到非容器: 假 mkv(.torrent)/改后缀 FLV → 源端假片, §1.2 体检定真身。
 - **点卡/启动续播「先弹无法打开该文件, 随后自己正常播」→ 首开喂进引擎的是非 URL, 已定位(2026-10-03, iOS 真机)**: 现象是**闪一下错误浮层就进正片**, 每张卡都中(不是某部片的事)。根因链: 墙卡/最近卡传的是 `MediaItem.sourcePath`(`local_library` 的库内路径, 如 `/sata1-…/迅雷下载/团鬼/団鬼六 繩責.avi`)或 `item.id`(history 身份键哈希), 而 `AppShell._openPickedFile` 只对 **SMB**(`smbEnginePlayUrl`)和**云盘**(`CloudLinks`)把非 URL 换成真直链, **webdav/http 源没有这一跳** → `engine.open(裸路径)`; 引擎侧 `IOParseFF.cpp:481 reopenInput avformat_open_input failed error[-2]: No such file or directory` + `MediaPlayer.cpp:332 onError av source error:other msg:open input failed` + `io error,code:100`; shim 的 `onIoError` 只在开相转发 → Dart `_onEngineIoError` **即刻 failed(不等 15s 看门狗)** → 播放页全遮挡浮层; 800ms 后壳层 `_onEngineForRetry` → `_retryWithFreshUrl` → `_resolveRef`(webdav lister `resolvePlayable`) 拼出 `http://user:pass@host:port/…` 重开 → 正常播。
