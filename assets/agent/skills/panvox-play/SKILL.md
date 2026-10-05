@@ -101,6 +101,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 - `[FF][mlp] Stream parameters not seen` 刷屏 + 位置 18 倍慢放 → 已修 96e205b+f58bc94
 - 全片每秒周期跳帧(TrueHD 碎片轨) → 已修 c3f92b0
 - **多声道 AAC(5.1+)整轨静音(音轨在、画面正常、无 buffering, 日志缺 `setDesc` 行) → 已修(fdk-aac 输出缓冲定长 10240B 不足 6ch×1024, 每帧 `8204` 风暴; 见播放中分册)**: fdk 初始化成功故不触发 openFailed 回退链而 FFmpeg 车道永不接管; 首帧恒有一条 `error:5` 是无害噪声勿与风暴混判
+- **Android TrueHD/DTS-HD(s32 位型)整轨满耳沙沙噪声(画面正常) + `audio speed resample failed … outsample:-26705` 每帧风暴 → 已修 6d600f5(1005, 见播放中分册)**: Java 侧 32bit 恒映射 FLOAT, s32 整型被当浮点读=全轨噪声; 修后日志有 `audio track device desc:flt-…` 且风暴归零; 验装机 APK 内引擎别信 jniLibs mtime(兄弟会话 worktree 重package会顶掉)
 - **顶部细条彩带闪烁 → 片源病, 非引擎(换源才能根治)**
 - **DV Profile 5 颜色与 VLC/系统播放器不一致(自己品红/紫、别家青绿) → 非引擎问题: P5 基础层=IPTPQc2 且容器无色彩标签, 不做 DV 反变换的播放器按 BT.709 直出必然偏色; 自己日志 `[dovi] dispatch valid=1` 即正确(判据/复现配方见分册)**; 同日复核实测另发现的 P5 偏暗欠饱和(DV 输出未走 tone map)**已修(1002, 四腿 `doviEnable==1` 时按 PQ 消费输出)**: 修后 `ubo transfer:0` 属正常(打印的是源标签), 验收数字见分册
 - **DV 片之后播非 DV 片发红/发粉(DV 整形状态跨 open 残留; 拖窗跨 HDR/SDR 屏也会触发) → 已修(1002, 开流复位空 DoviMeta; 见播放中分册)**: 非 DV 流不派发 DV 元数据故旧状态常驻, 判据 = 非 DV 开流日志应见 `setDoviMeta valid=0`
