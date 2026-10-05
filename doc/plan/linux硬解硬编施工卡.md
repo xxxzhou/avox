@@ -122,9 +122,44 @@
 
 ## 变更日志（每轮追加）
 
-- **2026-10-05 05:05 看门狗巡检轮**: 全绿无待办——仓/远端同步 3ad2eb5, WSL 树 c6ca9bd=
-  代码 HEAD（仅差纯文档提交）, 清掉仓根杂散 `~ffmpeg-build-1005.log`（04:13 被引号弄坏的
-  启动命令残留）。**后续空闲轮次（06:00-08:00）无需重复巡检, 直接空转, 08:30 轮写终态**。
+- **2026-10-05 05:05-08:17 看门狗轮（9/9 跑满, 自动化完结）**: 05:05 巡检全绿+清杂散日志+
+  空闲指引; 05:09-07:47 六轮按指引空转; 08:17 收官轮提前写终态（下一轮不存在）。
+
+## 终态（2026-10-05 08:17 收官）
+
+**本夜成果**（提交链 c55fd23 → 3ad2eb5 + 文档批, 全部已推送, 远端=3ad2eb5+docs）:
+
+| 项 | 内容 | 验证 |
+|---|---|---|
+| P0-2 | FFDecoder 收帧失败(receive侧非EAGAIN)立即上浮 openFailed, 不吃5s看门狗 | Win ctest 2/2 |
+| P0-1 | FFVkDecoder Linux 注册 vp9/av1（hwconfig 探测）+ AVTrack 选型分支 | 同上 |
+| P1-a | FFmpeg Linux 白名单重编+产物回填: h264/hevc_vaapi 编码器 + vp9/av1_vaapi hwaccel + **CONFIG_LIBDRM=1**（DRM_PRIME 解锁） | libavcodec 含 h264_vaapi ✓ / libavutil.pc 含 -ldrm ✓ |
+| P1-b | **FFVaapiEncoder** 四处接线（注册/选型/preset[有意免]/encode(YUVFrame)上载）7a4aed0+pts修 5f65893 | Win 构建+ctest 绿 |
+| 顺带 | AudioRender.hpp AudioLeveler incomplete type 既有断裂修复 c6ca9bd | Win 强制重编绿 |
+| P1-c | Linux 构建+ctest+冒烟 | 见下 |
+
+**验证总账**: Windows 构建 RC=0 + ctest 2/2 + 回归矩阵 **85过/3挂(dav既有家族)/37跳 零新增回归**;
+Linux 构建 RC=0 + ctest **111/112**（唯挂 test_videobuffer.cpp:337 P010 打包断言 ×15 = 既有
+gcc13 差异, 与本夜零交集, 待另案）; 冒烟 `ready→playing` 出帧, 无设备降级链逐级实测
+（FFVA onVaild 拒→选型链→FFVk→lavapipe 无 video queue→组内降软解→正常播）,
+`ffmpeg vaapi video encoder init` 注册确认。
+
+**遗留清单（按优先序）**:
+1. **真机验收**（阻塞: 无真 Linux 机, Intel 核显+iHD 优先）: rec-transcode-h264/h265 出片+
+   码率参数对照 Windows h264_mf; vp9/av1 Vulkan Video 硬解 hw=1; FFVADecoder 真机出帧。
+2. **D5 拍板**: rec.hard.encode=false 时 Linux 无视频软编兜底（白名单物理无 libx264）,
+   现状回退到 regFFCodec 自动注册的无 hw_device_ctx 通用 FFVEncoder 必 openFailed。
+3. **D1-D4 拍板**（方案 §4）: 车道优先序(建议维持 VAAPI 主路)/P2-P3 排期/nvenc/agpl 兜底。
+4. **另案小账**: Linux P010 打包测试 15 断言失败(gcc13); Linux AV1 软解缺 dav1d（vulkan 腿
+   失败即整体不可播, 与现状一致）; Muxer.cpp:63 非 h264/h265 转码选型落 h264 名; FFVEncoder
+   "not find decoder" 日志文案错字; FFVEncoder/FFDx11Encoder encode 循环 AVPacket 泄漏
+   （本夜新码已用 av_packet_free, 基类未动）。
+5. **P2 dmabuf 零拷贝**（方案 §3, 待 D2 排期）: 前置已全部就绪（libdrm 产物+载荷契约+
+   设备一致性设计+同步首版 vaSyncSurface 方案), 实现时照方案 §2.1 要点1-8 与施工卡
+   「环境事实」的 WSL 配方执行。
+
+**夜班机制复盘**: 看门狗 automation-ea887959（*/30, maxRuns=9）跑满自动完结, 无需手动删;
+主刀标记双开守卫有效（主会话持续工作期看门狗只读巡检未抢活）。
 
 - **2026-10-05 03:34-04:10 第一轮（主会话）**: P0 两项落地并验证（FFDecoder recvFailStreak 上浮;
   FFVk vp9/av1 Linux 车道+hwaccel 探测; AVTrack 宏/选型），Windows 构建 RC=0 + ctest 2/2 绿;
