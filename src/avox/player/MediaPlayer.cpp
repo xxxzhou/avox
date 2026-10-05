@@ -661,6 +661,14 @@ void MediaPlayer::cmdSetAudioTrack(int32_t index) {
   }
   mountAudioTrack(index);
   LOGFLF(LogLevel::info, "audio track switched to:", index);
+  // 切轨时间轴重对: 未选中轨的包在播放期被丢弃(onPacket 门控), 新轨只能从解复用
+  // 读位(领先播放位约一个缓冲深度)起收 ⇒ 音频前跳数秒、音画错位且音频钟拽跳主时钟。
+  // 与倍速撤 I 帧门闸同法: 可 seek 源重定位到渲染位置, 两轨从同一起点重读。
+  if (normalState() && renderTime > 0 && ioSource &&
+      ioSource->seekType() != SeekType::none) {
+    LOGFLF(LogLevel::info, "audio switch re-position to render time:", renderTime);
+    seek(renderTime);
+  }
 }
 
 // 挂载并启动局部轨 index 的音轨: setTrackDesc + aconfig 缓存补投 + start。

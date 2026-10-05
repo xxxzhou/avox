@@ -7,6 +7,11 @@
 #include "../module/AvoxManager.hpp"
 #include "../module/LogHelper.hpp"
 #include "../video/WindowRender.hpp"
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+
+#include "avox_apple/IOSHelper.h"
+#endif
 
 namespace avox {
 
@@ -365,6 +370,21 @@ bool SubtitleView::openTrackChannel() {
     LOGFLF(LogLevel::info, "subtitle view: no libass plugin, track off");
     return false;
   }
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+  // iOS: CoreText 缺字形回退落在私有框架路径(PingFangUI.ttc)沙箱打不开 ⇒ 汉字
+  // 全落 .notdef 方框; 改喂 app 内置 CJK 字体(目录供家族匹配, 路径作末位兜底)
+  if (const char* bundledFont = getFontPath("simhei.ttf")) {
+    const std::string fontPath(bundledFont);
+    const size_t slash = fontPath.find_last_of('/');
+    if (slash != std::string::npos) {
+      created->setFontsDir(fontPath.substr(0, slash).c_str());
+    }
+    created->setDefaultFont(fontPath.c_str(), "SimHei");
+    LOGFLF(LogLevel::info, "subtitle view: ios default font:", fontPath.c_str());
+  } else {
+    LOGFLF(LogLevel::warn, "subtitle view: ios bundled font missing");
+  }
+#endif
   if (!created->init(canvasW, canvasH)) {
     delete created;
     return false;
