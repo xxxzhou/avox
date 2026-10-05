@@ -209,17 +209,21 @@ void ARenderTask::onRunTask() {
         // 音频不是主时钟,同步外部时钟检测需要调整数据量
         if (wanted_bytes != trackContext->getFrameSize()) {
           AudioDesc changeDesc = renderDesc;
-          changeDesc.sampleRate =
-              renderDesc.sampleRate * wanted_bytes / inData.size;
+          // 大帧格式(如8ch s32=61440B)下32位乘法溢出成负采样率, swr init必败
+          int64_t outRate =
+              (int64_t)renderDesc.sampleRate * wanted_bytes / inData.size;
+          if (wanted_bytes > 0 && outRate > 0) {
+            changeDesc.sampleRate = (int32_t)outRate;
 #ifdef AVOX_ENABLE_FFMPEG
-          syncResmaple->init(renderDesc, changeDesc);
-          int ret = syncResmaple->resample(inData);
-          if (ret <= 0) {
-            LOGFLF(LogLevel::warn, "audio speed resample failed, ret:", ret,
-                   " insample:", renderDesc.sampleRate,
-                   " outsample:", changeDesc.sampleRate);
-          }
+            syncResmaple->init(renderDesc, changeDesc);
+            int ret = syncResmaple->resample(inData);
+            if (ret <= 0) {
+              LOGFLF(LogLevel::warn, "audio speed resample failed, ret:", ret,
+                     " insample:", renderDesc.sampleRate,
+                     " outsample:", changeDesc.sampleRate);
+            }
 #endif
+          }
         }
       }
       // 给渲染器inData

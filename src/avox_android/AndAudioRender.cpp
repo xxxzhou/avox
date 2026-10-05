@@ -60,19 +60,29 @@ void AndAudioRender::onInit() {
     LOGFLF(LogLevel::warn, "not find audio track class");
     return;
   }
-  int32_t bits = audioFormatSize(desc.format) * 8;
-  jobject track = createTrack(env, desc.sampleRate, desc.channels, bits);
+  AudioDesc trackDesc = desc;
 #ifdef AVOX_ENABLE_FFMPEG
-  if (!track && desc.channels > 2) {
+  // Java 侧 32bit 恒映射 FLOAT, s32 整型位型被当浮点读=全轨噪声, 引擎侧转 flt
+  if (trackDesc.format == AudioFormat::AVOX_AUDIO_S32) {
+    trackDesc.format = AudioFormat::AVOX_AUDIO_FLT;
+  }
+#endif
+  int32_t bits = audioFormatSize(trackDesc.format) * 8;
+  jobject track =
+      createTrack(env, trackDesc.sampleRate, trackDesc.channels, bits);
+#ifdef AVOX_ENABLE_FFMPEG
+  if (!track && trackDesc.channels > 2) {
     // 多声道轨建不出来时不降级会无人消费,帧队列涨满堵死整条播放管线
-    AudioDesc devDesc = desc;
-    devDesc.channels = 2;
-    if (devResample.init(desc, devDesc)) {
-      track = createTrack(env, devDesc.sampleRate, 2, bits);
-      devConvert = (track != nullptr);
-      if (devConvert) {
-        LOGFLF(LogLevel::info, "audio track downmix to stereo");
-      }
+    trackDesc.channels = 2;
+    track = createTrack(env, trackDesc.sampleRate, 2, bits);
+  }
+  if (track && !(trackDesc == desc)) {
+    if (devResample.init(desc, trackDesc)) {
+      devConvert = true;
+      LOGFLF(LogLevel::info, "audio track device desc:", trackDesc);
+    } else {
+      env->DeleteGlobalRef(track);
+      track = nullptr;
     }
   }
 #endif
