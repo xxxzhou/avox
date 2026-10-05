@@ -14,8 +14,9 @@ constexpr int64_t kInvalidPtsThreshold = -1000000000LL;
 AVSource::AVSource() {
   videoInfo.type = TrackType::video;
   audioInfo.type = TrackType::audio;
-  vIndexMaps.resize(4, 0);
-  aIndexMaps.resize(4, 0);
+  // -1 填充: 未注册流 Id 查表命中 -1 即丢弃, 防 OOB 读→tracks 野写
+  vIndexMaps.resize(4, -1);
+  aIndexMaps.resize(4, -1);
   // MKV 动漫源常见 10+ 字幕轨
   sIndexMaps.resize(32, 0);
 }
@@ -83,13 +84,23 @@ void AVSource::onTrackOpen() {
   videoInfo.trackSize = videoTracks.size();
   videoInfo.tracks.resize(videoTracks.size());
   for (int32_t i = 0; i < videoTracks.size(); i++) {
-    vIndexMaps[videoTracks[i].trackId] = i;
+    // 多档位HLS流Id可超默认表容量(如6档只建4轨): 按trackId动态扩表,
+    // 未注册Id保持-1, 包查表命中-1即丢弃(§六399追五/方案player/多档位HLS)
+    const int32_t trackId = videoTracks[i].trackId;
+    if (trackId >= (int32_t)vIndexMaps.size()) {
+      vIndexMaps.resize(trackId + 1, -1);
+    }
+    vIndexMaps[trackId] = i;
   }
   videoInfo.reset();
   audioInfo.trackSize = audioTracks.size();
   audioInfo.tracks.resize(audioTracks.size());
   for (int32_t i = 0; i < audioTracks.size(); i++) {
-    aIndexMaps[audioTracks[i].trackId] = i;
+    const int32_t trackId = audioTracks[i].trackId;
+    if (trackId >= (int32_t)aIndexMaps.size()) {
+      aIndexMaps.resize(trackId + 1, -1);
+    }
+    aIndexMaps[trackId] = i;
   }
   audioInfo.reset();
   // 字幕轨映射重置(容量不足时扩到 trackId+1, 防越界)
@@ -153,7 +164,15 @@ void AVSource::processPacket(AvoxPacket& packet) {
   }
   // 全局packet.index映射到A/V对应的index
   if (type == PackType::video || type == PackType::vconfig) {
+    // 多档位HLS会注册超出建轨数的流(未选档位): 查表前界检查, 未注册流
+    // 直接丢弃 — 越界读→tracks[垃圾]野写即 1005 夜五死之根(§六399追五)
+    if (packet.index < 0 || packet.index >= (int32_t)vIndexMaps.size()) {
+      return;
+    }
     packet.index = vIndexMaps[packet.index];
+    if (packet.index < 0 || packet.index >= (int32_t)videoTracks.size()) {
+      return;
+    }
     // 视频包检查一次annexb/avcc
     if (type == PackType::video) {
       if (!bCheckAcc) {
@@ -182,7 +201,13 @@ void AVSource::processPacket(AvoxPacket& packet) {
       // 无视频轨的源不持有(bSeeking没有视频I帧来清除, 会永久静音)
       return;
     }
+    if (packet.index < 0 || packet.index >= (int32_t)aIndexMaps.size()) {
+      return;
+    }
     packet.index = aIndexMaps[packet.index];
+    if (packet.index < 0 || packet.index >= (int32_t)audioTracks.size()) {
+      return;
+    }
     alignPacketPts(packet);
     if (bLogPacket) {
       int64_t baseTime = audioInfo.basePts;
@@ -647,14 +672,16 @@ void AVSource::alignPacketPts(AvoxPacket& packet) {
   checkJump(packet);
   // 记录上一个包的PTS,用于检查是否有跳时间
   if (type == PackType::video || type == PackType::vconfig) {
-    if (videoInfo.basePts != AVOX_NOVALID_PTS) {
+    if (videoInfo.basePts != AVOX_NOVALID_PTS && packet.index >= 0 &&
+        packet.index < videoInfo.trackSize) {
       videoInfo.tracks[packet.index].prePts = packet.pts;
     }
     // log(LogLevel::info, "video pts:", packet.pts, " dts:", packet.dts);
   } else if (type == PackType::audio || type == PackType::aconfig) {
     // 无效pts不更新prePts, 保持最后一个真实值供跳变检测与position
     if (audioInfo.basePts != AVOX_NOVALID_PTS &&
-        packet.pts != AVOX_NOVALID_PTS) {
+        packet.pts != AVOX_NOVALID_PTS && packet.index >= 0 &&
+        packet.index < audioInfo.trackSize) {
       audioInfo.tracks[packet.index].prePts = packet.pts;
     }
   }
