@@ -62,6 +62,9 @@ void AndAudioRender::onInit() {
   }
   AudioDesc trackDesc = desc;
 #ifdef AVOX_ENABLE_FFMPEG
+  // 渲染对象跨片复用, 上一片的转换闸必须先归零, 否则 s32 片之后播
+  // 直通格式片会带着旧 swr(s32→flt) 每帧错转=整片杂音
+  devConvert = false;
   // Java 侧 32bit 恒映射 FLOAT, s32 整型位型被当浮点读=全轨噪声, 引擎侧转 flt
   if (trackDesc.format == AudioFormat::AVOX_AUDIO_S32) {
     trackDesc.format = AudioFormat::AVOX_AUDIO_FLT;
@@ -79,12 +82,13 @@ void AndAudioRender::onInit() {
   if (track && !(trackDesc == desc)) {
     if (devResample.init(desc, trackDesc)) {
       devConvert = true;
-      LOGFLF(LogLevel::info, "audio track device desc:", trackDesc);
     } else {
       env->DeleteGlobalRef(track);
       track = nullptr;
     }
   }
+  LOGFLF(LogLevel::info, "audio track device desc:", trackDesc,
+         " convert:", devConvert);
 #endif
   if (!track) {
     return;
