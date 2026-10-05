@@ -39,17 +39,12 @@ __attribute__((constructor)) void onLibraryLoad() {
   // 执行初始化操作
   AvoxManager::Get().init();
   // 可以添加其他初始化代码
-  // 在主线程注册通知
+#if TARGET_OS_IPHONE
+  // 在主线程注册通知 (iOS: 进入后台 GPU/硬解即不可用, 须停管线)
   dispatch_async(dispatch_get_main_queue(), ^{
       lifecycleObserver = [[AppLifecycleObserver alloc] init];
-      // 生命周期通知名按系统区分(UIApplication*/NSApplication*)
-#if TARGET_OS_IPHONE
       NSString* willResignActive = UIApplicationWillResignActiveNotification;
       NSString* didBecomeActive = UIApplicationDidBecomeActiveNotification;
-#else
-      NSString* willResignActive = NSApplicationWillResignActiveNotification;
-      NSString* didBecomeActive = NSApplicationDidBecomeActiveNotification;
-#endif
       // 1. 即将进入后台 (最关键：此时 GPU 权限还在，赶紧停！)
       [[NSNotificationCenter defaultCenter] addObserver:lifecycleObserver
                                                selector:@selector(handleWillResignActive)
@@ -62,6 +57,12 @@ __attribute__((constructor)) void onLibraryLoad() {
                                                    name:didBecomeActive
                                                  object:nil];
   });
+#else
+  // macOS 不注册: NSApplicationWillResignActive 只是「失去前台焦点」(切到别的
+  // App/弹系统面板都触发), 并非不可渲染——macOS 不挂起进程, GPU/硬解照常可用,
+  // 窗口不可见时 nextDrawable 返回 nil, 渲染侧自行跳帧(MetalRender)。故不设
+  // 后台标志, 切后台继续播放。
+#endif
 }
 
 // 动态库卸载时调用

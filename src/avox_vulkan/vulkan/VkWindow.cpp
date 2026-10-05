@@ -131,7 +131,8 @@ void VkWindow::onInitWin() {
 }
 
 bool VkWindow::onValidWin() {
-#ifdef __APPLE__
+#if defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+  // iOS 后台窗口面失效(macOS 不挂起进程, 窗口面照常有效)
   if (AvoxManager::Get().getBackground()) {
     return false;
   }

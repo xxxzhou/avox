@@ -8,6 +8,10 @@
 #include "avox/module/HighClock.hpp"
 #include "../VkContext.hpp"
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 namespace avox {
 
 VkPipeGraph::VkPipeGraph(VkContext* ctx) {
@@ -225,8 +229,8 @@ void VkPipeGraph::onInitBuffers() {
 }
 
 void VkPipeGraph::onRun() {
-#ifdef __APPLE__
-  // IOS 切到后台不能调用GPU
+#if defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+  // iOS 切到后台不能调用GPU(macOS 不挂起进程, 继续出图)
   if (AvoxManager::Get().getBackground()) {
     return;
   }

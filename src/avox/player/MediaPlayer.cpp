@@ -11,6 +11,10 @@
 #include "../module/ModuleMgr.hpp"
 #include "../module/OptionKey.hpp"
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 namespace avox {
 
 // 通用轨道检查函数
@@ -1314,9 +1318,10 @@ void MediaPlayer::tick() {
       }
     }
   }
-#ifdef __APPLE__
+#if defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
   if (state == PlayerState::playing) {
-    // 切到后台后,GPU资源不能,硬解也不能用,在这直接关闭播放器算了
+    // iOS 切到后台 GPU/硬解不可用, 直接关闭播放器; macOS 失去焦点照常播
+    // (不挂起进程), 不走此分支。
     if (AvoxManager::Get().getBackground()) {
       close();
     }
