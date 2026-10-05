@@ -144,6 +144,10 @@ const char *getModelPath(const char *modelName){
   return getBundlePath(@"avox.bundle/models", [NSString stringWithUTF8String:modelName]);
 }
 
+const char *getCACertPath(void){
+  return getBundlePath(@"avox.bundle/certs", @"cacert.pem");
+}
+
 float getIosDeviceSystemVersion() {
 #if TARGET_OS_IPHONE
   return [[UIDevice currentDevice].systemVersion floatValue];

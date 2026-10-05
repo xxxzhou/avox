@@ -29,6 +29,21 @@ void HttplibTransport::setTimeouts(int connSec, int readSec) {
   this->readSec = readSec;
 }
 
+// OpenSSL/BoringSSL 无系统 CA 兜底(iOS 明确没有, mac 钥匙串宏未开): https 一律
+// 显式喂 avox.bundle/certs/cacert.pem (deploy 随 bundle 上包)。取不到文件时保持
+// 引擎默认(验证开=大概率失败, 不静默关验证——凭据安全优先)。
+#if defined(__APPLE__)
+// avox_apple/IOSHelper.mm 实现 (IOSHelper.h 声明, 同 namespace, 静态同库)
+const char *getCACertPath(void);
+static void applyCaCert(httplib::Client &cli) {
+  if (const char *p = getCACertPath()) {
+    cli.set_ca_cert_path(p);
+  }
+}
+#else
+static void applyCaCert(httplib::Client &) {}
+#endif
+
 HttpSseResult HttplibTransport::postSse(const std::string& baseUrl, const std::string& path,
                                         const std::string& payload, const std::string& bearerKey,
                                         const SocketHook& onSocket, const Receiver& onChunk) {
@@ -40,6 +55,7 @@ HttpSseResult HttplibTransport::postSse(const std::string& baseUrl, const std::s
   }
   cli.set_connection_timeout(connSec);
   cli.set_read_timeout(readSec);
+  applyCaCert(cli);
   // 捕获 connect 前的裸 socket fd: 中断时主线程对其 shutdown() 解除本线程阻塞的 recv
   // (等首 token / 长 thinking, 回调不跑时回调返回 false 这条路够不到)
   cli.set_socket_options([&onSocket](socket_t s) {
@@ -81,6 +97,7 @@ extern "C" bool vaildHttps(const char* url) {
   cli.set_connection_timeout(5);
   cli.set_read_timeout(5);
   cli.set_follow_location(true);
+  applyCaCert(cli);
 
   auto res = cli.Head(path);
   // 有响应即算可达 (含 4xx: 那说明 TLS 与路由都通了, 只是这个路径要鉴权或不支持 HEAD)。

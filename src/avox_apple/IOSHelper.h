@@ -15,6 +15,8 @@ const char *getShaderPath(const char *spvPath);
 const char *getFontPath(const char *fontName);
 const char *getImagePath(const char *imageName);
 const char *getModelPath(const char *imageName);
+// avox.bundle/certs/cacert.pem (agent TLS 根证书; iOS/tvOS 无系统 CA 兜底)
+const char *getCACertPath(void);
 
 #ifdef __OBJC__
 // 从 avox.bundle 查找资源完整路径
