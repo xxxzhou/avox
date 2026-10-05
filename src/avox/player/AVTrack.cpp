@@ -324,6 +324,10 @@ const char* getDefaultDecoderName(VCodecId codecId, bool bHard) {
     // AV1: Apple 走 VideoToolbox(M3/A17 Pro 起有硬解块, IOSVDecoder::onVaild
     // 探测 VTIsHardwareDecodeSupported, 不支持时由 VDecoderTask 选型回退软解)
     return bHard ? AVOX_IOS_AV1_DECODER : AVOX_FF_AV1_DECODER;
+#elif defined(__ANDROID__)
+    // AV1: Android 走 MediaCodec(8 Gen 2 起多数旗舰带 AV1 硬解块;
+    // onVaild 按解码器名排除平台软实现 c2.android.av1, 无硬解设备回退软解)
+    return bHard ? AVOX_ANDROID_AV1_DECODER : AVOX_FF_AV1_DECODER;
 #elif defined(_WIN32)
     // AV1: Windows 走 D3D11VA(FFDx11Decoder::onVaild 探测 GPU 解码 profile,
     // 不支持时由 VDecoderTask 选型回退软解)。注意 FFmpeg 的 av1 解码器是

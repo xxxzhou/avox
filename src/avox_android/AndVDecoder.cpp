@@ -66,6 +66,16 @@ void regVDecoderReg() {
         AvoxManager::Get().vDecoders.regInitFunc(
             VCodecId::vp9, codecDesc,
             []() -> VideoDecoder* { return new AndVDecoder(); });
+
+        // AV1: 同 VP9 口径, onVaild 排除平台软实现(c2.android.av1), 无硬解
+        // 设备回退 FFmpeg 软解(dav1d 在场时归一名)
+        codecDesc = {};
+        codecDesc.name = AVOX_ANDROID_AV1_DECODER;
+        codecDesc.bHardware = true;
+        codecDesc.vcodecId = VCodecId::av1;
+        AvoxManager::Get().vDecoders.regInitFunc(
+            VCodecId::av1, codecDesc,
+            []() -> VideoDecoder* { return new AndVDecoder(); });
       }};
   AvoxManager::Get().initFuncs.push_back(andVDecoderReg);
 }
@@ -91,20 +101,25 @@ bool AndVDecoder::createCodec() {
     case VCodecId::vp9:
       mime = "video/x-vnd.on2.vp9";  // VP9 MIME类型
       break;
+    case VCodecId::av1:
+      mime = "video/av01";  // AV1 MIME类型
+      break;
     default:
       LOGFLF(LogLevel::warn, "unsupported codec");
       return false;
   }
   // 先关闭可能存在的mediaCodec/format
   onClose();
+  // AV1 是 OBU 自带长度字段的自成流, 无 avcc/hvcc 概念, 禁掉基类转换
+  bMustAnnexb = codecDesc.vcodecId != VCodecId::av1;
   mediaCodec = AMediaCodec_createDecoderByType(mime);
   if (!mediaCodec) {
     return false;
   }
-  // VP9: createDecoderByType 在无硬解设备上会落平台软实现(c2.android.vp9
-  // .decoder), 按名字排除并回退软解。AMediaCodec_getName API 28+ 才有, 编译
-  // 目标 26, 运行期 dlsym 探测; 拿不到名字(老设备)保留原样, 不误杀
-  if (codecId == VCodecId::vp9) {
+  // VP9/AV1: createDecoderByType 在无硬解设备上会落平台软实现(c2.android.*),
+  // 按名字排除并回退软解。AMediaCodec_getName API 28+ 才有, 编译目标 26,
+  // 运行期 dlsym 探测; 拿不到名字(老设备)保留原样, 不误杀
+  if (codecId == VCodecId::vp9 || codecId == VCodecId::av1) {
     using GetNameFn = media_status_t (*)(AMediaCodec*, const char**);
     using FreeNameFn = void (*)(const char*);
     static GetNameFn getName =
@@ -114,8 +129,9 @@ bool AndVDecoder::createCodec() {
     const char* mcName = nullptr;
     if (getName && getName(mediaCodec, &mcName) == AMEDIA_OK && mcName) {
       const bool bSw = isMediaCodecSwName(mcName);
-      LOGFLF(LogLevel::info, "vp9 mediaCodec:", mcName,
-             " hardware:", !bSw);
+      LOGFLF(LogLevel::info,
+             codecId == VCodecId::av1 ? "av1 mediaCodec:" : "vp9 mediaCodec:",
+             mcName, " hardware:", !bSw);
       if (freeName) {
         freeName(mcName);
       }
@@ -143,13 +159,26 @@ DecodeResult AndVDecoder::onPreDecoder() {
   }
   auto& packets = configPackets;
   // csd 必须是AnnexB: mp4/rtmp 的 config 是avcc/hvcc长度前缀, 不转MediaCodec解析不了csd, 静默无输出
-  // (已是AnnexB的包长度对不上, avcc2AnnexbPacket 自动跳过)
-  for (auto& packet : packets) {
-    AvoxPacket view = {};
-    view.data = {packet.buff.data(), packet.size, true};
-    avcc2AnnexbPacket(view);
+  // (已是AnnexB的包长度对不上, avcc2AnnexbPacket 自动跳过); AV1 的 av1C 是
+  // 自成结构的配置记录, 非 NALU, 不过转换
+  if (codecDesc.vcodecId != VCodecId::av1) {
+    for (auto& packet : packets) {
+      AvoxPacket view = {};
+      view.data = {packet.buff.data(), packet.size, true};
+      avcc2AnnexbPacket(view);
+    }
   }
-  if (codecDesc.vcodecId == VCodecId::vp9) {
+  if (codecDesc.vcodecId == VCodecId::av1) {
+    // AV1: mp4 的 extradata 即 av1C 配置记录, 原样作 csd-0(MP4 demuxer 侧
+    // IOParseFF 对非 H26x 编码整段透传, 见 parseStream); mkv 的 CodecPrivate
+    // 同构。 configure 不吃时走 openFailed → 选型链回退软解
+    if (packets.empty()) {
+      return DecodeResult::noConfig;
+    }
+    AMediaFormat_setString(format, "mime", "video/av01");
+    AMediaFormat_setBuffer(format, "csd-0", packets.front().buff.data(),
+                           packets.front().size);
+  } else if (codecDesc.vcodecId == VCodecId::vp9) {
     // VP9: 无带外参数集(webm in-band), 不需要 csd; 无 csd 依赖的解析分支
     if (packets.empty()) {
       return DecodeResult::noConfig;
