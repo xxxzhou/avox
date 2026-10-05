@@ -87,7 +87,12 @@ if __name__ == "__main__":
     # libwebrtc_nosym.a(nm T _SSL_new 实证; nosym 只是防跨 .so 重导出, 静态链入无碍),
     # 头在 avox_library/src/third_party/boringssl —— 与 mac 同一条 AVOX_AGENT_USE_BORINGSSL
     # 路线, 不需要 OpenSSL); CLI/SWIG 关。缺 BoringSSL 头时 AVOXOptions 自动降级关 Agent。
-    extra_args = "-DAVOX_ENABLE_AGENT=ON -DAVOX_ENABLE_CLI=OFF -DAVOX_ENABLE_SWIG=OFF"
+    # 模拟器例外: webrtc 归档是真机专用腿(sim 无预编译), Agent 的 TLS 底座悬空 —
+    # 显式关, 同 AI 三旗标的 sim 跳过待遇, 否则链接期 BIO_* 全线 undefined。
+    if is_sim:
+        extra_args = "-DAVOX_ENABLE_AGENT=OFF -DAVOX_ENABLE_CLI=OFF -DAVOX_ENABLE_SWIG=OFF"
+    else:
+        extra_args = "-DAVOX_ENABLE_AGENT=ON -DAVOX_ENABLE_CLI=OFF -DAVOX_ENABLE_SWIG=OFF"
     # AI 开时三旗标齐开 (AVOXOptions find_package 三家+全局头/宏, 缺库逐项自动 OFF);
     # 关时维持旧行为 (iOS 无 ORT 预编译时代的硬关)。vulkan 保持开: volk 动态加载只需
     # 头文件, VULKAN_SDK 未设时自动用本机 SDK 的 macOS 目录, MoltenVK 不随 INTERFACE

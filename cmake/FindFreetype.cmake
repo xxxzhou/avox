@@ -12,7 +12,12 @@ set(DLLNAME freetype)
 if(WIN32)
     set(FREETYPE_LIB_DIR ${AVOX_MOEDULE_BUILD_DIR}/freetype/${CMAKE_BUILD_TYPE})
 elseif(IOS)
-    set(FREETYPE_LIB_DIR ${AVOX_MOEDULE_BUILD_DIR}/freetype/${CMAKE_BUILD_TYPE}-iphoneos)      
+    # 模拟器 slice: 模块产物在 sim 构建树(build/ios-sim), 同 FindFdkaac 口径。
+    if("$ENV{AVOX_IOS_SIM}" STREQUAL "1")
+        set(FREETYPE_LIB_DIR ${AVOX_MOEDULE_BUILD_DIR}-sim/freetype/${CMAKE_BUILD_TYPE}-iphonesimulator)
+    else()
+        set(FREETYPE_LIB_DIR ${AVOX_MOEDULE_BUILD_DIR}/freetype/${CMAKE_BUILD_TYPE}-iphoneos)
+    endif()
 elseif(APPLE)
     # macOS(Xcode 多配置生成器): 库在 freetype/<Config>/
     set(FREETYPE_LIB_DIR ${AVOX_MOEDULE_BUILD_DIR}/freetype/${CMAKE_BUILD_TYPE})

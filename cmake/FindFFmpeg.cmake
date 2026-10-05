@@ -1,5 +1,12 @@
-set(FFmpeg_INC_SEARCH_PATH ${AVOX_TRDPARTY_LIBRAY}/ffmpeg/include)
-set(FFmpeg_LIB_SEARCH_PATH ${AVOX_TRDPARTY_LIBRAY}/ffmpeg/bin ${AVOX_TRDPARTY_LIBRAY}/ffmpeg/lib)
+# 模拟器 slice 用 ffmpeg-sim(仓内预编译; 新 linker 拒真机对象, 与
+# deploy_ios_runtime.sh sim 分支同源)。AVOX_IOS_SIM 由 build_ios.py 环境透传。
+if("$ENV{AVOX_IOS_SIM}" STREQUAL "1")
+    set(FFmpeg_INC_SEARCH_PATH ${AVOX_TRDPARTY_LIBRAY}/ffmpeg-sim/include)
+    set(FFmpeg_LIB_SEARCH_PATH ${AVOX_TRDPARTY_LIBRAY}/ffmpeg-sim/bin ${AVOX_TRDPARTY_LIBRAY}/ffmpeg-sim/lib)
+else()
+    set(FFmpeg_INC_SEARCH_PATH ${AVOX_TRDPARTY_LIBRAY}/ffmpeg/include)
+    set(FFmpeg_LIB_SEARCH_PATH ${AVOX_TRDPARTY_LIBRAY}/ffmpeg/bin ${AVOX_TRDPARTY_LIBRAY}/ffmpeg/lib)
+endif()
 
 message(STATUS "ffmpeg include:" ${FFmpeg_INC_SEARCH_PATH})
 message(STATUS "ffmpeg libs:" ${FFmpeg_LIB_SEARCH_PATH})

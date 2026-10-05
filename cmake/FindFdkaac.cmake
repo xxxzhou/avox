@@ -14,7 +14,14 @@ message(STATUS "FDKAAC_INCLUDE_DIRS: ${FDKAAC_INCLUDE_DIRS}")
 if(WIN32)
     set(FDKAAC_LIB_DIR ${AVOX_MOEDULE_BUILD_DIR}/fdk-aac/${CMAKE_BUILD_TYPE}) 
 elseif(IOS)
-    set(FDKAAC_LIB_DIR ${AVOX_MOEDULE_BUILD_DIR}/fdk-aac/${CMAKE_BUILD_TYPE}-iphoneos)          
+    # 模拟器 slice: 模块产物在 sim 构建树(build/ios-sim, AVOX_BUILD_TAG=sim)的
+    # Release-iphonesimulator; AVOX_MOEDULE_BUILD_DIR 恒指 build/iOS(不 tag),
+    #须手工补 -sim, 否则 sim 引擎链进真机对象, 新 linker 硬拒。
+    if("$ENV{AVOX_IOS_SIM}" STREQUAL "1")
+        set(FDKAAC_LIB_DIR ${AVOX_MOEDULE_BUILD_DIR}-sim/fdk-aac/${CMAKE_BUILD_TYPE}-iphonesimulator)
+    else()
+        set(FDKAAC_LIB_DIR ${AVOX_MOEDULE_BUILD_DIR}/fdk-aac/${CMAKE_BUILD_TYPE}-iphoneos)
+    endif()
 elseif(APPLE)
     # macOS(Xcode 多配置生成器): 库在 fdk-aac/<Config>/
     set(FDKAAC_LIB_DIR ${AVOX_MOEDULE_BUILD_DIR}/fdk-aac/${CMAKE_BUILD_TYPE})
