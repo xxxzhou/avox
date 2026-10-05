@@ -224,13 +224,17 @@ void copyPlaneYUV2TightlyBuffer(const YUVFrame& frame, uint8_t* bfdata) {
     // r16 rowPitch、VkInputLayer 字节视图、image2YUVFrame 线性解包互逆; 源行距
     // 带 padding(FFmpeg 宽度按样本对齐 960→1024 ⇒ dav1d stride 2048)逐行收 — 1004
     uint64_t ySize = (uint64_t)width * 2 * height;
-    for (int32_t h = 0; h < height; ++h) {
-      memcpy(bfdata + (uint64_t)h * width * 2,
-             frame.data[0] + (uint64_t)h * frame.stride[0], (size_t)width * 2);
-    }
     if (frame.format.type == YuvType::p010) {
       // P010: 10bit 在高 10 位(右移对齐低 10 位), UV 交错双平面(拆分为独立 U/V),
       // 归一化成与 yuv420P10 相同的紧排布局, shader 读函数零改动
+      for (int32_t h = 0; h < height; ++h) {
+        auto* src =
+            (const uint16_t*)(frame.data[0] + (uint64_t)h * frame.stride[0]);
+        auto* dst = (uint16_t*)(bfdata + (uint64_t)h * width * 2);
+        for (int32_t i = 0; i < width; ++i) {
+          dst[i] = (uint16_t)(src[i] >> 6);
+        }
+      }
       int32_t uv_height = height / 2;
       uint64_t uv_size = (uint64_t)width * uv_height;
       auto* udst = (uint16_t*)(bfdata + ySize);
@@ -246,6 +250,11 @@ void copyPlaneYUV2TightlyBuffer(const YUVFrame& frame, uint8_t* bfdata) {
         }
       }
     } else {
+      // 420P10/422P10 已是低对齐平面, Y 逐行收源 stride 即可
+      for (int32_t h = 0; h < height; ++h) {
+        memcpy(bfdata + (uint64_t)h * width * 2,
+               frame.data[0] + (uint64_t)h * frame.stride[0], (size_t)width * 2);
+      }
       // 420: 色度半高; 422: 色度**全高**(4:2:2 垂直不降采样); 行宽 w 字节
       int32_t uv_height =
           (frame.format.type == YuvType::yuv422P10) ? height : height / 2;
