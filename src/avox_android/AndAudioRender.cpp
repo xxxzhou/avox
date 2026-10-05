@@ -174,7 +174,14 @@ bool AndAudioRender::empty() {
   return false;
 }
 
-int32_t AndAudioRender::getQueueMS() { return 80; }
+int32_t AndAudioRender::getQueueMS() {
+  // 阻塞写下缓冲常满, 以缓冲深度为准; 硬编码 80 会把深缓冲(7.1≈160ms)的
+  // 音频钟系统性报快 80ms, 过 50ms 阈值即触发逐帧微重采样=可闻抖动
+  if (!audioTrack || frameSize <= 0 || desc.sampleRate <= 0) {
+    return 80;
+  }
+  return (int32_t)((int64_t)frameSize * 1000 / desc.sampleRate);
+}
 
 bool AndAudioRender::full() {
   if (!audioTrack) {

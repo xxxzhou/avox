@@ -214,6 +214,13 @@ void ARenderTask::onRunTask() {
               (int64_t)renderDesc.sampleRate * wanted_bytes / inData.size;
           if (wanted_bytes > 0 && outRate > 0) {
             changeDesc.sampleRate = (int32_t)outRate;
+            // 长期挂在此路=音频钟与主钟差超阈, 逐帧微重采样可闻; 限频留痕
+            static int32_t syncCount = 0;
+            if ((++syncCount % 50) == 1) {
+              LOGFLF(LogLevel::info, "audio sync resample out:",
+                     changeDesc.sampleRate, " wanted:", wanted_bytes,
+                     " frame:", inData.size);
+            }
 #ifdef AVOX_ENABLE_FFMPEG
             syncResmaple->init(renderDesc, changeDesc);
             int ret = syncResmaple->resample(inData);
