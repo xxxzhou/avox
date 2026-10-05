@@ -293,6 +293,45 @@ if(IOS AND NOT _avox_ios_sysroot_l MATCHES "iphonesimulator")
         list(APPEND AVOX_LINK_LIBRARIES ${SPM_LIBRARIES})
         message(STATUS "iOS: avox_translation 静态并档")
     endif()
+    # iOS 真机: avox_ass 静态并档 (10/5)。libass overlay 是全部字幕形态(内封
+    # PGS/ASS/SRT、外挂、AI 产物)的唯一合成通道, 缺它 iOS 静默无字幕(病族案
+    # Passengers_Breakfast_4K_HDR)。libass.a 自包含(fribidi/freetype/harfbuzz
+    # 内嵌, script/ass/build_apple.py 产物)在库仓; CoreText/CG 框架引用由宿主
+    # podspec 链接, libass.a 本体由宿主 deploy_ios_runtime.sh 并档。
+    if(AVOX_ENABLE_ASS
+       AND EXISTS "${AVOX_EXTERNAL_LIBRARY_DIR}/3rdparty/library/ios/ass/lib/libass.a")
+        add_sub_path(../plugins/avox_ass AVOX_HEADER AVOX_SOURCE)
+        include_directories("${AVOX_EXTERNAL_LIBRARY_DIR}/3rdparty/library/ios/ass/include")
+        add_definitions(-DAVOX_ASS_HAVE_LIBASS=1)
+        # 保活表开关(ModuleMgr.cpp): 把注册器所在 .o 拖进归档闭包
+        add_definitions(-DAVOX_STATIC_MODULE_ASS=1)
+        message(STATUS "iOS: avox_ass 静态并档 (libass overlay)")
+    else()
+        message(STATUS "iOS: avox_ass 并档条件不足 (enable=${AVOX_ENABLE_ASS})")
+    endif()
+    # iOS 真机: avox_disc 静态并档 (10/5) —— 蓝光原盘(ISO/BDMV)直读腿; 库仓
+    # ios/libbluray 预编译就位(只依赖 libc), 缺它 app 侧 ISO/BDMV 入口打开即败。
+    if(AVOX_ENABLE_DISC AND LIBBLURAY_INCLUDE_DIRS)
+        add_sub_path(../plugins/avox_disc AVOX_HEADER AVOX_SOURCE)
+        include_directories(${LIBBLURAY_INCLUDE_DIRS})
+        add_definitions(-DAVOX_STATIC_MODULE_DISC=1)
+        list(APPEND AVOX_LINK_LIBRARIES ${LIBBLURAY_LIBRARIES})
+        message(STATUS "iOS: avox_disc 静态并档 (bluray)")
+    endif()
+    # iOS 真机: avox_tempo 静态并档 (10/5) —— 变速不变调(SoundTouch WSOLA);
+    # 缺它 ARenderTask 降级变调重采样, 移动端倍速会变调(花栗鼠音)。
+    if(AVOX_ENABLE_TEMPO)
+        find_package(SoundTouch QUIET)
+        if(SoundTouch_FOUND)
+            add_sub_path(../plugins/avox_tempo AVOX_HEADER AVOX_SOURCE)
+            include_directories(${SOUNDTOUCH_INCLUDE_DIRS})
+            add_definitions(-DAVOX_STATIC_MODULE_TEMPO=1)
+            list(APPEND AVOX_LINK_LIBRARIES ${SOUNDTOUCH_LIBRARIES})
+            message(STATUS "iOS: avox_tempo 静态并档 (soundtouch)")
+        else()
+            message(STATUS "iOS: avox_tempo 并档条件不足 (soundtouch 未找到)")
+        endif()
+    endif()
 endif()
 add_library(avox ${AVOX_DLL_TYPE} ${AVOX_SOURCE} ${AVOX_HEADER})
 

@@ -46,6 +46,15 @@ void avox_keep_module_avox_onnx();
 #if defined(AVOX_STATIC_MODULE_TRANSLATION)
 void avox_keep_module_avox_translation();
 #endif
+#if defined(AVOX_STATIC_MODULE_ASS)
+void avox_keep_module_avox_ass();
+#endif
+#if defined(AVOX_STATIC_MODULE_DISC)
+void avox_keep_module_avox_disc();
+#endif
+#if defined(AVOX_STATIC_MODULE_TEMPO)
+void avox_keep_module_avox_tempo();
+#endif
 }
 static void avoxModuleKeeperNoop() {}
 // 非 const: 命名空间级 const 隐含内部链接, 未被引用时 -O2 连表带取址 relocation
@@ -63,6 +72,15 @@ void (*avox_moduleKeepers[])(void) = {
 #endif
 #ifdef AVOX_STATIC_MODULE_TRANSLATION
     avox_keep_module_avox_translation,
+#endif
+#ifdef AVOX_STATIC_MODULE_ASS
+    avox_keep_module_avox_ass,
+#endif
+#ifdef AVOX_STATIC_MODULE_DISC
+    avox_keep_module_avox_disc,
+#endif
+#ifdef AVOX_STATIC_MODULE_TEMPO
+    avox_keep_module_avox_tempo,
 #endif
 };
 

@@ -45,6 +45,11 @@ if(IOS)
   list(REMOVE_ITEM PLUGINS_DYNAMIC avox_sherpa)
   list(REMOVE_ITEM PLUGINS_DYNAMIC avox_onnx)
   list(REMOVE_ITEM PLUGINS_DYNAMIC avox_translation)
+  # 同口径追加: avox_disc/avox_tempo 10/5 起由 src 真机段静态并档
+  # (AVOX_STATIC_MODULE_DISC/TEMPO) — 动态路径排除防双实现; iOS 禁 dlopen
+  # 应用内 dylib, 动态产物本就装不上(avox_ass 同, 见上)。
+  list(REMOVE_ITEM PLUGINS_DYNAMIC avox_disc)
+  list(REMOVE_ITEM PLUGINS_DYNAMIC avox_tempo)
 endif()
 
 # 动态插件: 各自子目录调用 register_plugin(<name> DYNAMIC ...)
