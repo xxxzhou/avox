@@ -108,6 +108,15 @@ enum class VCodecTh : int32_t {
   dx11
 };
 
+// VR/立体容器声明(值导出给宿主快照, 只增不改不删): none=无声明/声明单目,
+// stereo=立体轨声明(MKV StereoMode/MP4 st3d), spherical=球面投影声明(MP4 sv3d)
+enum class VrHint : int32_t {
+  none = 0,
+  stereo,
+  spherical,
+  stereoSpherical
+};
+
 // 一个流里一般包含一个视频与音频包队列
 // 假定可以处理多个流，流里多个trark
 struct VTrackDesc {
@@ -118,6 +127,8 @@ struct VTrackDesc {
   VideoDesc desc = {};
   // Dolby Vision profile(容器 DOVI conf, 0=非DV): 媒体信息入档/展示用
   int32_t dvProfile = 0;
+  // 容器立体/球面声明(VrHint): 宿主「立体/VR」入口显隐用
+  VrHint vrHint = VrHint::none;
 };
 
 struct ATrackDesc {
