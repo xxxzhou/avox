@@ -9,16 +9,36 @@
 #include <sysinfoapi.h>
 #pragma comment(lib, "dbghelp.lib")
 
+// 崩溃 dmp 落 %APPDATA%\panvox\crashes(CWD 可能是只读安装目录), 环境不可用回退 CWD。
+static void crashDumpPath(wchar_t *out, DWORD cap, const wchar_t *name) {
+  out[0] = 0;
+  wchar_t ad[MAX_PATH];
+  DWORD n = ::GetEnvironmentVariableW(L"APPDATA", ad, MAX_PATH);
+  if (n <= 0 || n >= MAX_PATH) {
+    lstrcpynW(out, name, (int)cap);
+    return;
+  }
+  wchar_t parent[MAX_PATH];
+  wsprintfW(parent, L"%s\\panvox", ad);
+  wchar_t dir[MAX_PATH];
+  wsprintfW(dir, L"%s\\crashes", parent);
+  ::CreateDirectoryW(parent, NULL);
+  ::CreateDirectoryW(dir, NULL);
+  wsprintfW(out, L"%s\\%s", dir, name);
+}
+
 LONG WINAPI unhandledFilter(struct _EXCEPTION_POINTERS *lpExceptionInfo) {
   LONG ret = EXCEPTION_EXECUTE_HANDLER;
-  TCHAR szFileName[64];
+  wchar_t szName[64];
   SYSTEMTIME st;
   ::GetLocalTime(&st);
-  wsprintf(szFileName, TEXT("AVOX_%04d%02d%02d-%02d%02d%02d-%ld-%ld.dmp"),
-           st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond,
-           GetCurrentProcessId(), GetCurrentThreadId());
-  HANDLE hFile = ::CreateFile(szFileName, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
-                              FILE_ATTRIBUTE_NORMAL, NULL);
+  wsprintfW(szName, L"AVOX_%04d%02d%02d-%02d%02d%02d-%ld-%ld.dmp",
+            st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond,
+            GetCurrentProcessId(), GetCurrentThreadId());
+  wchar_t szPath[MAX_PATH + 64];
+  crashDumpPath(szPath, MAX_PATH + 64, szName);
+  HANDLE hFile = ::CreateFileW(szPath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+                               FILE_ATTRIBUTE_NORMAL, NULL);
   if (hFile != INVALID_HANDLE_VALUE) {
     MINIDUMP_EXCEPTION_INFORMATION ExInfo;
     ExInfo.ThreadId = ::GetCurrentThreadId();
