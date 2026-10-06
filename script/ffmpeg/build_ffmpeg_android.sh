@@ -3,10 +3,11 @@
 # 白名单与 Windows build_ffmpeg.py minsize 同源(2026-09: NAS 老媒体扩展 + webm/无损
 # 等常用 LGPL 软解, 组件名已对照 FFmpeg 9.0.1 源码核实); 差异: 无 MediaFoundation
 # 软编(硬编走 avox 自己的 MediaCodec 模块), 无 vulkan 硬解(走 avox_vulkan),
-# TLS 无系统后端(https/rtmps 需另接 mbedtls/openssl, 暂缺)
+# TLS 走 openssl 静态链(第5参数 OPENSSL_PREFIX; 不传则 https 无实现, 见 1006
+# 手机 IPTV https 全灭定谳)
 # 用法 (在 MSYS2 bash 或 Git Bash 里):
-#   ./build_ffmpeg_android.sh <NDK路径-msys风格> [源码目录] [输出目录] [dav1d安装树]
-# dav1d 参数优先于同名环境变量(部分执行层会剥子进程 env, 位置参数恒可靠)
+#   ./build_ffmpeg_android.sh <NDK路径-msys风格> [源码目录] [输出目录] [dav1d安装树] [openssl安装树]
+# 参数优先于同名环境变量(部分执行层会剥子进程 env, 位置参数恒可靠)
 # 例:
 #   ./build_ffmpeg_android.sh /c/Users/mfjt5/AppData/Local/Android/Sdk/ndk/26.1.10909125
 set -e
@@ -14,6 +15,7 @@ NDK=${1:?need NDK path (msys style, e.g. /c/Users/.../ndk/26.1.10909125)}
 SRC_DIR=${2:-$(pwd)}
 OUT=${3:-"$SRC_DIR/out-android-arm64"}
 DAV1D_PREFIX=${4:-${DAV1D_PREFIX:-}}
+OPENSSL_PREFIX=${5:-${OPENSSL_PREFIX:-}}
 API=24
 JOBS=$(nproc 2>/dev/null || echo 8)
 HOST=windows-x86_64
@@ -51,6 +53,25 @@ if [ -n "${DAV1D_PREFIX:-}" ]; then
   echo "== dav1d soft-decode leg: $DAV1D_PREFIX =="
 fi
 
+# openssl 静态链(可选): https/rtmps 的 TLS 后端。安装树形如 avox_library
+# /3rdparty/library/android/openssl/{include, arm64-v8a|lib}。目录里的
+# libssl.so/libcrypto.so 是 14 字节 soname 文本占位(lld 解析即 EOF 炸),
+# 故拷 .a 到只含静态库的目录再 -L 指它, 强制走静态链进 libavformat.so,
+# 免 jniLibs 打包; 无系统 TLS 后端可用(Android 无 securetransport)。
+OPENSSL_FLAGS=()
+if [ -n "${OPENSSL_PREFIX:-}" ]; then
+  OSSL_SRC="$OPENSSL_PREFIX/lib"
+  [ -d "$OSSL_SRC" ] || OSSL_SRC="$OPENSSL_PREFIX/arm64-v8a"
+  OSSL_STATIC="$BUILD_DIR/openssl-static"
+  mkdir -p "$OSSL_STATIC"
+  cp -f "$OSSL_SRC/libssl.a" "$OSSL_SRC/libcrypto.a" "$OSSL_STATIC/"
+  OPENSSL_FLAGS=(--enable-openssl
+                 "--extra-cflags=-I${OPENSSL_PREFIX}/include"
+                 "--extra-ldflags=-L${OSSL_STATIC}"
+                 --extra-libs="-lssl -lcrypto")
+  echo "== openssl TLS leg: $OPENSSL_PREFIX (static: $OSSL_STATIC) =="
+fi
+
 "$SRC_DIR/configure" \
   --prefix="$OUT" \
   --enable-shared --disable-static --enable-pic \
@@ -70,7 +91,7 @@ fi
   --enable-encoder=aac \
   --enable-parser=h264,hevc,aac,opus,ac3,mpegaudio,mpegvideo,mpeg4video,vc1,vp8,vp9,av1,vorbis,flac,dca,aac_latm,amr,mjpeg \
   --enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,aac_adtstoasc,extract_extradata \
-  "${DAV1D_FLAGS[@]}"
+  "${DAV1D_FLAGS[@]}" "${OPENSSL_FLAGS[@]}"
 
 echo "== make -j$JOBS (android arm64-v8a) =="
 make -j"$JOBS"
