@@ -45,6 +45,16 @@ CC 组)。现状行为链与崩溃:
 
 ### 3.2 建轨规则(AVSource)
 
+> **10/6 白天修订(用户质疑「全拉浪费带宽」定谳)**: 建轨 cap4 语义保留, 但
+> **拉包必须是单路**——引擎 open 到 master 时先解析档位表并只 open 选中档
+> 的 media playlist(与 panvox app 侧 hls_master.dart 同款逻辑下沉), 不得
+> 依赖 ffmpeg hls demuxer 的多 variant 全拉+discard(discard 省不了带宽,
+> 分片照拉, 1005 夜 A 轮日志 1.2 万包丢弃实锤)。setVideoTrack(i) 的实现=
+> 引擎内重定向 open 第 i 档 media playlist(=下方「兜底」升为唯一路径)。
+> panvox 主链路(app 解析选档直开)已单路, 本节修订使 CLI/拖入/第三方入口
+> 同享单路。原「master 全档位建轨」仅保留作档位表的数据来源(解析层,
+> 非拉包层)。
+
 - master 全档位解析; **按分辨率降序保留最多 4 档**建 video track
   (低档位丢弃, 用户定稿 2026-10-06);
 - 每档 muxed 音频建 audio track(既有行为);
