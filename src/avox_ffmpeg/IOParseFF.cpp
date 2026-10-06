@@ -10,8 +10,10 @@
 #include <chrono>
 #include <cstring>
 #include <cstdlib>
+#include <string>
 #include <thread>
 #ifndef _WIN32
+#include <dirent.h>
 #include <unistd.h>
 #endif
 
@@ -19,6 +21,7 @@
 #include "avox/codec/H26XHelper.hpp"
 #include "avox/module/AvoxManager.hpp"
 #include "avox/module/LogHelper.hpp"
+#include "avox/module/AssetLoader.hpp"
 #include "avox/subtitle/SubtitleCanvas.hpp"
 
 namespace avox {
@@ -367,23 +370,84 @@ void IOParseFF::onSelectedSubtitle(int32_t localIndex) {
 // fast probe 保底补查只能整链重开, 故从 onRunTask 抽出复用。
 int IOParseFF::reopenInput() {
 #ifndef _WIN32
-  // OpenSSL(ffmpeg TLS) 编入的默认证书路径是 Linux 形态, Android 不存在:
-  // 指向系统 CA 目录(hash 目录=capath 语义, 1006 https 证书层)。装此处
-  // 因 Android 上 libavox.so 由宿主 dlopen 加载, JNI_OnLoad 不触发;
-  // 候选都不存在(Linux 发行版)则不动 env 保留系统默认。OpenSSL 3.x 每次
-  // set_default_verify_paths 实时读 env, once 足够。
-  static const bool sslCertDirSet = []() {
-    const char* dirs[] = {"/apex/com.android.conscrypt/cacerts",
-                          "/system/etc/security/cacerts"};
-    for (const char* d : dirs) {
-      if (access(d, F_OK) == 0) {
-        setenv("SSL_CERT_DIR", d, 0);
-        break;
+  // Android TLS 证书链(1006 https 全灭第三层, 三段定谳): ①openssl 编译期
+  // 默认路径是 Linux 形态(ENOENT); ②OpenSSL 3.x set_default_verify_paths
+  // 是 by_file 失败即提前 return——只设 SSL_CERT_DIR 时目录半根本不执行
+  // (env 实证已设仍全灭的真因); ③HLS 分片连接走 hls 内部 avio_opts, 父
+  // 层 ca_file 不传播(清单通而分片全灭)。总修: 合成单文件 CA bundle
+  // (assets/cacert.pem 优先=与 iOS/agent 同源, 兜底系统目录拼接)落 app
+  // cache, 然后 SSL_CERT_FILE 指它(by_file 成功)+SSL_CERT_DIR 指系统目录
+  // (by_dir 生效)全进程喂饱默认路径——分片连接同样受益; 另留 ca_file
+  // 直传给首连接双保险。Linux 桌面 assets 缺+目录不存在时返回空不干预。
+  static const std::string caBundle = []() -> std::string {
+    // app cache 路径: 进程 cmdline 首段=包名(com.panvox.panvox)
+    char pkg[256] = {0};
+    FILE* cf = fopen("/proc/self/cmdline", "rb");
+    if (!cf) return "";
+    size_t r = fread(pkg, 1, sizeof(pkg) - 1, cf);
+    fclose(cf);
+    for (size_t i = 0; i < r; i++) {
+      if (pkg[i] == '\0') break;
+      if (pkg[i] == ':') { pkg[i] = '\0'; break; }  // 剥离 :proc 后缀
+    }
+    if (pkg[0] == '\0') return "";
+    std::string out = std::string("/data/user/0/") + pkg + "/cache/avox-ca-bundle.pem";
+    auto applyEnv = [&out](const char* dirUsed) {
+      setenv("SSL_CERT_FILE", out.c_str(), 1);
+      if (dirUsed && *dirUsed) setenv("SSL_CERT_DIR", dirUsed, 1);
+      // hls 分片连接自开 avio, tls 选项不随白名单传播——见 ffmpeg 侧
+      // hls.c 的 AVOX_TLS_CA_FILE 补传(分片 TLS 与首连接同源)
+      setenv("AVOX_TLS_CA_FILE", out.c_str(), 1);
+    };
+    auto writeBundle = [&out](const std::vector<uint8_t>& bytes, const char* src) {
+      FILE* w = fopen(out.c_str(), "wb");
+      if (!w) return false;
+      fwrite(bytes.data(), 1, bytes.size(), w);
+      fclose(w);
+      LOGFLF(LogLevel::info, "ca bundle from", src, ":", out,
+             " bytes:", (int64_t)bytes.size());
+      return true;
+    };
+    // 1) assets 内的 cacert.pem(打包随 APK; 与 iOS/agent 同一份 CA 源)
+    if (auto pem = avox::AssetLoader::loadToMemory("certs/cacert.pem"); !pem.empty()) {
+      if (writeBundle(pem, "assets")) {
+        applyEnv(access("/system/etc/security/cacerts", R_OK | X_OK) == 0
+                     ? "/system/etc/security/cacerts"
+                     : "/apex/com.android.conscrypt/cacerts");
+        return out;
       }
     }
-    return true;
+    // 2) 兜底: 系统 CA 目录哈希命名证书(.0)拼接
+    const char* dirs[] = {"/system/etc/security/cacerts",
+                          "/apex/com.android.conscrypt/cacerts"};
+    for (const char* d : dirs) {
+      if (access(d, R_OK | X_OK) != 0) continue;
+      std::vector<uint8_t> pem;
+      DIR* dp = opendir(d);
+      if (!dp) continue;
+      struct dirent* de = nullptr;
+      while ((de = readdir(dp)) != nullptr) {
+        const char* n = de->d_name;
+        size_t len = strlen(n);
+        if (len < 2 || strcmp(n + len - 2, ".0") != 0) continue;
+        FILE* f = fopen((std::string(d) + "/" + n).c_str(), "rb");
+        if (!f) continue;
+        char buf[8192];
+        size_t rd = 0;
+        while ((rd = fread(buf, 1, sizeof(buf), f)) > 0) {
+          pem.insert(pem.end(), buf, buf + rd);
+        }
+        fclose(f);
+        if (!pem.empty() && pem.back() != '\n') pem.push_back('\n');
+      }
+      closedir(dp);
+      if (!pem.empty() && writeBundle(pem, "system-dir")) {
+        applyEnv(d);
+        return out;
+      }
+    }
+    return "";
   }();
-  (void)sslCertDirSet;
 #endif
   AVFormatContext* temp = avformat_alloc_context();
   temp->interrupt_callback.callback = decode_interrupt_cb;
@@ -422,6 +486,12 @@ int IOParseFF::reopenInput() {
   av_dict_set(&dict, "reconnect", "1", 0);
   av_dict_set(&dict, "reconnect_streamed", "1", 0);
   av_dict_set(&dict, "reconnect_delay_max", "5", 0);
+#ifndef _WIN32
+  // TLS CA: 显式喂合成 bundle(见上), 不依赖 openssl 默认路径机制
+  if (!caBundle.empty()) {
+    av_dict_set(&dict, "ca_file", caBundle.c_str(), 0);
+  }
+#endif
   // 关闭 http 连接复用(keep-alive): 半开死连接(对端静默丢弃)若被复用, 重连
   // 后仍走死连接拿不到数据; 关闭后每次读取新建连接, 半开故障自然隔离.
   // fmp4 本就多 range 短连接, 性能影响可忽略
