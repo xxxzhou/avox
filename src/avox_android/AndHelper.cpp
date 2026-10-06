@@ -21,14 +21,6 @@ static bool isInited = false;
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* jvm, void*) {
   __android_log_print(ANDROID_LOG_INFO, "avox", "%s", "avox JNI_OnLoad");
-  // OpenSSL(ffmpeg TLS) 编入的默认证书路径是 Linux 形态, Android 不存在:
-  // 指系统 CA 目录(hash 命名目录=capath 语义, 1006 https 全灭之证书层)。
-  // A14+ 正主在 conscrypt apex, 旧位兜底; 不覆盖已有环境变量
-  if (access("/apex/com.android.conscrypt/cacerts", F_OK) == 0) {
-    setenv("SSL_CERT_DIR", "/apex/com.android.conscrypt/cacerts", 0);
-  } else {
-    setenv("SSL_CERT_DIR", "/system/etc/security/cacerts", 0);
-  }
   // 引发静态变量的初始化，注册所有IO,解码器等
   AvoxManager::Get().init();
   aenv.vm = jvm;

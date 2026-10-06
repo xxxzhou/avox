@@ -9,7 +9,11 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <cstdlib>
 #include <thread>
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 #include "avox/Avox.hpp"
 #include "avox/codec/H26XHelper.hpp"
@@ -362,6 +366,25 @@ void IOParseFF::onSelectedSubtitle(int32_t localIndex) {
 // FFmpeg9 起 find_stream_info 返回即释放各流探测态(sti->info), 同上下文二次调用踩空指针,
 // fast probe 保底补查只能整链重开, 故从 onRunTask 抽出复用。
 int IOParseFF::reopenInput() {
+#ifndef _WIN32
+  // OpenSSL(ffmpeg TLS) 编入的默认证书路径是 Linux 形态, Android 不存在:
+  // 指向系统 CA 目录(hash 目录=capath 语义, 1006 https 证书层)。装此处
+  // 因 Android 上 libavox.so 由宿主 dlopen 加载, JNI_OnLoad 不触发;
+  // 候选都不存在(Linux 发行版)则不动 env 保留系统默认。OpenSSL 3.x 每次
+  // set_default_verify_paths 实时读 env, once 足够。
+  static const bool sslCertDirSet = []() {
+    const char* dirs[] = {"/apex/com.android.conscrypt/cacerts",
+                          "/system/etc/security/cacerts"};
+    for (const char* d : dirs) {
+      if (access(d, F_OK) == 0) {
+        setenv("SSL_CERT_DIR", d, 0);
+        break;
+      }
+    }
+    return true;
+  }();
+  (void)sslCertDirSet;
+#endif
   AVFormatContext* temp = avformat_alloc_context();
   temp->interrupt_callback.callback = decode_interrupt_cb;
   temp->interrupt_callback.opaque = this;
