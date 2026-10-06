@@ -115,6 +115,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 - iOS 全形态字幕不出(内封 PGS/ASS/SRT、外挂、AI 产物全无画面, 枚举/选轨全正常) → 已修(1005, iOS 构建排除 avox_ass 插件致 libass 通道缺席静默降级); 判据 = console `subtitle view: no libass plugin, track off`
 - iOS 汉字整行空心方框(tofu, 英文数字正常, 用户报「乱码」) → 已修(1005); 判据 = `fontselect: (…, 700, 0) -> <Latin 字体>` + `Error opening font …PingFangUI.ttc` 风暴; 修后 `-> SimHei`; 方框数=字符数(字体层)≠字节数(解码层, 见 mac tofu 条)
 - 切音轨后音画不同步(音频前跳数秒)+ 字幕跟着乱闪 → 已修(1005, 切轨后按渲染位置重定位); 判据 = `audio track switched to:N` 后紧跟 `av not align ioDiff:~6s`; 修后 = `audio switch re-position to render time:<ms>` 且无 align 行; 无触摸真机复现走 §2 `audiotrack_probe.txt`
+- iOS/mac 播放中「声音不连续/周期性卡顿」(画面正常、无 buffering、无 IO 错误, 难判是不是片源) → 已修(1006, avox 110d9d5: 实时回调取锁吐静音 → 改无锁 SPSC 环形缓冲); 判据 = `[audio-diag] silence:` 非 0(实测占播放时长 2.48%、148/160 个2s窗), 修后恒 0ms; 详见 `references/病族-播放中.md`
 - 字幕整行空心方框(tofu, 日中全灭、英文数字正常, mac) → 双层同症状, 均已修 d5a603b+6edc3c3(1002); 判据 = -Log `Loaded default font: …Helvetica.ttc`(病)/`Loaded bundled font: …simhei.ttf`(修后); 方框=字体/解码病, 错字/U+FFFD 菱形=编码病别混
 
 **AI 字幕/插件/模型装配** → [`references/病族-ai字幕与插件.md`](references/病族-ai字幕与插件.md)
