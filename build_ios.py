@@ -40,9 +40,31 @@ if DIST_FLAVOR not in ("agpl", "commercial"):
 
 if __name__ == "__main__":
     print(f"dist flavor: {DIST_FLAVOR}")
+    is_sim = os.environ.get("AVOX_IOS_SIM") == "1"
+    import shutil
     # module可以只编译一次，有改动再编译
     if not build_common.check_module_zlmediakit():
-        build_common.build_module("zlmediakit",onlyMake,ZL_CMAKE_ARGS)
+        # ZLM 的产物目录约定写死 release/ios(CMAKE_SYSTEM_NAME 拼, 不分模拟器)——
+        # sim 构建前把真机产物挪开, 编完分档拷到 ios-sim 再还原, 两平台判据位
+        # 互不覆盖(§六408 追五治本: 此前先到先得互相覆盖, 靠手工备份恢复)。
+        _zl = os.path.join(os.path.dirname(__file__), "3rdparty", "zlmediakit", "release")
+        _dev = os.path.join(_zl, "ios")
+        _sim = os.path.join(_zl, "ios-sim")
+        _had_dev = os.path.exists(_dev)
+        if is_sim and _had_dev:
+            os.rename(_dev, _dev + ".presim")
+        try:
+            if not build_common.build_module("zlmediakit", onlyMake, ZL_CMAKE_ARGS):
+                raise SystemExit("zlmediakit 构建失败")
+            if is_sim:
+                if os.path.exists(_sim):
+                    shutil.rmtree(_sim)
+                shutil.copytree(_dev, _sim)  # 刚产出的 sim 版分档
+        finally:
+            if is_sim and _had_dev:
+                if os.path.exists(_dev):
+                    shutil.rmtree(_dev)  # 本次 sim 版, 丢弃
+                os.rename(_dev + ".presim", _dev)  # 真机版还原
     if not build_common.check_module("fdk-aac","fdk-aac"):
         build_common.build_module("fdk-aac",onlyMake,FDK_AAC_CMAKE_ARGS)
     if not build_common.check_module("freetype","freetype"):
@@ -51,7 +73,6 @@ if __name__ == "__main__":
     # iOS 静态库预编译入库仓 (ios/onnxruntime/onnxruntime-ios-arm64-1.23.2/, 与 mac
     # 同版本) 后默认构建; 缺库或 AVOX_SKIP_AI=1 回退跳过 (find_package 缺席自动 OFF)。
     # 模拟器无 ORT 切片校验, 沿用跳过。
-    is_sim = os.environ.get("AVOX_IOS_SIM") == "1"
     ort_dir = os.path.abspath(os.path.join(os.path.dirname(__file__),
         "..", "avox_library", "3rdparty", "library", "ios", "onnxruntime",
         "onnxruntime-ios-arm64-1.23.2"))

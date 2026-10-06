@@ -483,7 +483,12 @@ def check_module_zlmediakit():
     elif get_current_target() == "windows":
         bin_dri = os.path.join(project_root, f"3rdparty/zlmediakit/release/{AVOX_TARGET_SYSTEM}/{AVOX_BUILD_TYPE}/{AVOX_BUILD_TYPE}/mk_api{suffix}")
     elif get_current_target() == "ios":
-        bin_dri = os.path.join(project_root, f"3rdparty/zlmediakit/release/{AVOX_TARGET_SYSTEM}/{AVOX_BUILD_TYPE}/{AVOX_BUILD_TYPE}/libmk_api{suffix}")
+        # 模拟器产物分档在 release/ios-sim(build_ios.py 构建后分档); release/ios
+        # 恒为真机版——两平台判据位互不覆盖(§六408 追五治本)。
+        if os.environ.get("AVOX_IOS_SIM") == "1":
+            bin_dri = os.path.join(project_root, f"3rdparty/zlmediakit/release/ios-sim/{AVOX_BUILD_TYPE}/{AVOX_BUILD_TYPE}/libmk_api{suffix}")
+        else:
+            bin_dri = os.path.join(project_root, f"3rdparty/zlmediakit/release/{AVOX_TARGET_SYSTEM}/{AVOX_BUILD_TYPE}/{AVOX_BUILD_TYPE}/libmk_api{suffix}")
     elif get_current_target() == "macos":
         # ZLMediaKit 自身用 CMAKE_SYSTEM_NAME(Darwin) 拼输出目录, 产物落在 release/darwin 而非 release/macos;
         # 且 macOS 产物是 .dylib(get_system_lib_suffix 的 else 分支给 .a, 那是给 fdk-aac/freetype 静态库用的)

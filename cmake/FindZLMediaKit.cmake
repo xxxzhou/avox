@@ -18,7 +18,13 @@ set(ZLMEDIAKIT_INCLUDE_DIRS ${ZLMEDIAKIT_INCLUDE_DIR} ${ZLTOOLKIT_INCLUDE_DIR} $
 # android在编译参数里传入
 # 设置ZLMediaKit库文件所在目录(release/Debug有二个固定目录，需要注意)
 if(WIN32 OR APPLE)
-    set(Mediakit_LIB_DIR ${PROJECT_SOURCE_DIR}/3rdparty/ZLMediaKit/release/${CMAKE_SYSTEM_NAME}/${CMAKE_BUILD_TYPE}/${CMAKE_BUILD_TYPE})
+    # iOS 模拟器: ZLM 产物分档目录(release/ios-sim, build_ios.py 构建后分档拷入)——
+    # release/ios 恒为真机版, 两平台互不覆盖(§六408 追五)。
+    if(IOS AND "$ENV{AVOX_IOS_SIM}" STREQUAL "1")
+        set(Mediakit_LIB_DIR ${PROJECT_SOURCE_DIR}/3rdparty/ZLMediaKit/release/ios-sim/${CMAKE_BUILD_TYPE}/${CMAKE_BUILD_TYPE})
+    else()
+        set(Mediakit_LIB_DIR ${PROJECT_SOURCE_DIR}/3rdparty/ZLMediaKit/release/${CMAKE_SYSTEM_NAME}/${CMAKE_BUILD_TYPE}/${CMAKE_BUILD_TYPE})
+    endif()
     # set(Mediakit_LIB_DIR ${PROJECT_SOURCE_DIR}/3rdparty/ZLMediaKit/release/${CMAKE_SYSTEM_NAME}/release/release)
     find_library_list(ZLMEDIAKIT_LIBRARIES Mediakit_LIB_DIR "mk_api")
 elseif(ONLY_LINUX)
