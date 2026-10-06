@@ -79,7 +79,23 @@ void logApple(const char *time, const char *level, const char *msg) {
   std::cout << "[" << time << "] " << level << ": " << msg << std::endl;
 }
 
+// 实现在下: getBundlePath 兜底名的主体 (Apple 90035: .bundle 后缀目录按嵌套
+// 代码校验, 无独立签名即拒; 上包改名 avox_res 后引擎按名兜底, 见 panvox
+// deploy_ios_runtime.sh)。
+static const char* getBundlePathIn(NSString* bundleName, NSString* resourceName);
+
 const char* getBundlePath(NSString* bundleName, NSString* resourceName){
+  if (const char* hit = getBundlePathIn(bundleName, resourceName)) return hit;
+  // 旧名 (含带子路径形态 "avox.bundle/fonts") 查不到 → 试改名后的 avox_res
+  if ([bundleName hasPrefix:@"avox.bundle"]) {
+    NSString* alt = [@"avox_res" stringByAppendingString:
+        [bundleName substringFromIndex:@"avox.bundle".length]];
+    return getBundlePathIn(alt, resourceName);
+  }
+  return nullptr;
+}
+
+static const char* getBundlePathIn(NSString* bundleName, NSString* resourceName){
   // 布局回退链:
   //  a) mainBundle 枚举到 <bundleName> 包装目录 (iOS app/裸可执行) → NSBundle 内查
   //  b) macOS 26 的 NSBundle 会漏枚举 .bundle 包目录: .app 内是平铺
