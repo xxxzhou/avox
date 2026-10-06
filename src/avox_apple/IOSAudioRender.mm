@@ -185,19 +185,32 @@ void IOSAudioRender::onInit() {
     return;
   }
 
-  // 分配环形缓冲区（约 200ms）
+  // 分配环形缓冲区（约 200ms; 容量取2的幂便于掩码取模）
   uint32_t bufferMs = 200;
   uint32_t sampleSize = renderDesc.channels * audioFormatSize(renderDesc.format);
-  bufferCapacity = renderDesc.sampleRate * bufferMs / 1000 * sampleSize;
-  ringBuffer.resize(bufferCapacity);
-  writePos = 0;
-  readPos = 0;
-  totalFrames = 0;
+  if (sampleSize == 0) {
+    LOGFLF(LogLevel::warn, "invalid render desc, no audio buffer");
+    AudioUnitUninitialize(audioUnit);
+    AudioComponentInstanceDispose(audioUnit);
+    audioUnit = nullptr;
+    return;
+  }
+  uint32_t want = renderDesc.sampleRate * bufferMs / 1000 * sampleSize;
+  ringSize = 8;
+  while (ringSize < want) {
+    ringSize <<= 1;
+  }
+  ringMask = ringSize - 1;
+  ringBuffer.assign(ringSize, 0);
+  wPos.store(0, std::memory_order_relaxed);
+  rPos.store(0, std::memory_order_relaxed);
+  flushTarget.store(0, std::memory_order_relaxed);
+  flushReq.store(false, std::memory_order_relaxed);
+  totalFrames.store(0, std::memory_order_relaxed);
   playedFrames = 0;
   lastQueueMs = bufferMs / 2;
   // 诊断窗随重开归零(轨对象跨 open 复用, 残留计数会串片)
-  underrunFrames = 0;
-  lockBusyFrames = 0;
+  silenceFrames = 0;
   dropFrames = 0;
   lateFeeds = 0;
   maxLateMs = 0;
@@ -213,6 +226,8 @@ void IOSAudioRender::onInit() {
     audioUnit = nullptr;
     return;
   }
+  // 缓冲就绪且设备已起, 才置运行位(回调据此判断可读)
+  running.store(true, std::memory_order_release);
 
   log(LogLevel::info, "iOS AudioUnit render init success, sampleRate:", renderDesc.sampleRate,
       " channels:", renderDesc.channels, " bufferMs:", bufferMs);
@@ -225,59 +240,51 @@ OSStatus IOSAudioRender::renderCallback(void* inRefCon,
                                          UInt32 inNumberFrames,
                                          AudioBufferList* ioData) {
   IOSAudioRender* self = static_cast<IOSAudioRender*>(inRefCon);
-  // 实时线程绝不阻塞: 拿不到锁就出静音, 持锁等待会与 onClose/pause 的停流互等死锁
-  std::unique_lock<std::mutex> lock(self->mtx, std::try_to_lock);
-  if (!lock.owns_lock()) {
-    if (ioData) {
-      for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
-        memset(ioData->mBuffers[i].mData, 0, ioData->mBuffers[i].mDataByteSize);
-      }
-    }
-    // 抢锁失败=整块静音, 可闻丢音; 只累加不写日志
-    self->lockBusyFrames.fetch_add(inNumberFrames, std::memory_order_relaxed);
+  // 实时线程全程无锁: 只读写原子索引。历史上此处用互斥量+try_lock, 抢不到锁即
+  // 整块(21ms)静音, 实测占播放时长 2.35% —— 是 iOS/mac 声音不连续的直接原因
+  if (!ioData || !self->running.load(std::memory_order_acquire)) {
     return noErr;
   }
-
-  if (!self->audioUnit || !ioData) {
-    return noErr;
+  // 冲刷请求(seek 重定位): 由本线程兑现 —— 它才是 rPos 的唯一写者
+  if (self->flushReq.exchange(false, std::memory_order_acq_rel)) {
+    self->rPos.store(self->flushTarget.load(std::memory_order_acquire),
+                     std::memory_order_release);
   }
 
   uint32_t sampleSize = self->renderDesc.channels * audioFormatSize(self->renderDesc.format);
   uint32_t bytesNeeded = inNumberFrames * sampleSize;
-  uint32_t undFrames = 0;
+  uint32_t avail = self->wPos.load(std::memory_order_acquire) -
+                   self->rPos.load(std::memory_order_relaxed);  // 无符号环绕安全
+  uint32_t pos = self->rPos.load(std::memory_order_relaxed);
+  uint32_t silent = 0;
 
   for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
     AudioBuffer* buffer = &ioData->mBuffers[i];
     uint8_t* outData = (uint8_t*)buffer->mData;
     uint32_t bytesToCopy = std::min(bytesNeeded, buffer->mDataByteSize);
+    uint32_t n = std::min(avail, bytesToCopy);
 
-    // 从环形缓冲区读取数据
-    uint32_t available = (self->writePos >= self->readPos)
-                             ? (self->writePos - self->readPos)
-                             : (self->bufferCapacity - self->readPos + self->writePos);
-
-    if (available >= bytesToCopy) {
-      // 读取数据
-      uint32_t firstPart = std::min(bytesToCopy, self->bufferCapacity - self->readPos);
-      memcpy(outData, self->ringBuffer.data() + self->readPos, firstPart);
-      self->readPos = (self->readPos + firstPart) % self->bufferCapacity;
-
-      if (firstPart < bytesToCopy) {
-        memcpy(outData + firstPart, self->ringBuffer.data(), bytesToCopy - firstPart);
-        self->readPos = bytesToCopy - firstPart;
+    if (n) {
+      uint32_t idx = pos & self->ringMask;
+      uint32_t firstPart = std::min(n, self->ringSize - idx);
+      memcpy(outData, self->ringBuffer.data() + idx, firstPart);
+      if (firstPart < n) {
+        memcpy(outData + firstPart, self->ringBuffer.data(), n - firstPart);
       }
-
-      self->playedFrames += inNumberFrames;
-    } else {
-      // 缓冲区数据不足，填充静音; 首次喂数据前的静音是起播前导, 不计丢音
-      memset(outData, 0, bytesToCopy);
-      if (self->totalFrames > 0) {
-        undFrames += inNumberFrames;
-      }
+      pos += n;
+      avail -= n;
+    }
+    if (n < bytesToCopy) {
+      // 只补缺的那一段(旧实现整块静音, 还把已到的数据推迟一整块)
+      memset(outData + n, 0, bytesToCopy - n);
+      silent += (bytesToCopy - n) / sampleSize;
     }
   }
-  if (undFrames) {
-    self->underrunFrames.fetch_add(undFrames, std::memory_order_relaxed);
+  self->rPos.store(pos, std::memory_order_release);
+  self->playedFrames += inNumberFrames;
+  // 起播前导(尚未喂过数据)不算丢音
+  if (silent && self->totalFrames.load(std::memory_order_relaxed) > 0) {
+    self->silenceFrames.fetch_add(silent, std::memory_order_relaxed);
   }
 
   return noErr;
@@ -299,8 +306,7 @@ void IOSAudioRender::onRender(const AvoxData& frame) {
   }
   lastFeedMs = nowMs;
 
-  std::unique_lock<std::mutex> lock(mtx);
-  if (!audioUnit || frame.size == 0) {
+  if (!running.load(std::memory_order_acquire) || frame.size == 0) {
     return;
   }
 
@@ -312,27 +318,24 @@ void IOSAudioRender::onRender(const AvoxData& frame) {
   }
 #endif
 
-  // 写入环形缓冲区
-  uint32_t available = (writePos >= readPos)
-                           ? (bufferCapacity - writePos + readPos)
-                           : (readPos - writePos);
-
-  if (inData.size <= available) {
-    uint32_t firstPart = std::min((uint32_t)inData.size, bufferCapacity - writePos);
-    memcpy(ringBuffer.data() + writePos, inData.data, firstPart);
-    writePos = (writePos + firstPart) % bufferCapacity;
-
-    if (firstPart < inData.size) {
-      memcpy(ringBuffer.data(), inData.data + firstPart, inData.size - firstPart);
-      writePos = inData.size - firstPart;
+  // 生产者独占写 wPos, 消费者独占写 rPos(SPSC 无锁契约, 不取锁)
+  uint32_t bytes = (uint32_t)inData.size;
+  uint32_t sampleSize = renderDesc.channels * audioFormatSize(renderDesc.format);
+  uint32_t w = wPos.load(std::memory_order_relaxed);
+  uint32_t used = w - rPos.load(std::memory_order_acquire);
+  if (bytes > 0 && used <= ringSize && bytes <= ringSize - used) {
+    uint32_t idx = w & ringMask;
+    uint32_t firstPart = std::min(bytes, ringSize - idx);
+    memcpy(ringBuffer.data() + idx, inData.data, firstPart);
+    if (firstPart < bytes) {
+      memcpy(ringBuffer.data(), inData.data + firstPart, bytes - firstPart);
     }
-
-    totalFrames += inData.size / (renderDesc.channels * audioFormatSize(renderDesc.format));
-  } else {
+    wPos.store(w + bytes, std::memory_order_release);
+    totalFrames.fetch_add(bytes / sampleSize, std::memory_order_relaxed);
+  } else if (bytes > 0) {
     // 塞不下则整帧丢弃(不做部分写), 是一条静默的数据丢失路径
     dropFrames.fetch_add(1, std::memory_order_relaxed);
   }
-  lock.unlock();
   reportDiag(nowMs);
 }
 
@@ -345,63 +348,45 @@ void IOSAudioRender::reportDiag(int64_t nowMs) {
     return;
   }
   int32_t sr = renderDesc.sampleRate > 0 ? renderDesc.sampleRate : 48000;
-  uint64_t uf = underrunFrames.exchange(0, std::memory_order_relaxed);
-  uint64_t lf = lockBusyFrames.exchange(0, std::memory_order_relaxed);
+  uint64_t sil = silenceFrames.exchange(0, std::memory_order_relaxed);
   uint64_t df = dropFrames.exchange(0, std::memory_order_relaxed);
   uint64_t late = lateFeeds.exchange(0, std::memory_order_relaxed);
   uint32_t ml = maxLateMs.exchange(0, std::memory_order_relaxed);
   lastDiagMs = nowMs;
   // 静默期不留痕, 每10窗留一条心跳证链路在测
   ++diagWindow;
-  if (!uf && !lf && !df && !late && (diagWindow % 10) != 0) {
+  if (!sil && !df && !late && (diagWindow % 10) != 0) {
     return;
   }
-  LOGFLF(LogLevel::info, "[audio-diag] underrun:", (int64_t)(uf * 1000 / sr),
-         "ms lockBusy:", (int64_t)(lf * 1000 / sr), "ms dropFrames:", (int64_t)df,
-         " lateFeeds:", (int64_t)late, " maxLate:", (int64_t)ml,
-         "ms queue:", getQueueMS(), "ms sr:", sr);
+  LOGFLF(LogLevel::info, "[audio-diag] silence:", (int64_t)(sil * 1000 / sr),
+         "ms dropFrames:", (int64_t)df, " lateFeeds:", (int64_t)late,
+         " maxLate:", (int64_t)ml, "ms queue:", getQueueMS(), "ms sr:", sr);
 }
 
 bool IOSAudioRender::empty() {
-  std::unique_lock<std::mutex> lock(mtx);
-  if (!audioUnit) {
+  if (!running.load(std::memory_order_acquire) || ringSize == 0) {
     return true;
   }
-
-  uint32_t available = (writePos >= readPos)
-                           ? (writePos - readPos)
-                           : (bufferCapacity - readPos + writePos);
-  uint32_t sampleSize = renderDesc.channels * audioFormatSize(renderDesc.format);
-  int32_t availableMs = (available / sampleSize) * 1000 / renderDesc.sampleRate;
-  return availableMs < frameMs;
+  return getQueueMS() < frameMs;
 }
 
 int32_t IOSAudioRender::getQueueMS() {
-  std::unique_lock<std::mutex> lock(mtx);
-  if (!audioUnit) {
+  if (!running.load(std::memory_order_acquire) || ringSize == 0 ||
+      renderDesc.sampleRate <= 0) {
     return lastQueueMs;
   }
-
-  uint32_t available = (writePos >= readPos)
-                           ? (writePos - readPos)
-                           : (bufferCapacity - readPos + writePos);
+  // 查询路径不取锁: 只读两个原子索引(SPSC)
+  uint32_t used = wPos.load(std::memory_order_acquire) -
+                  rPos.load(std::memory_order_relaxed);
   uint32_t sampleSize = renderDesc.channels * audioFormatSize(renderDesc.format);
-  int32_t queueMs = (available / sampleSize) * 1000 / renderDesc.sampleRate;
-  return queueMs;
+  return (int32_t)((used / sampleSize) * 1000 / renderDesc.sampleRate);
 }
 
 bool IOSAudioRender::full() {
-  std::unique_lock<std::mutex> lock(mtx);
-  if (!audioUnit) {
+  if (!running.load(std::memory_order_acquire) || ringSize == 0) {
     return false;
   }
-
-  uint32_t available = (writePos >= readPos)
-                           ? (writePos - readPos)
-                           : (bufferCapacity - readPos + writePos);
-  uint32_t sampleSize = renderDesc.channels * audioFormatSize(renderDesc.format);
-  int32_t queueMs = (available / sampleSize) * 1000 / renderDesc.sampleRate;
-  return queueMs >= frameMs * 2;
+  return getQueueMS() >= frameMs * 2;
 }
 
 void IOSAudioRender::pause(bool pause) {
@@ -423,28 +408,31 @@ void IOSAudioRender::pause(bool pause) {
 }
 
 void IOSAudioRender::flush() {
-  std::unique_lock<std::mutex> lock(mtx);
-  writePos = 0;
-  readPos = 0;
-  totalFrames = 0;
-  playedFrames = 0;
-  lastQueueMs = 0;
+  // 丢弃冲刷点之前的已写数据; 由回调兑现(它才是 rPos 的唯一写者), 之后写入的新帧保留
+  flushTarget.store(wPos.load(std::memory_order_acquire), std::memory_order_release);
+  flushReq.store(true, std::memory_order_release);
   lastFeedMs = 0;  // seek 冲刷跨度不算供给卡顿
 }
 
 void IOSAudioRender::onClose() {
+  // 先落运行位(回调据此提前退出), 再停/销毁设备(stop 返回即无在飞回调),
+  // 最后才动缓冲 —— 全程不需要实时回调取锁
+  running.store(false, std::memory_order_release);
   AudioComponentInstance unit = nullptr;
   {
-    // 锁内只摘句柄: 持锁调 AudioOutputUnitStop 会等实时回调让路, 而回调在等这把锁
+    // 锁内只摘句柄: 持锁调 AudioOutputUnitStop 会等实时回调让路
     std::unique_lock<std::mutex> lock(mtx);
     unit = audioUnit;
     audioUnit = nullptr;
-    ringBuffer.clear();
   }
   if (unit) {
     AudioOutputUnitStop(unit);
     AudioUnitUninitialize(unit);
     AudioComponentInstanceDispose(unit);
+  }
+  {
+    std::unique_lock<std::mutex> lock(mtx);
+    ringBuffer.clear();
   }
 
 #if TARGET_OS_IPHONE
