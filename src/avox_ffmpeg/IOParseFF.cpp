@@ -5,6 +5,8 @@
 #include <libavutil/dovi_meta.h>
 #include <libavutil/intreadwrite.h>
 #include <libavutil/log.h>
+#include <libavutil/spherical.h>
+#include <libavutil/stereo3d.h>
 
 #include <algorithm>
 #include <chrono>
@@ -13,6 +15,8 @@
 #include <string>
 #include <thread>
 #ifndef _WIN32
+#include <sys/stat.h>
+
 #include <dirent.h>
 #include <unistd.h>
 #endif
@@ -399,11 +403,22 @@ int IOParseFF::reopenInput() {
       // hls.c 的 AVOX_TLS_CA_FILE 补传(分片 TLS 与首连接同源)
       setenv("AVOX_TLS_CA_FILE", out.c_str(), 1);
     };
-    auto writeBundle = [&out](const std::vector<uint8_t>& bytes, const char* src) {
+    auto writeBundle = [&out, &pkg](const std::vector<uint8_t>& bytes, const char* src) {
       FILE* w = fopen(out.c_str(), "wb");
       if (!w) return false;
       fwrite(bytes.data(), 1, bytes.size(), w);
       fclose(w);
+#ifdef __ANDROID__
+      // 编译期默认 CA 路径(--openssldir 烘焙, 与 ffmpeg android 构建脚本同值)同落一份:
+      // by_file 默认腿直接命中, 分片 TLS 不依赖环境变量(1006 手机 https 定谳)
+      std::string defDir = std::string("/data/user/0/") + pkg + "/files/ssl";
+      mkdir(defDir.c_str(), 0755);
+      FILE* dw = fopen((defDir + "/cert.pem").c_str(), "wb");
+      if (dw) {
+        fwrite(bytes.data(), 1, bytes.size(), dw);
+        fclose(dw);
+      }
+#endif
       LOGFLF(LogLevel::info, "ca bundle from", src, ":", out,
              " bytes:", (int64_t)bytes.size());
       return true;
@@ -1169,6 +1184,35 @@ void IOParseFF::onRunTask() {
               ((const AVDOVIDecoderConfigurationRecord*)sd.data)->dv_profile;
           break;
         }
+      }
+      // 容器立体/球面声明 → VrHint(宿主显隐「立体/VR」入口): STEREO3D
+      // (MKV StereoMode/MP4 st3d) + SPHERICAL(sv3d; RECTILINEAR=声明平面不算),
+      // 老容器把 stereo_mode 挂流字典的兜一层(数值/mono 之外才算立体)。
+      {
+        bool hasStereo = false, hasSpherical = false;
+        for (int32_t k = 0; k < st->codecpar->nb_coded_side_data; k++) {
+          const AVPacketSideData& sd = st->codecpar->coded_side_data[k];
+          if (sd.type == AV_PKT_DATA_STEREO3D &&
+              sd.size >= (int)sizeof(AVStereo3D) &&
+              ((const AVStereo3D*)sd.data)->type != AV_STEREO3D_2D) {
+            hasStereo = true;
+          } else if (sd.type == AV_PKT_DATA_SPHERICAL &&
+                     sd.size >= (int)sizeof(AVSphericalMapping) &&
+                     ((const AVSphericalMapping*)sd.data)->projection !=
+                         AV_SPHERICAL_RECTILINEAR) {
+            hasSpherical = true;
+          }
+        }
+        if (!hasStereo) {
+          const AVDictionaryEntry* e =
+              av_dict_get(st->metadata, "stereo_mode", nullptr, 0);
+          hasStereo = e != nullptr && *e->value != '\0' &&
+                      strcmp(e->value, "0") != 0 && strcmp(e->value, "mono") != 0;
+        }
+        vdesc.vrHint = hasStereo && hasSpherical ? VrHint::stereoSpherical
+                        : hasStereo              ? VrHint::stereo
+                        : hasSpherical           ? VrHint::spherical
+                                                 : VrHint::none;
       }
       // 容器 codec_tag 透传(按内存序): ProRes 靠它定 profile ⇒ VT 的
       // kCMVideoCodecType_AppleProRes*。MP4/MOV 的 stsd 里有; MKV 仅在

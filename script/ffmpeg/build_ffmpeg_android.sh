@@ -58,6 +58,10 @@ fi
 # libssl.so/libcrypto.so 是 14 字节 soname 文本占位(lld 解析即 EOF 炸),
 # 故拷 .a 到只含静态库的目录再 -L 指它, 强制走静态链进 libavformat.so,
 # 免 jniLibs 打包; 无系统 TLS 后端可用(Android 无 securetransport)。
+# ⚠ 该 .a 必须用 --openssldir=/data/user/0/com.panvox.panvox/files/ssl 重编
+# (msys2: MSYS2_ARG_CONV_EXCL='*' 贯穿 configure+make 且改后须 make clean,
+# 编完 grep -a 验证烘焙串未被转成 C:/msys64/...)——avox 把 CA bundle 落该处,
+# by_file 默认腿免 env 命中(1006 手机 https 定谳; 重编配方见 memory/交接)。
 OPENSSL_FLAGS=()
 if [ -n "${OPENSSL_PREFIX:-}" ]; then
   OSSL_SRC="$OPENSSL_PREFIX/lib"
