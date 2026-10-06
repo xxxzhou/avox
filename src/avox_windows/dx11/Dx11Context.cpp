@@ -4,7 +4,12 @@ namespace avox {
 
 void Dx11Context::setDevice(ID3D11Device *device_) {
   device = device_;
-  device->GetImmediateContext(&d3dcontext);
+  // 空设备不设防会崩: 释放路径可能传 NULL(换代窗口渲染线程旧帧并发)
+  if (device) {
+    device->GetImmediateContext(&d3dcontext);
+  } else {
+    d3dcontext.Reset();
+  }
 }
 
 void Dx11Context::setTexture(ID3D11Texture2D *texture_) { texture = texture_; }

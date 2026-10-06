@@ -482,11 +482,18 @@ bool Dx11CSVideoRender::vaildAndInitGraph() {
   ID3D11Texture2D* yuvTexture = (ID3D11Texture2D*)gpuFrame.buffer;
   D3D11_TEXTURE2D_DESC desc = {};
   yuvTexture->GetDesc(&desc);
+  // 换片/换档换代竞态: 旧帧的解码上下文设备已被释放(成员置空), 空设备
+  // 本帧跳过——ComPtr 赋值与 GetImmediateContext 都对 NULL 不设防, 必崩。
+  // 下帧新流就绪后自然重建。
+  ID3D11Device* frameDevice = context->getDevice();
+  if (frameDevice == nullptr) {
+    return false;
+  }
   // 原子读+清重置标志: 释放决策用捕获值, 只清本次读到的值 —— 读-清分离期间宿主
   // 新置的请求不会被盲写抹掉, 留到下一帧再重建一次(见 VideoRender.hpp 契约)
   const bool bNeedReset = bResetFlag.exchange(false);
   // 如果上下文或是大小变化，重新创建
-  if (device != context->getDevice() || bNeedReset) {
+  if (device != frameDevice || bNeedReset) {
     releaseGraph();
   }
   // NV12/P010 流切换: SRV 视图与着色器分支都不同, 必须重建
@@ -506,8 +513,8 @@ bool Dx11CSVideoRender::vaildAndInitGraph() {
   if (desc.Width == 0 || desc.Height == 0) {
     return false;
   }
-  // 使用解码的D3D11设备
-  setDevice(context->getDevice());
+  // 使用解码的D3D11设备(帧入口已验空, 直用捕获值避免 TOCTOU 再取)
+  setDevice(frameDevice);
   // 换分辨率要重传 constBuf: CS 按 inputSize 裁剪线程, 不重传会按旧尺寸只填左上角
   if (imageWidth != gpuFrame.format.width ||
       imageHeight != gpuFrame.format.height) {
