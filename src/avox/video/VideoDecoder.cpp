@@ -282,11 +282,24 @@ DecodeResult VideoDecoder::decoderImp(AvoxPacket& vdata) {
       splitAvccNalu(vdata, spiltBufs);
     }
     if (spiltBufs.size() > 0) {
-      // 分段的avcc的头换成annexb格式
+      // 多NALU包逐段喂: 返回值必须收敛上抛——恒success会吞掉硬解give-up的
+      // openFailed, 软解兜底永不触发(1006 bipbop mac黑屏定谳); 负值>EOS>其余
+      DecodeResult agg = DecodeResult::success;
+      bool bEos = false;
       for (auto& buf : spiltBufs) {
-        decode(buf);
+        const DecodeResult r = decode(buf);
+        if (r == DecodeResult::complete) {
+          bEos = true;
+          continue;
+        }
+        if ((int32_t)r < (int32_t)agg) {
+          agg = r;
+        }
       }
-      return DecodeResult::success;
+      if (bEos && agg == DecodeResult::success) {
+        agg = DecodeResult::complete;
+      }
+      return agg;
     } else {
       return decode(vdata);
     }
