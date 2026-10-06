@@ -3,6 +3,7 @@
 #include <AVFoundation/AVFoundation.h>
 #include <AudioToolbox/AudioToolbox.h>
 
+#include <atomic>
 #include <mutex>
 
 #include "avox/audio/AudioOutput.hpp"
@@ -31,6 +32,17 @@ class IOSAudioRender : public AudioOutput {
   uint32_t writePos = 0;
   uint32_t readPos = 0;
   uint32_t bufferCapacity = 0;
+
+  // 播放诊断: 回调内只做原子累加(实时线程不写日志), 由 onRender 每2s限频汇总
+  std::atomic<uint64_t> underrunFrames{0};  // 数据不足被静音填充的采样帧
+  std::atomic<uint64_t> lockBusyFrames{0};  // 抢锁失败整块静音的采样帧
+  std::atomic<uint64_t> dropFrames{0};      // onRender 整帧塞不下被丢弃的帧数
+  std::atomic<uint64_t> lateFeeds{0};       // 供给间隔超1.5帧长(生产被卡)次数
+  std::atomic<uint32_t> maxLateMs{0};       // 观测窗内最大供给间隔(ms)
+  int64_t lastFeedMs = 0;                   // 仅生产线程读写
+  int64_t lastDiagMs = 0;
+  int64_t diagWindow = 0;
+  void reportDiag(int64_t nowMs);
 
 #ifdef AVOX_ENABLE_FFMPEG
   std::unique_ptr<FFResample> resample = nullptr;

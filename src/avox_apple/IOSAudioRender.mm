@@ -1,6 +1,7 @@
 #include "IOSAudioRender.hpp"
 
 #include <TargetConditionals.h>
+#include "avox/AvoxTime.h"
 #include "avox/module/AvoxManager.hpp"
 #include "avox/player/MediaPlayer.hpp"
 
@@ -194,6 +195,15 @@ void IOSAudioRender::onInit() {
   totalFrames = 0;
   playedFrames = 0;
   lastQueueMs = bufferMs / 2;
+  // 诊断窗随重开归零(轨对象跨 open 复用, 残留计数会串片)
+  underrunFrames = 0;
+  lockBusyFrames = 0;
+  dropFrames = 0;
+  lateFeeds = 0;
+  maxLateMs = 0;
+  lastFeedMs = 0;
+  lastDiagMs = 0;
+  diagWindow = 0;
 
   status = AudioOutputUnitStart(audioUnit);
   if (status != noErr) {
@@ -223,6 +233,8 @@ OSStatus IOSAudioRender::renderCallback(void* inRefCon,
         memset(ioData->mBuffers[i].mData, 0, ioData->mBuffers[i].mDataByteSize);
       }
     }
+    // 抢锁失败=整块静音, 可闻丢音; 只累加不写日志
+    self->lockBusyFrames.fetch_add(inNumberFrames, std::memory_order_relaxed);
     return noErr;
   }
 
@@ -232,6 +244,7 @@ OSStatus IOSAudioRender::renderCallback(void* inRefCon,
 
   uint32_t sampleSize = self->renderDesc.channels * audioFormatSize(self->renderDesc.format);
   uint32_t bytesNeeded = inNumberFrames * sampleSize;
+  uint32_t undFrames = 0;
 
   for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {
     AudioBuffer* buffer = &ioData->mBuffers[i];
@@ -256,15 +269,36 @@ OSStatus IOSAudioRender::renderCallback(void* inRefCon,
 
       self->playedFrames += inNumberFrames;
     } else {
-      // 缓冲区数据不足，填充静音
+      // 缓冲区数据不足，填充静音; 首次喂数据前的静音是起播前导, 不计丢音
       memset(outData, 0, bytesToCopy);
+      if (self->totalFrames > 0) {
+        undFrames += inNumberFrames;
+      }
     }
+  }
+  if (undFrames) {
+    self->underrunFrames.fetch_add(undFrames, std::memory_order_relaxed);
   }
 
   return noErr;
 }
 
 void IOSAudioRender::onRender(const AvoxData& frame) {
+  // 供给节拍: 生产线程按帧长节拍喂, 明显超时=被抢占或IO卡, 先于回调欠载暴露
+  int64_t nowMs = timeStampMS();
+  if (lastFeedMs > 0) {
+    int64_t gap = nowMs - lastFeedMs;
+    if (gap > (int64_t)frameMs * 3 / 2) {
+      lateFeeds.fetch_add(1, std::memory_order_relaxed);
+      uint32_t prev = maxLateMs.load(std::memory_order_relaxed);
+      while ((int64_t)gap > (int64_t)prev &&
+             !maxLateMs.compare_exchange_weak(prev, (uint32_t)gap,
+                                              std::memory_order_relaxed)) {
+      }
+    }
+  }
+  lastFeedMs = nowMs;
+
   std::unique_lock<std::mutex> lock(mtx);
   if (!audioUnit || frame.size == 0) {
     return;
@@ -294,7 +328,38 @@ void IOSAudioRender::onRender(const AvoxData& frame) {
     }
 
     totalFrames += inData.size / (renderDesc.channels * audioFormatSize(renderDesc.format));
+  } else {
+    // 塞不下则整帧丢弃(不做部分写), 是一条静默的数据丢失路径
+    dropFrames.fetch_add(1, std::memory_order_relaxed);
   }
+  lock.unlock();
+  reportDiag(nowMs);
+}
+
+void IOSAudioRender::reportDiag(int64_t nowMs) {
+  if (lastDiagMs == 0) {
+    lastDiagMs = nowMs;
+    return;
+  }
+  if (nowMs - lastDiagMs < 2000) {
+    return;
+  }
+  int32_t sr = renderDesc.sampleRate > 0 ? renderDesc.sampleRate : 48000;
+  uint64_t uf = underrunFrames.exchange(0, std::memory_order_relaxed);
+  uint64_t lf = lockBusyFrames.exchange(0, std::memory_order_relaxed);
+  uint64_t df = dropFrames.exchange(0, std::memory_order_relaxed);
+  uint64_t late = lateFeeds.exchange(0, std::memory_order_relaxed);
+  uint32_t ml = maxLateMs.exchange(0, std::memory_order_relaxed);
+  lastDiagMs = nowMs;
+  // 静默期不留痕, 每10窗留一条心跳证链路在测
+  ++diagWindow;
+  if (!uf && !lf && !df && !late && (diagWindow % 10) != 0) {
+    return;
+  }
+  LOGFLF(LogLevel::info, "[audio-diag] underrun:", (int64_t)(uf * 1000 / sr),
+         "ms lockBusy:", (int64_t)(lf * 1000 / sr), "ms dropFrames:", (int64_t)df,
+         " lateFeeds:", (int64_t)late, " maxLate:", (int64_t)ml,
+         "ms queue:", getQueueMS(), "ms sr:", sr);
 }
 
 bool IOSAudioRender::empty() {
@@ -344,6 +409,7 @@ void IOSAudioRender::pause(bool pause) {
   {
     std::unique_lock<std::mutex> lock(mtx);
     unit = audioUnit;
+    lastFeedMs = 0;  // 暂停跨度不算供给卡顿
   }
   if (!unit) {
     return;
@@ -363,6 +429,7 @@ void IOSAudioRender::flush() {
   totalFrames = 0;
   playedFrames = 0;
   lastQueueMs = 0;
+  lastFeedMs = 0;  // seek 冲刷跨度不算供给卡顿
 }
 
 void IOSAudioRender::onClose() {
