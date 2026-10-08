@@ -15,7 +15,17 @@ VideoStream::VideoStream() {
 // #endif
 }
 
-VideoStream::~VideoStream() {}
+VideoStream::~VideoStream() { stopEncoder(); }
+
+void VideoStream::stopEncoder() {
+  if (encoder) {
+    // 排空: 硬编 CompleteFrames 返回前把待出帧全回调完(sink 尚活时写出尾帧)
+    encoder->flush();
+    encoder.reset();
+  }
+  // 断链: 之后任何迟到包判空返回, 不再碰已释放的 muxer
+  muxer = nullptr;
+}
 
 void VideoStream::setHardEncode(bool bHard) { bHardEncoder = bHard; }
 

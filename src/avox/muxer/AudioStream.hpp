@@ -19,6 +19,8 @@ public:
   ATrackDesc setAudioDesc(const ATrackDesc &desc,const AudioDesc& outDesc);
   void encoderFrame(const AvoxAFrame &frame);
   void flushEncoder() { if (encoder) encoder->flush(); }
+  // 停编码器(同 VideoStream::stopEncoder): 排空 → 析构 → 断 muxer 链
+  void stopEncoder();
 
   // IEncoderOb
 public:

@@ -7,7 +7,16 @@ namespace avox {
 
 AudioStream::AudioStream() {}
 
-AudioStream::~AudioStream() {}
+AudioStream::~AudioStream() { stopEncoder(); }
+
+void AudioStream::stopEncoder() {
+  if (encoder) {
+    // 排空: 音频编码器内部线程的待出包在 sink 尚活时落盘
+    encoder->flush();
+    encoder.reset();
+  }
+  muxer = nullptr;
+}
 
 ATrackDesc AudioStream::setAudioDesc(const ATrackDesc& desc_,
                                      const AudioDesc& outDesc_) {

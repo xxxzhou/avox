@@ -110,6 +110,10 @@ void IOSVEncoder::flush() {
 
 void IOSVEncoder::onClose() {
   if (compressionSession) {
+    // 先排空: CompleteFrames 保证待出帧在返回前全部回调完(此时调用方还没放
+    // sink, 尾帧能正常写出); 再落关闭闸丢迟到回调, 最后 Invalidate/Release
+    VTCompressionSessionCompleteFrames(compressionSession, kCMTimeInvalid);
+    bClosing.store(true);
     VTCompressionSessionInvalidate(compressionSession);
     CFRelease(compressionSession);
     compressionSession = nullptr;
@@ -352,6 +356,9 @@ void IOSVEncoder::compressionOutputCallback(void *outputCallbackRefCon,
   }
   IOSVEncoder *encoder = static_cast<IOSVEncoder *>(outputCallbackRefCon);
   if (!encoder)
+    return;
+  // 会话已开始关闭: 该帧属排空后的迟到回调, 丢弃(防打到已释放的下游)
+  if (encoder->bClosing.load())
     return;
   // 获取编码数据
   CMBlockBufferRef dataBuffer = CMSampleBufferGetDataBuffer(sampleBuffer);

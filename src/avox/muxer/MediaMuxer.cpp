@@ -126,6 +126,10 @@ void MediaMuxer::pushPacket(const AvoxPacket& packet) {
     LOGFLF(LogLevel::warn, "muxer is not recording");
     return;
   }
+  // sink 已释放(close 收尾窗口): 编码器迟到回调不得再碰已释放的队列
+  if (!ioMuxer) {
+    return;
+  }
   PackType type = (PackType)packet.packtype;
   // [dbg] ENH_VKDBG=1: pushPacket 包类型计数
   {

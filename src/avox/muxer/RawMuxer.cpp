@@ -16,7 +16,17 @@ RawMuxer::RawMuxer() {
   bDisableAudio = false;
 }
 
-RawMuxer::~RawMuxer() { close(); }
+// 析构先停编码器: MediaMuxer::close 已放 sink 时也要保证编码器先死,
+// 否则硬编回调(异步)会在成员析构途中打到已释放的队列
+RawMuxer::~RawMuxer() {
+  stopStreams();
+  close();
+}
+
+void RawMuxer::stopStreams() {
+  if (videoStream) videoStream->stopEncoder();
+  if (audioStream) audioStream->stopEncoder();
+}
 
 bool RawMuxer::getHardEncode() { return videoStream->getHardEncode(); }
 
@@ -98,7 +108,12 @@ void RawMuxer::setInAudioDesc(const ATrackDesc& desc) {
 
 void RawMuxer::onOpen() {}
 
-void RawMuxer::onClose() { bReAudio = false; }
+void RawMuxer::onClose() {
+  // MediaMuxer::close 在 onClose 之后才释放 sink(ioMuxer): 此处先停编码器,
+  // 待出帧趁 sink 尚活排空落盘, 且关流后不再有回调能触到 sink
+  stopStreams();
+  bReAudio = false;
+}
 
 void RawMuxer::pushFrame(const YUVFrame& frame) {
   // [dbg] ENH_VKDBG=1: 前几个视频帧进入编码链路

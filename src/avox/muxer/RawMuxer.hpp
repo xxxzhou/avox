@@ -52,6 +52,8 @@ class RawMuxer : public MediaMuxer {
     if (videoStream) videoStream->flushEncoder();
     if (audioStream) audioStream->flushEncoder();
   }
+  // 停两条流的编码器(幂等; close 与析构共用)
+  void stopStreams();
 };
 
 }

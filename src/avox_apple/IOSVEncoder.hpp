@@ -2,6 +2,8 @@
 
 #include <VideoToolbox/VideoToolbox.h>
 
+#include <atomic>
+
 #include "avox/video/VideoEncoder.hpp"
 
 namespace avox {
@@ -16,6 +18,8 @@ class IOSVEncoder : public VideoEncoder {
   bool bMetalRender = false;
   IOSurfaceRef preSurface = nullptr;
   CVPixelBufferRef pixelBuffer = nullptr;
+  // 关闭闸: onClose 排空后置位, VT 队列上迟到的回调据此直接丢
+  std::atomic<bool> bClosing{false};
 
  public:
   virtual DecodeResult onPreEncoder() override;
