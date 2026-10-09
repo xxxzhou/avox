@@ -7,8 +7,27 @@ avox 是一套跨平台音视频能力库（C++17），提供从设备采集、�
 [![License](https://img.shields.io/badge/License-AGPL_v3-important)](LICENSE)
 [![Commercial License](https://img.shields.io/badge/Commercial-Available-success)]()
 [![Version](https://img.shields.io/badge/Version-1.0.0969-green)]()
+[![GitHub stars](https://img.shields.io/github/stars/xxxzhou/avox?style=social)](https://github.com/xxxzhou/avox)
 
 avox 源自作者多年的音视频/GPU 技术积累，经大模型辅助整理而成。技术脉络从早期 [OEIP](https://zhuanlan.zhihu.com/p/104027165)（UE4/Unity3D 多媒体管线）到 [aoce](https://github.com/xxxzhou/aoce)（Vulkan 跨平台 GPU 图像处理），关键实现过程均整理成系列技术文章（[天天不在](https://www.zhihu.com/people/zhou-xin-12-70-21/posts)），见下文[技术实现解析](#技术实现解析)。
+
+## 用 avox 构建的产品
+
+**泛音 Panvox** 是基于 avox 构建的跨平台视频播放器:产品层用 Flutter,引擎层即本库——通过 C ABI 复用播放、硬解与 GPU 处理管线、字幕渲染与 AI 能力,覆盖 Windows / macOS / iOS / Android。
+
+- **Windows 已上架** [Microsoft Store](https://apps.microsoft.com/detail/9PG77H33P7K8);iOS / macOS 审核中;Android 开发中
+- 落地形态:海报墙媒体库(直连 NAS / SMB / WebDAV / Jellyfin)、直连不转码、ASS/PGS/SRT 完整渲染、逐帧 HDR 色调映射、AI 字幕与识别打标、IPTV(m3u + EPG)
+
+<p align="center">
+  <img src="assets/images/panvox/win_wall.png" width="410" alt="Windows - 海报墙媒体库">
+  <img src="assets/images/panvox/mac_wall.png" width="410" alt="macOS - 海报墙媒体库">
+</p>
+<p align="center">
+  <img src="assets/images/panvox/ios_library.png" width="260" alt="iOS - 海报墙">
+  <img src="assets/images/panvox/android_iptv.png" width="260" alt="Android - IPTV 频道">
+</p>
+
+产品介绍与实现解析见 [《从开源引擎 avox 到成品:全平台播放器「泛音」》](https://zhuanlan.zhihu.com/p/2091902400839921766)。
 
 ## 项目优势
 
@@ -24,7 +43,10 @@ avox 源自作者多年的音视频/GPU 技术积累，经大模型辅助整理�
 - **游戏引擎深度接入** - UE5、Unity3D、Godot 纹理级零拷贝双向直通；播放、通话、AI 能力在引擎内原生可用，而非仅嵌一个播放窗口
 - **真实场景验证，全程有据可查** - 直播播放、多平台双向通话、XR/VR·MR 相机标定与虚实融合（虚拟制片）等场景实战落地，关键实现均有系列技术文章与仓库文档对应，可读、可查、可复现
 
-Android Godot GPU 直通播放磁力链接演示![Android Godot GPU直通播放磁力链接](assets/images/godot/avox_android_menu.png)
+<p align="center">
+  <img src="assets/images/godot/avox_android_menu.png" width="360" alt="Android + Godot - GPU 直通播放磁力链接">
+  <br><em>Android + Godot:纹理级直通播放磁力链接</em>
+</p>
 
 ## 核心特性
 
@@ -80,6 +102,11 @@ AI 模块以动态插件（`plugins/`）形式加载，运行期探测能力：
 - **AI 推理** - ONNX Runtime / NCNN 通用推理（YOLO 检测、人脸关键点等），支持 Vulkan 显存直连输入输出
 - **多模态 Agent** - LLM 集成，支持图文对话、工具链调用
 
+<p align="center">
+  <img src="assets/images/panvox/win_ai_subtitle.png" width="720" alt="Windows - AI 字幕生成(泛音 Panvox)">
+  <br><em>泛音 Panvox 中的 AI 字幕:本机识别 + 翻译后嵌入播放</em>
+</p>
+
 ### XR / VR·MR 相机标定与虚实融合（虚拟制片）
 
 VR/MR 相机跟踪、虚拟制片相机标定、MR 虚实融合等相关模块已在生产环境验证并集成进 avox：
@@ -111,6 +138,15 @@ VR/MR 相机跟踪、虚拟制片相机标定、MR 虚实融合等相关模块�
 ## 技术实现解析
 
 关键实现过程整理成系列技术文章（[天天不在 - 文章列表](https://www.zhihu.com/people/zhou-xin-12-70-21/posts)）：
+
+**泛音 Panvox 产品与实现（2026）**
+
+- [从开源引擎 avox 到成品:全平台播放器「泛音」](https://zhuanlan.zhihu.com/p/2091902400839921766) - 产品全貌:播放、片库、字幕、AI、IPTV
+- [HDR 不同平台的播放实现:直通、整形与逐帧色调映射](https://zhuanlan.zhihu.com/p/2091913868247356371)
+- [Flutter 与 avox 的视频帧交互:从 Texture 到原生窗口](https://zhuanlan.zhihu.com/p/2091915145169715723)
+- [ASS/PGS/SRT 的不同平台显示:三条渲染路与四块画布](https://zhuanlan.zhihu.com/p/2091918340063343994)
+- [avox 本体与插件的不同平台编译:动态还是静态,平台说了算](https://zhuanlan.zhihu.com/p/2091919551512449262)
+- [4 倍速播放的实现:解码上限与 I 帧模式](https://zhuanlan.zhihu.com/p/2091923024178164860)
 
 **播放器框架与多平台移植**
 
@@ -167,6 +203,7 @@ avox 的能力来自多年的持续积累：
 | 2019-2020 | oeip（Windows） | CUDA/DX11 图像管线、FFmpeg 推拉流、UE4/Unity3D 纹理直通、CUDA Grabcut/导向滤波、YOLO 整合游戏引擎 |
 | 2020-2021 | [aoce](https://github.com/xxxzhou/aoce)（跨平台） | Vulkan Compute 图像管线、GPUImage 100+ 滤镜移植、Android/iOS 相机采集、蓝绿幕扣像、NCNN 端侧推理、SWIG 多语言 |
 | 2024-至今 | avox | 播放器 SDK：多平台硬解硬编、零拷贝 GPU 通路、WebRTC 全家桶、AI 字幕/修复/超分、多语言 SDK；XR/VR·MR 相机标定与虚实融合模块已集成 |
+| 2026 | **泛音 Panvox**（[Microsoft Store](https://apps.microsoft.com/detail/9PG77H33P7K8)） | 基于 avox 的跨平台播放器产品：Flutter 产品层 + avox C ABI；Windows 已上架，Apple 两端审核中；播放/片库/字幕/AI/IPTV 全链路落地 |
 
 **XR / 虚拟制片模块**（VR/MR 相机跟踪、虚拟制片标定、MR 虚实融合等，前期在 aoce 上完整验证，已集成进 avox）：
 
