@@ -163,10 +163,10 @@ DecodeResult IOSVEncoder::encode(const GpuFrame &frame) {
       return DecodeResult::dataError;
     }    
     // 使用 pixelBuffer 进行编码
-    CMTime presentationTime = CMTimeMakeWithSeconds(frame.pts, 1000000);
+    CMTime presentationTime = CMTimeMake(frame.pts, 1000);
     VTEncodeInfoFlags infoFlags = 0;
     OSStatus status = VTCompressionSessionEncodeFrame(compressionSession,pixelBuffer,
-        presentationTime,kCMTimeInvalid,nullptr,nullptr,&infoFlags);  
+        presentationTime,kCMTimeInvalid,nullptr,nullptr,&infoFlags);
     if (status != noErr) {
       LOGFLF(LogLevel::warn, "Failed to encode frame:", status);
       return DecodeResult::dataError;
@@ -175,7 +175,7 @@ DecodeResult IOSVEncoder::encode(const GpuFrame &frame) {
   } else if (frame.buffer) {
    // 使用Metal渲染的GPU帧编码
     CVPixelBufferRef pixelBuffer = (CVPixelBufferRef)frame.buffer;
-    CMTime presentationTime = CMTimeMakeWithSeconds(frame.pts, 1000000);
+    CMTime presentationTime = CMTimeMake(frame.pts, 1000);
     VTEncodeInfoFlags infoFlags = 0;
     OSStatus status = VTCompressionSessionEncodeFrame(
         compressionSession, pixelBuffer, presentationTime, kCMTimeInvalid,
@@ -247,7 +247,7 @@ DecodeResult IOSVEncoder::encode(const YUVFrame &frame) {
   }
   CVPixelBufferUnlockBaseAddress(pixelBuffer, 0);
   // 编码帧
-  CMTime presentationTime = CMTimeMake(frame.pts, 1000000);
+  CMTime presentationTime = CMTimeMake(frame.pts, 1000);
   VTEncodeInfoFlags infoFlags = 0;
   OSStatus status = VTCompressionSessionEncodeFrame(
       compressionSession, pixelBuffer, presentationTime, kCMTimeInvalid,
@@ -377,10 +377,12 @@ void IOSVEncoder::compressionOutputCallback(void *outputCallbackRefCon,
     packet.data.size = length;
     packet.data.bRef = true;
     packet.prefixSize = 4;
-    // 获取时间戳
+    // 获取时间戳: 换回毫秒。曾用 value/timescale 整除, VT 会话 timescale 下
+    // 亚秒全被量化成 0 → 全片 pts 恒 0, 下游 IOMuxer 按「同 dts=同帧」AU 合并
+    // 把整片粘成一个 sample(产物秒完播+无声, 10/10 定谳)
     CMTime presentationTime =
         CMSampleBufferGetPresentationTimeStamp(sampleBuffer);
-    packet.pts = presentationTime.value / presentationTime.timescale;
+    packet.pts = (int64_t)llround(CMTimeGetSeconds(presentationTime) * 1000.0);
     packet.dts = packet.pts;
     // 判断帧类型
     if (infoFlags & kVTEncodeInfo_FrameDropped) {
