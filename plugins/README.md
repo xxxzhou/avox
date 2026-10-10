@@ -2,7 +2,7 @@
 
 把依赖大三方库的可选模块（opencv / onnx / sherpa / translation / inpaint 等）做成独立「组件」，
 编译为 `avox_<name>.dll/.so`，输出到 avox.dll 同级的 `plugins/` 子目录。avox 首次访问时（lazy）
-扫描该目录，发现 `avox_*` 开头的 dll 并加载，运行期探测能力。设计见 `doc/plan/动态加载组件设计.md`。
+扫描该目录，发现 `avox_*` 开头的 dll 并加载，运行期探测能力。设计见 `doc/plan/player/动态加载组件设计.md`。
 
 ## 总开关与组件 option
 - 根 `CMakeLists.txt` 只有一个 `option(AVOX_ENABLE_PLUGINS)`：ON 时 `add_subdirectory(plugins)`。
@@ -53,7 +53,7 @@ plugins/
 - plugin 编译时只定义 `AVOX_PLUGIN_BUILDING`（导出 `NewModule` / `GetModuleABI`），**绝不定义 `AVOX_EXPORT_DEFINE`**
   （否则 `IModule` 被当 dllexport，虚表跨 dll 错乱）。由 `register_plugin` 自动设，组件 CMakeLists 不用手动。
 - `IModule` 对象由 plugin `new`，unload 时直接 `delete`（实测 avox /MT 配置下跨 dll new/delete 安全：
-  UCRT 静态堆复用 `GetProcessHeap()`，所有 /MT 模块共享进程默认堆；详见设计文档 §13）。
+  UCRT 静态堆复用 `GetProcessHeap()`，所有 /MT 模块共享进程默认堆；详见设计文档 §6）。
   业务侧用 `unique_ptr` / `delete` 即可，**无需 `destroy()` 自销毁**。
 - `IModule::loadModule(IOption*)` 语义 = 运行期能力探测 + 初始化（false = 不可用 ≠ 崩溃）。
 - 静态模式（iOS/WASM）：`AVOX_ENABLE_STATIC` 由 CMake 在 `AVOX_DLL_TYPE==STATIC` 时定义，
@@ -61,7 +61,7 @@ plugins/
   插件 .cpp 须 `#include "module/ModuleMgr.hpp"`（静态分支实例化 `StaticLinkModule` 需要）。
 
 ## 平台
-- Windows / Linux：DYNAMIC（扫描 `plugins/` + dlopen）。
-- iOS / Apple：强制 STATIC（App Store 禁止加载第三方可执行代码）。
-- Android：STATIC 为主（`jniLibs` 不能枚举目录，扫描做不成）。
-- 详见设计文档 §8。
+- Windows / Linux / macOS：DYNAMIC（扫描 `plugins/` + dlopen；macOS 产物 `libavox_*.dylib`，`-undefined dynamic_lookup`）。
+- iOS：强制 STATIC（App Store 禁止加载第三方可执行代码；随包模块全静态并档 + 保活表）。
+- Android：DYNAMIC（与 `libavox.so` 同目录平铺即被扫描，原生库需解包成实体 so；宿主 `setPluginsDir` 指定优先）。
+- 详见设计文档 §5。

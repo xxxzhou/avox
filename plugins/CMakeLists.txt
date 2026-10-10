@@ -9,20 +9,20 @@ set(PLUGINS_STATIC  "")
 # avox_python (嵌入 CPython) 已移除: 被 avox.dll 核心的 SubprocessRunner (spawn 机器 python) 取代。
 set(PLUGINS_DYNAMIC avox_opencv avox_sherpa avox_onnx avox_translation avox_cv avox_ocr avox_webrtc avox_openvino avox_avatar avox_torrent avox_calib avox_fbx avox_remote avox_ass avox_tempo avox_disc)
 if(ANDROID)
-  # Android: jniLibs 平铺 + 目录不可枚举, 动态插件无法被 avox 扫描加载(见 plugins/README.md
-  # 静态化规划); Godot 打包场景仅保留 avox_torrent —— so 作为 APK 资源打进包,
-  # 运行期由 avox_godot 解压到 filesDir 并 setPluginsDir 动态加载。
+  # Android: jniLibs 平铺无 plugins/ 子目录 —— ModuleMgr __ANDROID__ 分支按 libavox.so
+  # 同目录(nativeLibraryDir)扫描加载(890e1d4), 插件 so 与主库同放即被发现; 需原生库解包
+  # 成实体 so(useLegacyPackaging); 宿主 setPluginsDir 显式指定优先。Godot 打包场景:
+  # so 作为 APK 资源打进包, 运行期由 avox_godot 解压到 filesDir 并 setPluginsDir 动态加载。
   # 其余插件在 Android 无预编译依赖(opencv 等)或链接不完整(sherpa 等), 一并排除。
   set(PLUGINS_DYNAMIC avox_torrent)
   # webrtc 插件: 宿主把 libavox_webrtc.so 复制到可写目录后 setPluginsDir 动态加载
   # (依赖 avox_library/build/android/release/libwebrtc_nosym.a; console 无 JVM 用不了 webrtc)
   list(APPEND PLUGINS_DYNAMIC avox_webrtc)
   # avox_remote/avox_ass: 预编译依赖已入库 avox_library(android/libsmb2、android/ass,
-  # 构建脚本 script/smb2|ass/build_android.py), so 由宿主 setPluginsDir 指向
-  # jniLibs 动态加载(与 webrtc 同模式)
+  # 构建脚本 script/smb2|ass/build_android.py), so 与主库同在 jniLibs 即被扫描加载
   list(APPEND PLUGINS_DYNAMIC avox_remote avox_ass)
   # avox_disc: libbluray 静态链(aarch64 预编译在库仓 android/libbluray/arm64-v8a),
-  # 加载同 remote/ass 的 setPluginsDir 模式
+  # 加载同 remote/ass(与主库同目录扫描)
   list(APPEND PLUGINS_DYNAMIC avox_disc)
 endif()
 if(WIN32)

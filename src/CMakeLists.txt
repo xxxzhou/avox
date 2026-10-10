@@ -249,7 +249,7 @@ endif()
 # iOS 真机: avox_remote 静态并档 (10/2)。仅设备 sysroot——模拟器无 libsmb2/webrtc
 # 预编译, 其他平台插件模式不变。TLS 由 WebRTC 归档的 BoringSSL 提供(同 mac 插件
 # 路线), OpenSSL 只取头; libsmb2 iOS 预编译在库仓。注册器是全局 ctor 对象, 无引用
-# 不进归档闭包 — 由 panvox iOS shim 引用 avox_remote_static_anchor() 强拉。
+# 不进归档闭包 — 由 ModuleMgr.cpp 保活表(AVOX_STATIC_MODULE_REMOTE)取址拖进闭包。
 # sysroot 大小写不定(iPhoneOS27.0.sdk), 转小写后排除模拟器。
 string(TOLOWER "${CMAKE_OSX_SYSROOT}" _avox_ios_sysroot_l)
 if(IOS AND NOT _avox_ios_sysroot_l MATCHES "iphonesimulator")
