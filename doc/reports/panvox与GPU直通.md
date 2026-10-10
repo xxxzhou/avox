@@ -1,6 +1,6 @@
 # panvox 应用层与 GPU 直通专题
 
-> 状态: 有效 · 上次核对: 2026-09-30 · 权威源: 记忆库(memory/)+panvox/avox 仓提交号
+> 状态: 有效 · 上次核对: 2026-10-10 · 权威源: 记忆库(memory/)+panvox/avox 仓提交号
 > 汇编 panvox 壳层崩溃/部署、GPU 直通撕裂战役、字幕、远控与原生渲染方向
 
 一句话背景: panvox 侧的崩溃与撕裂几乎全部收敛于「**跨线程/跨 API 的同步缺口**」
@@ -59,6 +59,19 @@
 - **一键复现**: PANVOX_AUTOPLAY / PANVOX_AUTOPLAY_RESUME=ms 环境变量直落点位;
   PrintWindow 对 GPU 直通窗口=黑屏死路; obj-vs-commit dll 考古法可救「明明修了
   还复现」。
+- **SkipSign 部署漏插件路径修复 → 沙盒下 ORT 插件加载失败 → 画质增强假增强**
+  (mac, 10/10 定谳): `PANVOX_SKIP_SIGN=1` 流程(Podfile script_phase, 交
+  xcodebuild 统一签)把 install_name_tool `-change`(@rpath/libonnxruntime →
+  @loader_path)与 codesign 一并跳过 → 插件靠构建机绝对 rpath 兜底; 沙盒构建
+  启动期安全作用域书签未恢复, /Volumes/PSSD 不可读 → avox_onnx/avox_sherpa
+  dlopen 失败; 数秒后书签恢复, shim 预检自 dlopen 成功放行任务(与引擎模块态
+  脱节) → 引擎 ORT 缺席 `fallback plain:quality enhance` 纯转码出「假增强版」
+  (秒完成、画质反而更差)。判据 = 启动段 `dll load failed` 只挂依赖
+  onnxruntime 的两个插件 + `CpuQEnhancer load model failed`; 裸进程 dlopen
+  探针测不出(差异在沙盒+书签时序), vmmap 看进程内 onnxruntime 加载路径。
+  修 = deploy_macos_runtime.sh 路径修复与 SkipSign 解耦(未提交) + 插件构建
+  BUILD/INSTALL_RPATH `@loader_path`(avox cmake/avox_module.cmake, 未提交) +
+  ModuleMgr 失败日志补 dlerror(未提交); 修后启动段 6 插件全 regedit success。
 
 ## 6. 远控与周边
 
