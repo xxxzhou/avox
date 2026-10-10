@@ -280,8 +280,9 @@ bool ModuleMgr::loadModule(const char* name) {
                                 ": dll load failed. path=" + dllPath +
                                 " err=" + std::to_string(GetLastError()));
 #else
-        log(LogLevel::warn,
-            moduleInfo->name + ": dll load failed. path=" + dllPath);
+        const char* dlerr = dlerror();
+        log(LogLevel::warn, moduleInfo->name + ": dll load failed. path=" + dllPath +
+                                (dlerr ? (std::string(" err=") + dlerr) : ""));
 #endif
         moduleInfo->state = ModuleInfo::Failed;
         return false;
