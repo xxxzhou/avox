@@ -399,9 +399,6 @@ int IOParseFF::reopenInput() {
     auto applyEnv = [&out](const char* dirUsed) {
       setenv("SSL_CERT_FILE", out.c_str(), 1);
       if (dirUsed && *dirUsed) setenv("SSL_CERT_DIR", dirUsed, 1);
-      // hls 分片连接自开 avio, tls 选项不随白名单传播——见 ffmpeg 侧
-      // hls.c 的 AVOX_TLS_CA_FILE 补传(分片 TLS 与首连接同源)
-      setenv("AVOX_TLS_CA_FILE", out.c_str(), 1);
     };
     auto writeBundle = [&out, &pkg](const std::vector<uint8_t>& bytes, const char* src) {
       FILE* w = fopen(out.c_str(), "wb");
