@@ -129,6 +129,8 @@
 %newobject createAudioTts;
 %newobject createAudioFace;
 %newobject createTranslator;
+// 远程内容源会话 IRemoteSource (create* 约定: 返回需释放的内存; 293915a 引入时漏标, 补齐)
+%newobject createRemoteSource;
 
 // 没有的话,int32_t对应不了int, uint8_t对应不了IntPtr
 %include "stdint.i"
