@@ -97,6 +97,12 @@ function(register_plugin name)
     # 导出表回绑(宿主 exe 需 -Wl,-export_dynamic, 见 generatetest/playtest)。
     target_link_libraries(${name} PRIVATE ${_libs})
     target_link_options(${name} PRIVATE -Wl,-undefined,dynamic_lookup)
+    # 自包含: 部署位第三方 dylib 与插件同放 plugins/, @loader_path 让 @rpath
+    # 依赖就地解析, 不依赖构建机绝对 rpath(沙盒 app 启动期安全作用域书签未
+    # 恢复时外置卷读不到 → 插件加载失败, 10/10 画质增强静默降级纯转码定谳)
+    set_target_properties(${name} PROPERTIES
+      BUILD_RPATH "@loader_path"
+      INSTALL_RPATH "@loader_path")
   else()
     target_link_libraries(${name} PRIVATE avox ${_libs})
   endif()
