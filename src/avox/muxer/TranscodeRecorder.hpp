@@ -11,9 +11,9 @@
 
 namespace avox {
 
-// 前置声明(实现在 CpuQEnhancer.hpp, 仅 .cpp 使用; 避免在此拉入改变
+// 前置声明(实现在 RecordVideoFilter.hpp, 仅 .cpp 使用; 避免在此拉入改变
 // Window.hpp 平台宏解析顺序的 include 链)
-class CpuQEnhancer;
+class IRecordVideoFilter;
 
 // 转码录制器：将网络流/本地文件解码
 // 通过VkVideoRender处理（缩放/水印等），重新编码保存
@@ -54,11 +54,9 @@ class TranscodeRecorder : public IRecorder,
   AudioDesc outAudioDesc = {};
   bool bSetOutVideo = false;
   bool bSetOutAudio = false;
-  // 离线画质增强: 图只做 yuv→rgba, rgba 帧入队, 编码线程侧推理(队列满反压解码)
-  bool bQEnhance = false;
-  QualityEnhanceParamet qparamet = {};
-  std::unique_ptr<CpuQEnhancer> qenhancer;
-  std::shared_ptr<ImageBuffer> rgbaBuffer;
+  // 编码前视频滤镜槽位(离线画质增强等, enableQualityEnhance经工厂注入):
+  // prepare装配渲染(输出desc由滤镜定), capture取帧入队, process编码线程处理
+  std::shared_ptr<IRecordVideoFilter> videoFilter;
   // 帧队列，上限5，满时阻塞解码线程
   RingBuffer<VideoFramePtr> vFrameQueue{5};
   RingBuffer<AudioFramePtr> aFrameQueue{5};

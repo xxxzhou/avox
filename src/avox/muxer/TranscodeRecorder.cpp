@@ -5,7 +5,7 @@
 #include "../module/AvoxManager.hpp"
 #include "../module/LogHelper.hpp"
 #include "../module/OptionKey.hpp"
-#include "../video/CpuQEnhancer.hpp"
+#include "RecordVideoFilter.hpp"
 
 namespace avox {
 
@@ -83,13 +83,14 @@ void TranscodeRecorder::setAudioDesc(const AudioDesc& desc) {
 }
 
 void TranscodeRecorder::enableQualityEnhance(const QualityEnhanceParamet& paramet) {
-  qparamet = paramet;
-  bQEnhance = true;
-  LOGFLF(LogLevel::info, "quality enhance on, mode:",
-         (int32_t)paramet.outputMode);
+  // API兼容壳: 把参数翻译成滤镜注入, 录制器不感知具体滤镜
+  videoFilter = createQualityEnhanceFilter(paramet);
+  LOGFLF(LogLevel::info, "video filter on, name:",
+         videoFilter ? videoFilter->name() : "unavailable",
+         " mode:", (int32_t)paramet.outputMode);
 }
 
-void TranscodeRecorder::disableQualityEnhance() { bQEnhance = false; }
+void TranscodeRecorder::disableQualityEnhance() { videoFilter.reset(); }
 
 ISurfaceRender* TranscodeRecorder::getSurfaceRender() {
   return surfaceRender.get();
@@ -143,6 +144,12 @@ bool TranscodeRecorder::open(const char* url, const char* file) {
     LOGFLF(LogLevel::warn, "copy mode needs output file, fallback transcode");
     bVideoCopy = false;
     bAudioCopy = false;
+  }
+  // 滤镜相容判定(滤镜要解码帧且要有封装目标; 空输出/视频直拷下弃用走默认路)
+  if (videoFilter && !videoFilter->accepts(bNoOutput, bVideoCopy)) {
+    LOGFLF(LogLevel::warn, "video filter not applicable, off:",
+           videoFilter->name());
+    videoFilter.reset();
   }
   source->setTransMode(transMode);
   // 音频直拷前置判定注入: 目标容器容不下源音频编码(rmvb 的 cook 进 mp4/mov 无
@@ -212,9 +219,8 @@ void TranscodeRecorder::close() {
   }
   // 停止编码线程(编码线程收尾块排空/清队并关源后join返回)
   stopTask();
-  // 增强器/RGBA缓冲随open重建(下次open重新init)
-  qenhancer.reset();
-  rgbaBuffer.reset();
+  // 滤镜随open重建(下次open重新prepare); 析构内disableImage关图分支
+  videoFilter.reset();
   // join后复位标志与队列开关(close自含); ioSource已随source析构, 置空恢复判空语义
   bStopPending.store(false);
   bDrainPhase.store(false);
@@ -231,16 +237,6 @@ void TranscodeRecorder::onReady() {
   }
   const auto& vTracks = source->getVideoTracks();
   const auto& aTracks = source->getAudioTracks();
-  // 空输出(离屏直出)无编码消费, 增强无意义
-  if (bQEnhance && !muxer) {
-    LOGFLF(LogLevel::warn, "quality enhance needs output file, off");
-    bQEnhance = false;
-  }
-  // 增强要解码帧, 与视频直拷互斥(离线超分默认 AudioCopy 不受影响)
-  if (bQEnhance && bVideoCopy) {
-    LOGFLF(LogLevel::warn, "quality enhance conflicts video copy, off");
-    bQEnhance = false;
-  }
   // 打开muxer(空输出不建 muxer)
   if (muxer) {
     muxer->open(outputFile.c_str());
@@ -266,63 +262,26 @@ void TranscodeRecorder::onReady() {
     if (muxer) {
       muxer->setVideoCodec(vCodecId);
     }
-    if (bQEnhance) {
-      // 离线画质增强: 图只做 yuv→rgba(enableImage 独立输出分支), rgba 帧入队,
-      // 编码线程侧推理; 输出尺寸由增强器决定, yuv 分支不开。
-      // 增强输出 yuv 类型必须与编码模式匹配(硬编 nv12/软编 yuv420P), 否则
-      // FFVEncoder 按(codecCtx->pix_fmt)nv12 读 yuv420p 平面 → 越界崩溃
-      qenhancer = std::make_unique<CpuQEnhancer>();
-      YuvType enhanceOut = bHardEncode ? YuvType::nv12 : YuvType::yuv420P;
-      if (qenhancer->init(qparamet, vdesc.desc.width, vdesc.desc.height,
-                          enhanceOut)) {
-        rgbaBuffer = std::make_shared<ImageBuffer>();
-        ImageFormat fmt = {};
-        // [dbg] 稳定性实验: rgba 缓冲回退源分辨率(GPU resize 无缩放), 推理
-        // 分辨率的降采样由 CpuQEnhancer 的 box filter 在 CPU 侧完成
-        fmt.width = vdesc.desc.width;
-        fmt.height = vdesc.desc.height;
-        fmt.imageType = ImageType::rgba8;
-        rgbaBuffer->setImageFormat(fmt);
-        static const bool noImg = std::getenv("ENH_NOIMG") != nullptr;
-        surfaceRender->setOffSurface(YuvType::other);
-        if (!noImg) {
-          surfaceRender->enableImage(rgbaBuffer.get());
+    if (videoFilter) {
+      // 滤镜自装配渲染接线(enableImage等), 输出desc由滤镜决定(增强=模型
+      // 整数倍缩放); prepare失败(模型/后端缺失)清滤镜回退普通转码路
+      VideoDesc filterOut = {};
+      if (videoFilter->prepare(vdesc.desc, bHardEncode, surfaceRender.get(),
+                               filterOut)) {
+        vdesc.desc = filterOut;
+        // G15 口径(2026-09-19 定): 滤镜输出尺寸即最终输出, 显式 setOutVideo
+        // 不与滤镜级联(级联需滤镜后再 resize 一次); 被忽略时日志明示
+        if (bSetOutVideo) {
+          LOGFLF(LogLevel::warn, "setOutVideo ignored while filter on, keep ",
+                 vdesc.desc.width, "x", vdesc.desc.height);
         }
-        // 关键: enableImage 的图重建延迟到下一次 render, 首个真帧的 render 期间
-        // 重建会销毁旧 cpuBuffer, rgbaBuffer(引用旧映射内存)在重建后到下一帧输出
-        // 前是悬存的 → 拷贝帧时读已释放内存。此处先渲染一张空帧, 让「带 image
-        // 分支的重建」同步完成且 rgbaBuffer 引用落位, 之后的真帧拷贝安全
-        static const bool noDummy = std::getenv("ENH_NODUMMY") != nullptr;
-        if (!noDummy) {
-          int32_t sw = vdesc.desc.width, sh = vdesc.desc.height;
-          size_t ySize = (size_t)sw * sh;
-          size_t uvSize = (size_t)(sw / 2) * (sh / 2);
-          std::vector<uint8_t> dummy(ySize + uvSize * 2, 0);
-          YUVFrame dummyFrame = {};
-          dummyFrame.format.width = sw;
-          dummyFrame.format.height = sh;
-          dummyFrame.format.type = YuvType::nv12;
-          dummyFrame.data[0] = dummy.data();
-          dummyFrame.stride[0] = sw;
-          dummyFrame.data[1] = dummy.data() + ySize;
-          dummyFrame.stride[1] = sw;
-          surfaceRender->render(dummyFrame);
-          LOGFLF(LogLevel::info, "quality enhance dummy frame rendered, ",
-                 "graph rebuilt with image branch");
-        }
-        vdesc.desc.width = qenhancer->outWidth();
-        vdesc.desc.height = qenhancer->outHeight();
-        vdesc.desc.type = enhanceOut;
-        LOGFLF(LogLevel::info, "quality enhance path, out:", vdesc.desc.width,
-               "x", vdesc.desc.height);
       } else {
-        // 模型/后端缺失: 回退普通转码, 队列走原 YUV 路径
-        LOGFLF(LogLevel::warn, "quality enhance init failed, fallback plain");
-        qenhancer.reset();
-        rgbaBuffer.reset();
+        LOGFLF(LogLevel::warn, "video filter prepare failed, fallback plain:",
+               videoFilter->name());
+        videoFilter.reset();
       }
     }
-    if (!qenhancer) {
+    if (!videoFilter) {
       // 硬编给NV12,软编给YUV420P;空输出(无编码)用YUV420P对外
       if (bHardEncode && muxer) {
         surfaceRender->setOffSurface(YuvType::nv12);
@@ -331,22 +290,16 @@ void TranscodeRecorder::onReady() {
         surfaceRender->setOffSurface(YuvType::yuv420P);
         vdesc.desc.type = YuvType::yuv420P;
       }
-    }
-    if (bSetOutVideo && !qenhancer) {
-      if (outVideoDesc.width > 0 && outVideoDesc.height > 0 &&
-          (outVideoDesc.width != vdesc.desc.width ||
-           outVideoDesc.height != vdesc.desc.height)) {
-        surfaceRender->enableSizeChange(outVideoDesc.width,
-                                        outVideoDesc.height);
-        vdesc.desc.width = outVideoDesc.width;
-        vdesc.desc.height = outVideoDesc.height;
+      if (bSetOutVideo) {
+        if (outVideoDesc.width > 0 && outVideoDesc.height > 0 &&
+            (outVideoDesc.width != vdesc.desc.width ||
+             outVideoDesc.height != vdesc.desc.height)) {
+          surfaceRender->enableSizeChange(outVideoDesc.width,
+                                          outVideoDesc.height);
+          vdesc.desc.width = outVideoDesc.width;
+          vdesc.desc.height = outVideoDesc.height;
+        }
       }
-    } else if (bSetOutVideo && qenhancer) {
-      // G15 口径(2026-09-19 定): 增强输出尺寸由模型整数倍缩放决定, 显式
-      // setOutVideo 不与增强级联(级联需增强后再 resize 一次); 显式请求被
-      // 忽略时日志明示, 不再静默。若产品要显式优先, 改这里做增强后缩放
-      LOGFLF(LogLevel::warn, "setOutVideo ignored while enhance on, keep ",
-             vdesc.desc.width, "x", vdesc.desc.height);
     }
     if (muxer) {
       muxer->setInVideoDesc(vdesc);
@@ -412,16 +365,12 @@ void TranscodeRecorder::onVideoFrame(const YUVFrame& frame, int32_t trackId) {
   if (bNoOutput) {
     return;
   }
-  // 增强模式: 图已出 rgba(enableImage 缓冲, 上面那次 render 已写入), 深拷贝入队
-  // (满则阻塞解码=反压), 推理在编码线程消费侧做
-  if (qenhancer && rgbaBuffer) {
-    // [dbg] 竞态排查: ENH_NOQUEUE=1 跳过入队, 仅验 render/图分支稳定性
-    static const bool noQueue = std::getenv("ENH_NOQUEUE") != nullptr;
-    if (noQueue) {
-      return;
+  // 滤镜路: capture取渲染产物深拷入队(满则阻塞解码=反压), 处理在编码线程
+  if (videoFilter) {
+    VideoFramePtr filterFrame;
+    if (videoFilter->capture(frame.pts, frame.dts, filterFrame)) {
+      vFrameQueue.enqueueWait(filterFrame);
     }
-    RgbaFrameRef ref = {rgbaBuffer.get(), frame.pts, frame.dts};
-    vFrameQueue.enqueueWait<RgbaFrameRef>(ref, copyBufRgba);
     return;
   }
   // 得到处理后的帧,入队给编码线程
@@ -446,14 +395,12 @@ void TranscodeRecorder::onGpuFrame(const GpuFrame& frame, int32_t trackId) {
   if (bNoOutput) {
     return;
   }
-  // 增强模式: 图已出 rgba, 与 onVideoFrame 同路
-  if (qenhancer && rgbaBuffer) {
-    static const bool noQueue = std::getenv("ENH_NOQUEUE") != nullptr;
-    if (noQueue) {
-      return;
+  // 滤镜路: 与 onVideoFrame 同路, capture 已在 render 后取走产物
+  if (videoFilter) {
+    VideoFramePtr filterFrame;
+    if (videoFilter->capture(frame.pts, frame.dts, filterFrame)) {
+      vFrameQueue.enqueueWait(filterFrame);
     }
-    RgbaFrameRef ref = {rgbaBuffer.get(), frame.pts, frame.dts};
-    vFrameQueue.enqueueWait<RgbaFrameRef>(ref, copyBufRgba);
     return;
   }
   // 硬解帧经渲染腿回读为 packed CPU YUV 入队(队列恒为 SwVideoBuffer),
@@ -607,18 +554,17 @@ void TranscodeRecorder::processVideo(VideoFramePtr vframe) {
       (!running() && !bDrainPhase.load())) {
     return;
   }
-  // VideoFrame里的SwVideoBuffer恒为packed布局,to()取split帧给编码器,
-  // 需要重排时数据拷进splitBuffer(buffer可能与渲染线程共享,不可原地改)
-  std::shared_ptr<SwVideoBuffer> hostBuffer =
-      std::static_pointer_cast<SwVideoBuffer>(vframe->buffer);
   YUVFrame yframe = {};
-  // 增强模式: 编码线程逐帧推理(慢则队列满反压解码, 整线节拍化)
-  if (qenhancer) {
-    if (!qenhancer->process(hostBuffer.get(), vframe->pts, vframe->dts,
-                            yframe)) {
+  if (videoFilter) {
+    // 滤镜路: 编码线程逐帧处理(增强=推理, 慢则队列满反压解码, 整线节拍化)
+    if (!videoFilter->process(vframe, yframe)) {
       return;
     }
   } else {
+    // VideoFrame里的SwVideoBuffer恒为packed布局,to()取split帧给编码器,
+    // 需要重排时数据拷进splitBuffer(buffer可能与渲染线程共享,不可原地改)
+    std::shared_ptr<SwVideoBuffer> hostBuffer =
+        std::static_pointer_cast<SwVideoBuffer>(vframe->buffer);
     if (!splitBuffer) {
       splitBuffer = std::make_unique<ImageBuffer>();
     }
