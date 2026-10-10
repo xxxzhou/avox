@@ -15,7 +15,7 @@ avox 源自作者多年的音视频/GPU 技术积累，经大模型辅助整理�
 
 **泛音 Panvox** 是基于 avox 构建的跨平台视频播放器:产品层用 Flutter,引擎层即本库——通过 C ABI 复用播放、硬解与 GPU 处理管线、字幕渲染与 AI 能力,覆盖 Windows / macOS / iOS / Android。
 
-- **Windows 已上架** [Microsoft Store](https://apps.microsoft.com/detail/9PG77H33P7K8);iOS / macOS 审核中;Android 开发中
+- **Windows 已上架** [Microsoft Store](https://apps.microsoft.com/detail/9PG77H33P7K8);iOS / macOS 审核中;android [内部分享包](https://play.google.com/apps/test/RQo-NZmDUok/ahAO29uNRS3gG4ZDC35BtgMLCLvoQyam1Kvd6wGKPphYU5aCzPQ-UiYxxlxAB4ZtodrH0fTBAETk3--ARIvcjm3KQT) （连点「Play 商店版本」7 次->开发者选项->内部应用分享）。
 - 落地形态:海报墙媒体库(直连 NAS / SMB / WebDAV / Jellyfin)、直连不转码、ASS/PGS/SRT 完整渲染、逐帧 HDR 色调映射、AI 字幕与识别打标、IPTV(m3u + EPG)
 
 <p align="center">
