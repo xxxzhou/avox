@@ -18,14 +18,16 @@ avox 源自作者多年的音视频/GPU 技术积累，经大模型辅助整理�
 - **Windows 已上架** [Microsoft Store](https://apps.microsoft.com/detail/9PG77H33P7K8);iOS / macOS 审核中;android [内部分享包](https://play.google.com/apps/test/RQo-NZmDUok/ahAO29uNRS3gG4ZDC35BtgMLCLvoQyam1Kvd6wGKPphYU5aCzPQ-UiYxxlxAB4ZtodrH0fTBAETk3--ARIvcjm3KQT) （连点「Play 商店版本」7 次->开发者选项->内部应用分享）。
 - 落地形态:海报墙媒体库(直连 NAS / SMB / WebDAV / Jellyfin)、直连不转码、ASS/PGS/SRT 完整渲染、逐帧 HDR 色调映射、AI 字幕与识别打标、IPTV(m3u + EPG)
 
-<p align="center">
-  <img src="assets/images/panvox/win_wall.png" width="410" alt="Windows - 海报墙媒体库">
-  <img src="assets/images/panvox/mac_wall.png" width="410" alt="macOS - 海报墙媒体库">
-</p>
-<p align="center">
-  <img src="assets/images/panvox/ios_library.png" width="260" alt="iOS - 海报墙">
-  <img src="assets/images/panvox/android_iptv.png" width="260" alt="Android - IPTV 频道">
-</p>
+<table align="center">
+  <tr>
+    <td valign="middle"><img src="assets/images/panvox/win_wall.png" width="590" alt="Windows - 海报墙媒体库"></td>
+    <td valign="middle"><img src="assets/images/panvox/android_iptv.png" width="160" alt="Android - IPTV 频道"></td>
+  </tr>
+  <tr>
+    <td valign="middle"><img src="assets/images/panvox/mac_wall.png" width="590" alt="macOS - 海报墙媒体库"></td>
+    <td valign="middle"><img src="assets/images/panvox/ios_library.png" width="160" alt="iOS - 海报墙"></td>
+  </tr>
+</table>
 
 产品介绍与实现解析见 [《从开源引擎 avox 到成品:全平台播放器「泛音」》](https://zhuanlan.zhihu.com/p/2091902400839921766)。
 
