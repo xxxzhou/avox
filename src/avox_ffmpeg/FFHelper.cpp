@@ -170,6 +170,10 @@ VCodecId ffVCodec(AVCodecID codecId) {
       // 软解输出 AV_PIX_FMT_YUV422P10LE(→ YuvType::yuv422P10); 三平台均无固定
       // 功能硬解(Apple 的 VT 可解, 但走引擎 IOSVDecoder 独立腿, 不在此注册)
       return VCodecId::prores;
+    case AV_CODEC_ID_VVC:
+      // VVC/H.266: 软解输出 AV_PIX_FMT_YUV420P10LE(→ YuvType::yuv420P10);
+      // 三平台均无硬解(DXVA/MediaCodec/VT 名单没有), 恒软解
+      return VCodecId::vvc;
     default:
       return VCodecId::none;
   }
@@ -282,6 +286,8 @@ AVCodecID getFFCodecId(VCodecId codecId) {
       return AV_CODEC_ID_AV1;
     case VCodecId::prores:
       return AV_CODEC_ID_PRORES;
+    case VCodecId::vvc:
+      return AV_CODEC_ID_VVC;
     default:
       return AV_CODEC_ID_NONE;
   }

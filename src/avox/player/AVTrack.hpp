@@ -35,6 +35,9 @@ namespace avox {
 // = FFmpeg 侧注册名(regFFCodec 用 codec->name), 与 AVOX_FF_VP9_DECODER 同款约定
 #define AVOX_FF_PRORES_DECODER "prores"
 #endif
+#ifndef AVOX_FF_VVC_DECODER
+#define AVOX_FF_VVC_DECODER "vvc"
+#endif
 #define AVOX_ANDROID_H264_DECODER "android h264 decoder"
 #define AVOX_ANDROID_H265_DECODER "android h265 decoder"
 #define AVOX_ANDROID_VP9_DECODER "android vp9 decoder"

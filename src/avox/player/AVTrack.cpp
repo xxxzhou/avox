@@ -356,6 +356,10 @@ const char* getDefaultDecoderName(VCodecId codecId, bool bHard) {
     // 侥幸选中 —— 那是隐式行为, 加新解码器时随时可能被撞坏
     return AVOX_FF_PRORES_DECODER;
 #endif
+  } else if (codecId == VCodecId::vvc) {
+    // VVC: 三平台均无硬解(DXVA/MediaCodec/VT 名单没有) ⇒ 恒软解。
+    // 必须显式给出软解名, 否则落末尾 H264 兜底(同 prores 分支教训)
+    return AVOX_FF_VVC_DECODER;
   }
   return AVOX_FF_H264_DECODER;
 }
