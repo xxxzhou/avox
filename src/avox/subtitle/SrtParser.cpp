@@ -5,9 +5,12 @@
 namespace avox {
 
 int64_t SrtParser::parseTime(const char* time) {
-  // Format: 00:00:00,000
+  // Format: 00:00:00,000 或 00:00:00.000 (点号变体)
   int64_t h = 0, m = 0, s = 0, ms = 0;
-  sscanf(time, "%lld:%lld:%lld,%lld", &h, &m, &s, &ms);
+  int n = sscanf(time, "%lld:%lld:%lld%*c%lld", &h, &m, &s, &ms);
+  if (n != 4 || m > 59 || s > 59 || ms > 999 || h > 999) {
+    return -1;  // 畸形时间行, 调用方整条跳过
+  }
   return (h * 3600 + m * 60 + s) * 1000 + ms;
 }
 
@@ -87,6 +90,8 @@ bool SrtParser::parse(const char* content, size_t len,
 
       int64_t startMs = parseTime(startTimeStr.c_str());
       int64_t endMs = parseTime(endTimeStr.c_str());
+      // 坏时间行整条跳过(不废整文件), 与上方 arrowPos 缺失的处理一致
+      if (startMs < 0 || endMs < 0 || endMs < startMs) continue;
 
       // Read text lines until empty line
       std::string subtitleText;

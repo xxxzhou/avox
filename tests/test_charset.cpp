@@ -116,3 +116,35 @@ TEST_CASE("字幕编码: GBK 外挂 SRT 端到端解析出正确文本") {
   CHECK(enc == avox::SubtitleEncoding::unknown);
 #endif
 }
+
+TEST_CASE("SRT 时间: 点号毫秒变体不丢 ms") {
+  const std::string raw = "1\n00:00:01.500 --> 00:00:02.250\ntext\n";
+  std::vector<avox::SrtParser::RawItem> items;
+  REQUIRE(avox::SrtParser::parse(raw.c_str(), raw.size(), items));
+  REQUIRE(items.size() == 1);
+  CHECK(items[0].startMs == 1500);
+  CHECK(items[0].endMs == 2250);
+}
+
+TEST_CASE("SRT 时间: 畸形时间行整条跳过, 好条目保留") {
+  const std::string raw =
+      "1\ngarbage --> also garbage\nbad\n\n"
+      "2\n00:00:03,000 --> 00:00:04,000\ngood\n";
+  std::vector<avox::SrtParser::RawItem> items;
+  REQUIRE(avox::SrtParser::parse(raw.c_str(), raw.size(), items));
+  REQUIRE(items.size() == 1);
+  CHECK(items[0].startMs == 3000);
+  CHECK(items[0].text == "good");
+}
+
+TEST_CASE("SRT 时间: 结束早于开始整条跳过") {
+  const std::string raw = "1\n00:00:05,000 --> 00:00:02,000\nbad\n";
+  std::vector<avox::SrtParser::RawItem> items;
+  CHECK_FALSE(avox::SrtParser::parse(raw.c_str(), raw.size(), items));
+}
+
+TEST_CASE("SRT 时间: 越界字段(秒/毫秒超范围)整条跳过") {
+  const std::string raw = "1\n00:00:75,000 --> 00:00:80,000\nbad\n";
+  std::vector<avox::SrtParser::RawItem> items;
+  CHECK_FALSE(avox::SrtParser::parse(raw.c_str(), raw.size(), items));
+}
