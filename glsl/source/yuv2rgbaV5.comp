@@ -24,7 +24,8 @@ layout (std140, binding = 2) uniform UBO
 	int hdrMode;        // 0=follow 1=forceSDR 2=forceHDR
 	int toneMapCurve; // 0=软膝(默认) 1=BT.2390 EETF(ToneMapCurve 声明序)
 	int doviEnable;     // 1=走 DV 整形链
-	int _dv0;
+	// 前置 3 槽为 DV vec4 区 16B 对齐填充; 首槽借给输出端 dither(与 DV 无关)
+	float ditherStrength;
 	int _dv1;
 	int _dv2;
 	vec4 dvPivots[7];   // 3comp×9 pivot(归一化), flat=c*9+k
@@ -205,9 +206,33 @@ vec3 dvProcess(vec3 yuv) {
 	return linearToPq(lm * lin);
 }
 
+// 8x8 Bayer 有序抖动矩阵, 位交错法解析求值(无需噪声纹理): 输出 (0,1)
+float bayer8(ivec2 pos) {
+	int x = pos.x & 7;
+	int y = pos.y & 7;
+	int idx = 0;
+	for (int i = 0; i < 3; i++) {
+		idx |= ((x >> i) & 1) << (2 * i);
+		idx |= ((y >> i) & 1) << (2 * i + 1);
+	}
+	return (float(idx) + 0.5) / 64.0;
+}
+
+// 输出端抖动: 在 8bit 量化前加 ±0.5LSB 的有序噪声, 打散台阶(强度 0=恒等)
+// 位置取输出像素坐标(屏幕锁定), 移动画面下图案不蠕动
+vec3 applyDither(vec3 c, ivec2 pos) {
+	float s = ubo.ditherStrength;
+	if (s <= 0.0) {
+		return c;
+	}
+	float n = (bayer8(pos) - 0.5) * (s / 255.0);
+	return clamp(c + vec3(n), vec3(0.0), vec3(1.0));
+}
+
 // 色彩处理总入口: forceHDR 跳过全部处理(PQ 编码值直通); 否则仅 PQ/HLG 做变换,
 // SDR 原样透传(零改动)。forceSDR 与 follow 在此等价(恒 tone map)
-vec3 processColor(vec3 rgb) {
+// dither 只挂 PQ/HLG 量化分支内: 纯 SDR 直通链不参与(方案 §3 判据 2/4)
+vec3 processColor(vec3 rgb, ivec2 pos) {
 	if (ubo.hdrMode == 2) {           // forceHDR: 直通, HDR 显示链消费
 		return rgb;
 	}
@@ -219,13 +244,13 @@ vec3 processColor(vec3 rgb) {
 		vec3 lin = (ubo.toneMapCurve == 1) ? toneMapEetf(rgb)
 		                                   : toneMap(pqToLinear(rgb));
 		lin = bt2020ToBt709(lin);
-		return linearToBt709(lin);
+		return applyDither(linearToBt709(lin), pos);
 	}
 	if (xfer == 3) {          // hlg
 		vec3 lin = hlgToLinear(rgb) * 0.1;  // 1000nit 归一 -> 10000nit 归一
 		lin = toneMap(lin);
 		lin = bt2020ToBt709(lin);
-		return linearToBt709(lin);
+		return applyDither(linearToBt709(lin), pos);
 	}
 	return rgb;
 }
@@ -278,10 +303,11 @@ void yuv420p10(){
 	vec3 rgb4 = ubo.doviEnable == 1 ? dvProcess(vec3(y4, u, v))
 	                                : (vec4(y4, u, v, 1.0) * ubo.colorMat).rgb;
 	// 仅 HDR 流走色彩处理, SDR 直通(processColor 内部按 transfer 分支)
-	vec4 rgba1 = vec4(processColor(rgb1), 1.0);
-	vec4 rgba2 = vec4(processColor(rgb2), 1.0);
-	vec4 rgba3 = vec4(processColor(rgb3), 1.0);
-	vec4 rgba4 = vec4(processColor(rgb4), 1.0);
+	// pos 与下方 imageStore 一致: dither 图案按输出像素锁定
+	vec4 rgba1 = vec4(processColor(rgb1, ivec2(uv.x*2, uv.y*2)), 1.0);
+	vec4 rgba2 = vec4(processColor(rgb2, ivec2(uv.x*2+1, uv.y*2)), 1.0);
+	vec4 rgba3 = vec4(processColor(rgb3, ivec2(uv.x*2, uv.y*2+1)), 1.0);
+	vec4 rgba4 = vec4(processColor(rgb4, ivec2(uv.x*2+1, uv.y*2+1)), 1.0);
 
 	imageStore(outTex, ivec2(uv.x*2, uv.y*2), rgba1);
 	imageStore(outTex, ivec2(uv.x*2+1, uv.y*2), rgba2);

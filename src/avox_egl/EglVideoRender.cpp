@@ -645,12 +645,14 @@ void EglVideoRender::uploadDvUbo() {
 void EglVideoRender::setHdrMode(HdrMode mode) { hdrMode = mode; }
 
 void EglVideoRender::setToneMap(const ToneMapParamet& paramet) {
-  // 本腿 tone map 曲线未接入(画质深化方案记已知分叉): 非默认参数只告警不改行为,
-  // 避免"设置成功但无效果"不可诊
-  if (paramet.curve != ToneMapCurve::softKnee || paramet.sdrWhiteNits > 0.0f) {
+  // 本腿 tone map 曲线与输出端 dither 均未接入(画质深化方案记已知分叉):
+  // 非默认参数只告警不改行为, 避免"设置成功但无效果"不可诊
+  if (paramet.curve != ToneMapCurve::softKnee || paramet.sdrWhiteNits > 0.0f ||
+      paramet.ditherStrength > 0.0f) {
     LOGFLF(LogLevel::warn,
            "[egl] setToneMap not implemented on this leg, ignored (curve:",
-           (int32_t)paramet.curve, " sdrWhite:", paramet.sdrWhiteNits, ")");
+           (int32_t)paramet.curve, " sdrWhite:", paramet.sdrWhiteNits,
+           " dither:", paramet.ditherStrength, ")");
   }
 }
 

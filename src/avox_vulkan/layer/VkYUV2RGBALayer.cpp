@@ -27,9 +27,13 @@ void VkYUV2RGBALayer::refreshColorMat() {
   uboData.sdrWhiteNits = toneMapParamet.sdrWhiteNits > 0.0f
                              ? toneMapParamet.sdrWhiteNits
                              : 100.0f;
+  // 输出端 dither 强度(0=关, 默认; 仅 shader 内 tone map 分支生效)
+  uboData.ditherStrength =
+      toneMapParamet.ditherStrength > 0.0f ? toneMapParamet.ditherStrength : 0.0f;
   LOGFLF(LogLevel::info, "[yuv2rgba] ubo transfer:", uboData.transfer,
          " peak:", uboData.maxLuminance, " sdrWhite:", uboData.sdrWhiteNits,
-         " hdrMode:", uboData.hdrMode, " toneMapCurve:", uboData.toneMapCurve);
+         " hdrMode:", uboData.hdrMode, " toneMapCurve:", uboData.toneMapCurve,
+         " dither:", uboData.ditherStrength);
   updateUBO(&uboData);
 }
 

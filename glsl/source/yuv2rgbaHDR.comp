@@ -26,7 +26,8 @@ layout (std140, binding = 2) uniform UBO
 	int hdrMode;        // 0=follow 1=forceSDR 2=forceHDR
 	int toneMapCurve; // 0=软膝(默认) 1=BT.2390 EETF(ToneMapCurve 声明序)
 	int doviEnable;     // 1=走 DV 整形链
-	int _dv0;
+	// 前置 3 槽为 DV vec4 区 16B 对齐填充; 首槽借给输出端 dither(与 DV 无关)
+	float ditherStrength;
 	int _dv1;
 	int _dv2;
 	vec4 dvPivots[7];   // 3comp×9 pivot(归一化), flat=c*9+k

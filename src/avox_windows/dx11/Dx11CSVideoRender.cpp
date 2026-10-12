@@ -39,6 +39,7 @@ cbuffer CBParameters : register(b0)
     float sdrWhiteNits;  // SDR 白点 nits
     int   hdrMode;       // HdrMode 声明序: 0=follow 1=forceSDR 2=forceHDR
     int   toneMapCurve;  // ToneMapCurve 声明序: 0=软膝(默认) 1=BT.2390 EETF
+    float ditherStrength; // 8bit 量化终点抖动强度: 0=关(默认)
     int   doviEnable;    // 1=走 DV 整形链
     int   _dv0;
     int   _dv1;
@@ -222,8 +223,30 @@ float3 toneMapEetf(float3 pqCode) {
     return pqToLinear(mapped) * (10000.0 / dstN);
 }
 
+// 8x8 Bayer 有序抖动(位交错解析, 无需噪声纹理): 输出 (0,1)
+float bayer8(uint2 pos) {
+    uint x = pos.x & 7u;
+    uint y = pos.y & 7u;
+    uint idx = 0u;
+    for (int i = 0; i < 3; i++) {
+        idx |= ((x >> i) & 1u) << (2 * i);
+        idx |= ((y >> i) & 1u) << (2 * i + 1);
+    }
+    return (float(idx) + 0.5) / 64.0;
+}
+
+// 输出端抖动: 8bit 量化前加 ±0.5LSB 有序噪声(强度 0=恒等); 位置按输出像素锁定
+float3 applyDither(float3 c, uint2 pos) {
+    if (ditherStrength <= 0.0) {
+        return c;
+    }
+    float n = (bayer8(pos) - 0.5) * (ditherStrength / 255.0);
+    return saturate(c + float3(n, n, n));
+}
+
 // 色彩处理总入口: forceHDR 跳过全部处理; 否则仅 PQ/HLG 做变换
-float3 processColor(float3 rgb) {
+// dither 只挂 PQ/HLG 量化分支内: 纯 SDR 直通链不参与(方案 §3 判据 2/4)
+float3 processColor(float3 rgb, uint2 pix) {
     if (hdrMode == 2) {
         return rgb;
     }
@@ -235,13 +258,13 @@ float3 processColor(float3 rgb) {
         float3 lin = (toneMapCurve == 1) ? toneMapEetf(rgb)
                                          : toneMap(pqToLinear(rgb));
         lin = bt2020ToBt709(lin);
-        return linearToBt709(lin);
+        return applyDither(linearToBt709(lin), pix);
     }
     if (xfer == 3) {
         float3 lin = hlgToLinear(rgb) * 0.1;
         lin = toneMap(lin);
         lin = bt2020ToBt709(lin);
-        return linearToBt709(lin);
+        return applyDither(linearToBt709(lin), pix);
     }
     return rgb;
 }
@@ -262,7 +285,7 @@ float4 p010Point(uint2 pix, float a) {
     float r = yy + 1.4746 * vv;
     float g = yy - 0.164553 * uu - 0.571353 * vv;
     float b = yy + 1.8814 * uu;
-    return float4(saturate(processColor(float3(r, g, b))), a);
+    return float4(saturate(processColor(float3(r, g, b), pix)), a);
 }
 
 // yuv422P10: 与 p010Point 同款 16-bit 视图采样, **唯一差别是色度平面全高**
@@ -282,7 +305,7 @@ float4 p422Point(uint2 pix, float a) {
     float r = yy + 1.4746 * vv;
     float g = yy - 0.164553 * uu - 0.571353 * vv;
     float b = yy + 1.8814 * uu;
-    return float4(saturate(processColor(float3(r, g, b))), a);
+    return float4(saturate(processColor(float3(r, g, b), pix)), a);
 }
 
 [numthreads(16, 16, 1)]
@@ -336,7 +359,7 @@ void main(uint2 DTid : SV_DispatchThreadID)
 
 // DV 分支注入文本(p010Point 内; 基础变体注入空串)
 static const char* kDvBranch = R"(    if (doviEnable == 1) {
-        return float4(saturate(processColor(dvProcess(float3(y, uvRaw.x * k, uvRaw.y * k)))), a);
+        return float4(saturate(processColor(dvProcess(float3(y, uvRaw.x * k, uvRaw.y * k)), pix)), a);
     }
 )";
 
@@ -841,6 +864,10 @@ void Dx11CSVideoRender::renderCpuFrame(const YUVFrame& frame) {
                                  : 100.0f;
     constData.hdrMode = (int32_t)hdrMode;
     constData.toneMapCurve = (int32_t)toneMapParamet.curve;
+    // 输出端 dither 强度(0=关, 默认; 仅 shader 内 tone map 分支生效)
+    constData.ditherStrength = toneMapParamet.ditherStrength > 0.0f
+                                   ? toneMapParamet.ditherStrength
+                                   : 0.0f;
     Mat4x4f mat = buildYuvToRgb(cs);
     memcpy(&constData.colorMat, &mat, 16 * sizeof(float));
     constBuf->updateResource(d3dcontext.Get());
@@ -1147,6 +1174,10 @@ void Dx11CSVideoRender::renderToTexture(const GpuFrame& gpuFrame) {
                                  : 100.0f;
     constData.hdrMode = (int32_t)hdrMode;
     constData.toneMapCurve = (int32_t)toneMapParamet.curve;
+    // 输出端 dither 强度(0=关, 默认; 仅 shader 内 tone map 分支生效)
+    constData.ditherStrength = toneMapParamet.ditherStrength > 0.0f
+                                   ? toneMapParamet.ditherStrength
+                                   : 0.0f;
     // 颜色矩阵: buildYuvToRgb 已含标准系数 + limited 量程展开, 行优先 16 浮点,
     // 与 float4x4 列主序一致, mul(vec4, colorMat) 结果等同于 Vulkan V1/V5
     Mat4x4f mat = buildYuvToRgb(cs);

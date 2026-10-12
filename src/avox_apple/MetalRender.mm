@@ -18,7 +18,7 @@
 
 namespace avox {
 
-// 与 shader 内 FragParams 同布局(28B), 每帧经 setFragmentBytes 下发
+// 与 shader 内 FragParams 同布局(32B), 每帧经 setFragmentBytes 下发
 struct MetalFragParams {
   int hdrMode;
   int tenBit;
@@ -26,7 +26,8 @@ struct MetalFragParams {
   float peakNits;
   float sdrWhiteNits;
   int doviEnable;
-  int toneMapCurve;  // 0=软膝(默认) 1=BT.2390 EETF(ToneMapCurve 声明序)
+  int toneMapCurve;      // 0=软膝(默认) 1=BT.2390 EETF(ToneMapCurve 声明序)
+  float ditherStrength;  // 8bit 量化终点抖动强度, 0=关(默认)
 };
 
 // 顶点数据
@@ -69,7 +70,8 @@ NSString *const nv12trgbBody = AVOX_SHADER_STRING(
       float peakNits;
       float sdrWhiteNits;
       int doviEnable;
-      int toneMapCurve;  // 0=软膝(默认) 1=BT.2390 EETF(ToneMapCurve 声明序)
+      int toneMapCurve;      // 0=软膝(默认) 1=BT.2390 EETF(ToneMapCurve 声明序)
+      float ditherStrength;  // 8bit 量化终点抖动强度, 0=关(默认)
     };
 
     vertex VertexOut vertexShader(const VertexIn in [[stage_in]]) {
@@ -127,7 +129,28 @@ NSString *const nv12trgbBody = AVOX_SHADER_STRING(
     // toneMapEetf 定义在 linearToPq 之后(依赖 PQ 编码), 前向声明供 processColor 调用
     float3 toneMapEetf(float3 pqCode, float peakNits, float sdrWhite);
 
-    float3 processColor(float3 rgb, constant FragParams& params) {
+    // 8x8 Bayer 有序抖动(位交错解析, 无需噪声纹理): 输出 (0,1)
+    float bayer8(int2 pos) {
+      int x = pos.x & 7;
+      int y = pos.y & 7;
+      int idx = 0;
+      for (int i = 0; i < 3; i++) {
+        idx |= ((x >> i) & 1) << (2 * i);
+        idx |= ((y >> i) & 1) << (2 * i + 1);
+      }
+      return (float(idx) + 0.5) / 64.0;
+    }
+
+    // 输出端抖动: 8bit 量化前加 ±0.5LSB 有序噪声(强度 0=恒等); 位置按输出像素锁定
+    float3 applyDither(float3 c, int2 pos, float strength) {
+      if (strength <= 0.0) {
+        return c;
+      }
+      float n = (bayer8(pos) - 0.5) * (strength / 255.0);
+      return clamp(c + float3(n), float3(0.0), float3(1.0));
+    }
+
+    float3 processColor(float3 rgb, constant FragParams& params, int2 pos) {
       // DV 链输出恒为 PQ BT.2020, 与容器标签无关(P5 无色彩标签时 transfer=0):
       // 不覆盖则走 SDR 直通, DV 输出被当 gamma 直显 → 偏暗欠饱和
       int xfer = (params.doviEnable == 1) ? 2 : params.transfer;
@@ -146,13 +169,13 @@ NSString *const nv12trgbBody = AVOX_SHADER_STRING(
                 ? toneMapEetf(rgb, params.peakNits, params.sdrWhiteNits)
                 : toneMap(pqToLinear(rgb), params.peakNits, params.sdrWhiteNits);
         lin = bt2020ToBt709(lin);
-        return linearToBt709(lin);
+        return applyDither(linearToBt709(lin), pos, params.ditherStrength);
       }
       if (xfer == 3) {
         float3 lin = hlgToLinear(rgb) * 0.1;
         lin = toneMap(lin, params.peakNits, params.sdrWhiteNits);
         lin = bt2020ToBt709(lin);
-        return linearToBt709(lin);
+        return applyDither(linearToBt709(lin), pos, params.ditherStrength);
       }
       return rgb;
     }
@@ -323,7 +346,7 @@ NSString *const nv12trgbBody = AVOX_SHADER_STRING(
           dot(yuv, float4(colorMat[4], colorMat[5], colorMat[6], colorMat[7])),
           dot(yuv, float4(colorMat[8], colorMat[9], colorMat[10], colorMat[11])));
       }
-      rgb = processColor(rgb, params);
+      rgb = processColor(rgb, params, int2(in.position.xy));
       return float4(clamp(rgb, 0.0, 1.0), 1.0);
     }
 
@@ -1458,6 +1481,9 @@ void MetalRender::renderCVPixelBuffer(CVImageBufferRef imageBuffer) {
         toneMapParamet.sdrWhiteNits > 0.0f ? toneMapParamet.sdrWhiteNits : 100.0f;
     params.doviEnable = doviUbo.doviEnable;
     params.toneMapCurve = (int)toneMapParamet.curve;
+    // 输出端 dither 强度(0=关, 默认; 仅 shader 内 tone map 分支生效)
+    params.ditherStrength =
+        toneMapParamet.ditherStrength > 0.0f ? toneMapParamet.ditherStrength : 0.0f;
     [commandEncoder setFragmentBytes:&params length:sizeof(params) atIndex:0];
     // 颜色矩阵(行优先 16 浮点): 替换 shader 旧硬编码 BT.601, 尊重 cs.standard/range
     [commandEncoder setFragmentBytes:colorMatData length:sizeof(colorMatData) atIndex:1];

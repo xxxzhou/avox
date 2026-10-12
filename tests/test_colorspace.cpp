@@ -103,6 +103,9 @@ TEST_CASE("UBO 布局: transfer 槽位与头 96B+DV 区尺寸 (3a 定稿契约)"
   // tone map 曲线槽(2026-10-12): 启用原 _pad2 padding, 头布局不变
   CHECK(offsetof(ColorYuvUBO, hdrMode) == 88);
   CHECK(offsetof(ColorYuvUBO, toneMapCurve) == 92);
+  // 输出端 dither 强度(2026-10-12 ②): 借 DV 区前置填充首槽, 尺寸与 DV 偏移均不变
+  CHECK(offsetof(ColorYuvUBO, ditherStrength) == 100);
+  CHECK(offsetof(ColorYuvUBO, dvPivots) == 112);
   // 枚举序即 UBO int 值: 0=软膝(默认) 1=BT.2390 EETF
   CHECK((int32_t)ToneMapCurve::softKnee == 0);
   CHECK((int32_t)ToneMapCurve::bt2390 == 1);

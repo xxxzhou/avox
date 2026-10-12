@@ -89,8 +89,12 @@ enum class ToneMapCurve {
 struct ToneMapParamet {
   ToneMapCurve curve = ToneMapCurve::softKnee;
   float sdrWhiteNits = 0.0f;  // <=0 = 默认 100
+  // 输出端 dither(8bit 量化终点; 画质深化方案 §3 T3 并入本质量参数面)。0=关(默认):
+  // 闸判弱命中, 定位评测项不宣传; 仅 HDR→SDR 的 tone map 分支生效(纯 SDR 链不动)
+  float ditherStrength = 0.0f;
   inline bool operator==(const ToneMapParamet& r) const {
-    return curve == r.curve && sdrWhiteNits == r.sdrWhiteNits;
+    return curve == r.curve && sdrWhiteNits == r.sdrWhiteNits &&
+           ditherStrength == r.ditherStrength;
   }
   inline bool operator!=(const ToneMapParamet& r) const {
     return !(*this == r);

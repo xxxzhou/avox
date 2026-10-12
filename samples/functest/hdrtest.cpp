@@ -10,6 +10,12 @@
 //      enableImage 通道零值, 两通道都到不了 tone map 输出, 故以 screenShot 为准。
 //      锚点素材实测: 软膝 0/183/215/251/251 vs EETF 0/189/225/251/251(100/203nit
 //      块 +6/+10 码, 同数值预测方向与幅值)
+//      **本机渲染腿=Metal**(setToneMap 日志出自 MetalRender): 故 mac 侧实测覆盖
+//      Metal 腿; VK/DX11 腿同源同参数但需各自平台复测
+//   5. dither A/B(2026-10-12, 画质深化方案 ②): AVOX_DITHER=<强度> 下发输出端抖动,
+//      配仍静态 PQ 渐变素材(码 72..91, 落在 8bit 台阶最宽带)量测台阶结构:
+//      默认/显式 0 逐位一致; 1.0 时最长恒定段 66px→34px、跳变数 50→110, 2.0 时 26px/144;
+//      静态 SDR 渐变 0 vs 2.0 逐位一致(纯 SDR 链不参与)
 //   4. -hard 档走硬解 (DX11VA P010), 观察 getDxFormat 不识别 P010 落 other 的
 //      已知雷区实际表现 (计划文档 §2.2/§6.7)
 //   5. API 面验证: IMediaPlayerOb::onHdrMeta 宿主回调(HDR 流回调/SDR 流不回调)
@@ -294,15 +300,23 @@ bool playOnce(const char* url, bool hard, HdrOb& ob,
   ISurfaceRender* sr = player->getSurfaceRender();
   ob.sr = sr;
   sr->setOffSurface(YuvType::yuv420P);
-  // tone map 曲线开关(2026-10-12, 画质深化方案 ① 验证): AVOX_TONEMAP_CURVE=1|bt2390
-  // 下发 BT.2390 EETF; 未设/0 保持默认软膝(零回归基线)
+  // tone map 曲线/dither 开关(2026-10-12, 画质深化方案 ①/② 验证):
+  // AVOX_TONEMAP_CURVE=1|bt2390 下发 BT.2390 EETF; AVOX_DITHER=<强度> 下发输出端抖动。
+  // 未设=默认软膝 + dither 关(逐位回归基线)
+  ToneMapParamet tm = {};
   const char* curveEnv = std::getenv("AVOX_TONEMAP_CURVE");
   if (curveEnv &&
       (std::string(curveEnv) == "1" || std::string(curveEnv) == "bt2390")) {
-    ToneMapParamet tm = {};
     tm.curve = ToneMapCurve::bt2390;
+  }
+  const char* ditherEnv = std::getenv("AVOX_DITHER");
+  if (ditherEnv) {
+    tm.ditherStrength = (float)std::atof(ditherEnv);
+  }
+  if (tm.curve != ToneMapCurve::softKnee || tm.ditherStrength > 0.0f) {
     sr->setToneMap(tm);
-    std::printf("[tonemap] curve=1 BT.2390 EETF (env)\n");
+    std::printf("[tonemap] curve=%d dither=%.2f (env)\n", (int32_t)tm.curve,
+                tm.ditherStrength);
   }
   addSurfaceRenderOb(sr, &ob);
   if (metaOb) {
@@ -322,9 +336,9 @@ bool playOnce(const char* url, bool hard, HdrOb& ob,
                 (long long)ob.frames);
   }
   std::this_thread::sleep_for(std::chrono::seconds(4));
-  // tone map 曲线验证(2026-10-12): 经 screenShot 取渲染后像素 —— onFrame 的
+  // tone map 曲线/dither 验证(2026-10-12): 经 screenShot 取渲染后像素 —— onFrame 的
   // CPU-YUV 通道在 mac 实测为解码直出(锚点块=原样 PQ 码值), enableImage 通道
-  // 零值, 两者都到不了 tone map 输出; screenShot 走 VK 图输出口
+  // 零值, 两者都到不了 tone map 输出; screenShot 走渲染腿输出口(本机 mac=Metal)
   {
     IImageBuffer* shot = createImageBuffer();
     ImageFormat sf = {};
@@ -353,6 +367,34 @@ bool playOnce(const char* url, bool hard, HdrOb& ob,
         for (int i = 0; i < 5; i++) {
           std::printf("%.0f%s", cnt[i] ? (double)blk[i] / cnt[i] : 0.0,
                       i == 4 ? "\n" : "/");
+        }
+        // 台阶统计(画质深化方案 ② 判据): 取中部一行 luma, 数恒定平台段与最长平台。
+        // dither 生效应把长平台打散成 1~2px 交替, 最长平台显著下降;
+        // 8bit 纯 SDR 链/直通链不参与, 故本行为默认档应保持不变
+        {
+          int r = f2.height / 2;
+          const unsigned char* row = p + (size_t)r * pitch;
+          int runs = 0, maxRun = 0, cur = 0, prev = -1, distinct = 0;
+          bool seen[256] = {false};
+          for (int c = 0; c < f2.width; c++) {
+            int l = (row[c * 4] + row[c * 4 + 1] + row[c * 4 + 2]) / 3;
+            if (!seen[l]) {
+              seen[l] = true;
+              distinct++;
+            }
+            if (l == prev) {
+              cur++;
+            } else {
+              runs++;
+              cur = 1;
+              prev = l;
+            }
+            if (cur > maxRun) {
+              maxRun = cur;
+            }
+          }
+          std::printf("[%s] row%d runs=%d maxRun=%dpx distinct=%d\n",
+                      ob.tag.c_str(), r, runs, maxRun, distinct);
         }
       }
     } else {

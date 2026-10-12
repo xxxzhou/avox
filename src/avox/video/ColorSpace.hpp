@@ -36,7 +36,10 @@ struct ColorYuvUBO {
   int32_t toneMapCurve = 0;      // ToneMapCurve 声明序: 0=软膝 1=BT.2390 EETF
   // --- V5 追加区: DV 整形(offset 96) ---
   int32_t doviEnable = 0;        // 1=按 DV 区整形(doviEnable!=1 时全部走原 colorMat)
-  int32_t dvPad[3] = {};
+  // 后随 3 个 int 是 DV vec4 区 16B 对齐前的填充; 首槽借给输出端 dither(与 DV 无关),
+  // 布局/尺寸与历史一致, 只是语义借用 —— 与 shader 侧靠声明序对齐
+  float ditherStrength = 0.0f;   // 8bit 量化终点抖动强度: 0=关
+  int32_t _dvPad[2] = {};
   DoviUboVec4 dvPivots[7];       // 3comp×9 pivot 归一化, flat=c*9+k
   DoviUboVec4 dvPoly[18];        // 3comp×8段×3系数, flat=(c*8+p)*3+k
   DoviUboVec4 dvMmr[132];        // 3comp×8段×(1const+3阶×7), flat=(c*8+p)*22+n
