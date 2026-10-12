@@ -4,7 +4,7 @@
 //   用于 1) 跨腿一致性比对(判据 1) 2) 最近邻 vs 双线性的边沿剖面判别。
 // 内置判据: 彩边素材在 2:1 色度子采样下, 双线性升采样在色度样本边界两侧给出
 //   25%/75% 与 75%/25% 的混合(RGB 通道落在两端点间 ~25% 处), 最近邻则整块跳变。
-// 用法: chromatest <url> [-vk] [-row N] [-x0 A] [-x1 B] [-prefix P]
+// 用法: chromatest <url> [-vk] [-hard] [-row N] [-x0 A] [-x1 B] [-col X] [-prefix P]
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -33,12 +33,13 @@ class ChromaOb : public ISurfaceRenderOb {
 
 int main(int argc, char* argv[]) {
   if (argc < 2) {
-    std::printf("usage: chromatest <url> [-vk] [-row N] [-x0 A] [-x1 B]"
+    std::printf("usage: chromatest <url> [-vk] [-hard] [-row N] [-x0 A] [-x1 B]"
                 " [-col X] [-cy0 A] [-cy1 B] [-prefix P]\n");
     return 2;
   }
   const char* url = argv[1];
   bool vk = false;
+  bool hard = false;
   int row = 60;
   int x0 = 280;
   int x1 = 360;
@@ -50,6 +51,8 @@ int main(int argc, char* argv[]) {
     std::string a = argv[i];
     if (a == "-vk") {
       vk = true;
+    } else if (a == "-hard") {
+      hard = true;
     } else if (a == "-row" && i + 1 < argc) {
       row = atoi(argv[++i]);
     } else if (a == "-x0" && i + 1 < argc) {
@@ -74,9 +77,14 @@ int main(int argc, char* argv[]) {
   ISurfaceRender* sr = player->getSurfaceRender();
   // 腿选择: 不设=平台默认(本机 mac=Metal); -vk 显式走 Vulkan(MoltenVK)
   sr->setVulkan(vk);
-  // 必须软解: mac 硬解(VT)出 CVPixelBuffer, 恒经 Metal 腿, 到不了 VK 的 yuv2rgba
-  // 色度车道(V1/V5/V6) —— 本探针要测的正是那条车道
-  player->setHardDecode(false);
+  // 解码档与腿强相关(两平台要求相反), 默认软解:
+  //   mac 测 VK 腿(默认): 必须**软解** —— 硬解(VT)出 CVPixelBuffer 恒经 Metal 腿, 到不了
+  //     VK 的 yuv2rgba 色度车道(V1/V5/V6);
+  //   Windows 测 DX11 CS: 必须 `-hard`(硬解) —— CS 的软解上传路(initGraphCpu)要求
+  //     targetWindow 的 DX11 设备, 无窗口宿主直接 "no window device, skip"(实测踩过:
+  //     软解下 CS 全程 skip, 出图来自别的腿, 剖面仍是最近邻, 会误判成"改动没生效");
+  //     硬解走 renderToTexture(解码器设备), 不需要窗口。
+  player->setHardDecode(hard);
   sr->setOffSurface(YuvType::yuv420P);
   ChromaOb ob;
   addSurfaceRenderOb(sr, &ob);
