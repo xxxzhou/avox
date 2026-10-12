@@ -38,9 +38,13 @@ class AudioFrame {
   int32_t spaceLeft() { return buffer.size() - wcount; }
   void clear() { wcount = 0; }
   void writeBytes(const uint8_t* data, int32_t size) {
-    assert(size + wcount <= buffer.size());
-    memcpy(buffer.data() + wcount, data, size);
-    wcount += size;
+    if (!data || size <= 0) return;
+    int32_t space = spaceLeft();
+    assert(size <= space);  // 调试期暴露越界调用
+    // Release 下显式钳位: 只写剩余空间, 不再裸 memcpy 越界
+    int32_t n = size < space ? size : space;
+    memcpy(buffer.data() + wcount, data, n);
+    wcount += n;
   }
   void form(const AudioFrame& frame) {
     pts = frame.pts;
