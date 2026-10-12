@@ -364,6 +364,10 @@ VkFormat getVkFormat(ImageType type) {
       return VK_FORMAT_R32G32B32A32_SINT;
     case ImageType::rgba16f:
       return VK_FORMAT_R16G16B16A16_SFLOAT;
+    case ImageType::rgba16:
+      // 16bit UNORM(8B/px), 与 rgba16f(SFLOAT)区分; 与 DXGI
+      // R16G16B16A16_UNORM 命名对齐
+      return VK_FORMAT_R16G16B16A16_UNORM;
     default:
       return VK_FORMAT_UNDEFINED;
   }

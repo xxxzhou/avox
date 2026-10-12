@@ -40,6 +40,12 @@ DXGI_FORMAT getImageDXFormt(ImageType imageType) {
     case ImageType::rgba32:
       dxFormat = DXGI_FORMAT_R32G32B32A32_SINT;
       break;
+    case ImageType::rgba16:
+      dxFormat = DXGI_FORMAT_R16G16B16A16_UNORM;
+      break;
+    case ImageType::rgba16f:
+      dxFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
+      break;
     default:
       dxFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
       break;
@@ -75,6 +81,12 @@ ImageType getImageType(DXGI_FORMAT imageFormat) {
       break;
     case DXGI_FORMAT_R8_UNORM:
       imageType = ImageType::r8;
+      break;
+    case DXGI_FORMAT_R16G16B16A16_UNORM:
+      imageType = ImageType::rgba16;
+      break;
+    case DXGI_FORMAT_R16G16B16A16_FLOAT:
+      imageType = ImageType::rgba16f;
       break;
     default:
       imageType = ImageType::other;
