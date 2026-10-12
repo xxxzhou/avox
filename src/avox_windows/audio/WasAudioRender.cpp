@@ -199,7 +199,7 @@ bool WasAudioRender::initLocked() {
   renderDesc.format = waveFormatToAudioFormat(format);
 #ifdef AVOX_ENABLE_FFMPEG
   // 重采样(新设备混音格式可能不同,重建时必须重跑)
-  if (!resample->init(desc, renderDesc)) {
+  if (!resample->init(desc, renderDesc, getDownmix())) {
     LOGFLF(LogLevel::warn, "resample init failed");
   }
 #endif
@@ -247,7 +247,8 @@ void WasAudioRender::onRender(const AvoxData& frame) {
   }
   AvoxData inData = frame;
 #ifdef AVOX_ENABLE_FFMPEG
-  // 如果格式不同,先重采样
+  // 如果格式不同,先重采样(下混系数热切由 resample 内部惰性重建兑现)
+  resample->setDownmix(getDownmix());
   if (!resample->resample(inData)) {
     LOGFLF(LogLevel::warn, "resample failed");
     return;

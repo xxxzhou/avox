@@ -147,7 +147,7 @@ void IOSAudioRender::onInit() {
 #endif
 
 #ifdef AVOX_ENABLE_FFMPEG
-  if (!resample->init(desc, renderDesc)) {
+  if (!resample->init(desc, renderDesc, getDownmix())) {
     LOGFLF(LogLevel::warn, "resample init failed");
   }
 #endif
@@ -312,6 +312,8 @@ void IOSAudioRender::onRender(const AvoxData& frame) {
 
   AvoxData inData = frame;
 #ifdef AVOX_ENABLE_FFMPEG
+  // 下混系数热切: 参数变化由 resample 内部惰性重建 swr 兑现
+  resample->setDownmix(getDownmix());
   if (!resample->resample(inData)) {
     LOGFLF(LogLevel::warn, "resample failed");
     return;

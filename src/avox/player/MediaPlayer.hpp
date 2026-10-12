@@ -142,6 +142,8 @@ class MediaPlayer : public IMediaPlayer,
   // 播放响度均衡(mp.audio.normalize, 默认开)与目标响度 LUFS, 播放链路消费
   bool bAudioNormalize = true;
   double audioNormalizeTarget = -18.0;
+  // 播放下混系数/对白增强(mp.audio.downmix*), 播放链路消费
+  DownmixParamet audioDownmix = {};
 
  protected:
   // 直播模式下，是否开启低延迟，数据太多会自动快播
@@ -245,6 +247,8 @@ class MediaPlayer : public IMediaPlayer,
   // 播放响度均衡开关与目标响度(ARenderTask 起播时消费)
   bool getAudioNormalize() { return bAudioNormalize; }
   double getAudioNormalizeTarget() { return audioNormalizeTarget; }
+  // 下混系数(ARenderTask 起播时消费)
+  DownmixParamet getAudioDownmix() { return audioDownmix; }
 
  public:
   virtual IOption* getOption() override;

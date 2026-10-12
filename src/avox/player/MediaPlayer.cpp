@@ -149,6 +149,31 @@ void MediaPlayer::onOptionChange(const char* key, ArgType option) {
     auto optCmd =
         createCommand<MPCommandType::Option>(OptionData{std::string(key), option});
     mpCommands.enqueueWait(optCmd);
+  } else if (equalsIgnoreCase(key, AVOX_MP_AUDIO_DOWNMIX_INT) ||
+             equalsIgnoreCase(key, AVOX_MP_AUDIO_DOWNMIX_CENTER_DOUBLE) ||
+             equalsIgnoreCase(key, AVOX_MP_AUDIO_DOWNMIX_SURROUND_DOUBLE) ||
+             equalsIgnoreCase(key, AVOX_MP_AUDIO_DOWNMIX_LFE_DOUBLE)) {
+    if (equalsIgnoreCase(key, AVOX_MP_AUDIO_DOWNMIX_INT)) {
+      audioDownmix.preset = (DownmixPreset)getInt(key);
+    } else if (equalsIgnoreCase(key, AVOX_MP_AUDIO_DOWNMIX_CENTER_DOUBLE)) {
+      audioDownmix.centerGainDb = (float)getDouble(key);
+      audioDownmix.preset = DownmixPreset::custom;
+    } else if (equalsIgnoreCase(key, AVOX_MP_AUDIO_DOWNMIX_SURROUND_DOUBLE)) {
+      audioDownmix.surroundGainDb = (float)getDouble(key);
+      audioDownmix.preset = DownmixPreset::custom;
+    } else {
+      audioDownmix.lfeGainDb = (float)getDouble(key);
+      audioDownmix.preset = DownmixPreset::custom;
+    }
+    LOGFLF(LogLevel::info, "option:", key,
+           " downmix preset:", (int32_t)audioDownmix.preset,
+           " center:", audioDownmix.centerGainDb,
+           " surround:", audioDownmix.surroundGainDb,
+           " lfe:", audioDownmix.lfeGainDb);
+    // 下发到在播音轨即时生效(未起播时 ARenderTask::start 读到新值)
+    auto optCmd =
+        createCommand<MPCommandType::Option>(OptionData{std::string(key), option});
+    mpCommands.enqueueWait(optCmd);
   }
 }
 
@@ -1933,6 +1958,7 @@ void MediaPlayer::cmdOption(OptionCommandPtr cmd) {
     AudioRender* render = dynamic_cast<AudioRender*>(track->getAudioRender());
     if (render) {
       render->setAudioNormalize(bAudioNormalize, audioNormalizeTarget);
+      render->setDownmix(audioDownmix);
     }
   }
 }

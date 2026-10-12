@@ -30,6 +30,9 @@ void ARenderTask::start(class AudioTrack* context) {
     const double targetLufs =
         mediaPlayer ? mediaPlayer->getAudioNormalizeTarget() : -18.0;
     audioRender->setAudioNormalize(bNormalize, targetLufs);
+    // 下混系数/对白增强: 播放链路按播放器选项(默认 none=不干预)
+    audioRender->setDownmix(mediaPlayer ? mediaPlayer->getAudioDownmix()
+                                        : DownmixParamet{});
     audioRender->setDesc(renderDesc, frameMs);
   }
   // 开始渲染

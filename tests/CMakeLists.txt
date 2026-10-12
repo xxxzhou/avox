@@ -32,6 +32,7 @@ add_executable(avox_tests
   ${AVOX_TESTS_SRC}/test_ptsflattener.cpp
   ${AVOX_TESTS_SRC}/test_pocrestamper.cpp
   ${AVOX_TESTS_SRC}/test_audioleveler.cpp
+  ${AVOX_TESTS_SRC}/test_downmix.cpp
   ${AVOX_TESTS_SRC}/log_sink.cpp
   # 被测源码 (自包含编译)
   ${AVOX_SRC}/module/AvoxMath.cpp

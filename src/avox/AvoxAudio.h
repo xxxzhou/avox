@@ -55,6 +55,33 @@ struct AudioAec {
   int32_t mobileMode = 0;
 };
 
+// 多声道→少声道下混系数(播放下混; 增益单位 dB)。仅当源道数多于设备道数、
+// 需要转换时才生效(无需转换时链路短路, 见 FFResample::init):
+// 5.1 源在双声道设备上默认把中置(对白)压 -3dB, 抬高 centerGainDb 即对白增强。
+// 三个增益 <= -60dB 统一视为不混入
+enum class DownmixPreset {
+  none = 0,    // 不干预: 用音频库默认(中置/环绕 -3dB, LFE 丢弃), 历史行为
+  itu = 1,     // ITU-R BS.775: 中置/环绕 -3dB, LFE 丢弃
+  dolby = 2,   // Dolby 风格: 中置/环绕 -3dB, LFE -3dB(保留低频)
+  custom = 3,  // 用下面显式增益
+};
+
+struct DownmixParamet {
+  DownmixPreset preset = DownmixPreset::none;
+  float centerGainDb = -3.0f;    // 中置增益(对白增强主旋钮), custom 生效
+  float surroundGainDb = -3.0f;  // 环绕增益, custom 生效
+  float lfeGainDb = 0.0f;        // LFE 增益, custom 生效
+  float volume = 1.0f;           // 下混整体线性音量
+  inline bool operator==(const DownmixParamet& right) const {
+    return preset == right.preset && centerGainDb == right.centerGainDb &&
+           surroundGainDb == right.surroundGainDb &&
+           lfeGainDb == right.lfeGainDb && volume == right.volume;
+  }
+  inline bool operator!=(const DownmixParamet& right) const {
+    return !(*this == right);
+  }
+};
+
 // 音频 tap 观察者:从 IAudioRender 读取正在播放的音频数据
 // onFrame 在 tap 专用线程触发,帧仅在回调内有效,上层需延后处理请自行复制
 class IAudioTapOb {
@@ -94,6 +121,8 @@ class IAudioRender {
   virtual float getVolume() = 0;
   virtual void enableAec(const AudioAec& aec) {}
   virtual void disableAec() {}
+  // 下混系数/对白增强: 设备道数少于源道数时生效, 默认 none=不干预; 可热切
+  virtual void setDownmix(const DownmixParamet& downmix) {}
   // 打开音频 tap:outDesc 为空(sampleRate=0)时跟随源格式不重采样
   // frameMs 为切片时长。默认关闭,open 后才开始备份与回调
   virtual void openTap(const AudioDesc& outDesc, int32_t frameMs) {}

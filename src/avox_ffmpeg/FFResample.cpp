@@ -1,15 +1,21 @@
 #include "FFResample.hpp"
 
+extern "C" {
+#include <libavutil/opt.h>
+}
+
 namespace avox {
 
-bool FFResample::init(const AudioDesc& sDesc, const AudioDesc& dDesc) {
-  // 如果相同,不需要重采样
+bool FFResample::init(const AudioDesc& sDesc, const AudioDesc& dDesc,
+                      const DownmixParamet& downmix) {
+  // 如果相同,不需要重采样(下混也无从谈起: 无转换即无声道折叠)
   bSameDesc = sDesc == dDesc;
+  downmixParamet = downmix;
   if (bSameDesc) {
     return true;
   }
   // 如果已经用相同参数初始化过
-  if (srcDesc == sDesc && dstDesc == dDesc && swrCtx) {
+  if (srcDesc == sDesc && dstDesc == dDesc && swrParamet == downmix && swrCtx) {
     return true;
   }
   srcDesc = sDesc;
@@ -31,6 +37,15 @@ bool FFResample::init(const AudioDesc& sDesc, const AudioDesc& dDesc) {
     swr_free(&swr);
     return false;
   }
+  // 下混系数: none 不干预(等价历史行为); 其余把增益换算成线性系数, 必须在
+  // swr_init 之前下发(这几个选项只在建矩阵时读取)
+  float center = 0.0f, surround = 0.0f, lfe = 0.0f, volume = 1.0f;
+  if (resolveDownmixLevels(downmix, center, surround, lfe, volume)) {
+    av_opt_set_double(swr, "center_mix_level", center, 0);
+    av_opt_set_double(swr, "surround_mix_level", surround, 0);
+    av_opt_set_double(swr, "lfe_mix_level", lfe, 0);
+    av_opt_set_double(swr, "rematrix_volume", volume, 0);
+  }
   ret = swr_init(swr);
   av_channel_layout_uninit(&in_ch_layout);
   av_channel_layout_uninit(&out_ch_layout);
@@ -40,6 +55,7 @@ bool FFResample::init(const AudioDesc& sDesc, const AudioDesc& dDesc) {
     return false;
   }
   swrCtx = getUniquePtr(swr);
+  swrParamet = downmix;
   // 每秒输入与输出的采样字节数
   int32_t inSizeMS = getAudioFrameSize(srcDesc, 10);
   int32_t outSizeMS = getAudioFrameSize(dstDesc, 10);
@@ -53,6 +69,10 @@ int32_t FFResample::resample(AvoxData& src) {
     return src.size;
   }
   if (!swrCtx) {
+    return -1;
+  }
+  // 下混系数热切: 用新选项重建 swr。丢内部延迟数 ms(开关切换处, 不产生爆音)
+  if (swrParamet != downmixParamet && !init(srcDesc, dstDesc, downmixParamet)) {
     return -1;
   }
   AVSampleFormat inFormat = getFFAudioFormat(srcDesc.format);

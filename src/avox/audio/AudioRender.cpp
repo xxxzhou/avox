@@ -94,6 +94,22 @@ void AudioRender::setAudioNormalize(bool bEnable, double targetLufs) {
   createAudioLevelerLocked();
 }
 
+void AudioRender::setDownmix(const DownmixParamet& downmix) {
+  std::lock_guard<std::mutex> lk(downmixMtx);
+  if (downmixParamet == downmix) {
+    return;
+  }
+  downmixParamet = downmix;
+  LOGFLF(LogLevel::info, "audio downmix preset:", (int32_t)downmix.preset,
+         " center:", downmix.centerGainDb, " surround:", downmix.surroundGainDb,
+         " lfe:", downmix.lfeGainDb, " volume:", downmix.volume);
+}
+
+DownmixParamet AudioRender::getDownmix() {
+  std::lock_guard<std::mutex> lk(downmixMtx);
+  return downmixParamet;
+}
+
 void AudioRender::createAudioLevelerLocked() {
   if (!bAudioNormalize) {
     audioLeveler.reset();

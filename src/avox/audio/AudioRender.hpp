@@ -47,6 +47,9 @@ class AVOX_EXPORT AudioRender : public IAudioRender, public IAudioProcessOb {
   std::unique_ptr<AudioLeveler> audioLeveler = nullptr;
   // 护 leveler 指针(选项可在控制线程改, 渲染线程每帧取用)
   std::mutex levelerMtx;
+  // 下混系数(默认 none=不干预): 控制线程写、渲染线程每帧读, 故加锁
+  DownmixParamet downmixParamet = {};
+  std::mutex downmixMtx;
   // tap 延迟打开:openTap 时 desc 未就绪则缓存参数,setDesc 后自动 open
   bool bTapPending = false;
   AudioDesc pendingTapOutDesc = {};
@@ -59,6 +62,8 @@ class AVOX_EXPORT AudioRender : public IAudioRender, public IAudioProcessOb {
   virtual void onClose() {}
   // desc 就绪后按开关建/重建 leveler(调用方持 levelerMtx)
   void createAudioLevelerLocked();
+  // 取当前下混系数副本(设备腿在 desc 转换处每帧取用, 与 setDownmix 跨线程)
+  DownmixParamet getDownmix();
 
  public:
   void setDesc(AudioDesc desc, int32_t frameMs = 40);
@@ -81,6 +86,8 @@ class AVOX_EXPORT AudioRender : public IAudioRender, public IAudioProcessOb {
   virtual float getVolume() override { return 1.0f; };
   virtual void enableAec(const AudioAec& aec) override;
   virtual void disableAec() override;
+  // 下混系数/对白增强(设备道数少于源道数时生效); 只存值, 各腿转换处取用
+  virtual void setDownmix(const DownmixParamet& downmix) override;
   // 播放响度均衡开关(EBU R128 实时慢收敛); 播放链路按播放器选项调用, 其余链路不启用
   void setAudioNormalize(bool bEnable, double targetLufs = -18.0);
   // IAudioRender tap

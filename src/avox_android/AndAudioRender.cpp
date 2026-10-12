@@ -80,7 +80,7 @@ void AndAudioRender::onInit() {
     track = createTrack(env, trackDesc.sampleRate, 2, bits);
   }
   if (track && !(trackDesc == desc)) {
-    if (devResample.init(desc, trackDesc)) {
+    if (devResample.init(desc, trackDesc, getDownmix())) {
       devConvert = true;
     } else {
       env->DeleteGlobalRef(track);
@@ -115,6 +115,8 @@ void AndAudioRender::onRender(const AvoxData& frame) {
   AvoxData out = frame;
 #ifdef AVOX_ENABLE_FFMPEG
   if (devConvert) {
+    // 下混系数热切: 由 resample 内部惰性重建兑现
+    devResample.setDownmix(getDownmix());
     int32_t converted = devResample.resample(out);
     if (converted <= 0) {
       return;

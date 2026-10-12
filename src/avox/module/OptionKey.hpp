@@ -37,6 +37,12 @@ namespace avox {
 #define AVOX_MP_AUDIO_NORMALIZE_BOOL "mp.audio.normalize"
 // 响度均衡目标响度 LUFS(默认 -18)
 #define AVOX_MP_AUDIO_NORMALIZE_TARGET_DOUBLE "mp.audio.normalize.target"
+// 播放下混系数预设: 0=none 不干预(默认) 1=ITU 2=Dolby 3=自定义; 仅多声道→少声道时生效
+#define AVOX_MP_AUDIO_DOWNMIX_INT "mp.audio.downmix"
+// 自定义下混增益 dB(设置即切 preset=custom): 中置(对白增强主旋钮)/环绕/LFE
+#define AVOX_MP_AUDIO_DOWNMIX_CENTER_DOUBLE "mp.audio.downmix.center"
+#define AVOX_MP_AUDIO_DOWNMIX_SURROUND_DOUBLE "mp.audio.downmix.surround"
+#define AVOX_MP_AUDIO_DOWNMIX_LFE_DOUBLE "mp.audio.downmix.lfe"
 // IMediaPlayer里的getOption设置的key
 #define AVOX_MP_IO_TIMEOUT_MS_INT "io.timeout.ms"
 // HTTP 自定义请求头, CRLF 分隔的 "Key: value" 行(云盘直链要带

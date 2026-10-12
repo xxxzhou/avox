@@ -245,8 +245,9 @@ void PulseAudioRender::onRender(const AvoxData& frame) {
   }
   AvoxData inData = frame;
 #ifdef AVOX_ENABLE_FFMPEG
-  // 如果格式不同,先重采样
+  // 如果格式不同,先重采样(下混系数热切由 resample 内部惰性重建兑现)
   if (renderDesc != desc) {
+    resample->setDownmix(getDownmix());
     if (resample->resample(inData) <= 0 || inData.size == 0) {
       LOGFLF(LogLevel::warn, "resample failed");
       return;
