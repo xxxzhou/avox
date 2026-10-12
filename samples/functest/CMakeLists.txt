@@ -23,6 +23,8 @@ generatetest(yuvouttest)
 generatetest(downmixtest)
 # HDR10 tone map 链路探针: PQ/BT.2020 素材经 Vulkan V5 渲染与 SDR 参考对比
 generatetest(hdrtest)
+# 色度升采样探针(方案 §5 T1): 同素材分跑原生腿/VK 腿, 打印彩边逐像素剖面
+generatetest(chromatest)
 # seek 出图回归: 起播→seek 指定位置→抽帧 PNG + 客观像素判据 (源码含中文字面量)
 generatetest(seektest)
 if(MSVC)

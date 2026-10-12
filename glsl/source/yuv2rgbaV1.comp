@@ -18,6 +18,56 @@ ivec2 lin2coord(int pos, int width) {
 	return ivec2(pos % width, pos / width);
 }
 
+// ---------- 色度双线性(2026-10-12, 画质深化方案 §5 T1): 对齐 Metal 腿线性采样口径 ----------
+// Metal 腿 Y/UV 共用一个线性采样器(uvTexture 半宽), 故输出像素 (x,y) 的色度平面位置 =
+// ((x+0.5)*uvW/w - 0.5, (y+0.5)*uvH/h - 0.5)。偶数帧宽高下该位置恒为 k±0.25 / m±0.25,
+// 权重固定 (0.25,0.75)/(0.75,0.25); 边缘按 clamp-to-edge 折叠(越界抽头改读边缘样本,
+// 权重和仍为 1, 与 clamp 后的采样坐标等价)。VK/DX11 原为每 2x2 取一次(最近邻) ⇒ 跨腿
+// 不一致(彩边/红字), 本函数把 VK 拉到 Metal 同水准。
+// 平面式色度(i,j) 线性索引 = base + j*rowStride + i(与 V5 同款字流寻址); nv12 的
+// U/V 交错在同一 texel(.r/.g), 单独走下面的 nv12Chroma。
+
+// 平面内索引 -> 值
+float readWord(int wi, int w) {
+	return imageLoad(inTex, lin2coord(wi, w)).r;
+}
+
+// 一行 3 抽头(左/中/右, 边缘 clamp) -> 该行横向双线性: .x=x=2k(左像素) .y=x=2k+1(右像素)
+vec2 chromaRowLR(int base, int rowIdx, int rowStride, int uvW, int k, int w) {
+	int im = max(k - 1, 0), ip = min(k + 1, uvW - 1);
+	int r = base + rowIdx * rowStride;
+	float a = readWord(r + im, w);
+	float b = readWord(r + k, w);
+	float c = readWord(r + ip, w);
+	return vec2(0.25 * a + 0.75 * b, 0.75 * b + 0.25 * c);
+}
+
+// 4:2:0: 一个线程的 2x2 输出块共用 3x3 色度抽头(省去逐像素重复取点)
+// 返回 .x=(2k,2m) .y=(2k+1,2m) .z=(2k,2m+1) .w=(2k+1,2m+1)
+vec4 chroma420Block(int base, int rowStride, int uvW, int uvH, int k, int m, int w) {
+	int jm = max(m - 1, 0), jp = min(m + 1, uvH - 1);
+	vec2 hm = chromaRowLR(base, jm, rowStride, uvW, k, w);
+	vec2 h0 = chromaRowLR(base, m, rowStride, uvW, k, w);
+	vec2 hp = chromaRowLR(base, jp, rowStride, uvW, k, w);
+	return vec4(0.25 * hm.x + 0.75 * h0.x, 0.25 * hm.y + 0.75 * h0.y,
+	            0.75 * h0.x + 0.25 * hp.x, 0.75 * h0.y + 0.25 * hp.y);
+}
+
+// nv12: 输出像素 (x,y) 的色度双线性, 返回 (U,V)。色度(i,j) 在 (2i, H+j), V 在 +1 列
+vec2 nv12Chroma(int w, int h, int x, int y) {
+	int uvW = w / 2, uvH = h / 2;
+	float cx = clamp((float(x) + 0.5) * float(uvW) / float(w) - 0.5, 0.0, float(uvW - 1));
+	float cy = clamp((float(y) + 0.5) * float(uvH) / float(h) - 0.5, 0.0, float(uvH - 1));
+	int i0 = int(cx), j0 = int(cy);
+	int i1 = min(i0 + 1, uvW - 1), j1 = min(j0 + 1, uvH - 1);
+	float fx = cx - float(i0), fy = cy - float(j0);
+	vec2 s00 = imageLoad(inTex, ivec2(i0 * 2, h + j0)).rg;
+	vec2 s10 = imageLoad(inTex, ivec2(i1 * 2, h + j0)).rg;
+	vec2 s01 = imageLoad(inTex, ivec2(i0 * 2, h + j1)).rg;
+	vec2 s11 = imageLoad(inTex, ivec2(i1 * 2, h + j1)).rg;
+	return mix(mix(s00, s10, fx), mix(s01, s11, fx), fy);
+}
+
 // yuv420sp
 void nv12(){
     ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
@@ -25,21 +75,20 @@ void nv12(){
     if(uv.x >= size.x/2 || uv.y >= size.y/2){
         return;
     }
-	ivec2 nuv = ivec2(0,size.y);
-	ivec2 uindex = ivec2(uv.x*2,uv.y)+nuv;
-	ivec2 vindex = ivec2(uv.x*2+1,uv.y)+nuv;
-
 	float y1 = imageLoad(inTex,ivec2(uv.x*2,uv.y*2)).r;
 	float y2 = imageLoad(inTex,ivec2(uv.x*2+1,uv.y*2)).r;
 	float y3 = imageLoad(inTex,ivec2(uv.x*2,uv.y*2+1)).r;
 	float y4 = imageLoad(inTex,ivec2(uv.x*2+1,uv.y*2+1)).r;
-	float u = imageLoad(inTex,uindex.xy).r;     // 不再 -0.5f (折进 colorMat 偏移列)
-    float v = imageLoad(inTex,vindex.xy).r;     // 不再 -0.5f
+	// 色度双线性(§5 T1): 四像素各得一组 (U,V), 原为四像素共用一组(最近邻)
+	vec2 c1 = nv12Chroma(size.x, size.y, uv.x*2, uv.y*2);
+	vec2 c2 = nv12Chroma(size.x, size.y, uv.x*2+1, uv.y*2);
+	vec2 c3 = nv12Chroma(size.x, size.y, uv.x*2, uv.y*2+1);
+	vec2 c4 = nv12Chroma(size.x, size.y, uv.x*2+1, uv.y*2+1);
 
-	vec4 rgba1 = vec4(y1,u,v,1.0) * ubo.colorMat;
-	vec4 rgba2 = vec4(y2,u,v,1.0) * ubo.colorMat;
-	vec4 rgba3 = vec4(y3,u,v,1.0) * ubo.colorMat;
-	vec4 rgba4 = vec4(y4,u,v,1.0) * ubo.colorMat;
+	vec4 rgba1 = vec4(y1,c1.x,c1.y,1.0) * ubo.colorMat;
+	vec4 rgba2 = vec4(y2,c2.x,c2.y,1.0) * ubo.colorMat;
+	vec4 rgba3 = vec4(y3,c3.x,c3.y,1.0) * ubo.colorMat;
+	vec4 rgba4 = vec4(y4,c4.x,c4.y,1.0) * ubo.colorMat;
 
 	imageStore(outTex, ivec2(uv.x*2,uv.y*2),rgba1);
 	imageStore(outTex, ivec2(uv.x*2+1,uv.y*2),rgba2);
@@ -53,23 +102,22 @@ void yuv420p(){
     if(uv.x >= size.x/2 || uv.y >= size.y/2){
         return;
     }
-	int uvW = size.x/2;
-	int uPos = size.x*size.y + uv.y*uvW + uv.x;
-	int vPos = uPos + uvW*(size.y/2);
-	ivec2 uindex = lin2coord(uPos, size.x);
-	ivec2 vindex = lin2coord(vPos, size.x);
+	int W = size.x, H = size.y;
+	int uvW = W / 2, uvH = H / 2;
+	int uBase = W * H, vBase = uBase + uvW * uvH;
 
 	float y1 = imageLoad(inTex,ivec2(uv.x*2,uv.y*2)).r;
 	float y2 = imageLoad(inTex,ivec2(uv.x*2+1,uv.y*2)).r;
 	float y3 = imageLoad(inTex,ivec2(uv.x*2,uv.y*2+1)).r;
 	float y4 = imageLoad(inTex,ivec2(uv.x*2+1,uv.y*2+1)).r;
-	float u = imageLoad(inTex,uindex.xy).r;     // 不再 -0.5f
-    float v = imageLoad(inTex,vindex.xy).r;     // 不再 -0.5f
+	// 色度双线性(§5 T1), 平面按 uvW 行宽紧排
+	vec4 ub = chroma420Block(uBase, uvW, uvW, uvH, uv.x, uv.y, W);
+	vec4 vb = chroma420Block(vBase, uvW, uvW, uvH, uv.x, uv.y, W);
 
-	vec4 rgba1 = vec4(y1,u,v,1.0) * ubo.colorMat;
-	vec4 rgba2 = vec4(y2,u,v,1.0) * ubo.colorMat;
-	vec4 rgba3 = vec4(y3,u,v,1.0) * ubo.colorMat;
-	vec4 rgba4 = vec4(y4,u,v,1.0) * ubo.colorMat;
+	vec4 rgba1 = vec4(y1,ub.x,vb.x,1.0) * ubo.colorMat;
+	vec4 rgba2 = vec4(y2,ub.y,vb.y,1.0) * ubo.colorMat;
+	vec4 rgba3 = vec4(y3,ub.z,vb.z,1.0) * ubo.colorMat;
+	vec4 rgba4 = vec4(y4,ub.w,vb.w,1.0) * ubo.colorMat;
 
 	imageStore(outTex, ivec2(uv.x*2,uv.y*2),rgba1);
 	imageStore(outTex, ivec2(uv.x*2+1,uv.y*2),rgba2);
@@ -83,24 +131,25 @@ void yuv422ap(){
     if(uv.x >= size.x/2 || uv.y >= size.y/2){
         return;
     }
-	ivec2 uindex = uv + ivec2(0,size.y);
-	ivec2 vindex = uv + ivec2(0,size.y*3/2);
-	ivec2 aindex1 = uv + ivec2(size.x/2,size.y);
-	ivec2 aindex2 = uv + ivec2(size.x/2,size.y*3/2);
+	int W = size.x, H = size.y;
+	int uvW = W / 2, uvH = H / 2;
+	// 布局: 行 [H,1.5H) = U | A1, 行 [1.5H,2H) = V | A2(各自左半), 行宽 = 帧宽
+	int uBase = W * H, vBase = uBase + W * H / 2;
 
 	float y1 = imageLoad(inTex,ivec2(uv.x*2,uv.y*2)).r;
 	float y2 = imageLoad(inTex,ivec2(uv.x*2+1,uv.y*2)).r;
 	float y3 = imageLoad(inTex,ivec2(uv.x*2,uv.y*2+1)).r;
 	float y4 = imageLoad(inTex,ivec2(uv.x*2+1,uv.y*2+1)).r;
-	float a1 = imageLoad(inTex,aindex1).r;
-	float a2 = imageLoad(inTex,aindex2).r;
-	float u = imageLoad(inTex,uindex.xy).r;     // 不再 -0.5f
-    float v = imageLoad(inTex,vindex.xy).r;     // 不再 -0.5f
+	float a1 = imageLoad(inTex,ivec2(uv.x,uv.y)+ivec2(W/2,H)).r;
+	float a2 = imageLoad(inTex,ivec2(uv.x,uv.y)+ivec2(W/2,H*3/2)).r;
+	// 色度双线性(§5 T1): 本变体色度仍是半高(两输出行共用一行色度), 与 420 同形
+	vec4 ub = chroma420Block(uBase, W, uvW, uvH, uv.x, uv.y, W);
+	vec4 vb = chroma420Block(vBase, W, uvW, uvH, uv.x, uv.y, W);
 
-	vec4 rgba1 = vec4(y1,u,v,1.0) * ubo.colorMat;  rgba1.a = a1;
-	vec4 rgba2 = vec4(y2,u,v,1.0) * ubo.colorMat;  rgba2.a = a1;
-	vec4 rgba3 = vec4(y3,u,v,1.0) * ubo.colorMat;  rgba3.a = a2;
-	vec4 rgba4 = vec4(y4,u,v,1.0) * ubo.colorMat;  rgba4.a = a2;
+	vec4 rgba1 = vec4(y1,ub.x,vb.x,1.0) * ubo.colorMat;  rgba1.a = a1;
+	vec4 rgba2 = vec4(y2,ub.y,vb.y,1.0) * ubo.colorMat;  rgba2.a = a1;
+	vec4 rgba3 = vec4(y3,ub.z,vb.z,1.0) * ubo.colorMat;  rgba3.a = a2;
+	vec4 rgba4 = vec4(y4,ub.w,vb.w,1.0) * ubo.colorMat;  rgba4.a = a2;
 
 	imageStore(outTex, ivec2(uv.x*2,uv.y*2),rgba1);
 	imageStore(outTex, ivec2(uv.x*2+1,uv.y*2),rgba2);
@@ -114,19 +163,18 @@ void yuv422p(){
     if(uv.x >= size.x/2 || uv.y >= size.y){
         return;
     }
-	int uvW = size.x/2;
-	int uPos = size.x*size.y + uv.y*uvW + uv.x;
-	int vPos = uPos + uvW*size.y;
-	ivec2 uindex = lin2coord(uPos, size.x);
-	ivec2 vindex = lin2coord(vPos, size.x);
+	int W = size.x, H = size.y;
+	int uvW = W / 2;
+	int uBase = W * H, vBase = uBase + uvW * H;
 
 	float y1 = imageLoad(inTex,ivec2(uv.x*2,uv.y)).r;
 	float y2 = imageLoad(inTex,ivec2(uv.x*2+1,uv.y)).r;
-	float u = imageLoad(inTex,uindex.xy).r;     // 不再 -0.5f
-    float v = imageLoad(inTex,vindex.xy).r;     // 不再 -0.5f
+	// 色度双线性(§5 T1): 本变体一线程只写一行, 色度平面全高 ⇒ 色度行号 = 输出行号
+	vec2 u = chromaRowLR(uBase, uv.y, uvW, uvW, uv.x, W);
+	vec2 v = chromaRowLR(vBase, uv.y, uvW, uvW, uv.x, W);
 
-	vec4 rgba1 = vec4(y1,u,v,1.0) * ubo.colorMat;
-	vec4 rgba2 = vec4(y2,u,v,1.0) * ubo.colorMat;
+	vec4 rgba1 = vec4(y1,u.x,v.x,1.0) * ubo.colorMat;
+	vec4 rgba2 = vec4(y2,u.y,v.y,1.0) * ubo.colorMat;
 
 	imageStore(outTex, ivec2(uv.x*2,uv.y),rgba1);
 	imageStore(outTex, ivec2(uv.x*2+1,uv.y),rgba2);

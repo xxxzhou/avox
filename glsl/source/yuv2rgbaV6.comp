@@ -69,6 +69,35 @@ float read10bitUV(ivec2 pos) {
 	return read10bit(pos);
 }
 
+// ---------- 色度双线性(2026-10-12, 画质深化方案 §5 T1): 对齐 Metal 腿线性采样口径 ----------
+// Metal 腿 Y/UV 共用一个线性采样器, 输出像素 (x,y) 的色度平面位置 =
+// ((x+0.5)*uvW/w - 0.5, (y+0.5)*uvH/h - 0.5)。4:2:2 的色度平面全高 ⇒ 纵向该位置恰为
+// 整数 y(f=0, 不混合), 只有横向按 k±0.25 固定权重 (0.25,0.75)/(0.75,0.25); 边缘
+// clamp-to-edge 折叠(越界抽头改读边缘样本, 权重和仍为 1)。原为每 2x2 取一次 ⇒ 跨腿不一致。
+
+// 平面内字索引 -> 归一化值(平面按 width 紧排, 见 read10bit 注释)
+float readWord(int wi, int w) {
+	return read10bit(ivec2(wi % w, wi / w));
+}
+
+// 一行 3 抽头(左/中/右, 边缘 clamp) -> 该行横向双线性: .x=x=2k(左像素) .y=x=2k+1(右像素)
+vec2 chromaRowLR(int base, int rowIdx, int rowStride, int uvW, int k, int w) {
+	int im = max(k - 1, 0), ip = min(k + 1, uvW - 1);
+	int r = base + rowIdx * rowStride;
+	float a = readWord(r + im, w);
+	float b = readWord(r + k, w);
+	float c = readWord(r + ip, w);
+	return vec2(0.25 * a + 0.75 * b, 0.75 * b + 0.25 * c);
+}
+
+// 4:2:2: 色度行号 = 输出行号(垂直不降采样), 只需两行 x 3 列抽头
+// 返回 .x=(2k,row0) .y=(2k+1,row0) .z=(2k,row1) .w=(2k+1,row1)
+vec4 chroma422Block(int base, int rowStride, int uvW, int k, int row0, int row1, int w) {
+	vec2 h0 = chromaRowLR(base, row0, rowStride, uvW, k, w);
+	vec2 h1 = chromaRowLR(base, row1, rowStride, uvW, k, w);
+	return vec4(h0.x, h0.y, h1.x, h1.y);
+}
+
 // ---------- 色彩尾段: 输入 gamma 域 RGB, 输出 SDR 编码值 ----------
 
 // PQ EOTF (SMPTE ST2084): 编码值 -> 线性光, 1.0 = 10000 nits
@@ -301,38 +330,25 @@ void yuv422p10(){
 	int row0 = uv.y * 2;
 	int row1 = uv.y * 2 + 1;
 
-	// U/V 在整个图像中的线性位置(字流按 width 连排)
-	int uLin0 = yPlaneSize + row0 * uvWidth + uv.x;
-	int uLin1 = yPlaneSize + row1 * uvWidth + uv.x;
-	int vLin0 = uLin0 + uvPlaneSize;
-	int vLin1 = uLin1 + uvPlaneSize;
-
-	// 转换为2D坐标 (基于输入图像宽度)
-	ivec2 uPos0 = ivec2(uLin0 % width, uLin0 / width);
-	ivec2 uPos1 = ivec2(uLin1 % width, uLin1 / width);
-	ivec2 vPos0 = ivec2(vLin0 % width, vLin0 / width);
-	ivec2 vPos1 = ivec2(vLin1 % width, vLin1 / width);
-
 	// 读取4个Y值 (2x2块)
 	float y1 = read10bit(ivec2(uv.x*2, row0));
 	float y2 = read10bit(ivec2(uv.x*2+1, row0));
 	float y3 = read10bit(ivec2(uv.x*2, row1));
 	float y4 = read10bit(ivec2(uv.x*2+1, row1));
-	// 读取 U/V: 上下两行各一组(色度全高, 与 420 两行共用一组不同)
-	float u0 = read10bitUV(uPos0);
-	float v0 = read10bitUV(vPos0);
-	float u1 = read10bitUV(uPos1);
-	float v1 = read10bitUV(vPos1);
+	// 读取 U/V: 色度双线性, 上下两行各得左右两组(色度全高; 原为每行共用一组 = 最近邻)
+	vec4 ub = chroma422Block(yPlaneSize, uvWidth, uvWidth, uv.x, row0, row1, width);
+	vec4 vb = chroma422Block(yPlaneSize + uvPlaneSize, uvWidth, uvWidth, uv.x, row0, row1,
+	                         width);
 
 	// DV 流走整形链(替换 colorMat), 输出已是 PQ BT.2020, processColor 照常消费
-	vec3 rgb1 = ubo.doviEnable == 1 ? dvProcess(vec3(y1, u0, v0))
-	                                : (vec4(y1, u0, v0, 1.0) * ubo.colorMat).rgb;
-	vec3 rgb2 = ubo.doviEnable == 1 ? dvProcess(vec3(y2, u0, v0))
-	                                : (vec4(y2, u0, v0, 1.0) * ubo.colorMat).rgb;
-	vec3 rgb3 = ubo.doviEnable == 1 ? dvProcess(vec3(y3, u1, v1))
-	                                : (vec4(y3, u1, v1, 1.0) * ubo.colorMat).rgb;
-	vec3 rgb4 = ubo.doviEnable == 1 ? dvProcess(vec3(y4, u1, v1))
-	                                : (vec4(y4, u1, v1, 1.0) * ubo.colorMat).rgb;
+	vec3 rgb1 = ubo.doviEnable == 1 ? dvProcess(vec3(y1, ub.x, vb.x))
+	                                : (vec4(y1, ub.x, vb.x, 1.0) * ubo.colorMat).rgb;
+	vec3 rgb2 = ubo.doviEnable == 1 ? dvProcess(vec3(y2, ub.y, vb.y))
+	                                : (vec4(y2, ub.y, vb.y, 1.0) * ubo.colorMat).rgb;
+	vec3 rgb3 = ubo.doviEnable == 1 ? dvProcess(vec3(y3, ub.z, vb.z))
+	                                : (vec4(y3, ub.z, vb.z, 1.0) * ubo.colorMat).rgb;
+	vec3 rgb4 = ubo.doviEnable == 1 ? dvProcess(vec3(y4, ub.w, vb.w))
+	                                : (vec4(y4, ub.w, vb.w, 1.0) * ubo.colorMat).rgb;
 	// 仅 HDR 流走色彩处理, SDR 直通(processColor 内部按 transfer 分支)
 	// pos 与下方 imageStore 一致: dither 图案按输出像素锁定
 	vec4 rgba1 = vec4(processColor(rgb1, ivec2(uv.x*2, row0)), 1.0);

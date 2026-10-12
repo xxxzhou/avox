@@ -60,6 +60,25 @@ float4 yuv2Rgb(float y, float u, float v, float a) {
     return float4(clamp(rgb.rgb, 0.0f, 1.0f), a);
 }
 
+// 色度双线性(2026-10-12, 画质深化方案 §5 T1): Metal 腿 Y/UV 共用一个线性采样器,
+// 输出像素 (x,y) 的色度平面位置 = ((x+0.5)*uvW/w - 0.5, (y+0.5)*uvH/h - 0.5)(4:2:0
+// uvH=h/2 半高, 4:2:2 uvH=h 全高 ⇒ 纵向自然退化为整行), 边缘按 clamp-to-edge 折叠。
+// 原为 uvTex.Load(x/2, y/2) = 最近邻 ⇒ 与 Metal 腿不一致(彩边/红字)。
+float2 chromaBilinear(uint2 pix, int uvW, int uvH) {
+    float cx = clamp((pix.x + 0.5f) * (float)uvW / (float)width - 0.5f,
+                     0.0f, (float)(uvW - 1));
+    float cy = clamp((pix.y + 0.5f) * (float)uvH / (float)height - 0.5f,
+                     0.0f, (float)(uvH - 1));
+    int i0 = (int)cx, j0 = (int)cy;
+    int i1 = min(i0 + 1, uvW - 1), j1 = min(j0 + 1, uvH - 1);
+    float fx = cx - (float)i0, fy = cy - (float)j0;
+    float2 s00 = uvTex.Load(int3(i0, j0, 0)).rg;
+    float2 s10 = uvTex.Load(int3(i1, j0, 0)).rg;
+    float2 s01 = uvTex.Load(int3(i0, j1, 0)).rg;
+    float2 s11 = uvTex.Load(int3(i1, j1, 0)).rg;
+    return lerp(lerp(s00, s10, fx), lerp(s01, s11, fx), fy);
+}
+
 float3 pqToLinear(float3 n);
 float3 linearToPq(float3 lin);
 )";
@@ -273,7 +292,8 @@ float3 processColor(float3 rgb, uint2 pix) {
 float4 p010Point(uint2 pix, float a) {
     float k = 65535.0 / 64.0 / 1023.0;  // R16_UNORM 值 -> 10bit 归一
     float y = yTex.Load(int3(pix, 0)).r * k;
-    float2 uvRaw = uvTex.Load(int3(pix.x / 2, pix.y / 2, 0)).rg;
+    // 色度双线性(§5 T1): UV 纹理半宽半高
+    float2 uvRaw = chromaBilinear(pix, width / 2, height / 2);
     // DV 链吃原始 PQ 信号(不做 limited 展开, 偏移在 DV 矩阵里), 其余走原路
 %%DV_BRANCH%%
     float u = uvRaw.x * k - 0.5;
@@ -296,7 +316,8 @@ float4 p010Point(uint2 pix, float a) {
 float4 p422Point(uint2 pix, float a) {
     float k = 65535.0 / 64.0 / 1023.0;
     float y = yTex.Load(int3(pix, 0)).r * k;
-    float2 uvRaw = uvTex.Load(int3(pix.x / 2, pix.y, 0)).rg;
+    // 色度双线性(§5 T1): UV 纹理半宽**全高**(4:2:2 垂直不降采样)
+    float2 uvRaw = chromaBilinear(pix, width / 2, height);
     float u = uvRaw.x * k - 0.5;
     float v = uvRaw.y * k - 0.5;
     float yy = saturate((y - 64.0 / 1023.0) / (876.0 / 1023.0));
@@ -342,13 +363,17 @@ void main(uint2 DTid : SV_DispatchThreadID)
     float y2 = yTex.Load(int3(DTid.x*2+1,DTid.y*2, 0)).r;
     float y3 = yTex.Load(int3(DTid.x*2,DTid.y*2+1, 0)).r;
     float y4 = yTex.Load(int3(DTid.x*2+1,DTid.y*2+1, 0)).r;
+    // 色度双线性(§5 T1): nv12/p010 的 UV 纹理半宽半高; 四像素各得一组(原为最近邻)
     // UV 不在此 -0.5: 居中偏移已折进 colorMat 第4列(与 Vulkan V1 一致)
-    float2 uv = uvTex.Load(int3(DTid.x, DTid.y, 0)).rg;
+    float2 uv1 = chromaBilinear(uint2(DTid.x*2, DTid.y*2), width / 2, height / 2);
+    float2 uv2 = chromaBilinear(uint2(DTid.x*2+1, DTid.y*2), width / 2, height / 2);
+    float2 uv3 = chromaBilinear(uint2(DTid.x*2, DTid.y*2+1), width / 2, height / 2);
+    float2 uv4 = chromaBilinear(uint2(DTid.x*2+1, DTid.y*2+1), width / 2, height / 2);
 
-    float4 rgba1 = yuv2Rgb(y1, uv.x, uv.y, 1.0f);
-    float4 rgba2 = yuv2Rgb(y2, uv.x, uv.y, 1.0f);
-    float4 rgba3 = yuv2Rgb(y3, uv.x, uv.y, 1.0f);
-    float4 rgba4 = yuv2Rgb(y4, uv.x, uv.y, 1.0f);
+    float4 rgba1 = yuv2Rgb(y1, uv1.x, uv1.y, 1.0f);
+    float4 rgba2 = yuv2Rgb(y2, uv2.x, uv2.y, 1.0f);
+    float4 rgba3 = yuv2Rgb(y3, uv3.x, uv3.y, 1.0f);
+    float4 rgba4 = yuv2Rgb(y4, uv4.x, uv4.y, 1.0f);
 
     outTex[int2(DTid.x*2,DTid.y*2)] = rgba1;
     outTex[int2(DTid.x*2+1,DTid.y*2)] = rgba2;
