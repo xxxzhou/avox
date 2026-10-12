@@ -299,6 +299,12 @@ bool playOnce(const char* url, bool hard, HdrOb& ob,
   player->getOption()->setBool("log.render.frame", true);
   ISurfaceRender* sr = player->getSurfaceRender();
   ob.sr = sr;
+  // 渲染腿: 默认平台原生(本机 mac=Metal); AVOX_FORCE_VK=1 强制走 Vulkan(MoltenVK),
+  // 用于 VK 腿侧的同参复测 —— ①/② 的 shader 改动主路径在 VK, 平台原生腿只是同源副本
+  if (std::getenv("AVOX_FORCE_VK")) {
+    sr->setVulkan(true);
+    std::printf("[leg] setVulkan(true) force VK lane\n");
+  }
   sr->setOffSurface(YuvType::yuv420P);
   // tone map 曲线/dither 开关(2026-10-12, 画质深化方案 ①/② 验证):
   // AVOX_TONEMAP_CURVE=1|bt2390 下发 BT.2390 EETF; AVOX_DITHER=<强度> 下发输出端抖动。
