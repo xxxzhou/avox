@@ -75,6 +75,29 @@ struct ColorSpaceDesc {
 // SDR 载荷当 PQ 码上 G2084 面 = 发灰)。UBO/shader 协议仍只见 2, 不进 UBO
 enum class HdrMode { follow = 0, forceSDR = 1, forceHDR = 2, vkHDR = 3 };
 
+// tone map 曲线(ISurfaceRender::setToneMap): 声明序即 ColorYuvUBO.toneMapCurve 的 int 值
+enum class ToneMapCurve {
+  softKnee = 0,  // 软膝 Reinhard(历史默认, 逐位零回归)
+  bt2390 = 1,    // BT.2390 EETF(PQ 码域 Hermite 膝点, 语义对齐 libplacebo)
+};
+
+// tone map 曲线参数(运行时可调; 默认各字段=历史行为, 零回归):
+// - sdrWhiteNits: SDR 白点 nits, <=0 取默认 100。软膝曲线里它是膝点形状参数
+//   (单独改会整体压暗, 画质深化方案 §2); EETF 里是输出标度终点。
+// - 两曲线同一片结果非等价(中段差 2~5%, EETF 略亮), 切换前宿主宜先 A/B。
+// - 实现面: VK/Metal/DX11 腿; EGL 腿未实现(调用只告警不改行为)
+struct ToneMapParamet {
+  ToneMapCurve curve = ToneMapCurve::softKnee;
+  float sdrWhiteNits = 0.0f;  // <=0 = 默认 100
+  inline bool operator==(const ToneMapParamet& r) const {
+    return curve == r.curve && sdrWhiteNits == r.sdrWhiteNits;
+  }
+  inline bool operator!=(const ToneMapParamet& r) const {
+    return !(*this == r);
+  }
+};
+
+
 // HDR 静态元数据(ST2086/CTA-861.3): 解码器从 side data 解出, 无标记全零不生效
 struct HdrMeta {
   uint32_t maxLuminance = 0;  // nits, mastering display 峰值亮度

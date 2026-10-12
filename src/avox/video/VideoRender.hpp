@@ -133,6 +133,9 @@ class AVOX_EXPORT VideoRender : public OptionLink {
   // DV RPU 整形数据(曲线+矩阵); VK 腿在层内消费, 平台腿 C 批后接入
   virtual void setDoviMeta(const DoviMeta& meta) {};
   virtual void setHdrMode(HdrMode mode) {};
+  // tone map 曲线参数(默认软膝=历史行为), 各平台腿覆写消费; 见 ToneMapParamet
+  virtual void setToneMap(const ToneMapParamet& paramet) {};
+
   // CPU输入帧的解码格式(cpuIn时有效)
   YuvType cpuFrameYuvType() { return yuvFrame.format.type; }
   // 改变窗口，会重置bResetFlag,这样会在运行时重置

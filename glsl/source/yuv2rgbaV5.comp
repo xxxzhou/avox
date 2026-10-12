@@ -22,7 +22,7 @@ layout (std140, binding = 2) uniform UBO
 	float maxLuminance; // 内容峰值亮度 nits
 	float sdrWhiteNits; // SDR 白点 nits
 	int hdrMode;        // 0=follow 1=forceSDR 2=forceHDR
-	int _pad;
+	int toneMapCurve; // 0=软膝(默认) 1=BT.2390 EETF(ToneMapCurve 声明序)
 	int doviEnable;     // 1=走 DV 整形链
 	int _dv0;
 	int _dv1;
@@ -120,6 +120,33 @@ vec3 linearToPq(vec3 lin) {
 	return pow(e, vec3(m2));
 }
 
+// BT.2390 EETF(PQ 码域 Hermite 膝点, 语义对齐 libplacebo pl_tone_map_bt2390):
+// 膝点以下 1:1, 以上三次 Hermite 滚降到目标峰值码(offset=1.0 ≈ 规范式 ks=1.5·Ld-0.5);
+// 逐通道; 目标峰值>=源峰值时原样(无压缩空间)。ks 钳 0 防目标白点极低时黑位抬升
+vec3 bt2390Eetf(vec3 pq, float srcPeakPq, float dstPeakPq) {
+	float ks = max(2.0 * dstPeakPq - srcPeakPq, 0.0);
+	if (ks >= srcPeakPq) {
+		return pq;
+	}
+	vec3 t = clamp((pq - ks) / (srcPeakPq - ks), vec3(0.0), vec3(1.0));
+	vec3 t2 = t * t;
+	vec3 t3 = t2 * t;
+	vec3 pb = (2.0 * t3 - 3.0 * t2 + 1.0) * ks +
+	          (t3 - 2.0 * t2 + t) * (srcPeakPq - ks) +
+	          (-2.0 * t3 + 3.0 * t2) * dstPeakPq;
+	return clamp(mix(pq, pb, step(vec3(ks), pq)), vec3(0.0), vec3(dstPeakPq));
+}
+
+// EETF 路径: PQ 码 -> 显示线性 [0,1](1.0=SDR 白), 与软膝路径同输出域
+vec3 toneMapEetf(vec3 pqCode) {
+	float dstN = max(ubo.sdrWhiteNits, 1.0);
+	float srcNits = max(ubo.maxLuminance, dstN);
+	float srcPq = linearToPq(vec3(srcNits / 10000.0)).x;
+	float dstPq = linearToPq(vec3(dstN / 10000.0)).x;
+	vec3 mapped = bt2390Eetf(clamp(pqCode, vec3(0.0), vec3(1.0)), srcPq, dstPq);
+	return pqToLinear(mapped) * (10000.0 / dstN);
+}
+
 // ---------- DV(Dolby Vision) 整形: 语义对齐 libplacebo, 输出 PQ BT.2020 ----------
 
 float dvPivot(int idx) { return ubo.dvPivots[idx >> 2][idx & 3]; }
@@ -188,8 +215,9 @@ vec3 processColor(vec3 rgb) {
 	// 不覆盖则走 SDR 直通, DV 输出被当 gamma 直显 → 偏暗欠饱和
 	int xfer = (ubo.doviEnable == 1) ? 2 : ubo.transfer;
 	if (xfer == 2) {          // pq (HDR10)
-		vec3 lin = pqToLinear(rgb);
-		lin = toneMap(lin);
+		// toneMapCurve: 0=软膝(默认) 1=BT.2390 EETF; HLG 恒走软膝
+		vec3 lin = (ubo.toneMapCurve == 1) ? toneMapEetf(rgb)
+		                                   : toneMap(pqToLinear(rgb));
 		lin = bt2020ToBt709(lin);
 		return linearToBt709(lin);
 	}

@@ -71,6 +71,8 @@ public:
   ColorSpaceDesc cs;
   HdrMeta hdrMeta;
   HdrMode hdrMode = HdrMode::follow;
+  // tone map 曲线参数(曲线+SDR 白点), 随帧进 setFragmentBytes(buffer 0)
+  ToneMapParamet toneMapParamet = {};
   // DV 整形数据: 场景级, setDoviMeta 时打包, 有效则逐帧经 buffer 2 下发
   DoviMeta doviMeta;
   ColorYuvUBO doviUbo{};
@@ -81,6 +83,8 @@ public:
   virtual void setHdrMeta(const HdrMeta& meta) override;
   virtual void setDoviMeta(const DoviMeta& meta) override;
   virtual void setHdrMode(HdrMode mode) override;
+  // tone map 曲线参数(曲线+SDR 白点), 随帧下发, 无需重建管线
+  virtual void setToneMap(const ToneMapParamet& paramet) override;
 
 private:
   // 把 buildYuvToRgb(cs) 展开成行优先 16 浮点, 写入 colorMatData

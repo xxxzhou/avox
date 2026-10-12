@@ -105,6 +105,13 @@ void SurfaceRenderNative::setHdrMode(HdrMode mode) {
   }
 }
 
+void SurfaceRenderNative::setToneMap(const ToneMapParamet& paramet) {
+  SurfaceRenderVk::setToneMap(paramet);
+  if (pVideoRender) {
+    pVideoRender->setToneMap(paramet);
+  }
+}
+
 ICanvasLayer* SurfaceRenderNative::enableRenderCanvas() {
   // lane 路由: lane=0 VK 图内合成(lane=0 的平台腿输出是 VK 对接面, 禁挂);
   // lane=1 平台腿(P0 平台渲染器未实现, 基类返回 nullptr = 字幕缺失现状)

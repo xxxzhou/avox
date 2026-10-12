@@ -2,11 +2,17 @@
 //   1. 软解 HDR10(PQ/BT.2020+mastering SEI) 素材 -> onFrame 收图后帧(yuv420P),
 //      dump PNG + 统计 Y 平面均值
 //   2. 同法渲染 SDR(bt709) 参考素材对比均值: PQ 解码路径把中灰 128 抬到 ~225
-//      (PQ EOTF -> ACES tone map -> BT.709 OETF), 若 transfer 误走 gamma 则均值
-//      与 SDR 接近 —— 均值差 > 40 作为 tone map 生效的客观判据
-//   3. -hard 档走硬解 (DX11VA P010), 观察 getDxFormat 不识别 P010 落 other 的
+//      (PQ EOTF -> tone map(软膝默认 / BT.2390 EETF) -> BT.709 OETF), 若 transfer
+//      误走 gamma 则均值与 SDR 接近 —— 均值差 > 40 作为 tone map 生效的客观判据
+//   3. 曲线 A/B(2026-10-12, 画质深化方案 ①): 环境变量 AVOX_TONEMAP_CURVE=1|bt2390
+//      下发 BT.2390 EETF, 不设=软膝基线; 渲染后像素经 screenShot 通道取 5 段块值。
+//      实测口径: 本机 mac 的 onFrame CPU-YUV 通道为**解码直出**(锚点块=原样 PQ 码值)、
+//      enableImage 通道零值, 两通道都到不了 tone map 输出, 故以 screenShot 为准。
+//      锚点素材实测: 软膝 0/183/215/251/251 vs EETF 0/189/225/251/251(100/203nit
+//      块 +6/+10 码, 同数值预测方向与幅值)
+//   4. -hard 档走硬解 (DX11VA P010), 观察 getDxFormat 不识别 P010 落 other 的
 //      已知雷区实际表现 (计划文档 §2.2/§6.7)
-//   4. API 面验证: IMediaPlayerOb::onHdrMeta 宿主回调(HDR 流回调/SDR 流不回调)
+//   5. API 面验证: IMediaPlayerOb::onHdrMeta 宿主回调(HDR 流回调/SDR 流不回调)
 //      + ISurfaceRender::setHdrMode(forceHDR 直通: 对 follow 中间调大幅回落,
 //      与 SDR 参考接近重合)
 // 判定: 末尾打印 case=hdrtest PASS/FAIL
@@ -78,6 +84,36 @@ class HdrOb : public ISurfaceRenderOb {
       if (w * h > 0) {
         meanSum += (double)sum / (w * h);
         meanFrames++;
+      }
+      // 10bit 输出采样(2026-10-12, tone map 曲线验证): 原始 u16 域均值 + 首帧
+      // 5 段均值(锚点素材横向 5 块) —— 判别输出域(PQ 直通 vs tone map 后)
+      // 与两条曲线的差异
+      if (yuvType == YuvType::yuv420P10 || yuvType == YuvType::p010) {
+        int64_t sum16 = 0;
+        int64_t blk[5] = {0, 0, 0, 0, 0};
+        for (int r = 0; r < h; r++) {
+          const unsigned short* row16 = (const unsigned short*)(
+              (const unsigned char*)frame.data[0] + (size_t)r * frame.stride[0]);
+          for (int c = 0; c < w; c++) {
+            sum16 += row16[c];
+            blk[(int64_t)c * 5 / (w > 0 ? w : 1)] += row16[c];
+          }
+        }
+        if (w * h > 0) {
+          mean16Sum += (double)sum16 / (w * h);
+          mean16Frames++;
+          if (mean16Frames == 1) {
+            std::printf("[%s] meanY16 first=%.1f blk16=", tag.c_str(),
+                        (double)sum16 / (w * h));
+            for (int i = 0; i < 5; i++) {
+              int64_t c0 = (int64_t)w * i / 5;
+              int64_t c1 = (int64_t)w * (i + 1) / 5;
+              std::printf("%.0f%s",
+                          (double)blk[i] / std::max<int64_t>(c1 - c0, 1),
+                          i == 4 ? "\n" : "/");
+            }
+          }
+        }
       }
       if (dumpCount < 1) {
         IImageBuffer* rgba = createImageBuffer();
@@ -221,6 +257,10 @@ class HdrOb : public ISurfaceRenderOb {
   int32_t dumpCount = 0;
   int32_t imgDump = 0;
   std::map<std::string, int64_t> typeCount;
+  // 10bit 输出域采样(2026-10-12, tone map 曲线验证): 原始 u16 均值
+  int64_t mean16Frames = 0;
+  double mean16Sum = 0.0;
+  double meanY16() const { return mean16Frames ? mean16Sum / mean16Frames : 0.0; }
 };
 
 // 宿主观察者: 捕获 IMediaPlayerOb::onHdrMeta (流级属性, 每次开流至多一次)
@@ -254,6 +294,16 @@ bool playOnce(const char* url, bool hard, HdrOb& ob,
   ISurfaceRender* sr = player->getSurfaceRender();
   ob.sr = sr;
   sr->setOffSurface(YuvType::yuv420P);
+  // tone map 曲线开关(2026-10-12, 画质深化方案 ① 验证): AVOX_TONEMAP_CURVE=1|bt2390
+  // 下发 BT.2390 EETF; 未设/0 保持默认软膝(零回归基线)
+  const char* curveEnv = std::getenv("AVOX_TONEMAP_CURVE");
+  if (curveEnv &&
+      (std::string(curveEnv) == "1" || std::string(curveEnv) == "bt2390")) {
+    ToneMapParamet tm = {};
+    tm.curve = ToneMapCurve::bt2390;
+    sr->setToneMap(tm);
+    std::printf("[tonemap] curve=1 BT.2390 EETF (env)\n");
+  }
   addSurfaceRenderOb(sr, &ob);
   if (metaOb) {
     addMediaPlayerOb(player, metaOb);
@@ -272,6 +322,44 @@ bool playOnce(const char* url, bool hard, HdrOb& ob,
                 (long long)ob.frames);
   }
   std::this_thread::sleep_for(std::chrono::seconds(4));
+  // tone map 曲线验证(2026-10-12): 经 screenShot 取渲染后像素 —— onFrame 的
+  // CPU-YUV 通道在 mac 实测为解码直出(锚点块=原样 PQ 码值), enableImage 通道
+  // 零值, 两者都到不了 tone map 输出; screenShot 走 VK 图输出口
+  {
+    IImageBuffer* shot = createImageBuffer();
+    ImageFormat sf = {};
+    sf.width = 640;
+    sf.height = 360;
+    sf.imageType = ImageType::rgba8;
+    shot->setImageFormat(sf);
+    if (sr->screenShot(shot)) {
+      std::string path = "shot_" + ob.tag + ".png";
+      saveImagePath(path.c_str(), shot);
+      const unsigned char* p = (const unsigned char*)shot->getPointer();
+      ImageFormat f2 = shot->getImageFormat();
+      if (p && f2.width > 0 && f2.height > 0) {
+        int pitch = f2.rowPitch > 0 ? f2.rowPitch : f2.width * 4;
+        int64_t blk[5] = {0, 0, 0, 0, 0};
+        int64_t cnt[5] = {0, 0, 0, 0, 0};
+        for (int r = 0; r < f2.height; r++) {
+          const unsigned char* row = p + (size_t)r * pitch;
+          for (int c = 0; c < f2.width; c++) {
+            int b = (int)c * 5 / f2.width;
+            blk[b] += (row[c * 4] + row[c * 4 + 1] + row[c * 4 + 2]) / 3;
+            cnt[b]++;
+          }
+        }
+        std::printf("[%s] shot %s blk=", ob.tag.c_str(), path.c_str());
+        for (int i = 0; i < 5; i++) {
+          std::printf("%.0f%s", cnt[i] ? (double)blk[i] / cnt[i] : 0.0,
+                      i == 4 ? "\n" : "/");
+        }
+      }
+    } else {
+      std::printf("[%s] screenShot failed\n", ob.tag.c_str());
+    }
+    delete shot;
+  }
   player->close();
   if (ob.imgBuf) {
     sr->disableImage();
@@ -340,8 +428,8 @@ int main(int argc, char* argv[]) {
   for (const auto& [t, c] : sdrOb.typeCount) {
     sdrDist += t + ":" + std::to_string(c) + " ";
   }
-  std::printf("[stats] hdr frames=%lld meanY=%.1f imgMean=%.1f (%lld f) types[%s]\n",
-              (long long)hdrOb.frames, hdrMean, hdrOb.imgMean(),
+  std::printf("[stats] hdr frames=%lld meanY=%.1f meanY16=%.1f imgMean=%.1f (%lld f) types[%s]\n",
+              (long long)hdrOb.frames, hdrMean, hdrOb.meanY16(), hdrOb.imgMean(),
               (long long)hdrOb.imgFrames, hdrDist.c_str());
   std::printf("[stats] sdr frames=%lld meanY=%.1f imgMean=%.1f (%lld f) types[%s]\n",
               (long long)sdrOb.frames, sdrMean, sdrOb.imgMean(),

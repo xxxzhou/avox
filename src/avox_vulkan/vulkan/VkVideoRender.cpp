@@ -169,6 +169,17 @@ void VkVideoRender::setHdrMode(HdrMode mode) {
   hdrMode = mode;
 }
 
+// tone map 曲线参数: 只落成员, 节点下发由渲染线程消费(onParametUpdate 收敛
+// + 重建尾重放); 曲线是 yuv2rgba 的 UBO 分支, 不触发拓扑重建
+void VkVideoRender::setToneMap(const ToneMapParamet& paramet) {
+  if (paramet == toneMapParamet) {
+    return;
+  }
+  LOGFLF(LogLevel::info, "set toneMap curve:", (int32_t)paramet.curve,
+         " sdrWhite:", paramet.sdrWhiteNits);
+  toneMapParamet = paramet;
+}
+
 #ifdef AVOX_ENABLE_FREETYPE
 FontRender* VkVideoRender::enableRenderFont() {
   if (fontRender->enabled()) {
@@ -505,6 +516,7 @@ void VkVideoRender::onParametUpdate() {
     yuv2RGBA->get()->setHdrMeta(hdrMeta);
     yuv2RGBA->get()->setDoviMeta(doviMeta);
     yuv2RGBA->get()->setHdrMode(hdrMode);
+    yuv2RGBA->get()->setToneMap(toneMapParamet);
   }
   if (rgba2YUV) {
     rgba2YUV->get()->setColorSpace(colorSpace);
@@ -541,6 +553,7 @@ bool VkVideoRender::vaildAndInitGraph() {
   // 重建尾重放: hdrMode/doviMeta 也须落到新节点(onInitLayer 按 hdrMode 选
   // 直通变体+16f 输出; 漏重放=直通变体静默丢失, 10/1 sess_75d44d7c 案)
   yuv2RGBA->get()->setHdrMode(hdrMode);
+  yuv2RGBA->get()->setToneMap(toneMapParamet);
   if (doviMeta.valid) {
     yuv2RGBA->get()->setDoviMeta(doviMeta);
   }

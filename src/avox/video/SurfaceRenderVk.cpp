@@ -353,6 +353,16 @@ void SurfaceRenderVk::setHdrMode(HdrMode mode) {
 #endif
 }
 
+void SurfaceRenderVk::setToneMap(const ToneMapParamet& paramet) {
+#ifdef AVOX_ENABLE_VULKAN
+  if (vkVideoRender) {
+    vkVideoRender->setToneMap(paramet);
+  }
+#else
+  (void)paramet;
+#endif
+}
+
 void SurfaceRenderVk::setAutoAspect(bool bEnable) {
   if (!vkVideoRender) {
     return;

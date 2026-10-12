@@ -31,6 +31,8 @@ class AVOX_EXPORT SurfaceRenderNative : public SurfaceRenderVk {
   // DV RPU 整形数据, 同为遮蔽+双路转发
   void setDoviMeta(const DoviMeta& meta);
   void setHdrMode(HdrMode mode) override;
+  // tone map 曲线参数: 双路转发(vk lane 进 UBO, 原生 lane 进平台转换器)
+  void setToneMap(const ToneMapParamet& paramet) override;
   // screenShot: Vulkan时走vkVideoRender，非Vulkan时走pVideoRender
   virtual bool screenShot(IImageBuffer* imageBuffer) override;
 

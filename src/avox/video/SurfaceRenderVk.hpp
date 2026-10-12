@@ -97,6 +97,8 @@ class AVOX_EXPORT SurfaceRenderVk : public ISurfaceRender,
   void setDoviMeta(const DoviMeta& meta);
   // HDR 输出模式, 转发 VkVideoRender(非vulkan车道无tone map,静默无效果)
   virtual void setHdrMode(HdrMode mode) override;
+  // tone map 曲线参数, 转发 VkVideoRender, 不重建 graph
+  virtual void setToneMap(const ToneMapParamet& paramet) override;
   virtual void setAutoAspect(bool bEnable) override;
 
   // 获取底层 VideoRender

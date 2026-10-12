@@ -74,6 +74,8 @@ protected:
   virtual void setColorSpace(const ColorSpaceDesc& c) override;
   virtual void setHdrMeta(const HdrMeta& meta) override;
   virtual void setHdrMode(HdrMode mode) override;
+  // tone map 曲线参数: 本腿未实现(画质深化方案记已知分叉), 非默认参数只告警
+  virtual void setToneMap(const ToneMapParamet& paramet) override;
   // DV 整形消费点(1005): 原 OES 域限制已由 GL_EXT_YUV_target 的 Y2Y 采样解除
   virtual void setDoviMeta(const DoviMeta& meta) override;
 

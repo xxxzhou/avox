@@ -33,7 +33,7 @@ struct ColorYuvUBO {
   float maxLuminance = 1000.0f;  // 内容峰值亮度 nits
   float sdrWhiteNits = 100.0f;   // SDR 白点 nits
   int32_t hdrMode = 0;           // HdrMode 声明序: 0=follow 1=forceSDR 2=forceHDR
-  int32_t _pad2 = {};
+  int32_t toneMapCurve = 0;      // ToneMapCurve 声明序: 0=软膝 1=BT.2390 EETF
   // --- V5 追加区: DV 整形(offset 96) ---
   int32_t doviEnable = 0;        // 1=按 DV 区整形(doviEnable!=1 时全部走原 colorMat)
   int32_t dvPad[3] = {};

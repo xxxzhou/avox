@@ -44,12 +44,14 @@ class Dx11CSVideoRender : public VideoRender, public Dx11Context {
   uint32_t imageWidth = 0;
   uint32_t imageHeight = 0;
   D3D11_TEXTURE2D_DESC yuvDesc = {};
-  // 颜色/HDR 参数(setColorSpace/setHdrMeta/setHdrMode 注入, 随脏标记进常量):
+  // 颜色/HDR 参数(setColorSpace/setHdrMeta/setHdrMode/setToneMap 注入, 随脏标记进常量):
   // P010 硬解的 tone map 在本 CS 内完成(与 glsl yuv2rgbaV5.comp 同源)
   ColorSpaceDesc cs{YuvStandard::bt601, YuvRange::full};
   HdrMeta hdrMeta = {};
   HdrMode hdrMode = HdrMode::follow;
   DoviMeta doviMeta = {};
+  // tone map 曲线参数(曲线+SDR 白点), 进常量区, 随 bParamsDirty 上传
+  ToneMapParamet toneMapParamet = {};
   bool bParamsDirty = true;
   // 常量区与 glsl ColorYuvUBO 同布局(96B 头 + DV 区), cbuffer 声明对齐
   ColorYuvUBO constData{};
@@ -100,6 +102,7 @@ class Dx11CSVideoRender : public VideoRender, public Dx11Context {
   virtual void setHdrMeta(const HdrMeta& meta) override;
   virtual void setDoviMeta(const DoviMeta& meta) override;
   virtual void setHdrMode(HdrMode mode) override;
+  virtual void setToneMap(const ToneMapParamet& paramet) override;
   // bOutCpuYuv时把当前NV12帧staging回读,渲染线程内按需调用,一帧最多一次
   virtual bool getCpuFrameBuffer(IImageBuffer** buffer, YuvType& yuvType,
                                  int64_t* pts) override;

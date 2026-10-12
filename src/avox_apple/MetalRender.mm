@@ -18,7 +18,7 @@
 
 namespace avox {
 
-// 与 shader 内 FragParams 同布局(24B), 每帧经 setFragmentBytes 下发
+// 与 shader 内 FragParams 同布局(28B), 每帧经 setFragmentBytes 下发
 struct MetalFragParams {
   int hdrMode;
   int tenBit;
@@ -26,6 +26,7 @@ struct MetalFragParams {
   float peakNits;
   float sdrWhiteNits;
   int doviEnable;
+  int toneMapCurve;  // 0=软膝(默认) 1=BT.2390 EETF(ToneMapCurve 声明序)
 };
 
 // 顶点数据
@@ -46,7 +47,8 @@ NSString *const nv12trgbPrefix =
     @"#include <metal_stdlib>\nusing namespace metal;\n";
 
 // 与 Dx11CSVideoRender 的 HLSL / glsl/yuv2rgbaV5.comp 同源的 HDR 链:
-// PQ EOTF -> ACES(Narkowicz) -> BT.2020->BT.709 -> BT.709 OETF。
+// PQ EOTF -> tone map(软膝 Reinhard 默认 / BT.2390 EETF 可选) -> BT.2020->BT.709
+// -> BT.709 OETF。
 // 10bit x420 按 P010 布局高 10 位采样(R16/RG16 UNORM, k=65535/64/1023);
 // 8bit NV12 承载 HDR(平台不支持 x420 回退)按 tv-range 展开同链处理
 NSString *const nv12trgbBody = AVOX_SHADER_STRING(
@@ -67,6 +69,7 @@ NSString *const nv12trgbBody = AVOX_SHADER_STRING(
       float peakNits;
       float sdrWhiteNits;
       int doviEnable;
+      int toneMapCurve;  // 0=软膝(默认) 1=BT.2390 EETF(ToneMapCurve 声明序)
     };
 
     vertex VertexOut vertexShader(const VertexIn in [[stage_in]]) {
@@ -121,6 +124,9 @@ NSString *const nv12trgbBody = AVOX_SHADER_STRING(
       return mix(lo, hi, step(float3(0.018), c));
     }
 
+    // toneMapEetf 定义在 linearToPq 之后(依赖 PQ 编码), 前向声明供 processColor 调用
+    float3 toneMapEetf(float3 pqCode, float peakNits, float sdrWhite);
+
     float3 processColor(float3 rgb, constant FragParams& params) {
       // DV 链输出恒为 PQ BT.2020, 与容器标签无关(P5 无色彩标签时 transfer=0):
       // 不覆盖则走 SDR 直通, DV 输出被当 gamma 直显 → 偏暗欠饱和
@@ -134,8 +140,11 @@ NSString *const nv12trgbBody = AVOX_SHADER_STRING(
         return lin;
       }
       if (xfer == 2) {
-        float3 lin = pqToLinear(rgb);
-        lin = toneMap(lin, params.peakNits, params.sdrWhiteNits);
+        // toneMapCurve: 0=软膝(默认) 1=BT.2390 EETF; HLG 恒走软膝
+        float3 lin =
+            (params.toneMapCurve == 1)
+                ? toneMapEetf(rgb, params.peakNits, params.sdrWhiteNits)
+                : toneMap(pqToLinear(rgb), params.peakNits, params.sdrWhiteNits);
         lin = bt2020ToBt709(lin);
         return linearToBt709(lin);
       }
@@ -174,6 +183,35 @@ NSString *const nv12trgbBody = AVOX_SHADER_STRING(
       float3 p = pow(max(lin, float3(0.0)), float3(m1));
       float3 e = (float3(c1) + float3(c2) * p) / (float3(1.0) + float3(c3) * p);
       return pow(e, float3(m2));
+    }
+
+    // BT.2390 EETF(与 VK/DX11 腿同源, 语义对齐 libplacebo pl_tone_map_bt2390):
+    // PQ 码域 Hermite 膝点, 膝点以下 1:1, 以上滚降到目标峰值码(offset=1.0);
+    // ks 钳 0 防目标白点极低时黑位抬升
+    float3 bt2390Eetf(float3 pq, float srcPeakPq, float dstPeakPq) {
+      float ks = max(2.0 * dstPeakPq - srcPeakPq, 0.0);
+      if (ks >= srcPeakPq) {
+        return pq;
+      }
+      float3 t = clamp((pq - ks) / (srcPeakPq - ks), float3(0.0), float3(1.0));
+      float3 t2 = t * t;
+      float3 t3 = t2 * t;
+      float3 pb = (2.0 * t3 - 3.0 * t2 + 1.0) * ks +
+                  (t3 - 2.0 * t2 + t) * (srcPeakPq - ks) +
+                  (-2.0 * t3 + 3.0 * t2) * dstPeakPq;
+      return clamp(mix(pq, pb, step(float3(ks), pq)), float3(0.0),
+                   float3(dstPeakPq));
+    }
+
+    // EETF 路径: PQ 码 -> 显示线性 [0,1](1.0=SDR 白), 与软膝路径同输出域
+    float3 toneMapEetf(float3 pqCode, float peakNits, float sdrWhite) {
+      float dstN = max(sdrWhite, 1.0);
+      float srcNits = max(peakNits, dstN);
+      float srcPq = linearToPq(float3(srcNits / 10000.0)).x;
+      float dstPq = linearToPq(float3(dstN / 10000.0)).x;
+      float3 mapped =
+          bt2390Eetf(clamp(pqCode, float3(0.0), float3(1.0)), srcPq, dstPq);
+      return pqToLinear(mapped) * (10000.0 / dstN);
     }
 
     float dvPivotAt(constant DoviParams& dv, int idx) {
@@ -1101,6 +1139,16 @@ void MetalRender::setDoviMeta(const DoviMeta &meta) {
 
 void MetalRender::setHdrMode(HdrMode mode) { hdrMode = mode; }
 
+void MetalRender::setToneMap(const ToneMapParamet& paramet) {
+  if (paramet == toneMapParamet) {
+    return;
+  }
+  LOGFLF(LogLevel::info, "[metal] toneMap curve:", (int32_t)paramet.curve,
+         " sdrWhite:", paramet.sdrWhiteNits, " (0=软膝 1=BT.2390 EETF)");
+  // 参数随帧进 setFragmentBytes(buffer 0), 无需重建管线
+  toneMapParamet = paramet;
+}
+
 // ---- vsync 相位对齐(AVOX_VSYNC_ALIGN=0 关) ----
 // 自由节拍 commit 相位随机: 实测提交间隔落在 ~25/50ms; 对齐后收敛到 33/50ms,
 // 即 25fps@60Hz 的 2-2-3 固有节奏(2026-09-24 vsynctest 间隔直方图实测)。
@@ -1399,14 +1447,17 @@ void MetalRender::renderCVPixelBuffer(CVImageBufferRef imageBuffer) {
     [commandEncoder setFragmentSamplerState:samplerState atIndex:0];
     // 设置顶点缓冲区
     [commandEncoder setVertexBytes:vertices length:sizeof(vertices) atIndex:0];
-    // 颜色/HDR参数随帧下发(20B, 免常量缓冲与脏标记)
+    // 颜色/HDR参数随帧下发(28B, 免常量缓冲与脏标记)
     MetalFragParams params = {};
     params.hdrMode = (int)hdrMode;
     params.tenBit = bTenBit ? 1 : 0;
     params.transfer = (int)cs.transfer;
     params.peakNits = (float)hdrPeakNits(hdrMeta);
-    params.sdrWhiteNits = 100.0f;
+    // sdrWhiteNits: <=0 取默认 100(历史硬编码值), 零回归
+    params.sdrWhiteNits =
+        toneMapParamet.sdrWhiteNits > 0.0f ? toneMapParamet.sdrWhiteNits : 100.0f;
     params.doviEnable = doviUbo.doviEnable;
+    params.toneMapCurve = (int)toneMapParamet.curve;
     [commandEncoder setFragmentBytes:&params length:sizeof(params) atIndex:0];
     // 颜色矩阵(行优先 16 浮点): 替换 shader 旧硬编码 BT.601, 尊重 cs.standard/range
     [commandEncoder setFragmentBytes:colorMatData length:sizeof(colorMatData) atIndex:1];

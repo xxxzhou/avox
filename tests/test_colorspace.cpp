@@ -100,6 +100,12 @@ TEST_CASE("UBO 布局: transfer 槽位与头 96B+DV 区尺寸 (3a 定稿契约)"
   CHECK(offsetof(ColorYuvUBO, maxLuminance) == 80);
   CHECK(offsetof(ColorYuvUBO, transfer) == 12);
   CHECK(offsetof(ColorYuvUBO, doviEnable) == 96);
+  // tone map 曲线槽(2026-10-12): 启用原 _pad2 padding, 头布局不变
+  CHECK(offsetof(ColorYuvUBO, hdrMode) == 88);
+  CHECK(offsetof(ColorYuvUBO, toneMapCurve) == 92);
+  // 枚举序即 UBO int 值: 0=软膝(默认) 1=BT.2390 EETF
+  CHECK((int32_t)ToneMapCurve::softKnee == 0);
+  CHECK((int32_t)ToneMapCurve::bt2390 == 1);
   // 枚举序即 UBO int 值, shader 按 2=pq 3=hlg 分支
   CHECK((int32_t)YuvTransfer::gamma == 0);
   CHECK((int32_t)YuvTransfer::linear == 1);

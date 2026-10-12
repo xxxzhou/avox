@@ -22,9 +22,14 @@ void VkYUV2RGBALayer::refreshColorMat() {
   // transfer 随 cs 运行时更新: setColorSpace 只走本函数, 只写 onInitLayer 会丢晚到的标志
   uboData.transfer = (int32_t)cs.transfer;
   uboData.hdrMode = (int32_t)hdrMode;
+  uboData.toneMapCurve = (int32_t)toneMapParamet.curve;
+  // sdrWhiteNits: <=0 取默认 100(历史硬编码值), 零回归
+  uboData.sdrWhiteNits = toneMapParamet.sdrWhiteNits > 0.0f
+                             ? toneMapParamet.sdrWhiteNits
+                             : 100.0f;
   LOGFLF(LogLevel::info, "[yuv2rgba] ubo transfer:", uboData.transfer,
          " peak:", uboData.maxLuminance, " sdrWhite:", uboData.sdrWhiteNits,
-         " hdrMode:", uboData.hdrMode);
+         " hdrMode:", uboData.hdrMode, " toneMapCurve:", uboData.toneMapCurve);
   updateUBO(&uboData);
 }
 
@@ -68,6 +73,18 @@ void VkYUV2RGBALayer::setHdrMode(HdrMode mode) {
   // 不在此 resetGraph: 直通过界的拓扑重建由 VkVideoRender::setHdrMode 置
   // bResetFlag 驱动(渲染线程消费), 本函数只落模式+UBO(10/1 UAF 案口径)
   hdrMode = mode;
+  refreshColorMat();
+  bParametChange = true;
+}
+
+void VkYUV2RGBALayer::setToneMap(const ToneMapParamet& paramet) {
+  if (paramet == toneMapParamet) {
+    return;  // 幂等: 渲染线程每轮收敛直推, 无变化早退
+  }
+  LOGFLF(LogLevel::info, "[yuv2rgba] toneMap curve:", (int32_t)paramet.curve,
+         " sdrWhite:", paramet.sdrWhiteNits, " (0=软膝 1=BT.2390 EETF)");
+  // 曲线是 UBO 分支, 不改变体/拓扑: 只重传 UBO, 不重建 graph
+  toneMapParamet = paramet;
   refreshColorMat();
   bParametChange = true;
 }

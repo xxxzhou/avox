@@ -411,6 +411,9 @@ class ISurfaceRender {
   // follow=按流与元数据自动(HDR进 tone map 出SDR); forceSDR=恒tone map;
   // forceHDR=跳过tone map(PQ编码值原样落帧, SDR表面表现为过曝, 宿主自担)
   virtual void setHdrMode(HdrMode mode) {};
+  // tone map 曲线参数(默认软膝=历史行为), 运行时可调; 参数见 ToneMapParamet。
+  // 实现面=VK/Metal/DX11 腿, EGL 腿调用只告警不改行为
+  virtual void setToneMap(const ToneMapParamet& paramet) {};
   // 调用方须先对 buf 调用 setImageFormat 设定 width/height/imageType(当前仅
   // rgba8); 每帧按该 ImageFormat 经 GPU 缩放后零拷贝写入 buf, 读取时以
   // buf->getImageFormat() 为准(rowPitch 可能对齐到 16 字节) buf 由调用方持有,

@@ -38,7 +38,7 @@ cbuffer CBParameters : register(b0)
     float maxLuminance;  // 内容峰值亮度 nits
     float sdrWhiteNits;  // SDR 白点 nits
     int   hdrMode;       // HdrMode 声明序: 0=follow 1=forceSDR 2=forceHDR
-    int   _pad;
+    int   toneMapCurve;  // ToneMapCurve 声明序: 0=软膝(默认) 1=BT.2390 EETF
     int   doviEnable;    // 1=走 DV 整形链
     int   _dv0;
     int   _dv1;
@@ -193,6 +193,35 @@ float3 linearToBt709(float3 c) {
     return lerp(lo, hi, step(0.018, c));
 }
 
+// BT.2390 EETF(与 VK/Metal 腿同源, 语义对齐 libplacebo pl_tone_map_bt2390):
+// PQ 码域 Hermite 膝点, 膝点以下 1:1, 以上滚降到目标峰值码(offset=1.0);
+// ks 钳 0 防目标白点极低时黑位抬升
+float3 bt2390Eetf(float3 pq, float srcPeakPq, float dstPeakPq) {
+    float ks = max(2.0 * dstPeakPq - srcPeakPq, 0.0);
+    if (ks >= srcPeakPq) {
+        return pq;
+    }
+    float3 t = clamp((pq - ks) / (srcPeakPq - ks), 0.0, 1.0);
+    float3 t2 = t * t;
+    float3 t3 = t2 * t;
+    float3 pb = (2.0 * t3 - 3.0 * t2 + 1.0) * ks +
+                (t3 - 2.0 * t2 + t) * (srcPeakPq - ks) +
+                (-2.0 * t3 + 3.0 * t2) * dstPeakPq;
+    return clamp(lerp(pq, pb, step(ks, pq)), 0.0, dstPeakPq);
+}
+
+// EETF 路径: PQ 码 -> 显示线性 [0,1](1.0=SDR 白), 与软膝路径同输出域
+float3 toneMapEetf(float3 pqCode) {
+    float dstN = max(sdrWhiteNits, 1.0);
+    float srcNits = max(maxLuminance, dstN);
+    float3 srcPq3 = linearToPq(float3(srcNits / 10000.0, srcNits / 10000.0,
+                                      srcNits / 10000.0));
+    float3 dstPq3 = linearToPq(float3(dstN / 10000.0, dstN / 10000.0,
+                                      dstN / 10000.0));
+    float3 mapped = bt2390Eetf(clamp(pqCode, 0.0, 1.0), srcPq3.x, dstPq3.x);
+    return pqToLinear(mapped) * (10000.0 / dstN);
+}
+
 // 色彩处理总入口: forceHDR 跳过全部处理; 否则仅 PQ/HLG 做变换
 float3 processColor(float3 rgb) {
     if (hdrMode == 2) {
@@ -202,8 +231,9 @@ float3 processColor(float3 rgb) {
     // 不覆盖则走 SDR 直通, DV 输出被当 gamma 直显 → 偏暗欠饱和
     int xfer = (doviEnable == 1) ? 2 : transfer;
     if (xfer == 2) {
-        float3 lin = pqToLinear(rgb);
-        lin = toneMap(lin);
+        // toneMapCurve: 0=软膝(默认) 1=BT.2390 EETF; HLG 恒走软膝
+        float3 lin = (toneMapCurve == 1) ? toneMapEetf(rgb)
+                                         : toneMap(pqToLinear(rgb));
         lin = bt2020ToBt709(lin);
         return linearToBt709(lin);
     }
@@ -806,8 +836,11 @@ void Dx11CSVideoRender::renderCpuFrame(const YUVFrame& frame) {
                         : (cpuInYuv == YuvType::yuv420P10) ? 1 : 0;
     constData.transfer = (int32_t)cs.transfer;
     constData.maxLuminance = (float)hdrPeakNits(hdrMeta);
-    constData.sdrWhiteNits = 100.0f;
+    constData.sdrWhiteNits = toneMapParamet.sdrWhiteNits > 0.0f
+                                 ? toneMapParamet.sdrWhiteNits
+                                 : 100.0f;
     constData.hdrMode = (int32_t)hdrMode;
+    constData.toneMapCurve = (int32_t)toneMapParamet.curve;
     Mat4x4f mat = buildYuvToRgb(cs);
     memcpy(&constData.colorMat, &mat, 16 * sizeof(float));
     constBuf->updateResource(d3dcontext.Get());
@@ -865,6 +898,17 @@ void Dx11CSVideoRender::setHdrMode(HdrMode mode) {
     return;
   }
   hdrMode = mode;
+  bParamsDirty = true;
+}
+
+void Dx11CSVideoRender::setToneMap(const ToneMapParamet& paramet) {
+  if (paramet == toneMapParamet) {
+    return;
+  }
+  // 探针走 stderr: playtest 环境 logTask 启动后不再排水, 引擎 info 日志不可见
+  fprintf(stderr, "[dx11cs] setToneMap curve=%d sdrWhite=%.1f\n",
+          (int)paramet.curve, (double)paramet.sdrWhiteNits);
+  toneMapParamet = paramet;
   bParamsDirty = true;
 }
 
@@ -1098,8 +1142,11 @@ void Dx11CSVideoRender::renderToTexture(const GpuFrame& gpuFrame) {
     constData.yuvType = (yuvDesc.Format == DXGI_FORMAT_P010) ? 1 : 0;
     constData.transfer = (int32_t)cs.transfer;
     constData.maxLuminance = (float)hdrPeakNits(hdrMeta);
-    constData.sdrWhiteNits = 100.0f;
+    constData.sdrWhiteNits = toneMapParamet.sdrWhiteNits > 0.0f
+                                 ? toneMapParamet.sdrWhiteNits
+                                 : 100.0f;
     constData.hdrMode = (int32_t)hdrMode;
+    constData.toneMapCurve = (int32_t)toneMapParamet.curve;
     // 颜色矩阵: buildYuvToRgb 已含标准系数 + limited 量程展开, 行优先 16 浮点,
     // 与 float4x4 列主序一致, mul(vec4, colorMat) 结果等同于 Vulkan V1/V5
     Mat4x4f mat = buildYuvToRgb(cs);

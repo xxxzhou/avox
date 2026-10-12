@@ -108,6 +108,8 @@ class VkVideoRender : public VideoRender, public IVOutputLayerOb {
   HdrMeta hdrMeta = {};
   // HDR 输出模式, 驱动 yuv2RGBA tone map 开关
   HdrMode hdrMode = HdrMode::follow;
+  // tone map 曲线参数(曲线+SDR 白点), 收敛重放到 yuv2RGBA 节点
+  ToneMapParamet toneMapParamet = {};
   // 拓扑建成时的模式(直通过界未对齐→置 bResetFlag 重建, hdr-chain-plan V1)
   HdrMode hdrTopologyMode = HdrMode::follow;
   // 链F 升样层(G10): 输入是平台渲染器 forceHDR 分支原样写下的 rgba8 PQ 码
@@ -180,6 +182,8 @@ class VkVideoRender : public VideoRender, public IVOutputLayerOb {
   void setDoviMeta(const DoviMeta& meta) override;
   // HDR 输出模式(forceHDR 跳过 tone map), 运行时重传, 不重建 graph
   void setHdrMode(HdrMode mode) override;
+  // tone map 曲线参数(曲线+SDR 白点), 运行时重传 UBO, 不重建 graph
+  void setToneMap(const ToneMapParamet& paramet) override;
 #ifdef AVOX_ENABLE_FREETYPE
   // 获取字体层
   FontRender* enableRenderFont();
