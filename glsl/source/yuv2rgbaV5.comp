@@ -53,11 +53,6 @@ float read10bit(ivec2 pos) {
 	return float(w16 & 1023u) / 1023.f;
 }
 
-// UV 值(归一化 [0,1], 含 +0.5 偏移), 不再减 0.5(折进 colorMat 偏移列)
-float read10bitUV(ivec2 pos) {
-	return read10bit(pos);
-}
-
 // ---------- 色度双线性(2026-10-12, 画质深化方案 §5 T1): 对齐 Metal 腿线性采样口径 ----------
 // Metal 腿 Y/UV 共用一个线性采样器(uvTexture 半宽), 故输出像素 (x,y) 的色度平面位置 =
 // ((x+0.5)*uvW/w - 0.5, (y+0.5)*uvH/h - 0.5)。偶数帧宽高下该位置恒为 k±0.25 / m±0.25,
