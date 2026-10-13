@@ -10,5 +10,5 @@ Requires:
 Requires.private: libavcodec >= 63.1.101, libswresample >= 7.1.101, libavutil >= 61.1.101
 Conflicts:
 Libs: -L${libdir}  -lavformat 
-Libs.private: -lm -latomic -lz
+Libs.private: -lm -latomic -lz -lssl -lcrypto
 Cflags: -I${includedir}

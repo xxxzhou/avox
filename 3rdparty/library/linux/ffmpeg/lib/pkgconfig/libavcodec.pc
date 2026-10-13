@@ -1,7 +1,7 @@
-prefix=/home/zhouxin/ffmpeg-out-linux
+prefix=/home/zhouxin/github/ffmpeg/out-linux-x64
 exec_prefix=${prefix}
-libdir=/home/zhouxin/ffmpeg-out-linux/lib
-includedir=/home/zhouxin/ffmpeg-out-linux/include
+libdir=/home/zhouxin/github/ffmpeg/out-linux-x64/lib
+includedir=/home/zhouxin/github/ffmpeg/out-linux-x64/include
 
 Name: libavcodec
 Description: FFmpeg codec library

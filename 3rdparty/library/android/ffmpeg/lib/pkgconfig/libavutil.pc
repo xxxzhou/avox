@@ -10,5 +10,5 @@ Requires:
 Requires.private: 
 Conflicts:
 Libs: -L${libdir}  -lavutil 
-Libs.private: -lm -lz -latomic -landroid -lmediandk -pthread
+Libs.private: -lm -lz -lssl -lcrypto -latomic -landroid -lmediandk -pthread
 Cflags: -I${includedir}
