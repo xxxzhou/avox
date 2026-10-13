@@ -146,6 +146,19 @@ bool IOParseDav::ensureClient() {
   if (!p.user.empty()) {
     client->set_basic_auth(p.user.c_str(), p.pass.c_str());
   }
+  // 私网源经隧道(io.http.proxy, per-open): WebDAV 直链也走本地网关口, URL
+  // 字面不变(重写成 127.0.0.1 会毁 SNI 与 Host); https 目标由 httplib 自动
+  // 升 CONNECT 隧道。只对私网目标注入(网关 ACL 拒公网 → 403)
+  if (!httpProxy.empty()) {
+    std::string proxyHost;
+    int32_t proxyPort = 0;
+    if (davbridge::parseProxyUrl(httpProxy, &proxyHost, &proxyPort)) {
+      client->set_proxy(proxyHost, proxyPort);
+    } else {
+      LOGFLF(LogLevel::warn, "[dav io] invalid io.http.proxy ignored:",
+             httpProxy);
+    }
+  }
   return true;
 }
 

@@ -519,6 +519,14 @@ int IOParseFF::reopenInput() {
   if (!httpHeaders.empty()) {
     av_dict_set(&dict, "headers", httpHeaders.c_str(), 0);
   }
+  // 私网源经隧道(io.http.proxy, per-open): 走 avox-tunnel 本地网关口发出,
+  // URL 不变; http 由本协议直接吃该项, https 走 tls 腿经 httpproxy 协议 CONNECT
+  // (故 FFmpeg 须编入 httpproxy, 见 script/ffmpeg/*)。只对私网目标注入 —— 网关
+  // ACL 只放行已共享设备, 公网源走代理必 403; 严禁改走进程级 http_proxy 环境
+  // 变量(那会把公网源也塞进隧道)
+  if (!httpProxy.empty()) {
+    av_dict_set(&dict, "http_proxy", httpProxy.c_str(), 0);
+  }
   // 强制重复发送 SPS/PPS
   // av_dict_set(&dict, "repeat_headers", "1", 0);
   // http 直链 wrapper+段缓存: 迅雷/Twitch 等逐段拼装的 mp4 两类病灶——①多

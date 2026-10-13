@@ -58,6 +58,9 @@ Command cmdPlay() {
   // RTSP 传输协议
   cmd.parser.addArg(
       {"-transport", "", ArgType::String, false, "RTSP传输: udp/tcp", ""});
+  // HTTP/HTTPS 代理(私网源经隧道网关: 值形如 http://127.0.0.1:端口; 公网源勿设)
+  cmd.parser.addArg(
+      {"-proxy", "", ArgType::String, false, "HTTP/HTTPS代理(私网源经隧道网关口)", ""});
   // 主时钟类型 (音频PTS异常的流可切到video绕过)
   cmd.parser.addArg({"-sync-type", "", ArgType::Int, false,
                      "主时钟(0=none 1=audio 2=video)", "1"});
@@ -105,6 +108,7 @@ Command cmdPlay() {
     int delay = args.getInt("delay", 2000);
     int syncType = args.getInt("sync-type", 1);
     std::string transport = args.getString("transport", "");
+    std::string proxy = args.getString("proxy", "");
     int timeout = args.getInt("timeout", 15000);
     bool logPacket = args.getBool("log-packet");
     bool logDecode = args.getBool("log-decode");
@@ -175,6 +179,9 @@ Command cmdPlay() {
     if (!transport.empty()) {
       opt->setString(AVOX_MP_IO_RTSP_TRANSPORT_STR, transport.c_str());
     }
+    if (!proxy.empty()) {
+      opt->setString(AVOX_MP_IO_HTTP_PROXY_STR, proxy.c_str());
+    }
     if (preciseSeek) {
       opt->setBool(AVOX_MP_SEEK_PRECISE_BOOL, true);
     }
@@ -208,6 +215,7 @@ Command cmdPlay() {
     printf("  speed:     %.1f\n", speed);
     if (lowlatency) printf("  lowlatency: on\n");
     if (!transport.empty()) printf("  transport: %s\n", transport.c_str());
+    if (!proxy.empty()) printf("  proxy:     %s\n", proxy.c_str());
     if (!logFilePath.empty()) printf("  log-file:  %s\n", logFilePath.c_str());
     if (!offscreen) {
       printf(

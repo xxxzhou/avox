@@ -202,6 +202,9 @@ class AVOX_EXPORT AVSource : public BaseSource,
   // HTTP 自定义请求头(CRLF 分隔)与 UA 覆盖; io.http.headers / io.http.useragent
   std::string httpHeaders;
   std::string httpUserAgent;
+  // HTTP/HTTPS 代理(per-open, io.http.proxy): 只对私网目标注入(隧道网关),
+  // 空=直连(公网源保持不受影响)
+  std::string httpProxy;
   bool bLogPacket = false;
 
  public:

@@ -165,7 +165,9 @@ MINIMUM_BSF = "h264_mp4toannexb,hevc_mp4toannexb,aac_adtstoasc,extract_extradata
 # 后续需要 SRT: 装 libsrt + --enable-libsrt --enable-protocol=libsrt(协议名是 libsrt, 不是 srt)
 # 注: FFmpeg 9.0 没有 rtsp 协议 —— rtsp 是 demuxer(已在 MINIMUM_DEMUXERS), 传输走
 #   tcp/udp/http + rtp; 写 rtsp 会被 configure 静默忽略
-MINIMUM_PROTOCOLS = "file,http,https,tcp,udp,rtp,rtmp,rtmps,tls,srtp,crypto,data,pipe"
+# httpproxy = https 经 HTTP 代理的 CONNECT 隧道协议(tls 腿内部拨 httpproxy://);
+#   缺它则 http 能过代理而 https 报 "Protocol not found"(隧道网关/私网 https 源需要)
+MINIMUM_PROTOCOLS = "file,http,https,tcp,udp,rtp,rtmp,rtmps,tls,srtp,crypto,data,pipe,httpproxy"
 # 后三项(rm,mpegps,mpegvideo)为老媒体扩展。注意: FFmpeg 新版 MPEG-PS demuxer 的
 # configure 名是 mpegps(旧名 mpeg 已废弃, 传 mpeg 会被 configure 静默忽略不报错);
 # mpegvideo 是裸 MPEG-1/2 ES 流(.mpg 探测失败时靠它兜底)

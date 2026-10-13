@@ -11,6 +11,8 @@
 #endif
 #include <httplib.h>
 
+#include "avox/module/LogHelper.hpp"
+
 namespace avox {
 
 namespace {
@@ -277,6 +279,21 @@ void DavSource::setParam(const char* key, const char* value) {
       }
     }
   }
+  // 隧道网关代理(私网源经网关口列目录; 播放腿同代理走 io.http.proxy):
+  // 值形如 "http://127.0.0.1:17817", 空值清除(回直连)
+  if (std::strcmp(key, "proxy") == 0) {
+    std::string host;
+    int32_t port = 0;
+    if (value == nullptr || *value == '\0') {
+      proxyHost.clear();
+      proxyPort = 0;
+    } else if (davbridge::parseProxyUrl(value, &host, &port)) {
+      proxyHost = host;
+      proxyPort = port;
+    } else {
+      LOGFLF(LogLevel::warn, "[dav source] invalid proxy param ignored:", value);
+    }
+  }
 }
 
 bool DavSource::parseUrl(const std::string& url, UrlParts* out) {
@@ -485,6 +502,11 @@ bool DavSource::propfind(const std::string& reqPath, int depth,
     }
     if (!verifyTls) {
       c->enable_server_certificate_verification(false);
+    }
+    // 隧道网关代理(setParam("proxy")): 私网源列目录也经网关口, URL 不变;
+    // https 目标由 httplib 自动 CONNECT
+    if (proxyPort > 0) {
+      c->set_proxy(proxyHost, proxyPort);
     }
     return c;
   };

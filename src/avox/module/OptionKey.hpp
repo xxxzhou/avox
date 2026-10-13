@@ -50,6 +50,11 @@ namespace avox {
 #define AVOX_MP_IO_HTTP_HEADERS_STR "io.http.headers"
 // HTTP User-Agent 覆盖(FFmpeg 默认 Lavf/x.y): 云盘直链校验 UA 的源用
 #define AVOX_MP_IO_HTTP_USERAGENT_STR "io.http.useragent"
+// HTTP/HTTPS 代理(值形如 "http://127.0.0.1:端口"): 私网源经 avox-tunnel 本地
+// 网关口发出(URL 不变; https 走 CONNECT, 依赖 FFmpeg 编入 httpproxy 协议)。
+// 必须按源 per-open 注入, 且只对私网目标设置 —— 网关 ACL 只放行已共享设备,
+// 公网源走代理必 403 播放全废; 因此严禁改走进程级 http_proxy 环境变量(全局生效)
+#define AVOX_MP_IO_HTTP_PROXY_STR "io.http.proxy"
 // ffmpeg拉流可以设置成udp tcp
 #define AVOX_MP_IO_RTSP_TRANSPORT_STR "io.rtsp.transport"
 // RTSP拉流倍速(点播/NVR回放源,PLAY带Scale;仅zlmediakit IO生效,直播源无效)

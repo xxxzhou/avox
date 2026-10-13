@@ -145,6 +145,12 @@ void AVSource::onOptionChange(const char* key, ArgType type) {
   } else if (equalsIgnoreCase(key, AVOX_MP_IO_HTTP_USERAGENT_STR)) {
     httpUserAgent = option->getString(key);
     LOGFLF(LogLevel::info, "option:", key, " change:", httpUserAgent);
+  } else if (equalsIgnoreCase(key, AVOX_MP_IO_HTTP_PROXY_STR)) {
+    httpProxy = option->getString(key);
+    // 值可能是带凭据的代理 URL(user:pass@host), 落日志剥掉用户信息段
+    const size_t at = httpProxy.rfind('@');
+    LOGFLF(LogLevel::info, "option:", key, " change:",
+           at == std::string::npos ? httpProxy : httpProxy.substr(at + 1));
   } else if (equalsIgnoreCase(key, AVOX_LOG_SOURCE_INPACKET_BOOL)) {
     bLogPacket = option->getBool(key);
     LOGFLF(LogLevel::info, "option:", key, " change:", bLogPacket);

@@ -144,6 +144,10 @@ class DavSource : public IRemoteSource, public RunTask {
   int32_t opTimeoutMs = 10000;
   // 会话参数(setParam 写入)
   bool verifyTls = true;
+  // 隧道网关代理(setParam("proxy","http://127.0.0.1:端口") 写入; 私网源经
+  // 网关口发 PROPFIND, 空=直连。播放腿的同一代理走 io.http.proxy)
+  std::string proxyHost;
+  int32_t proxyPort = 0;
   // 鉴权 Header 注入 (a05-T3 契约 §3, setParam("authHeader","Key:Value") 写入;
   // 本会话所有 PROPFIND 携带, refreshPlaybackUrl 时交 IOParseDav 携带到直链 GET)
   std::string authKey;

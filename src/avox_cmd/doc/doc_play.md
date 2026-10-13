@@ -27,6 +27,7 @@ avox_cli play -i video.mp4 -offscreen -screenshot ./shots -shot-interval 1000
 | `-offscreen` | Bool | 离屏渲染 | 关 |
 | `-speed` | Number | 播放速度 | 1.0 |
 | `-lowlatency` | Bool | 低延迟模式 | 关 |
+| `-proxy` | String | HTTP/HTTPS 代理 (私网源经隧道网关口, 如 `http://127.0.0.1:17817`; 公网源勿设) | - |
 | `-screenshot` | String | 截图目录 | - |
 | `-audio-track` | Int | ready 后切到指定局部音轨(-1=关音频), 验证 setAudioTrack | 0 |
 
