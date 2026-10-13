@@ -6,7 +6,9 @@
 
 namespace avox {
 
-class FFResample {
+// 导出: 白盒探针/工具直驱本类做数值对照(samples/functest/downmixtest), Windows
+// avox.dll 是导入库, 不导出则链接 LNK2019(同模块 FFHelper.hpp 的导出口径)
+class AVOX_EXPORT FFResample {
 public:
   FFResample() = default;
   virtual ~FFResample() = default;
