@@ -760,6 +760,46 @@
         }
       },
       "note": "由 build_windows.py (或对应平台 build 脚本) 编译并复制到 plugins/。avox_library 无预编译, 不能下载; 如已有构建产物, 直接确认 plugins/ 下存在即可。"
+    },
+    {
+      "id": "hub_image_amd64",
+      "name": "NAS 枢纽镜像 · x86_64",
+      "type": "hub_image",
+      "method": "download",
+      "dest": "hub",
+      "source": "avox_model release",
+      "files": [
+        {
+          "url": "https://github.com/xxxzhou/avox_model/releases/download/hub-image-amd64/pvx-hub-image-amd64.tar",
+          "name": "pvx-hub-image-amd64.tar",
+          "size_mb": 8.6,
+          "sha256": "62d287d9adaf35000344b7813f2085eeef3319c235c39e1285ac9f2b7ce8c37b"
+        }
+      ],
+      "verify_files": [
+        "pvx-hub-image-amd64.tar"
+      ],
+      "note": "远程访问「给家里装一台 NAS」用: docker load 兼容 tar (FROM scratch, cmd/hub)。架构由用户在向导里选(NAS 的架构), 与 App 平台无关, 故不用 platforms 字段。**avox-tunnel 是私有仓, 产物不能发它自己的 Release** —— 私有仓出包后把 tar 传到这里(公开的 avox_model)release tag=hub-image-amd64, 再回填 sha256。"
+    },
+    {
+      "id": "hub_image_arm64",
+      "name": "NAS 枢纽镜像 · ARM64",
+      "type": "hub_image",
+      "method": "download",
+      "dest": "hub",
+      "source": "avox_model release",
+      "files": [
+        {
+          "url": "https://github.com/xxxzhou/avox_model/releases/download/hub-image-arm64/pvx-hub-image-arm64.tar",
+          "name": "pvx-hub-image-arm64.tar",
+          "size_mb": 7.9,
+          "sha256": "92ecf8b25fefa2fa3d5410d42bfb536d0c9a91af72af4d30e30da502a5a87493"
+        }
+      ],
+      "verify_files": [
+        "pvx-hub-image-arm64.tar"
+      ],
+      "note": "同 hub_image_amd64; 用于 ARM 机型(aarch64)的 NAS。"
     }
   ],
   "github_mirrors": [
