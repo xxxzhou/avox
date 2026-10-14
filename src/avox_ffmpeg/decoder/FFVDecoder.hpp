@@ -46,6 +46,9 @@ protected:
   DoviMeta lastDovi = {};
   // 故障注入解码器名(mp.decoder.failinject), onOptionChange缓存, open时比对命中即失败
   std::string failInjectName;
+  // 参数集依赖脏标记(仅h265): ffmpeg丢变化参数集的依赖项, 需补发(字节未变也发)
+  bool needSps = false;
+  bool needPps = false;
 };
 
 }

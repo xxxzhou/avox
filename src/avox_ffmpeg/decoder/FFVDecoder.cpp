@@ -50,6 +50,9 @@ DecodeResult FFVDecoder::onPreDecoder() {
   // 对它flush无意义, 且会打在上次open2失败残留的未open ctx上(internal空必崩)
   bCtxOpened = false;
   codecCtx.reset();
+  // 新上下文随 extradata 拿到完整参数集, 无待补发依赖
+  needSps = false;
+  needPps = false;
   // d3d11va/vulkan这些，非独立解码器，需要借助通用解码器，然后硬件加速
   // 在这借onAttachContext生成对应的d3d11/vulkan硬件环境
   const AVCodec* codec = nullptr;
@@ -162,9 +165,53 @@ DecodeResult FFVDecoder::decode(const AvoxPacket& packet) {
   // hasSameConfig 必然为真, 所以必须用 bChanged 把它排除掉, 否则seek跨段
   // (同分辨率但SPS/PPS不同)时新参数集永远喂不进解码器, 解码器会拿旧PPS
   // 解新段切片 -> 切片头字段乱值 / hardware accelerator failed to decode
-  if (naluConfigFrame(this->codecId, getNalUnit(this->codecId, packet)) &&
-      hasSameConfig(configPackets, packet) && !bChanged) {
-    return DecodeResult::success;
+  const uint8_t nalu = getNalUnit(this->codecId, packet);
+  // 依赖脏标记仅 h265: hevc/ps.c 级联丢依赖参数集, h264 分支被 #if 0 不丢
+  const bool bH265 = this->codecId == VCodecId::h265;
+  if (naluConfigFrame(this->codecId, nalu)) {
+    // 被上条变化参数集级联丢弃的依赖项, 字节未变也须补发
+    bool bNeed = bChanged;
+    if (bH265) {
+      if (nalu == (uint8_t)H265NAL::NAL_SPS) {
+        bNeed = bNeed || needSps;
+      } else if (nalu == (uint8_t)H265NAL::NAL_PPS) {
+        bNeed = bNeed || needPps;
+      }
+    }
+    if (!bNeed && hasSameConfig(configPackets, packet)) {
+      return DecodeResult::success;
+    }
+    // 下发变化参数集会级联丢弃依赖: VPS 丢 SPS+PPS, SPS 丢 PPS
+    if (bH265) {
+      if (nalu == (uint8_t)H265NAL::NAL_VPS) {
+        needSps = true;
+        needPps = true;
+      } else if (nalu == (uint8_t)H265NAL::NAL_SPS) {
+        needSps = false;
+        needPps = true;
+      } else if (nalu == (uint8_t)H265NAL::NAL_PPS) {
+        needPps = false;
+      }
+    }
+  } else if (bH265 && (needSps || needPps)) {
+    // 补齐可能被上层按"重复"丢弃的依赖参数集(播放链 VDecoderTask 吞带内PPS),
+    // 定序 SPS→PPS: 存储序不保证
+    const auto feedAll = [&](uint8_t want) {
+      for (auto& buf : configPackets) {
+        if ((uint8_t)buf.getNaluType(this->codecId) == want) {
+          AvoxPacket cp = getPacket(buf);
+          decodePacket(cp);
+        }
+      }
+    };
+    if (needSps) {
+      feedAll((uint8_t)H265NAL::NAL_SPS);
+    }
+    if (needPps) {
+      feedAll((uint8_t)H265NAL::NAL_PPS);
+    }
+    needSps = false;
+    needPps = false;
   }
   // VC-1/WMV3/RV30/RV40等: extradata已按vconfig消费进codecCtx,
   // 原样再喂一次只会报无效帧
@@ -181,13 +228,20 @@ DecodeResult FFVDecoder::decode(const AvoxPacket& packet) {
   return bRet;
 }
 
-void FFVDecoder::flush() { flushContext(); }
+void FFVDecoder::flush() {
+  flushContext();
+  // flush 不清 ffmpeg 参数集, 但脏标记语义是"解码器已丢依赖", 一并复位避免跨段误补发
+  needSps = false;
+  needPps = false;
+}
 
 void FFVDecoder::onClose() {
   bCtxOpened = false;
   if (codecCtx) {
     codecCtx.reset();
   }
+  needSps = false;
+  needPps = false;
 }
 
 // ST 2084 PQ 码值(0..1)逆 EOTF 换亮度 nits(0..10000)
