@@ -34,7 +34,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 - 引擎日志备选: `log show --last 10m --predicate 'process == "panvox"' --info`, 或 `log stream` 边播边收。
 - 「卡住/停止」先查 `~/Library/Logs/DiagnosticReports/` 有无 .ips 区分**崩溃 vs 冻住**(无 .ips = 冻死非崩); 解码自愈停顿 ≤1GOP(数百帧≈9s)易被用户当「停止」, 别误判。
 
-**Android**(adb): `adb install -r app/build/app/outputs/flutter-apk/app-release.apk`; `adb logcat -c && adb logcat -v time -s avox:V flutter:V`(引擎 tag=avox, Dart tag=flutter); 蜂窝网"全源打不开"先 `adb shell svc wifi enable`(历史陷阱)。
+**Android**(adb): `adb install -r app/build/app/outputs/flutter-apk/app-release.apk`; `adb logcat -c && adb logcat -v time -s avox:V flutter:V`(引擎 tag=avox, Dart tag=flutter); 蜂窝网"全源打不开"先 `adb shell svc wifi enable`(历史陷阱)。**报「crash」先挖 dropbox**: `adb shell dumpsys dropbox --print data_app_anr`(及 `data_app_native_crash`)——`logcat -b crash` 对 ANR 恒空; ANR 栈「无 1.ui 线程 + main(tid=1) 里 libpvx_tunnel/libpanvox_native 帧」= 同步 FFI 堵主线程(Flutter UI 已并平台线程)。
 
 **iOS**(模拟器 `xcrun simctl launch --console-pty booted com.panvox.panvox`; **真机 10/3 已打通, 不必再靠复述**):
 - 抓**引擎**stdout: `xcrun devicectl device process launch --device <udid> --console --terminate-existing --activate com.panvox.panvox`, 用 `script -q <file> <cmd>` 落地 + 定时 `pkill -INT -f 'device process launch'` 收尾(INT 转发给 app)。原生行齐全: `state from`/`io open result`/`io error,code:`/`[metrics] io open_input_ms`/`[FF]`; 真机 udid 用 `xcrun devicectl list devices`。
@@ -68,6 +68,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 **open/起播** → [`references/病族-open.md`](references/病族-open.md)
 - 容器头解析失败(EBML…) → 拿到非容器(假 mkv/改后缀 FLV) → 源端假片, §1.2 体检定真身
 - 点卡/启动续播「先闪无法打开该文件, 随后自己正常播」→ 首开喂引擎的是非 URL(webdav/http 源缺换直链一跳, SMB 不中) → 已定位(1003, 修法见分册); 判据 = `io open result: success msg:` 打的是裸路径/哈希而非 `http://`
+- Android/iOS 远程源或「最近」续播**恒转圈**、随后整 app 冻死(报「crash」但 crash buffer 空) → 裸 tailnet :18093 地址未落管道 + 主线程同步 FFI ANR + 管道拨号无死线三案并发; 已修(1014, panvox 0b1bdd0 / avox-tunnel 6383837); 取证与判据见分册「远程源转圈+ANR」条
 - Mac VT 起播全帧 `-12909` 风暴(resync 循环无效, 黑屏只有声) → 多 slice 流被逐 slice 包直喂 VT; 已修 AU 重组+让道软解(1002)
 - mac 播 HLS/IPTV「黑屏有声」(playing 全绿但视频帧队列恒 0) → VT 全帧 -12909(标准单 slice 流也中, a02 未决)+ **让道死端已修(1006)**: decoderImp 多 NALU 分支恒 return success 吞 give-up 返回值, 软解兜底永不触发; 修后 `give up hw lane`→`video decoder fallback to:h264`→出帧(黑 ~25s 才换道属预期); 详见分册「让道死端」条
 - ProRes(及一切白名单外编码)「打开有声无画面」→ 编码映射白名单缺口(有 `add video track: invalid-…` 而无 `video decode create`), 已修(1003); VK/D3D11 腿实测出画, Metal/VT 腿待 mac 验; 方案见 [doc/plan/gpu/422-10bit解码与呈现方案.md](../../../../doc/plan/gpu/422-10bit解码与呈现方案.md)
