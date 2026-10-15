@@ -80,6 +80,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 - 网络源硬解首帧慢被 5s 看门狗误杀 → 已修 2c2444b
 
 **seek 后** → [`references/病族-seek.md`](references/病族-seek.md)
+- **Android seek 黑屏一下再放(机率, 别平台保留老画面) → 已修(1015)**: 每逢 seek 解码器整拆重建连坐 SurfaceTexture/EGL → 渲染层 GL 图按 GLESContext 判变整拆, 重建窗口 AHB 未定义 VK present 黑帧; 修 = MediaCodec 走原地 flush 分档; 取证与验证配方见分册「Android seek 黑屏」条
 - **seek 落尾/越尾钳尾滞留 buffering(三形态) → ①②③ 已修(1bcc35a / bd09de9); 残留新形态(258)未修**
 - **fMP4 分片(stub moov + moof×N)只播首片即假 EOF → 已修 c5f70ed(0928)**
 - **缩图/录制 muxer init 失败后 close 跳0崩(RIP=0) → 已修 f76db0e(0928)**
