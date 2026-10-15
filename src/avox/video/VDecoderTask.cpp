@@ -201,6 +201,14 @@ void VDecoderTask::flush() {
   // h264 POC/frame_num, open-GOP 恢复点落点(non-IDR I帧带KEY标志)解码会
   // Frame num gap 螺旋到持续 0 帧(霍小玉.mkv seek冻结实证); 由解码线程在
   // 下一轮循环消费本标志(重建时在owner线程flush旧ctx), 避免并发操作codecCtx
+  // Android MediaCodec 例外: 重建(拆实例)连坐 SurfaceTexture/EGL, 渲染层
+  // needReset 按新 GLESContext 判变, 每逢 seek 拆一次 GL 图(AHB/VK 重绑),
+  // 重建窗口 AHB 未定义 → VK 合成黑帧上屏(1015 真机 44 连 seek 18 黑实锤);
+  // 原地 flush 保画面, 喂包由 seek keyframe/idr gate 保证 sync frame 起
+  if (decode && decode->getCodecTh() == VCodecTh::androidMC) {
+    bFlushCtx = true;
+    return;
+  }
   bResetCtx = true;
 }
 
@@ -301,6 +309,16 @@ void VDecoderTask::onRunTask() {
       continue;
     }
     double speed = trackContext->getSpeed();
+    // MediaCodec 原地 flush(见flush注释): 清 codec 内部 buffer/状态, 实例与
+    // SurfaceTexture/EGL 链全保留 → 渲染层 GLESContext 不变不拆图, 旧帧持续在屏
+    if (bFlushCtx) {
+      bFlushCtx = false;
+      if (bHardDecode) {
+        trackContext->flushFrames();
+      }
+      decode->flush();
+      LOGFLF(LogLevel::info, "seek flush decoder ok");
+    }
     // seek重置(见flush注释): 不等包、不等参数集, 立即在解码线程重建codecCtx,
     // 从落点包起以全新状态解码
     if (bResetCtx) {

@@ -503,6 +503,10 @@ void AndVDecoder::flush() {
   if (!mediaCodec) {
     return;
   }
+  // 原地flush连带清跨调用补喂的旧位置包: 残留会先于落点包喂入,
+  // 令codec丢到下个sync frame(有keyframe gate兜底, 但白丢一段)
+  pendingPackets.clear();
+  pendingPts.clear();
   AMediaCodec_flush(mediaCodec);
 }
 
