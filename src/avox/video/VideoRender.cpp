@@ -161,6 +161,19 @@ void VideoRender::closeResource() {
   bResetFlag = true;
 }
 
+// 流结束后渲染线程停摆, 在飞截图单无人应答(见 checkShot); 此口不依赖渲染
+// 活动, 直接回读最后渲染帧 —— 空输出抽帧的 EOF 竞态(解码先于截图到流尾)
+// 由它兜底。调用方须确认渲染已停摆或与渲染同线程。
+bool VideoRender::flushShot(ImageBuffer* imageBuffer) {
+  if (!imageBuffer) {
+    return false;
+  }
+  if (fetchFrame(imageBuffer)) {
+    return true;
+  }
+  return cpuIn && yuvframe2Rgba(yuvFrame, imageBuffer, colorSpace);
+}
+
 // 这种是插到队列的帧数据,由渲染线程调用release
 void VideoRender::renderFrame(const avox::VideoFrame& frame) {
   if (!frame.buffer) {

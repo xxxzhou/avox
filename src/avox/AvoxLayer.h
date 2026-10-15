@@ -425,6 +425,9 @@ class ISurfaceRender {
   virtual void setAutoAspect(bool bEnable) = 0;
   // 抓取帧
   virtual bool screenShot(IImageBuffer* imageBuffer) { return false; };
+  // EOF 后兜底抓帧: screenShot 靠下一帧 renderFrame 应答, 流结束后无人应答
+  // 必超时; 此口不依赖渲染活动, 直接回读最后渲染帧。默认不支持。
+  virtual bool flushShot(IImageBuffer* imageBuffer) { return false; };
   // 设置窗口大小
   virtual void enableSizeChange(int32_t width, int32_t height) {};
   virtual void enableSizeScale(float scale) {};

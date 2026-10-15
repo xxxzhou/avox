@@ -235,6 +235,19 @@ bool SurfaceRenderNative::screenShot(IImageBuffer* imageBuffer) {
   }
 }
 
+// EOF 后兜底抓帧: 与 screenShot 同分流, 直接回读各腿最后渲染帧
+bool SurfaceRenderNative::flushShot(IImageBuffer* imageBuffer) {
+  ImageBuffer* imgBuffer = dynamic_cast<ImageBuffer*>(imageBuffer);
+  if (!imgBuffer) {
+    LOGFLF(LogLevel::warn, "invalid imageBuffer");
+    return false;
+  }
+  if (bVulkan) {
+    return vkVideoRender && vkVideoRender->flushShot(imgBuffer);
+  }
+  return pVideoRender && pVideoRender->flushShot(imgBuffer);
+}
+
 void SurfaceRenderNative::render(const VideoFrame& frame) {
   if (!frame.buffer) {
     return;

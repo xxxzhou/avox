@@ -35,6 +35,8 @@ class AVOX_EXPORT SurfaceRenderNative : public SurfaceRenderVk {
   void setToneMap(const ToneMapParamet& paramet) override;
   // screenShot: Vulkan时走vkVideoRender，非Vulkan时走pVideoRender
   virtual bool screenShot(IImageBuffer* imageBuffer) override;
+  // EOF 后兜底抓帧: 按腿分流, 直接回读最后渲染帧(不依赖渲染活动)
+  virtual bool flushShot(IImageBuffer* imageBuffer) override;
 
  protected:
   void setVideoSurface(AvoxSurfaceType surface);

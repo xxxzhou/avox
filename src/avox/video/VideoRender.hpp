@@ -190,6 +190,9 @@ class AVOX_EXPORT VideoRender : public OptionLink {
 
   // 主要拿到处理后的图像
  public:
+  // EOF 后兜底: 回读最后渲染帧, 不依赖渲染活动(与 fetchFrame 同线程约定,
+  // 调用方须确认渲染已停摆或同线程); GPU 腿读不到时 CPU 输入走软件转换
+  virtual bool flushShot(ImageBuffer* imageBuffer);
   // 当bOutCpuYuv为true,返回处理后的YUV资源
   virtual bool getCpuFrame(YUVFrame& frame);
   // 直接取packed CPU帧(不做split重排),pts可选带回; 供透传型消费方(如RTC)使用
