@@ -1302,6 +1302,8 @@ void MediaPlayer::tick() {
           " delay ms:", delayMs, " speed:", cspeed);
       // 恢复渲染
       pauseRender(false);
+      // 与 pause 配对解闩: pause(false) 会重锚基准, 从钉住位置续走, 无回跳
+      clock->pause(false);
       setState(PlayerState::playing);
     } else {
       // buffing时间太久了，可以认为不正常，关闭播放器
@@ -1867,6 +1869,9 @@ void MediaPlayer::cmdSeek(SeekCommandPtr cmd) {
     bSeeking = false;
     bSeekSeenLanding = false;
   }
+  // buffering 态也可 seek(normalState 含 buffering), 而那条路不经 tick 恢复分支,
+  // 时钟钉住闩无人解 → 位置永久冻在 seek 目标; 此处统一解闩(seek 后即 playing)
+  clock->pause(false);
   setState(PlayerState::playing);
   // bSeeking 不再在此清除: 成功 seek 后保持到 compateIoTime 见真实位置追平目标
 }
@@ -1897,6 +1902,15 @@ void MediaPlayer::cmdBuffering() {
   }
   // 渲染暂停,等IO与解码把数据存够
   pauseRender(true);
+  // 播放器时钟同步钉住: 否则卡顿期无帧喂时钟, clock() 仍按墙钟外推,
+  // 进度条在缓冲中继续前进, 恢复时被首帧 sync 拽回落点(回跳 stall-1000ms)
+  // 钉之前先锚到当前显示值: 锚点是上次 sync 时的值, 可能已陈旧(偏差在阈值
+  // 千毫秒内就不再刷新), 直接 pause 会让进度条在卡顿瞬间回跳最多 ~2s
+  int64_t bufferClock = clock->clock();
+  if (bufferClock != AVOX_NOVALID_PTS) {
+    clock->update(bufferClock);
+  }
+  clock->pause(true);
   setState(PlayerState::buffering);
   // 开始buffer计时
   bufferChecker.reset();

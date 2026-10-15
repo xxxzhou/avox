@@ -88,6 +88,8 @@ private:
     pts = AVOX_NOVALID_PTS;
     offset = 0;
     lastUpdate = 0;
+    // 闩一并清: pause/buffering 态 close 后时钟会永久冻结, 同实例重开后进度不再走
+    bPause = false;
     // speed = 1.0;
   }
 };
