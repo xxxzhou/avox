@@ -42,6 +42,8 @@ class VkIosImage : public IRenderContext, public VkContextRef {
  public:
   void bindVK();
   void close();
+  // 归还当前面(自建才 CFRelease)与它映射的 VkImage/设备内存; 幂等。
+  void releaseResources();
   void logData();
 };
 

@@ -13,6 +13,7 @@ void VkIosImage::setIOSurface(IOSurfaceRef ioSurface_) {
   if (ioSurface == ioSurface_) {
     return;
   }
+  releaseResources();  // 换面即回收旧面与映射(自建面 CFRef 归零; 外来面只断映射)
   ioSurface = ioSurface_;
   LOGFLF(LogLevel::info, "set io surface:", ioSurface, " vkiosimage:", this);
   bCreate = false;
@@ -49,6 +50,7 @@ void VkIosImage::createIOSurface(const ImageFormat &imageFormat,
     (id)kIOSurfaceBytesPerElement : @(pixelSize),
     (id)kIOSurfaceBytesPerRow : @(rowPitch)
   };
+  releaseResources();  // 重造前先归还上一面(原先直接覆盖句柄 = 泄漏)
   ioSurface = IOSurfaceCreate((CFDictionaryRef)surfaceProps);
   bCreate = true;
   LOGFLF(LogLevel::info, "create io surface:", ioSurface, " vkiosimage:", this);
@@ -87,6 +89,16 @@ void VkIosImage::bindVK() {
     break;
   }
   // 将 IOSurfaceRef 映射到 VkImage
+  // 同一面重绑也先回收上一份映像/设备内存(重造路径不经过 close)。
+  if (vkImage) {
+    vkDestroyImage(vkDevice, vkImage, nullptr);
+    vkImage = VK_NULL_HANDLE;
+  }
+  if (memory) {
+    vkFreeMemory(vkDevice, memory, nullptr);
+    memory = VK_NULL_HANDLE;
+  }
+
   VkImportMetalIOSurfaceInfoEXT importInfo = {};
   importInfo.sType = VK_STRUCTURE_TYPE_IMPORT_METAL_IO_SURFACE_INFO_EXT;
   importInfo.ioSurface = ioSurface;
@@ -124,18 +136,30 @@ void VkIosImage::bindVK() {
       memoryTypeIndex);
   if (!getIndex) {
     LOGFLF(LogLevel::warn, "failed to get memory type index");
+    vkDestroyImage(vkDevice, vkImage, nullptr);
+    vkImage = VK_NULL_HANDLE;
     return;
   }
   VkMemoryAllocateInfo memoryAllocateInfo = {};
   memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
   memoryAllocateInfo.allocationSize = memoryRequirements.size;
   memoryAllocateInfo.memoryTypeIndex = memoryTypeIndex;
-  vkAllocateMemory(vkDevice, &memoryAllocateInfo, nullptr, &memory);
+  if (vkAllocateMemory(vkDevice, &memoryAllocateInfo, nullptr, &memory) !=
+      VK_SUCCESS) {
+    LOGFLF(LogLevel::warn, "failed to allocate image memory");
+    vkDestroyImage(vkDevice, vkImage, nullptr);
+    vkImage = VK_NULL_HANDLE;
+    return;
+  }
   // 绑定
   vkBindImageMemory(vkDevice, vkImage, memory, 0);
 }
 
-void VkIosImage::close() {
+// 归还当前面与它映射的 Vk 资源(2026-10-16 泄漏定谳): 重建路径原先直接覆盖
+// 句柄 —— 旧 IOSurface 的 CFRef 与 VkImage/设备内存无人释放。缩图每任务重造
+// 2~4 次(见 VkOutputLayer::onInitVkBuffer 的「本轮重造」), iOS 真机实测占用
+// 每张图涨 ~30MB, 爬到 ~2GB 上限后整条缩图链停摆(§六486)。
+void VkIosImage::releaseResources() {
   if (vkImage) {
     vkDestroyImage(vkDevice, vkImage, nullptr);
     vkImage = VK_NULL_HANDLE;
@@ -144,11 +168,14 @@ void VkIosImage::close() {
     vkFreeMemory(vkDevice, memory, nullptr);
     memory = VK_NULL_HANDLE;
   }
-  if (bCreate) {
+  if (bCreate && ioSurface) {
     CFRelease(ioSurface);
-    ioSurface = nil;
   }
+  ioSurface = nullptr;
+  bCreate = false;
 }
+
+void VkIosImage::close() { releaseResources(); }
 
 void VkIosImage::logData() {
   if (ioSurface) {

@@ -79,6 +79,13 @@ void HwVideoBuffer::setGPUFrame(const GpuFrame& frame) {
   // 先清空原来老的
   release();
   gpuFrame = frame;
+#ifdef __APPLE__
+  // 队列要长期持有这份面(解码器在 dispatch 返回后即放行自己那一份), 故在此
+  // 取一份自有引用, 与 releaseGpuFrame 的 CVBufferRelease 配对(§六486)。
+  if (gpuFrame.buffer) {
+    CFRetain(static_cast<CVImageBufferRef>(gpuFrame.buffer));
+  }
+#endif
 #ifdef __ANDROID__
   bufferType = VBufferType::opengles;
 #endif
