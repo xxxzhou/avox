@@ -96,6 +96,10 @@ const char* getDefaultDecoderName(VCodecId codecId, bool bHard) {
   } else if (codecId == VCodecId::vvc) {
     // VVC: 三平台均无硬解(DXVA/MediaCodec/VT 名单没有) ⇒ 恒软解
     return AVOX_FF_VVC_DECODER;
+  } else if (codecId == VCodecId::mjpeg) {
+    // MJPEG: 三平台均无硬解(MJPG 摄像头那套是 MF/AVFoundation 设备侧转码,
+    // 不走本引擎解码器登记) ⇒ 恒软解, 与 prores/vvc 同理须显式给名
+    return AVOX_FF_MJPEG_DECODER;
   }
   return AVOX_FF_H264_DECODER;
 }

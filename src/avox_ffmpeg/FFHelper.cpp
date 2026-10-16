@@ -174,6 +174,10 @@ VCodecId ffVCodec(AVCodecID codecId) {
       // VVC/H.266: 软解输出 AV_PIX_FMT_YUV420P10LE(→ YuvType::yuv420P10);
       // 三平台均无硬解(DXVA/MediaCodec/VT 名单没有), 恒软解
       return VCodecId::vvc;
+    case AV_CODEC_ID_MJPEG:
+      // MJPEG(运动 JPEG, 常见于 AVI/MJPG 摄像头): 每包一张完整 JPEG, 无
+      // avcc/annexb 概念; 全量程已由 ffColorSpace/ffYuvType 覆盖; 恒软解
+      return VCodecId::mjpeg;
     default:
       return VCodecId::none;
   }
@@ -314,6 +318,8 @@ AVCodecID getFFCodecId(VCodecId codecId) {
       return AV_CODEC_ID_PRORES;
     case VCodecId::vvc:
       return AV_CODEC_ID_VVC;
+    case VCodecId::mjpeg:
+      return AV_CODEC_ID_MJPEG;
     default:
       return AV_CODEC_ID_NONE;
   }

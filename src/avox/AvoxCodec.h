@@ -61,7 +61,8 @@ namespace avox {
   XX(av1, 20, "av1")        \
   XX(svq3, 21, "svq3")      \
   XX(prores, 22, "prores")  \
-  XX(vvc, 23, "vvc")
+  XX(vvc, 23, "vvc")        \
+  XX(mjpeg, 24, "mjpeg")
 
 enum class ACodecId : int32_t {
   none = -1,

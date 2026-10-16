@@ -39,6 +39,9 @@ namespace avox {
 #ifndef AVOX_FF_VVC_DECODER
 #define AVOX_FF_VVC_DECODER "vvc"
 #endif
+#ifndef AVOX_FF_MJPEG_DECODER
+#define AVOX_FF_MJPEG_DECODER "mjpeg"
+#endif
 #define AVOX_ANDROID_H264_DECODER "android h264 decoder"
 #define AVOX_ANDROID_H265_DECODER "android h265 decoder"
 #define AVOX_ANDROID_VP9_DECODER "android vp9 decoder"
