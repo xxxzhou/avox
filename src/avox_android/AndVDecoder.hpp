@@ -49,6 +49,23 @@ private:
   std::deque<std::vector<uint8_t>> pendingPackets;
   std::deque<int64_t> pendingPts;
 
+  // 车道守卫(只在"首帧交付前"生效, bLaneOut 一旦为真整体停用): 驱动在 STARTED
+  // 之后才翻脸(收下 csd 报 unrecoverable error→MediaCodec 进 Released)时,
+  // configure/start 都是成功, 上层 openFailed 换道口不响、共享看门狗又被供给
+  // 判据挡住 ⇒ 只表现为入队恒被拒 + 零输出 + 单核空转。这里在本层把"车道已死"
+  // 归成 openFailed, 复用车道换道逻辑让软解接手。
+  // 触发条件全部选健康车道不可能产生的量, 见 checkLaneAlive 注释
+  bool bLaneDead = false;
+  bool bLaneOut = false;       // 已交付过输出: 守卫停用(避免误伤正常播放)
+  int32_t laneQueueFails = 0;  // 连续入队失败(硬错)
+  int32_t laneDequeErrs = 0;   // 连续 dequeue 硬错(非"稍后重试")
+  int32_t laneRefused = 0;     // 连续被拒次数, 只随供给量增长(不看墙钟)
+  int64_t laneStartMs = 0;     // 首帧交付前计时起点
+  int64_t laneFedFrames = 0;   // 已成功入队帧数(取证)
+  bool bLaneErrLogged = false; // 首个负返回值取证(只打一次)
+  void resetLaneCheck();
+  DecodeResult checkLaneAlive();
+
 public:
   void updateYuvFormat();
 

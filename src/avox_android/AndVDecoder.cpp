@@ -5,6 +5,7 @@
 #include <dlfcn.h>
 #include <strings.h>
 
+#include "avox/AvoxTime.h"
 #include "avox/codec/H26XHelper.hpp"
 #include "avox/module/AvoxManager.hpp"
 #include "avox/player/MediaPlayer.hpp"
@@ -34,6 +35,29 @@ bool isMediaCodecSwName(const char* name) {
   return strncmp(name, "c2.android.", 11) == 0 ||
          strncasecmp(name, "omx.google.", 11) == 0 ||
          strstr(name, ".google.") != nullptr;
+}
+
+// 车道守卫(见 checkLaneAlive): 判据只用"健康车道不可能产生"的量。
+// kLaneRefusedMax 是大数兜底 —— 该计数只随供给量增长(每喂一个包至多多 1),
+// 要凑满它必须"一直喂、一直拒、且一个输出都没出", 健康车道在首帧前不可能满足;
+// 再加 kLaneRefusedMinMs 把"供给极快"的短促突发也挡掉
+constexpr int32_t kLaneRefusedMax = 1000;
+constexpr int64_t kLaneRefusedMinMs = 1500;
+
+// dequeue 硬错判定。依据 NDK 实现(NdkMediaCodec.cpp):
+//   dequeueInputBuffer: status==OK 给 index, -EAGAIN 给 TRY_AGAIN_LATER(-1),
+//     其余 status_t 才走 translate_error 变成 AMEDIA_ERROR_UNKNOWN(-10000)
+//   dequeueOutputBuffer: 另加 FORMAT_CHANGED(-2)/BUFFERS_CHANGED(-3) 两个正常态
+// ⇒ 健康车道"暂时没空位/暂时没输出"只可能是 -1/-2/-3(或旧版 WOULD_BLOCK);
+// 任何其它负值都出自错误分支, 只有 codec 已不在可用态才会有
+bool isDequeHardError(ssize_t v) {
+  if (v >= 0) {
+    return false;
+  }
+  return v != AMEDIACODEC_INFO_TRY_AGAIN_LATER &&
+         v != AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED &&
+         v != AMEDIACODEC_INFO_OUTPUT_BUFFERS_CHANGED &&
+         v != AMEDIA_ERROR_WOULD_BLOCK;
 }
 }  // namespace
 
@@ -155,9 +179,9 @@ DecodeResult AndVDecoder::onPreDecoder() {
       return DecodeResult::openFailed;
     }
   }
-  auto& packets = configPackets;
+  auto packets = configPackets;
 // csd 必须是AnnexB: mp4/rtmp 的 config 是avcc/hvcc长度前缀, 不转MediaCodec解析不了csd, 静默无输出
-// (已是AnnexB的包长度对不上, avcc2AnnexbPacket 自动跳过); AV1 的 av1C 是
+// 只转本地副本: 就地改 configPackets 会让换道后的 ffmpeg 按 Annex-B 建 extradata, 零帧
   if (codecDesc.vcodecId != VCodecId::av1) {
     for (auto& packet : packets) {
       AvoxPacket view = {};
@@ -319,7 +343,45 @@ DecodeResult AndVDecoder::onPreDecoder() {
   yuvFormat.width = 0;
   yuvFormat.height = 0;
   yuvFormat.type = params.yuvType;
+  resetLaneCheck();
   bOpen = true;
+  return DecodeResult::success;
+}
+
+void AndVDecoder::resetLaneCheck() {
+  bLaneDead = false;
+  bLaneOut = false;
+  laneQueueFails = 0;
+  laneDequeErrs = 0;
+  laneRefused = 0;
+  laneStartMs = 0;
+  laneFedFrames = 0;
+  bLaneErrLogged = false;
+}
+
+// 车道死即 openFailed: VDecoderTask 只在这个返回值上做换道, 交不出去才杀轨。
+// 守卫只在首帧交付前生效(bLaneOut 后整体停用), 且只用两类判据:
+//   A. 硬错误 —— 入队返回非 AMEDIA_OK、或 dequeue 返回非"稍后重试"的媒体错误码。
+//      健康车道不会产生(拿到 index 就该能入队; 等空位只会得到 WOULD_BLOCK/-1)。
+//   B. 大数兜底 —— 从未出图 + 被拒满 kLaneRefusedMax 次 + 已过 kLaneRefusedMinMs。
+//      刻意不用"纯超时"判据: 首帧慢(高码率/高码流)与源侧饿等都会误伤
+DecodeResult AndVDecoder::checkLaneAlive() {
+  if (bLaneDead) {
+    return DecodeResult::openFailed;
+  }
+  if (bLaneOut) {
+    return DecodeResult::success;
+  }
+  if (laneStartMs == 0) {
+    laneStartMs = timeStampMS();
+  }
+  if (laneRefused >= kLaneRefusedMax &&
+      timeStampMS() - laneStartMs >= kLaneRefusedMinMs) {
+    LOGFLF(LogLevel::warn, "android video decoder lane refused x", laneRefused,
+           " fed:", laneFedFrames, ", give up lane");
+    bLaneDead = true;
+    return DecodeResult::openFailed;
+  }
   return DecodeResult::success;
 }
 
@@ -356,6 +418,11 @@ DecodeResult AndVDecoder::decode(const AvoxPacket& packet) {
   if (!bOpen) {
     return onPreDecoder();
   }
+  // 车道已判死: 直接让出(上层换道), 别再往 Released 态的 codec 里灌包
+  DecodeResult lane = checkLaneAlive();
+  if (lane != DecodeResult::success) {
+    return lane;
+  }
   // 1.0 当前包先入待喂队列再统一入队: input buffer 全占时直接丢包=缺slice
   // 宏块花屏(9/25 真机硬解定案), 未入队的包跨调用补喂, seek复位清空
   pendingPackets.emplace_back(packet.data.data,
@@ -367,8 +434,24 @@ DecodeResult AndVDecoder::decode(const AvoxPacket& packet) {
     if (bufidx < 0) {
       // 输入buffer都占着: 有可能是解码慢跟不上输入速度, 留到下轮补喂,
       // 先走后面的输出排空腾位
+      if (!bLaneErrLogged) {
+        bLaneErrLogged = true;
+        LOGFLF(LogLevel::info, "android video decoder dequeue input ret:",
+               (int64_t)bufidx);
+      }
+      // 返回值要判: 等空位的正常态是 WOULD_BLOCK/-1; 落进媒体错误码区间
+      // 说明 codec 已不在可用态(驱动报错后被框架判 Released, 不会自愈)
+      if (isDequeHardError(bufidx) && ++laneDequeErrs >= 2) {
+        LOGFLF(LogLevel::warn, "android video decoder dequeue input hard err:",
+               (int64_t)bufidx, ", give up lane");
+        bLaneDead = true;
+        return DecodeResult::openFailed;
+      }
+      ++laneRefused;
       break;
     }
+    laneRefused = 0;
+    laneDequeErrs = 0;
     size_t bufsize = 0;
     uint8_t* buf = AMediaCodec_getInputBuffer(mediaCodec, bufidx, &bufsize);
     auto& data = pendingPackets.front();
@@ -382,8 +465,23 @@ DecodeResult AndVDecoder::decode(const AvoxPacket& packet) {
     } else {
       memcpy(buf, data.data(), data.size());
       // 入队列 给到解码器
-      AMediaCodec_queueInputBuffer(mediaCodec, bufidx, 0, data.size(),
-                                   pendingPts.front() * 1000, 0);
+      media_status_t qs = AMediaCodec_queueInputBuffer(
+          mediaCodec, bufidx, 0, data.size(), pendingPts.front() * 1000, 0);
+      // 入队失败: 健康车道不会出现(index 刚从本 codec 拿到、尺寸已校验)。
+      // 连续两次即判死 —— 驱动不可恢复报错后 MediaCodec 进 Released 不自愈
+      if (qs != AMEDIA_OK) {
+        if (++laneQueueFails >= 2) {
+          LOGFLF(LogLevel::warn, "android video decoder queue failed:", qs,
+                 ", give up lane");
+          bLaneDead = true;
+          return DecodeResult::openFailed;
+        }
+        break;
+      }
+      laneQueueFails = 0;
+      if (laneFedFrames++ == 0) {
+        laneStartMs = timeStampMS();
+      }
       if (andPtsLog()) {
         fprintf(stderr, "APTS in=%lld\n", (long long)pendingPts.front());
       }
@@ -409,8 +507,25 @@ DecodeResult AndVDecoder::decode(const AvoxPacket& packet) {
       }
       if (bufidx == AMEDIACODEC_INFO_OUTPUT_BUFFERS_CHANGED) {
       }
+      // 输出侧硬错同样是"codec 不在可用态": 健康车道只给 -1/-2/-3 或正常索引
+      if (isDequeHardError(bufidx) && ++laneDequeErrs >= 2) {
+        LOGFLF(LogLevel::warn, "android video decoder dequeue output hard err:",
+               (int64_t)bufidx, ", give up lane");
+        bLaneDead = true;
+        return DecodeResult::openFailed;
+      }
       return DecodeResult::dataNoReady;
     }
+    laneDequeErrs = 0;
+    // 交付过输出: 守卫转为"零输出"以外的话题(停滞/拒绝判定不再适用)。
+    // 顺手记下首帧成绩(喂帧数/被拒次数/耗时) —— 守卫门限 kLaneRefusedMax 的
+    // 安全余量是否够, 靠这条实测(健康车道该远小于门限)
+    if (!bLaneOut) {
+      LOGFLF(LogLevel::info, "android video decoder first out, fed:",
+             laneFedFrames, " refused:", laneRefused, " ms:",
+             laneStartMs == 0 ? 0 : timeStampMS() - laneStartMs);
+    }
+    bLaneOut = true;
     // 输入的buffer已解析完毕，结束当前while循环
     if (bufidx == AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM) {
       return DecodeResult::success;
@@ -504,6 +619,13 @@ void AndVDecoder::flush() {
   pendingPackets.clear();
   pendingPts.clear();
   AMediaCodec_flush(mediaCodec);
+  // seek 复位后重开守卫窗口(不碰 bLaneDead): 驱动在复位后翻脸同族
+  bLaneOut = false;
+  laneQueueFails = 0;
+  laneDequeErrs = 0;
+  laneRefused = 0;
+  laneStartMs = 0;
+  laneFedFrames = 0;
 }
 
 void AndVDecoder::onClose() {
