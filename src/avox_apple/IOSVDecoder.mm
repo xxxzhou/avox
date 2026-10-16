@@ -710,9 +710,8 @@ void IOSVDecoder::onClose() {
 
 void IOSVDecoder::dispatchDecodedFrame(int64_t pts, CVImageBufferRef imageBuffer) {
   if (bMetalRender) {
-    // 同步 dispatch: 帧只在本次调用内被用; 长期持有的接收者(帧队列)自己
-    // CFRetain(videobuffer.cpp setGPUFrame)。解码器**只放自己这一份**, 因此
-    // 任何丢弃出口(未就绪/无观察者/seek 丢帧/收尾在飞)都不再漏面(§六486)。
+    // 同步 dispatch: 解码器只放自己那一份, 长期持有者(帧队列)自 CFRetain
+    // (videobuffer.cpp setGPUFrame) —— 于是任何丢弃出口都不再漏面(§六486)
     GpuFrame frame = {};
     frame.pts = pts;
     frame.dts = pts;

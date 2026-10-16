@@ -195,9 +195,8 @@ class AVOX_EXPORT AVSource : public BaseSource,
   // 容器探测窗口上限(字节, 0=库默认): 抽帧等只取一张图的场景压小它, 见
   // io.probeBytes
   int32_t probeBytes = 0;
-  // 段抓取时的顺流预读段数(默认 8, 见 IOParseFF kHttpSegSize): 抽帧只要一个
-  // 关键帧, 预读 8 段=开流就拉 2MB, 手机空口上是纯耗时 —— 抽帧置 0。
-  // io.segPrefetch
+  // 段抓取时的顺流预读段数(默认 8, 见 io.segPrefetch): 抽帧只要一个关键帧,
+  // 预读 8 段 = 开流即拉 2MB, 手机空口上是纯耗时 —— 抽帧置 0
   int32_t segPrefetch = 8;
   std::string rtspTransport = "tcp";
   // HTTP 连接复用(keep-alive), 默认关: NAS/云盘每条新连接建连 ~150ms(极空间

@@ -155,10 +155,8 @@ void VkIosImage::bindVK() {
   vkBindImageMemory(vkDevice, vkImage, memory, 0);
 }
 
-// 归还当前面与它映射的 Vk 资源(2026-10-16 泄漏定谳): 重建路径原先直接覆盖
-// 句柄 —— 旧 IOSurface 的 CFRef 与 VkImage/设备内存无人释放。缩图每任务重造
-// 2~4 次(见 VkOutputLayer::onInitVkBuffer 的「本轮重造」), iOS 真机实测占用
-// 每张图涨 ~30MB, 爬到 ~2GB 上限后整条缩图链停摆(§六486)。
+// 归还当前面与它映射的 Vk 资源: 重建路径原先直接覆盖句柄, 旧 IOSurface 的
+// CFRef 与 VkImage/设备内存无人释放, 缩图每任务重造 2~4 次即漏(§六486)
 void VkIosImage::releaseResources() {
   if (vkImage) {
     vkDestroyImage(vkDevice, vkImage, nullptr);
