@@ -30,12 +30,11 @@
 
 namespace avox {
 
-// http 段缓存参数: 段 256KB 整段抓取, 每次抓取顺流预读 kHttpSegPrefetchSegs
+// http 段缓存参数: 段 256KB 整段抓取, 每次抓取顺流预读 segPrefetch(io.segPrefetch)
 // 段(seek 后音视频读区常相距数十 MB, 逐段一请求会被每连接建连成本拖死);
 // 普通段预算 16MB LRU; 驱逐后 10s 内又被要的段视为交错锚点(音轨扎堆区)
 // 升级进 4MB 钉住区
 static constexpr int64_t kHttpSegSize = 256 * 1024;
-static constexpr int32_t kHttpSegPrefetchSegs = 8;
 static constexpr int64_t kHttpSegLruBytes = 16 * 1024 * 1024;
 static constexpr int64_t kHttpSegPinBytes = 4 * 1024 * 1024;
 static constexpr int64_t kHttpSegAnchorWinMs = 10 * 1000;
@@ -370,6 +369,8 @@ void IOParseFF::onSelectedSubtitle(int32_t localIndex) {
 // 重建探测字典并 avformat_open_input(fmtCtx 接管), 返回 ffmpeg 错误码(0=成功)。
 // FFmpeg9 起 find_stream_info 返回即释放各流探测态(sti->info), 同上下文二次调用踩空指针,
 int IOParseFF::reopenInput() {
+  // 开流分段账(2026-10-16 抽帧 665ms 排查): 见下方 open split 判据行
+  const auto tEntry = std::chrono::steady_clock::now();
 #ifndef _WIN32
   // Android TLS 证书链(1006 https 全灭第三层, 三段定谳): ①openssl 编译期
   // 默认路径是 Linux 形态(ENOENT); ②OpenSSL 3.x set_default_verify_paths
@@ -527,7 +528,7 @@ int IOParseFF::reopenInput() {
   // 时在 open_input 窗口内对 AVSEEK_SIZE 谎报文件大小=第一 mdat 末尾, mov 扫
   // 描在第一个 mdat 处早退(FFmpeg9 mov.c:9967, 该分支不设 next_root_atom 毒,
   // 样本索引照建); 读路径经 256KB 段缓存, 回跳落缓存零重连, 顺序前进每段才
-  // 一次请求, 且每抓取顺流预读 kHttpSegPrefetchSegs 段(音视频 seek 落点相距
+  // 一次请求, 且每抓取顺流预读 segPrefetch 段(音视频 seek 落点相距
   // 数十 MB 的双区读, 逐段一请求会被建连成本拖死)。open 返回即停谎报, seek
   // 只记账, 底层位置归段抓取管
   const AVInputFormat* probeFmt = nullptr;
@@ -551,11 +552,16 @@ int IOParseFF::reopenInput() {
         // 预扫直接读了底层通道: wrapper 从文件 0 起映射, 回卷供首读
         avio_seek(httpPb, 0, SEEK_SET);
         // 探测在谎报窗口外(wrapper 可 seek 正常回卷); 失败置空让 open_input
-        // 自行再探, 与原生路径同语义
+        // 自行再探, 与原生路径同语义。probeBytes(io.probeBytes) > 0 时压小
+        // 探测窗口: 抽帧只要识别容器头, 读满大块探测数据在手机空口上是纯耗时
         if (av_probe_input_buffer2(wrapPb.get(), &probeFmt, url.c_str(), temp,
-                                   0, 0) < 0) {
+                                   0, probeBytes > 0 ? (unsigned)probeBytes : 0) <
+            0) {
           probeFmt = nullptr;
         }
+        LOGFLF(LogLevel::info, "[metrics] open probe: probe_bytes:",
+               (int64_t)wrapPb->bytes_read,
+               " http_bytes:", (int64_t)avio_tell(httpPb));
         bLieSize = bMultiMdat;
       } else {
         // wrapper 建不起来: 拆自开通道, 原生 avformat_open_input 自开兜底
@@ -572,6 +578,7 @@ int IOParseFF::reopenInput() {
   if (wrapPb && bAviNoSeekOpen) {
     wrapPb->seekable = 0;
   }
+  const auto tBeforeAvOpen = std::chrono::steady_clock::now();
   int ret = avformat_open_input(&temp, url.c_str(), probeFmt, &dict);
   bLieSize = false;
   bAviNoSeekOpen = false;
@@ -585,6 +592,17 @@ int IOParseFF::reopenInput() {
     closeCustomAvio();
     return ret;
   }
+  // 开流分段账(2026-10-16 抽帧 665ms 排查): 判读 —— 字节小=往返次数受限
+  // (MP4 moov 在尾要多次 range 请求), 字节大=带宽受限; pre 段=自开通道+预扫。
+  LOGFLF(LogLevel::info, "[metrics] open split: pre_ms:",
+         std::chrono::duration_cast<std::chrono::milliseconds>(tBeforeAvOpen -
+                                                               tEntry)
+             .count(),
+         " avopen_ms:",
+         std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::steady_clock::now() - tBeforeAvOpen)
+             .count(),
+         " bytes_read:", temp->pb ? (int64_t)temp->pb->bytes_read : (int64_t)-1);
   fmtCtx = getUniquePtr(temp);
   return 0;
 }
@@ -973,9 +991,9 @@ IOParseFF::HttpSeg* IOParseFF::fetchHttpSegOnce(int64_t segStart,
          lst.size() > (size_t)(bAnchor ? 1 : 0)) {
     evictHttpSeg(bAnchor);
   }
-// 顺流预读: 基段抓满才继续(短段=文件尾); 预读段恒进 LRU, 只在 EOF 短段
-// (真文件尾)入库短段, 中途吃错的半截段一律丢弃即停——半截段入库会让后续
-  for (int32_t k = 1; k < kHttpSegPrefetchSegs && total >= kHttpSegSize; ++k) {
+  // 顺流预读: 基段抓满才继续(短段=文件尾); 预读段恒进 LRU, 中途吃错的半截段
+  // 一律丢弃即停(半截段入库会让后续读到假 EOF, 基段同规则)
+  for (int32_t k = 1; k < segPrefetch && total >= kHttpSegSize; ++k) {
     const int64_t next = segStart + (int64_t)k * kHttpSegSize;
     HttpSeg pre;
     pre.off = next;
@@ -1123,7 +1141,9 @@ void IOParseFF::onRunTask() {
          " find_stream_info_ms:",
          std::chrono::duration_cast<std::chrono::milliseconds>(
              std::chrono::steady_clock::now() - findInfoStart)
-             .count());
+             .count(),
+         " probe_bytes:",
+         fmtCtx->pb ? (int64_t)fmtCtx->pb->bytes_read : (int64_t)-1);
   skipAudioStreams.clear();  // 实例可能复用重开, 清掉上次的跳过流记录
   for (int32_t i = 0; i < fmtCtx->nb_streams; i++) {
     auto& st = fmtCtx->streams[i];

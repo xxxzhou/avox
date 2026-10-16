@@ -68,6 +68,15 @@ namespace avox {
 // 一次定位(BACKWARD 落目标前最近关键帧), 抽帧/续播等无需从 0 开始的场景用;
 // 仅索引容器(SeekType::normal)生效, 定位失败按从 0 起播降级
 #define AVOX_MP_IO_START_FRAC_DOUBLE "io.startFrac"
+// 容器探测窗口上限(字节, 默认 0=库默认): 只取一张图的场景(抽帧)不必按播放
+// 口径读大块探测数据 —— 手机 2.4GHz 空口实测读 256KB 要 170~520ms, 占一张
+// 缩图总耗时一半以上(2026-10-16 §六489 追: avformat_open_input 本身 0ms,
+// 钱全在预扫/探测的读量上)。识别容器头 mp4/avi/mkv 皆 < 32KB 即够。
+#define AVOX_MP_IO_PROBE_BYTES_INT "io.probeBytes"
+// 段抓取顺流预读段数(默认 8, 0=不预读): 播放 seek 后音视频读区常相距数十 MB,
+// 预读是省建连成本的关键; 抽帧只要一个关键帧, 预读等同白拉 —— 抽帧置 0
+// (开流一次拉 8+1 段 ≈ 2MB, 手机空口实测 ~600ms, 2026-10-16 §六489 追)
+#define AVOX_MP_IO_SEG_PREFETCH_INT "io.segPrefetch"
 // 转码录制器是否硬解(仅TranscodeRecorder消费)
 #define AVOX_REC_HARD_DECODE_BOOL "rec.hard.decode"
 // 转码录制器是否硬编(默认true; 设 false 走 FFmpeg 软编, windows软编文件更小, 仅TranscodeRecorder消费)

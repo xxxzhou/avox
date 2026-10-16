@@ -137,6 +137,12 @@ void AVSource::onOptionChange(const char* key, ArgType type) {
   } else if (equalsIgnoreCase(key, AVOX_MP_IO_START_FRAC_DOUBLE)) {
     startFrac = option->getDouble(key);
     LOGFLF(LogLevel::info, "option:", key, " change:", startFrac);
+  } else if (equalsIgnoreCase(key, AVOX_MP_IO_PROBE_BYTES_INT)) {
+    probeBytes = option->getInt(key);
+    LOGFLF(LogLevel::info, "option:", key, " change:", probeBytes);
+  } else if (equalsIgnoreCase(key, AVOX_MP_IO_SEG_PREFETCH_INT)) {
+    segPrefetch = option->getInt(key);
+    LOGFLF(LogLevel::info, "option:", key, " change:", segPrefetch);
   } else if (equalsIgnoreCase(key, AVOX_MP_IO_HTTP_HEADERS_STR)) {
     httpHeaders = option->getString(key);
     // 头里可能带鉴权信息(Access-Token 等), 不落日志值

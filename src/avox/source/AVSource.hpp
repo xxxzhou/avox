@@ -192,6 +192,13 @@ class AVOX_EXPORT AVSource : public BaseSource,
   int32_t trackReadyMs = 3000;
   // 起播定位比例(0~0.9, 0=关): 读循环前按 duration*frac 定位, 见 io.startFrac
   double startFrac = 0.0;
+  // 容器探测窗口上限(字节, 0=库默认): 抽帧等只取一张图的场景压小它, 见
+  // io.probeBytes
+  int32_t probeBytes = 0;
+  // 段抓取时的顺流预读段数(默认 8, 见 IOParseFF kHttpSegSize): 抽帧只要一个
+  // 关键帧, 预读 8 段=开流就拉 2MB, 手机空口上是纯耗时 —— 抽帧置 0。
+  // io.segPrefetch
+  int32_t segPrefetch = 8;
   std::string rtspTransport = "tcp";
   // HTTP 连接复用(keep-alive), 默认关: NAS/云盘每条新连接建连 ~150ms(极空间
   // 实测)本是段抓取的大头, 但实测部分 NAS(极空间 5005)keep-alive 下反而提前
