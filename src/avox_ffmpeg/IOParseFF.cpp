@@ -1042,8 +1042,14 @@ IOParseFF::HttpSeg* IOParseFF::fetchHttpSegOnce(int64_t segStart,
   }
   // 预读驱逐可能挤掉基段(预算临界时), 按 offset 收尾查找, 挤掉即视为失败
   const auto hit = (bAnchor ? segIdxPin : segIdxLru).find(segStart);
-  return hit != (bAnchor ? segIdxPin : segIdxLru).end() ? &*hit->second
-                                                        : nullptr;
+  if (hit != (bAnchor ? segIdxPin : segIdxLru).end()) {
+    ++segFetchN;
+    if (segFetchOffs.size() < 8) {
+      segFetchOffs.push_back(segStart);
+    }
+    return &*hit->second;
+  }
+  return nullptr;
 }
 
 void IOParseFF::evictHttpSeg(bool bPin) {
@@ -1530,6 +1536,19 @@ void IOParseFF::onClose() {
   // AVERROR_EXIT, 读循环回循环顶见 running()==false 退出, stopTask 立即 join 到
   bStopIo = true;
   stopTask();
+  // 取段账单(§六489 追二, join 后读才安全): 网络实拉 vs 解复用实耗, 差即白读;
+  // offs 是各次取段的 offset(前 8), 判读按需读还是把整文件顺读了一遍
+  {
+    std::string offs;
+    for (size_t i = 0; i < segFetchOffs.size(); ++i) {
+      offs += (i ? "," : "") + std::to_string(segFetchOffs[i] / 1024) + "K";
+    }
+    LOGFLF(LogLevel::info, "[metrics] seg bill: fetches:", segFetchN, " offs:[",
+           offs, "] net_bytes:", httpPb ? (int64_t)httpPb->bytes_read : -1,
+           " consumed_bytes:",
+           wrapPb ? (int64_t)wrapPb->bytes_read : -1,
+           " file_bytes:", httpPb ? (int64_t)avio_size(httpPb) : -1);
+  }
 }
 
 void IOParseFF::pause(bool bFlag) {

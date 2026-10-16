@@ -54,6 +54,11 @@ protected:
   int64_t segLruBytes = 0;
   int64_t segPinBytes = 0;
   int64_t wrapPos = 0;  // wrapper 逻辑读位(seek 只记账, 底层位置归段抓取管)
+  // 取段账(§六489 追二): 本任务取了几段、落在哪 —— 与 httpPb/wrapPb 两侧
+  // 字节游标一起, 算「网络实拉 vs 解复用实耗」的白读量。仅 IO 线程写,
+  // onClose(join 后)读
+  int32_t segFetchN = 0;
+  std::vector<int64_t> segFetchOffs;
   AVBSFContextPtr bsf = nullptr;
   std::vector<uint8_t> aacData;
   AudioDesc audioDesc = {};
