@@ -324,7 +324,9 @@ bool AMediaSource::laneTried(const std::string& name) const {
   return false;
 }
 
-// 候选次序与播放腿 VDecoderTask 同构, 只差一条: 另一极不分硬软都补进来 ——
+// 候选次序与播放腿 VDecoderTask 同构: 另一极默认名 → 注册表首项兜底 →
+// vulkan 备选**放最后**(Apple 无 vulkan 解码器注册; 其他平台由 setContext→
+// onVaild 探运行时, 不可用即 false 跳下一候选)。另一极不分硬软都补进来 ——
 // 设置软解而软解车道首帧前就死时也能上浮硬解(旧实现只单向硬→软)
 void AMediaSource::buildVideoLaneCands(VCodecId codecId, bool bHard) {
   vLaneCands.clear();
@@ -340,14 +342,14 @@ void AMediaSource::buildVideoLaneCands(VCodecId codecId, bool bHard) {
       }
     }
   };
+  add(getDefaultDecoderName(codecId, !bHard));
+  if (!decodes.empty()) {
+    add(decodes[0].desc.name.c_str());
+  }
   if (codecId == VCodecId::h264) {
     add(AVOX_FFVULKAN_H264_DECODER);
   } else if (codecId == VCodecId::h265) {
     add(AVOX_FFVULKAN_H265_DECODER);
-  }
-  add(getDefaultDecoderName(codecId, !bHard));
-  if (!decodes.empty()) {
-    add(decodes[0].desc.name.c_str());
   }
 }
 

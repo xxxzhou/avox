@@ -125,25 +125,27 @@ bool VDecoderTask::start(class VideoTrack* context) {
       break;
     }
   }
-  // 候选次序: 首选名 → vulkan 备选 → 硬解失败回退软解名 → 原行为兜底(找不到名字用首项)
+  // 候选次序: 首选名 → 另一极(硬解失败回退软解) → 原行为兜底(找不到名字用首项)
+  // → vulkan 备选**放最后**(Apple 无 vulkan 解码器注册; 其他平台 setContext→
+  //  onVaild 探运行时, 不可用即 false 跳下一候选, 放最后免白等一次探测)
   if (!trySelect(sName)) {
-    if (!(sVulkan && trySelect(sVulkan))) {
-      if (!(sFallback && trySelect(sFallback))) {
-        if (bHitName || decodes.empty() ||
-            !trySelect(decodes[0].desc.name.c_str())) {
-          pb.result = ActionResult::fail;
-          string_format(pb.msg, "codecId ", getVCodecName(codecId),
-                        " select ", sName, " not init");
-          pushPB<MPPBType::MediaAction>(mpPingback, pb);
-          return false;
-        }
+    if (!(sFallback && trySelect(sFallback))) {
+      const bool bTail = (bHitName || decodes.empty())
+                             ? false
+                             : trySelect(decodes[0].desc.name.c_str());
+      if (!bTail && !(sVulkan && trySelect(sVulkan))) {
+        pb.result = ActionResult::fail;
+        string_format(pb.msg, "codecId ", getVCodecName(codecId),
+                      " select ", sName, " not init");
+        pushPB<MPPBType::MediaAction>(mpPingback, pb);
+        return false;
       }
     }
   }
   auto& vDecode = decodes[sIndex];
-  // 缓存懒open失败的降级候选: 默认链按 vulkan→软解 排; 名字被覆盖时仅软解(sVulkan已置空)
+  // 缓存懒open失败的降级候选: 同样 vulkan 放最后; 名字被覆盖时仅软解(sVulkan已置空)
   openFallbacks.clear();
-  for (const char* sWant : {sVulkan, sFallback}) {
+  for (const char* sWant : {sFallback, sVulkan}) {
     if (!sWant) {
       continue;
     }
