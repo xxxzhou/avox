@@ -194,6 +194,8 @@ class AVOX_EXPORT AVSource : public BaseSource,
   int32_t timeoutMs = 8000;
   // Track ready等待超时，毫秒(只有1个Track时等第二个Track来的超时)
   int32_t trackReadyMs = 3000;
+  // 起播定位比例(0~0.9, 0=关): 读循环前按 duration*frac 定位, 见 io.startFrac
+  double startFrac = 0.0;
   std::string rtspTransport = "tcp";
   // HTTP 连接复用(keep-alive), 默认关: NAS/云盘每条新连接建连 ~150ms(极空间
   // 实测)本是段抓取的大头, 但实测部分 NAS(极空间 5005)keep-alive 下反而提前

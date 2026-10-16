@@ -64,6 +64,10 @@ namespace avox {
 // HTTP 连接复用(keep-alive): 0=关(默认, 每次 range 读新建连接, 半开故障自然隔离)
 // 1=开(seek 密集的旁路转录场景必开, 否则每次 seek 一次 TCP+TLS 握手)
 #define AVOX_MP_IO_HTTP_PERSISTENT_INT "io.http.persistent"
+// 起播定位比例(0~0.9, 默认 0=关): find_stream_info 后读循环前按 duration*frac
+// 一次定位(BACKWARD 落目标前最近关键帧), 抽帧/续播等无需从 0 开始的场景用;
+// 仅索引容器(SeekType::normal)生效, 定位失败按从 0 起播降级
+#define AVOX_MP_IO_START_FRAC_DOUBLE "io.startFrac"
 // 转码录制器是否硬解(仅TranscodeRecorder消费)
 #define AVOX_REC_HARD_DECODE_BOOL "rec.hard.decode"
 // 转码录制器是否硬编(默认true; 设 false 走 FFmpeg 软编, windows软编文件更小, 仅TranscodeRecorder消费)

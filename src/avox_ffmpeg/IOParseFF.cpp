@@ -1301,6 +1301,45 @@ void IOParseFF::onRunTask() {
   } else {
     sourceMode = AVSourceMode::downLive;
   }
+  // io.startFrac: 读循环前按 duration*frac 定位(BACKWARD 落目标前最近关键帧),
+  // 失败降级从 0 起播。仅索引可信容器; h26x 不武装 bWaitKeyframe 同 seekTo 口径。
+  const char* fmtName0 = fmtCtx->iformat ? fmtCtx->iformat->name : "";
+  const bool bStartLocateContainer =
+      strstr(fmtName0, "mp4") || strstr(fmtName0, "mov") ||
+      strstr(fmtName0, "matroska") || strstr(fmtName0, "webm") ||
+      strstr(fmtName0, "avi") || strcmp(fmtName0, "rm") == 0;
+  if (startFrac > 0.0 && bStartLocateContainer && fmtCtx->duration > 0 &&
+      stype == SeekType::normal && sourceMode != AVSourceMode::live) {
+    const double f = startFrac > 0.9 ? 0.9 : startFrac;
+    const int64_t targetUs = (int64_t)((double)fmtCtx->duration * f);
+    bool bLocated = false;
+    if (targetUs > 0) {
+      bLocated = avformat_seek_file(fmtCtx.get(), -1, INT64_MIN, targetUs,
+                                    INT64_MAX,
+                                    AVSEEK_FLAG_BACKWARD) >= 0;
+    }
+    if (bLocated) {
+      bool bH26x = false;
+      for (int32_t i = 0; i < fmtCtx->nb_streams && !bH26x; i++) {
+        auto* vs = fmtCtx->streams[i];
+        if (vs->disposition & AV_DISPOSITION_ATTACHED_PIC) {
+          continue;
+        }
+        const auto cid = vs->codecpar->codec_id;
+        if (vs->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
+            (cid == AV_CODEC_ID_H264 || cid == AV_CODEC_ID_HEVC)) {
+          bH26x = true;
+        }
+      }
+      bWaitKeyframe.store(!bH26x);
+      waitKeyframeDrops = 0;
+      LOGFLF(LogLevel::info, "io.startFrac located, frac:", f,
+             " target_ms:", targetUs / 1000);
+    } else {
+      LOGFLF(LogLevel::warn, "io.startFrac locate failed, start from 0, frac:",
+             startFrac);
+    }
+  }
   trackReady();
   bAACExtradata = false;
   // open前可能已设置bFastRead+speed>1，初始化完成后应用非阻塞读取

@@ -84,6 +84,7 @@ Recording: rtsp://192.168.1.100/live -> records/record_remux_20260706_143025.mp4
 | `io.rtsp.transport` | string / - | IO层 | RTSP底层传输 udp/tcp, 与播放器共用 |
 | `io.timeout.ms` | int / - | IO层 | IO超时, 与播放器共用 |
 | `io.trackready.ms` | int / - | IO层 | Track ready等待超时, 与播放器共用 |
+| `io.startFrac` | double / 0.0 | IO层 | 起播定位比例(0~0.9): 读循环前按 duration×frac 定位到目标前最近关键帧, 抽帧/续播免从 0 起播; 仅索引容器(mp4/mov/mkv/webm/avi/rm)生效, 失败降级从 0; 与播放器共用 |
 
 ## 实现要点
 
