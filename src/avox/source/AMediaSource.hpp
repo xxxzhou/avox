@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <vector>
 
 #include "../AvoxMuxer.h"
 #include "../audio/AudioDecoder.hpp"
@@ -39,6 +40,12 @@ class AMediaSource : public RawSource,
   //
   bool bOpenVDecoder = false;
   bool bOpenADecoder = false;
+  // 视频配置包缓存(首帧前换软解时重喂新车道, 只收 vconfig)
+  std::vector<PacketBufPtr> vConfigPackets;
+  // 车道兜底: 非软解车道首帧前 openFailed 换软解重试一次, 试过即不再试
+  bool bVLaneFellBack = false;
+  // 换道落点: 半 GOP 起解产缺参考坏帧(播放腿实测), 吸到下一个关键帧再喂
+  bool bVDropUntilIdr = false;
   // IO结束标记: IO回调线程写, 消费线程轮询读
   std::atomic<bool> bIoEnd{false};
   // seek 状态:IO 线程检查,编码线程写
@@ -117,6 +124,8 @@ class AMediaSource : public RawSource,
 
  private:
   bool initVideoDecoder(VCodecId codecId, const VideoDesc& srcDesc, bool bHard);
+  // 首帧前车道兜底: 换软解重建 + 重喂配置包(与播放腿 VDecoderTask 同构)
+  bool retryVideoDecoderSoft();
   // 带已试标记的选型递归内核: 硬软互备, 防止硬→软→硬 无限递归。
   bool initVideoDecoderTried(VCodecId codecId, const VideoDesc& srcDesc,
                              bool bHard, bool bTriedHard, bool bTriedSoft);

@@ -68,6 +68,9 @@ bool AMediaSource::open() {
     ioSource->linkOption(getLink());
   }
   bOpenVDecoder = false;
+  bVLaneFellBack = false;
+  bVDropUntilIdr = false;
+  vConfigPackets.clear();
   bIoEnd = false;
   ioSource->setObserver(this);
   // 是否禁用音频与视频(直接复用 BaseSource 的 bDisableVideo/bDisableAudio)
@@ -239,12 +242,23 @@ void AMediaSource::onPacket(const AvoxPacket& packet) {
         break;
       }
       if (videoDecoder) {
+        // 换道落点: config 照喂, 其余非关键帧一律丢, 到 IDR 才恢复喂(见兜底函数)
+        if (bVDropUntilIdr && packet.packtype != (int32_t)PackType::vconfig &&
+            packet.frameType != 1) {
+          break;
+        }
         // PacketBuf buf(packet);
         PacketBufPtr pkt = std::make_shared<PacketBuf>(packet);
         // uint8_t nalu = getNalUnit(VCodecId::h264, packet);
         // log(LogLevel::info, "nalu:", (int32_t)nalu, " size:", packet.data.size);
         if (packet.packtype == (int32_t)PackType::vconfig) {
           videoDecoder->pushConfig(*pkt);
+          if (vConfigPackets.size() < 8) {
+            vConfigPackets.push_back(pkt);  // 首帧前换道要重喂给新车道
+          }
+        } else if (bVDropUntilIdr) {
+          bVDropUntilIdr = false;
+          LOGFLF(LogLevel::info, "fallback landing snap to idr, pts:", packet.pts);
         }
         DecodeResult result = videoDecoder->decoder(pkt);
         if (result == DecodeResult::success && !bOpenVDecoder) {
@@ -252,11 +266,20 @@ void AMediaSource::onPacket(const AvoxPacket& packet) {
           videoDecoder->dispatch(&IVideoDecoderOb::onVideoDesc);
           bOpenVDecoder = true;
         } else if (result == DecodeResult::openFailed) {
+          // 非软解车道首帧前即拒(如 Apple VT 无 h264 10bit 输出): 先换软解
+          // 重试一次, 换不动才判死 —— 播放腿 VDecoderTask 同款兜底
+          if (!bOpenVDecoder && !bVLaneFellBack &&
+              videoDecoder->getCodecTh() != VCodecTh::cpu &&
+              retryVideoDecoderSoft()) {
+            break;
+          }
 // 车道从没出过帧且连续喂包失败(FFDecoder 判据)= 解码车道死(如无软解
 // 构建下的 AV1: 每包 ENOSYS)。停喂并按源错误上报 —— 否则整片喂完,
           LOGFLF(LogLevel::error, "video decode lane dead, stop feeding:", uri);
-          videoDecoder->removeObserver(this);
-          videoDecoder.reset();
+          if (videoDecoder) {  // 兜底换道失败时已被置空
+            videoDecoder->removeObserver(this);
+            videoDecoder.reset();
+          }
           onError(AVError::decodeLaneDead, "video decode lane dead");
         }
       }
@@ -289,6 +312,38 @@ bool AMediaSource::initVideoDecoder(VCodecId codecId, const VideoDesc& srcDesc,
                                     bool bHard) {
   return initVideoDecoderTried(codecId, srcDesc, bHard, /*bTriedHard=*/false,
                                /*bTriedSoft=*/false);
+}
+
+// 首帧前车道兜底(与播放腿 VDecoderTask 同构): 硬解建得起来但第一包就拒时
+// 换软解重建、重喂配置包、吸到下一个关键帧; 只试一次, 失败交调用方判车道死
+bool AMediaSource::retryVideoDecoderSoft() {
+  if (!ioSource) {
+    return false;
+  }
+  const auto& vTracks = ioSource->getVideoTracks();
+  if (vTracks.empty()) {
+    return false;
+  }
+  bVLaneFellBack = true;
+  if (videoDecoder) {
+    videoDecoder->removeObserver(this);
+    videoDecoder.reset();
+  }
+  const auto& vTrack = vTracks[0];
+  if (!initVideoDecoderTried(vTrack.codecId, vTrack.desc, /*bHard=*/false,
+                             /*bTriedHard=*/true, /*bTriedSoft=*/false)) {
+    LOGFLF(LogLevel::warn, "video lane soft fallback init failed, lane dead");
+    return false;
+  }
+  for (auto& cp : vConfigPackets) {
+    videoDecoder->pushConfig(*cp);
+  }
+  vConfigPackets.clear();
+  bOpenVDecoder = false;
+  bVDropUntilIdr = true;
+  LOGFLF(LogLevel::warn, "video decode lane fallback to soft, codec:",
+         (int32_t)vTrack.codecId);
+  return true;
 }
 
 // 解码器选型的候选链(与播放器腿 VDecoderTask 同构): 先主路, 失败逐级下沉/上浮。
