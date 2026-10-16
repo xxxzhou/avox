@@ -14,6 +14,7 @@ namespace avox {
   XX(g711u, 2, "PCMU")         \
   XX(opus, 3, "opus")          \
   XX(pcms16le, 4, "pcmS16LE")  \
+  XX(flac, 5, "flac")          \
   XX(pcms24le, 6, "pcmS24LE")  \
   XX(mp3, 7, "mp3")            \
   XX(ac3, 8, "ac3")            \
@@ -28,7 +29,13 @@ namespace avox {
   XX(dts, 17, "dts")           \
   XX(eac3, 18, "eac3")         \
   XX(truehd, 19, "truehd")     \
-  XX(mlp, 20, "mlp")
+  XX(mlp, 20, "mlp")           \
+  XX(alac, 21, "alac")         \
+  XX(ape, 22, "ape")           \
+  XX(pcmbluray, 23, "pcmBluray") \
+  XX(pcmdvd, 24, "pcmDvd")     \
+  XX(aaclatm, 25, "aacLatm")   \
+  XX(mp2, 26, "mp2")
 
 // 视频编解码器类型(值导出给引擎插件, 只增不改不删)
 #define AVOX_MAP_VCODEC(XX)  \

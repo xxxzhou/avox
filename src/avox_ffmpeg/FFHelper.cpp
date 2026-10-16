@@ -191,6 +191,10 @@ ACodecId ffACodec(AVCodecID codecId) {
       return ACodecId::opus;
     case AV_CODEC_ID_PCM_S16LE:
       return ACodecId::pcms16le;
+    case AV_CODEC_ID_FLAC:
+      // 无损音轨(mkv/裸flac)常见于 BD 压制; 解码器一直在库里, 缺的只是这条映射,
+      // 漏了会在 IOParseFF 被判 unsupported 直接丢轨(全程无声)
+      return ACodecId::flac;
     case AV_CODEC_ID_PCM_S24LE:
       return ACodecId::pcms24le;
     case AV_CODEC_ID_MP3:
@@ -223,6 +227,28 @@ ACodecId ffACodec(AVCodecID codecId) {
       // MLP/TrueHD是两个真实编码(sync词不同, 解码车道不同), 枚举分开各表;
       // 折成同枚举会让解码器注册表一键双车道, 选错即全程0输出(TrueHD实证)
       return ACodecId::mlp;
+    // 以下 6 个: 2026-09 起已在四平台 ffmpeg 构建里编入(--enable-decoder,
+    // 四平台列表一致), 但本表一直没收 ⇒ 识别不出即被 IOParseFF 当
+    // unsupported 丢轨(症状: 整轨无声、无报错)。缺的只是这两条映射。
+    // 值一律追加到末尾(21~26), 不动任何既有值(头注释: 只增不改不删)。
+    case AV_CODEC_ID_ALAC:
+      // Apple 无损(m4a/MVHD): Apple 生态默认音频格式
+      return ACodecId::alac;
+    case AV_CODEC_ID_APE:
+      // Monkey's Audio: 无损音乐常见格式(ape demuxer 已在)
+      return ACodecId::ape;
+    case AV_CODEC_ID_PCM_BLURAY:
+      // 蓝光原盘 LPCM(24bit/96~192k): 与 truehd/mlp 同族, 走 mpegts demuxer
+      return ACodecId::pcmbluray;
+    case AV_CODEC_ID_PCM_DVD:
+      // DVD LPCM(20bit/48k/96k): VOB(mpegps) 与 mpegts 都会给
+      return ACodecId::pcmdvd;
+    case AV_CODEC_ID_AAC_LATM:
+      // 广播/电视录制 AAC(ADTS/LATM): 与 aac 是两条解析路径, 不折枚举
+      return ACodecId::aaclatm;
+    case AV_CODEC_ID_MP2:
+      // MPEG-1 Layer II: 老电视录制/DVB/广播录音
+      return ACodecId::mp2;
     default:
       return ACodecId::none;
   }
@@ -304,6 +330,8 @@ AVCodecID getFFCodecId(ACodecId codecId) {
       return AV_CODEC_ID_OPUS;
     case ACodecId::pcms16le:
       return AV_CODEC_ID_PCM_S16LE;
+    case ACodecId::flac:
+      return AV_CODEC_ID_FLAC;
     case ACodecId::pcms24le:
       return AV_CODEC_ID_PCM_S24LE;
     case ACodecId::mp3:
@@ -334,6 +362,18 @@ AVCodecID getFFCodecId(ACodecId codecId) {
       return AV_CODEC_ID_TRUEHD;
     case ACodecId::mlp:
       return AV_CODEC_ID_MLP;
+    case ACodecId::alac:
+      return AV_CODEC_ID_ALAC;
+    case ACodecId::ape:
+      return AV_CODEC_ID_APE;
+    case ACodecId::pcmbluray:
+      return AV_CODEC_ID_PCM_BLURAY;
+    case ACodecId::pcmdvd:
+      return AV_CODEC_ID_PCM_DVD;
+    case ACodecId::aaclatm:
+      return AV_CODEC_ID_AAC_LATM;
+    case ACodecId::mp2:
+      return AV_CODEC_ID_MP2;
     default:
       return AV_CODEC_ID_NONE;
   }

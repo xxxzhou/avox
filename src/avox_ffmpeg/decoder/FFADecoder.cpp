@@ -24,7 +24,11 @@ namespace {
 bool needExtradata(AVCodecID codecId) {
   return codecId == AV_CODEC_ID_WMAV1 || codecId == AV_CODEC_ID_WMAV2 ||
          codecId == AV_CODEC_ID_WMAPRO || codecId == AV_CODEC_ID_COOK ||
-         codecId == AV_CODEC_ID_ATRAC3;
+         codecId == AV_CODEC_ID_ATRAC3 ||
+         // alac/ape: magic cookie(24B ALACExtraConfig / APE头)是初始化必需,
+         // 缺了 avcodec_open2 直接失败(ffmpeg 报 "extradata is too small"),
+         // 与 wma/cook 同族。flac 不在此列 —— 它帧头自带参数, 无需配置帧。
+         codecId == AV_CODEC_ID_ALAC || codecId == AV_CODEC_ID_APE;
 }
 
 }  // namespace
