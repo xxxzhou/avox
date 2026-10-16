@@ -1296,11 +1296,13 @@ void IOParseFF::onRunTask() {
   }
   // io.startFrac: 读循环前按 duration*frac 定位(BACKWARD 落目标前最近关键帧),
   // 失败降级从 0 起播。仅索引可信容器; h26x 不武装 bWaitKeyframe 同 seekTo 口径。
+  // asf(WMV) 2026-10-16 补入: 漏了它 ⇒ 缩图恒抓第一帧, 片头黑幕的 WMV 全出黑图。
   const char* fmtName0 = fmtCtx->iformat ? fmtCtx->iformat->name : "";
   const bool bStartLocateContainer =
       strstr(fmtName0, "mp4") || strstr(fmtName0, "mov") ||
       strstr(fmtName0, "matroska") || strstr(fmtName0, "webm") ||
-      strstr(fmtName0, "avi") || strcmp(fmtName0, "rm") == 0;
+      strstr(fmtName0, "avi") || strstr(fmtName0, "asf") ||
+      strcmp(fmtName0, "rm") == 0;
   if (startFrac > 0.0 && bStartLocateContainer && fmtCtx->duration > 0 &&
       stype == SeekType::normal && sourceMode != AVSourceMode::live) {
     const double f = startFrac > 0.9 ? 0.9 : startFrac;
