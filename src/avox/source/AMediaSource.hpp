@@ -40,10 +40,12 @@ class AMediaSource : public RawSource,
   //
   bool bOpenVDecoder = false;
   bool bOpenADecoder = false;
-  // 视频配置包缓存(首帧前换软解时重喂新车道, 只收 vconfig)
+  // 视频配置包缓存(首帧前换道时重喂新车道, 只收 vconfig)
   std::vector<PacketBufPtr> vConfigPackets;
-  // 车道兜底: 非软解车道首帧前 openFailed 换软解重试一次, 试过即不再试
-  bool bVLaneFellBack = false;
+  // 首帧前降级的候选车道(按序待试)与已试车道名, 与播放腿 VDecoderTask 的
+  // openFallbacks 同构: 首选落谁由 bHard 定, 但运行期两侧都能互相兜
+  std::vector<std::string> vLaneCands;
+  std::vector<std::string> vLaneTried;
   // 换道落点: 半 GOP 起解产缺参考坏帧(播放腿实测), 吸到下一个关键帧再喂
   bool bVDropUntilIdr = false;
   // IO结束标记: IO回调线程写, 消费线程轮询读
@@ -124,8 +126,13 @@ class AMediaSource : public RawSource,
 
  private:
   bool initVideoDecoder(VCodecId codecId, const VideoDesc& srcDesc, bool bHard);
-  // 首帧前车道兜底: 换软解重建 + 重喂配置包(与播放腿 VDecoderTask 同构)
-  bool retryVideoDecoderSoft();
+  // 首帧前车道降级: 取候选表下一个未试过的车道重建 + 重喂配置包
+  bool downgradeVideoLane();
+  // 按名建一条车道(建不出/不支持返回 false); 只建车道, 不选型不递归
+  bool trySelectVideoLane(const std::string& name);
+  // 候选次序(与播放腿同构): vulkan备选 → 另一极默认名 → 注册表首项兜底
+  void buildVideoLaneCands(VCodecId codecId, bool bHard);
+  bool laneTried(const std::string& name) const;
   // 带已试标记的选型递归内核: 硬软互备, 防止硬→软→硬 无限递归。
   bool initVideoDecoderTried(VCodecId codecId, const VideoDesc& srcDesc,
                              bool bHard, bool bTriedHard, bool bTriedSoft);

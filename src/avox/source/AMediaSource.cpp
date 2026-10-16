@@ -68,9 +68,10 @@ bool AMediaSource::open() {
     ioSource->linkOption(getLink());
   }
   bOpenVDecoder = false;
-  bVLaneFellBack = false;
   bVDropUntilIdr = false;
   vConfigPackets.clear();
+  vLaneCands.clear();
+  vLaneTried.clear();
   bIoEnd = false;
   ioSource->setObserver(this);
   // 是否禁用音频与视频(直接复用 BaseSource 的 bDisableVideo/bDisableAudio)
@@ -266,11 +267,9 @@ void AMediaSource::onPacket(const AvoxPacket& packet) {
           videoDecoder->dispatch(&IVideoDecoderOb::onVideoDesc);
           bOpenVDecoder = true;
         } else if (result == DecodeResult::openFailed) {
-          // 非软解车道首帧前即拒(如 Apple VT 无 h264 10bit 输出): 先换软解
-          // 重试一次, 换不动才判死 —— 播放腿 VDecoderTask 同款兜底
-          if (!bOpenVDecoder && !bVLaneFellBack &&
-              videoDecoder->getCodecTh() != VCodecTh::cpu &&
-              retryVideoDecoderSoft()) {
+          // 首帧前车道被拒(如 Apple VT 无 h264 10bit 输出): 按候选表降级重试
+          // (与播放腿 VDecoderTask 同构), 候选走完才判车道死
+          if (!bOpenVDecoder && downgradeVideoLane()) {
             break;
           }
 // 车道从没出过帧且连续喂包失败(FFDecoder 判据)= 解码车道死(如无软解
@@ -310,13 +309,49 @@ void AMediaSource::onPacket(const AvoxPacket& packet) {
 
 bool AMediaSource::initVideoDecoder(VCodecId codecId, const VideoDesc& srcDesc,
                                     bool bHard) {
+  vLaneTried.clear();
+  buildVideoLaneCands(codecId, bHard);
   return initVideoDecoderTried(codecId, srcDesc, bHard, /*bTriedHard=*/false,
                                /*bTriedSoft=*/false);
 }
 
-// 首帧前车道兜底(与播放腿 VDecoderTask 同构): 硬解建得起来但第一包就拒时
-// 换软解重建、重喂配置包、吸到下一个关键帧; 只试一次, 失败交调用方判车道死
-bool AMediaSource::retryVideoDecoderSoft() {
+bool AMediaSource::laneTried(const std::string& name) const {
+  for (const auto& n : vLaneTried) {
+    if (n == name) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// 候选次序与播放腿 VDecoderTask 同构, 只差一条: 另一极不分硬软都补进来 ——
+// 设置软解而软解车道首帧前就死时也能上浮硬解(旧实现只单向硬→软)
+void AMediaSource::buildVideoLaneCands(VCodecId codecId, bool bHard) {
+  vLaneCands.clear();
+  const auto& decodes = AvoxManager::Get().vDecoders.initFuncs(codecId);
+  const auto add = [&](const char* n) {
+    if (!n || !*n) {
+      return;
+    }
+    for (const auto& d : decodes) {
+      if (d.desc.name == n) {
+        vLaneCands.push_back(n);
+        return;
+      }
+    }
+  };
+  if (codecId == VCodecId::h264) {
+    add(AVOX_FFVULKAN_H264_DECODER);
+  } else if (codecId == VCodecId::h265) {
+    add(AVOX_FFVULKAN_H265_DECODER);
+  }
+  add(getDefaultDecoderName(codecId, !bHard));
+  if (!decodes.empty()) {
+    add(decodes[0].desc.name.c_str());
+  }
+}
+
+bool AMediaSource::trySelectVideoLane(const std::string& name) {
   if (!ioSource) {
     return false;
   }
@@ -324,26 +359,55 @@ bool AMediaSource::retryVideoDecoderSoft() {
   if (vTracks.empty()) {
     return false;
   }
-  bVLaneFellBack = true;
-  if (videoDecoder) {
-    videoDecoder->removeObserver(this);
-    videoDecoder.reset();
-  }
   const auto& vTrack = vTracks[0];
-  if (!initVideoDecoderTried(vTrack.codecId, vTrack.desc, /*bHard=*/false,
-                             /*bTriedHard=*/true, /*bTriedSoft=*/false)) {
-    LOGFLF(LogLevel::warn, "video lane soft fallback init failed, lane dead");
-    return false;
+  const auto& decodes = AvoxManager::Get().vDecoders.initFuncs(vTrack.codecId);
+  for (const auto& d : decodes) {
+    if (d.desc.name != name) {
+      continue;
+    }
+    vLaneTried.push_back(name);
+    auto cand = std::unique_ptr<VideoDecoder>(d.initFunc());
+    if (!cand) {
+      return false;
+    }
+    cand->setObserver(this);
+    if (!cand->setContext(d.desc, vTrack.desc)) {
+      LOGFLF(LogLevel::warn, "lane set desc failed:", name);
+      return false;
+    }
+    videoDecoder = std::move(cand);
+    LOGFLF(LogLevel::info, "lane selected:", name);
+    return true;
   }
-  for (auto& cp : vConfigPackets) {
-    videoDecoder->pushConfig(*cp);
+  return false;
+}
+
+// 首帧前车道降级(与播放腿 VDecoderTask 的换道同构): 候选表逐个试, 建不出/
+// 不支持跳下一个; 换成的车道重喂配置包并吸到下一个关键帧; 表走完才判车道死
+bool AMediaSource::downgradeVideoLane() {
+  while (!vLaneCands.empty()) {
+    const std::string name = vLaneCands.front();
+    vLaneCands.erase(vLaneCands.begin());
+    if (laneTried(name)) {
+      continue;  // 同一条车道不重试(含正在用的那条)
+    }
+    if (videoDecoder) {
+      videoDecoder->removeObserver(this);
+      videoDecoder.reset();
+    }
+    if (!trySelectVideoLane(name)) {
+      continue;
+    }
+    for (auto& cp : vConfigPackets) {
+      videoDecoder->pushConfig(*cp);
+    }
+    vConfigPackets.clear();
+    bOpenVDecoder = false;
+    bVDropUntilIdr = true;
+    LOGFLF(LogLevel::warn, "video lane downgrade to:", name);
+    return true;
   }
-  vConfigPackets.clear();
-  bOpenVDecoder = false;
-  bVDropUntilIdr = true;
-  LOGFLF(LogLevel::warn, "video decode lane fallback to soft, codec:",
-         (int32_t)vTrack.codecId);
-  return true;
+  return false;
 }
 
 // 解码器选型的候选链(与播放器腿 VDecoderTask 同构): 先主路, 失败逐级下沉/上浮。
@@ -431,6 +495,7 @@ bool AMediaSource::initVideoDecoderTried(VCodecId codecId,
     return false;
   }
   videoDecoder->setObserver(this);
+  vLaneTried.push_back(vDecode.desc.name);  // 运行期降级据此跳过已试车道
   if (!videoDecoder->setContext(vDecode.desc, srcDesc)) {
     LOGFLF(LogLevel::warn, "video codec:", codecId, " set desc:", srcDesc,
            " failed");
@@ -445,6 +510,7 @@ bool AMediaSource::initVideoDecoderTried(VCodecId codecId,
           videoDecoder = std::unique_ptr<VideoDecoder>(decodes[i].initFunc());
           if (videoDecoder) {
             videoDecoder->setObserver(this);
+            vLaneTried.push_back(decodes[i].desc.name);
             if (videoDecoder->setContext(decodes[i].desc, srcDesc)) {
               LOGFLF(LogLevel::info, "create video decode success (vulkan)");
               return true;
