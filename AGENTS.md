@@ -116,6 +116,7 @@ SWIG 绑定: `swig/csharp/`, `swig/nodejs/`, `swig/python/` (Java 绑定构建�
 - **Godot Android 打包:** 全流程见 [platform/godot/docs/新机器Android打包.md](platform/godot/docs/新机器Android打包.md)，一键脚本 `platform/godot/build_android_godot.sh`
 - **VSCode 卡顿:** 工作区缓存按路径累积所致，解法见 [doc/tools/VSCode卡顿排查.md](doc/tools/VSCode卡顿排查.md)，别重拉 clone 或改名
 - **子模块重置:** `git -C 3rdparty/sherpa-onnx reset --hard HEAD`
+- **公开接口加虚函数:** 往 `IXxx` **中间**插虚函数会移动既有槽位，已编译的宿主/探针按旧槽位调用会**静默**落到邻近函数（`setDownmix` 曾插在 `openTap` 前 → 音频 tap 断流零字节；`setToneMap`/`screenShot` 同款）。新增虚函数请**追加到末尾**（末尾追加不影响旧二进制）；若挪动了既有虚函数的位置，必须重建宿主与 playtest runner
 - **GLSL:** 改 `glsl/source/*.comp` 后**必须手动重编** `python glsl/compileglsl.py`（需 PATH 有 glslangValidator；`cmake --build`/build_windows.py 都不含此步），产物自动复制到 `install/AMD64/{Debug,Release}/assets/glsl/`。只改 .comp 不重编则运行时仍加载旧 spv
 
 ## 外部依赖库路径

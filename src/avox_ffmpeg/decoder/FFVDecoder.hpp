@@ -20,6 +20,8 @@ public:
   virtual DecodeResult decode(const AvoxPacket & packet) override;
   // flush
   virtual void flush() override;
+  // 输入侧已排空(EOF): 排空解码器, 放空内部扣住的尾帧
+  virtual void onInputEnd() override;
   virtual void onClose() override;
   // IOptionOb(OptionLink): 选项推送缓存(含linkOption时存量重放)
   virtual void onOptionChange(const char* key, ArgType option) override;

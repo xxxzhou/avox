@@ -28,6 +28,9 @@ protected:
   int32_t recvFailStreak = 0;
   // 是否成功解出过帧
   bool bDecodedEver = false;
+  // 是否已排空到 EOF。FFmpeg 的 draining 是终态: 之后喂进来的实包(尾包迟到/
+  // 直播续传)会被 avcodec_send_packet 判 EOF 丢掉, 故 decodePacket 入口先 flush 解开
+  bool bInputDrained = false;
   // 收/发失败判open失败的连续次数阈值, 留余量容忍偶发错误
   static constexpr int32_t kSendFailOpenFailLimit = 3;
 
@@ -40,6 +43,9 @@ public:
   // 使用FFmpeg解码原始包
   DecodeResult decodePacket(const AvoxPacket &packet);
   void flushContext();
+  // 流尾排空: 送 NULL 包让解码器把内部扣住的帧吐完(帧级多线程与重排都有延迟),
+  // 否则流尾最后若干帧永不显示; 已排空过则直接返回
+  void drainInput();
 };
 
 }

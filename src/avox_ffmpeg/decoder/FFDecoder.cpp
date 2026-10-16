@@ -13,6 +13,12 @@ DecodeResult FFDecoder::decodePacket(const AvoxPacket &packet) {
   if (!codecCtx) {
     return DecodeResult::openFailed;
   }
+  // 排空过又有实包进来(尾包迟到/直播续传): draining 是终态, 不先解开的话
+  // 下面每个包都会被 avcodec_send_packet 判成 EOF 丢掉
+  if (bInputDrained) {
+    bInputDrained = false;
+    flushContext();
+  }
   avPacket->data = packet.data.data;
   avPacket->size = packet.data.size;
   avPacket->pts = packet.pts;
@@ -79,12 +85,43 @@ DecodeResult FFDecoder::decodePacket(const AvoxPacket &packet) {
 }
 
 void FFDecoder::flushContext() {
+  // 排空状态一并复位(flush 会清掉 FFmpeg 内部的 draining)
+  bInputDrained = false;
   // 未open的ctx(alloc到open2之间/open2失败残留)internal为空, FFmpeg8的
   // avcodec_flush_buffers无守卫直接解引用必崩(9/25 16:15真机crash)
   if (!codecCtx || !bCtxOpened) {
     return;
   }
   avcodec_flush_buffers(codecCtx.get());
+}
+
+void FFDecoder::drainInput() {
+  if (!codecCtx || !bCtxOpened || bInputDrained) {
+    return;
+  }
+  // NULL 包 = 告诉解码器输入到此为止, 把内部扣住的帧解完
+  int32_t ret = avcodec_send_packet(codecCtx.get(), nullptr);
+  if (ret < 0 && ret != AVERROR_EOF && ret != AVERROR(EAGAIN)) {
+    AVOX_FFMEPG_LOG(ret, "avcodec_send_packet(NULL) failed");
+    return;
+  }
+  while (true) {
+    ret = avcodec_receive_frame(codecCtx.get(), avFrame.get());
+    if (ret < 0) {
+      // 吐到 EOF 才算排空完(帧级多线程要几轮才吐空, EAGAIN 时上层下一轮会再调);
+      // 别把它当车道故障——此时包早喂完了, 失败计数没有意义
+      if (ret == AVERROR_EOF) {
+        bInputDrained = true;
+      } else if (ret != AVERROR(EAGAIN)) {
+        AVOX_FFMEPG_LOG(ret, "avcodec_receive_frame failed on drain");
+      }
+      break;
+    }
+    onFrame(avFrame.get(), false);
+    preVPts = avFrame->pts;
+    av_frame_unref(avFrame.get());
+    bDecodedEver = true;
+  }
 }
 
 }

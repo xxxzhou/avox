@@ -120,12 +120,13 @@ class IAudioRender {
   virtual float getVolume() = 0;
   virtual void enableAec(const AudioAec& aec) {}
   virtual void disableAec() {}
-  // 下混系数/对白增强: 设备道数少于源道数时生效, 默认 none=不干预; 可热切
-  virtual void setDownmix(const DownmixParamet& downmix) {}
   // 打开音频 tap:outDesc 为空(sampleRate=0)时跟随源格式不重采样
   // frameMs 为切片时长。默认关闭,open 后才开始备份与回调
   virtual void openTap(const AudioDesc& outDesc, int32_t frameMs) {}
   virtual void closeTap() {}
+  // 下混系数/对白增强: 设备道数少于源道数时生效, 默认 none=不干预; 可热切。
+  // 新增虚函数一律追加在末尾: 插在中间会移动既有槽位, 旧二进制静默调错
+  virtual void setDownmix(const DownmixParamet& downmix) {}
 };
 
 // ============== 语音识别 ==============

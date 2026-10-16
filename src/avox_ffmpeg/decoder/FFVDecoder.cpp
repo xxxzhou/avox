@@ -97,7 +97,7 @@ DecodeResult FFVDecoder::onPreDecoder() {
         (uint8_t*)av_malloc(extradata.size() + AV_INPUT_BUFFER_PADDING_SIZE);
     memcpy(codecCtx->extradata, extradata.data(), extradata.size());
     // 别的一些设置
-    codecCtx->thread_count = 1;
+    codecCtx->thread_count = 0;
   } else if (!configPackets.empty()) {
     // VC-1/WMV3/RV30/RV40等: 无nalu结构, 容器extradata原样透传
     // (ASF的sequence header/RM的codec数据, 解码器初始化必需)
@@ -233,6 +233,11 @@ void FFVDecoder::flush() {
   // flush 不清 ffmpeg 参数集, 但脏标记语义是"解码器已丢依赖", 一并复位避免跨段误补发
   needSps = false;
   needPps = false;
+}
+
+void FFVDecoder::onInputEnd() {
+  // 流尾: 排空解码器, 把重排与帧级多线程扣住的最后若干帧吐出来
+  drainInput();
 }
 
 void FFVDecoder::onClose() {
