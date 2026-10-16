@@ -12,14 +12,8 @@
 namespace avox {
 
 // 视频元数据提取器(解码器无关)
-//
 // 从码流里抠 HDR 静态元数据(SEI 137/144)与 Dolby Vision RPU(NAL 62 与容器 DOVI
 // conf), 解析成 HdrMeta / DoviMeta 后交给宿主回调。**与用哪条解码腿无关**: 硬解
-// (D3D11VA / VideoToolbox / MediaCodec / Vulkan) 不解码流内的这些 NAL, FFmpeg 也
-// 不会给硬解帧挂 DOVI/HDR side data, 所以必须由本类在喂包时旁路扫描。
-//
-// 用法: VideoDecoder 持有一个实例, 在 decode() 前调 extract(packet), 命中就派发
-// onHdrMeta / onDoviMeta。
 class MetaExtractor {
  public:
   // 元数据回调(由 VideoDecoder 转发到 IVideoDecoderOb)

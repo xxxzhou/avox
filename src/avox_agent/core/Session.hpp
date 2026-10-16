@@ -40,10 +40,8 @@ class SessionObserver {
 };
 
 // 判定一个事件载荷是否可上模型可见表面。
-//
 // append 的两个重载靠它做编译期分流: 可上表面的载荷必须带 SurfaceIntent, 不可上表面的
 // 载荷则连带的机会都没有。这是 dsh types.ts 里那句「非 surface 事件永不携带 surface
-// 元数据 —— 编译器在 append 调用点强制」在 C++ 里的对应物。
 template <class T>
 inline constexpr bool kIsSurfacePayload =
     std::is_same_v<T, UserMessageData>
@@ -53,20 +51,10 @@ inline constexpr bool kIsSurfacePayload =
 // 不加 AVOX_EXPORT: avox 用静态 CRT (/MT), 跨 DLL 边界传 std::string / vector 会让对象在
 // 一个堆上构造、在另一个堆上析构。core 的接口大量使用标准容器, 所以它是**DLL 内部设施**;
 // 跨语言边界一律走 avox_agent/export 的 C 接口 (char* + 裸指针), 那也是旧 IAgentClient
-// 导出路径的做法。自测通过直接编译 core 的源文件参与, 而不是从 DLL 导入。
 class Session {
  public:
-  // 构造一个会话。
-  //
-  // seed: resume / fork / replay 进来的历史。**走与 append 完全相同的不变式校验** ——
-  //   否则一个坏的 track 文件能造出任何后端都存不下的活日志: 每条事件的 seq 必须从 0
-  //   连续 (全系统依赖的 seq == 下标 契约), surface 转移必须合法。校验失败抛
-  //   std::runtime_error。
-  // header: 存储元数据; 不给则合成一个最小 header (盖当前 SESSION_FORMAT_VERSION)。
-  //
-  // seed 非空且末条不是 session/end-seed 时, 构造末尾补一条 —— 于是后端捕获创建 seed
-  // 时标记已在其中, 不必在加载期回写。已带该标记的 seed 不重复补: 冷会话在首次触碰时
-  // 才 resume, 反复打开一个未改动的会话不能让它的日志逐次变长。
+// 构造一个会话。
+// seed: resume / fork / replay 进来的历史。**走与 append 完全相同的不变式校验** ——
   explicit Session(SessionId id, std::vector<SessionEvent> seed = {},
                    std::optional<SessionHeader> header = std::nullopt);
 
@@ -81,22 +69,14 @@ class Session {
   const SessionHeader& getHeader() const { return header; }
   const SessionId& id() const { return header.id; }
 
-  // 本进程追加的第一个 seq (无 seed 时为 0)。
-  //
-  // seq 更小的事件是经构造进来的 (replay / fork / resume), 从未在观察者上发布过, 所以
-  // 「把重放日志当作发布替代品」的消费方 (遥测接管) 要从这里开始。
-  //
-  // 与 header.seedLength 的区别: 后者是持久的 fork 血缘边界; 本字段是进程内的构造事实
-  // —— 一个 resume 出来的会话, 它的构造 seed 是整份存储日志, 而 header 里仍保留原始的
-  // fork 值。
+// 本进程追加的第一个 seq (无 seed 时为 0)。
+// seq 更小的事件是经构造进来的 (replay / fork / resume), 从未在观察者上发布过, 所以
   size_t getFirstLiveSeq() const { return firstLiveSeq; }
 
   // ---- 日志 ----
 
-  // append-only 事件日志。
-  //
-  // 借用引用: **在下一次 append 之前有效**。append 可能让底层容器重分配, 届时先前取得
-  // 的引用与其中的元素引用一并失效。需要跨 append 持有请自行拷贝, 或改持 seq。
+// append-only 事件日志。
+// 借用引用: **在下一次 append 之前有效**。append 可能让底层容器重分配, 届时先前取得
   const std::vector<SessionEvent>& events() const { return eventLog; }
 
   // 下一个事件的序号 —— 恒等于日志长度 (seq == 下标 的连续性契约)。
@@ -133,35 +113,19 @@ class Session {
   // 有序模型可见表面。
   SurfaceManager& getSurface() { return surfaceManager; }
 
-  // 派生模型历史: 沿 surfaceOp 标记维护的有序表面逐节点投影。
-  //
-  // 表面是派生历史的唯一来源, 所以没有标记的原始事件 (分片、turn 边界) 正确地缺席,
-  // 而一次压缩 replace 会把被遮蔽的节点从派生里删掉。投影规则见 deriveEventMessage。
-  //
-  // 已缓存: 每个表面节点只投影一次, 一次调用的成本是 O(新节点数); 一次表面重写
-  // (replace, 见 SurfaceManager::replaceGeneration) 会触发整体重建。
-  //
-  // 借用引用: 在下一次 append 之前有效。
+// 派生模型历史: 沿 surfaceOp 标记维护的有序表面逐节点投影。
+// 表面是派生历史的唯一来源, 所以没有标记的原始事件 (分片、turn 边界) 正确地缺席,
   const std::vector<Message>& deriveMessages();
 
-  // 日志最后一条 header 事件之后生效的 EpochHeader —— 也就是**下一次请求要比对的那个
-  // header**; 首条 header 事件之前返回 nullptr。
-  //
-  // 增量维护: 每条 header 事件只折叠一次, 于是每步读取的成本是 O(新事件数)。
-  // 「header 不变」等价于「请求前缀字节相同」, 这是 KV cache 命中的判据。
-  //
-  // 借用指针: 在下一次 append 之前有效。
+// 日志最后一条 header 事件之后生效的 EpochHeader —— 也就是**下一次请求要比对的那个
+// header**; 首条 header 事件之前返回 nullptr。
   const EpochHeader* requestHeader();
 
   // 最新的已解析路由元数据; 首条 request/context 事件之前返回 nullptr。
   const RequestContext* requestContext();
 
-  // 当前的 todo 列表投影 —— 展示层状态, 永不在模型 surface 上 (todo/write 是仅记日志
-  // 的事件)。dsh 投影语义: 最新一条 todo/write 生效 (整表快照, latest write wins);
-  // turn/start 清回空 —— todo 是「当前 turn 的工作面」, 跨 turn 不保留待办。
-  // 尚无有效写入 (或已被 turn 边界清空) 时返回 nullptr。
-  //
-  // 借用指针: 在下一次 append 之前有效。
+// 当前的 todo 列表投影 —— 展示层状态, 永不在模型 surface 上 (todo/write 是仅记日志
+// 的事件)。dsh 投影语义: 最新一条 todo/write 生效 (整表快照, latest write wins);
   const std::vector<TodoItem>* todos();
 
   // ---- 观察者 ----
@@ -173,10 +137,8 @@ class Session {
  private:
   size_t appendImpl(EventData data, std::optional<SurfaceIntent> intent);
 
-  // 校验跨类型系统边界的不透明 JSON 载荷 (ToolResultData::meta、
-  // EpochHeader::toolsJson)。其余字段由 C++ 类型系统保证, 无需运行时校验 ——
-  // 这是 C++ 相对 dsh 省掉 snapshotJsonValue 整套递归校验的地方, 但这两个字段是
-  // 字符串装的 JSON, 类型系统管不到, 而它们要落进持久日志。
+// 校验跨类型系统边界的不透明 JSON 载荷 (ToolResultData::meta、
+// EpochHeader::toolsJson)。其余字段由 C++ 类型系统保证, 无需运行时校验 ——
   static void assertOpaqueJson(const EventData& data);
 
   // 命名注意: 不能叫 log —— 全项目通用的 LOGFLF 宏展开成对自由函数 log(...) 的调用,

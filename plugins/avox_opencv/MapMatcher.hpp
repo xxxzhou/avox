@@ -10,10 +10,7 @@ namespace avox {
 
 // IMapMatcher 的 OpenCV 实现: 通用小地图定位引擎
 // 1. 粗匹配: 小地图缩放到 coarseSize×coarseSize, 彩图 SQDIFF
-//    (FastSqDiff: 互相关 CCORR 加速 + 源图各通道平方预计算, 对照 BGI FastSqDiffMatcher)
-// 2. 精匹配: 以粗匹配位置为中心, 灰度图 matchTemplate(SQDIFF_NORMED)
-// 3. 亚像素: 精匹配结果 3×3 邻域二次曲面拟合 (对照 BGI SubPixMatch)
-// 通用: 不做朝向检测/掩码生成/坐标换算; 掩码经 setMask 由上层传入, 朝向用 IOrientationDetector
+// (FastSqDiff: 互相关 CCORR 加速 + 源图各通道平方预计算, 对照 BGI FastSqDiffMatcher)
 class MapMatcher : public IMapMatcher {
  private:
   // 粗匹配 (对照 BGI FastSqDiffMatcher)

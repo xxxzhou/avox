@@ -124,9 +124,8 @@ struct VKPhysDevWrapper {
                         int32_t& presentIndex);
   // 查找是否支持扩展特性
   bool findExtension(const char* name) const;
-  // typeBits当前的显存空间类型,每一位的索引对应mempryProperties是否可用
-  // quirementsMaks需要满足的mask,是否主机可见,是否支持缓存等
-  // index返回VkPhysicalDevice支持quirementsMaks的显存分配索引
+// typeBits当前的显存空间类型,每一位的索引对应mempryProperties是否可用
+// quirementsMaks需要满足的mask,是否主机可见,是否支持缓存等
   bool getMemoryTypeIndex(uint32_t typeBits, VkFlags quirementsMaks,
                           uint32_t& index);
   // WIN平台是否支持与DX11交互

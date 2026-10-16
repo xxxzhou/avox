@@ -13,7 +13,7 @@
 - **C++17** + RAII (智能指针，无手动 new/delete)
 - **命名:** 类型 `PascalCase`，函数 `camelCase`，成员 `snakeCase`，常量 `kPascalCase`；类成员禁用 `_` 前后缀 (写 `int inputSize;` 不写 `_inputSize`/`inputSize_`)，方法局部参数可带 `_` 后缀
 - **类定义顺序:** 构造/析构 → private → protected → public
-- **格式:** 函数体内不空行，逻辑分段用注释；注释精简：类≤2行，方法/变量1行
+- **格式:** 函数体内不空行，逻辑分段用注释；注释精简：类/结构体≤3行，方法≤2行 (第三方移植代码如 `src/avox/codec/dovi/` 不受此限)
 - **导出:** `AVOX_EXPORT` 定义于 `src/avox/AvoxDef.h`，`AVOX_EXPORT_DEFINE` 用于构建 SDK
 - **文件:** `.h`(C接口), `.hpp`(C++), `.cpp`(实现), `*Export.h`(公共API)
 

@@ -78,9 +78,7 @@ std::vector<std::string> expandBraces(const std::string& pattern) {
 }
 
 // 单个 glob 模式对文本匹配 (回溯递归; 分隔符恒按 '/')。
-//   **     跨目录任意序列; "**/" 额外匹配零个目录 (ripgrep 语义)
-//   *      任意非 '/' 序列
-//   ?      单个非 '/' 字符
+// **     跨目录任意序列; "**/" 额外匹配零个目录 (ripgrep 语义)
 bool globMatch(const std::string& pattern, size_t p, const std::string& text,
                size_t t) {
   if (p == pattern.size()) return t == text.size();

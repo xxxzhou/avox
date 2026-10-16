@@ -25,9 +25,6 @@ struct LogItem {
 
 // 回调定义,在ao下的模块可以使用C++传值改用std::function.
 // typedef C++ function后缀定义 handle,C为action,前缀不要加on
-// 定义的handle变量为on前缀,event后缀
-// 定义的handle包装方法为on前缀,handle后缀
-// 定义的set handle变量的方法为set前缀(不包含on),handle后缀
 typedef std::function<void(int32_t level, const char *message)> logHandle;
 
 AVOX_EXPORT void log(LogLevel level, const std::string &message);
@@ -47,7 +44,6 @@ AVOX_EXPORT std::string getAvoxPath();
 
 // 展开路径里的环境变量占位符: Windows 的 %APPDATA%/%LOCALAPPDATA%/... ,
 // POSIX 的 ~/~user。无占位符原样返回。供 read/grep 等接受用户路径的
-// 工具使用, 让 hysp_pc 默认日志路径 %APPDATA%/hysp_pc/logs/main.log 跨用户通用。
 AVOX_EXPORT std::string expandEnvPath(const std::string& path);
 // 检测是否是完整文件路径（如 D:/video.mp4）
 AVOX_EXPORT bool checkDirectFile(const std::string& url);
@@ -74,15 +70,10 @@ AVOX_EXPORT std::string getModelFilePath(const char* filename);
 
 // 模型根目录覆盖 (平台无关): 宿主把应用沙盒内可写目录 (按需下载的模型放这里,
 // 目录下直接是 "stt/sense-voice/..." 相对结构) 注入进来, getModelFilePath
-// 优先解析到该根 (文件存在才采用), 找不到再回退各平台包内默认。传空串/NULL
-// 清除覆盖。App Store 沙盒 (mac/iOS) 与 Android filesDir 的按需下载模型,
-// 都靠这条通道进引擎; 必须在打开媒体/发起识别前设置。
 AVOX_EXPORT void setModelsRoot(const char* path);
 
 // 注册 AVOX_HOME 环境变量 + avox.pth, 让外部 Python 能 import avox。
 // avox_cli / avox_agent 启动时调用一次。幂等: 路径未变则跳过。
-// 1) 写注册表用户环境变量 AVOX_HOME=<install_root>
-// 2) 找 Python site-packages, 写 avox.pth 指向 <install_root>/plugins
 AVOX_EXPORT void ensurePythonPath();
 
 // ============== Android 环境 (仅 __ANDROID__; 内部 C++ 用, 不导出) ==============

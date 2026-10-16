@@ -14,10 +14,6 @@ namespace avox {
 // 不同于MediaPlayer,这里没有IO包/帧队列
 // 音频与视频对应的是解码后的数据,PCM/YUV/GPUTexture
 // 暂时限定一路音频与一路视频，后续扩展多路
-// 音频与视频来了就播，同步是数据源已经做了的，主要是渲染原始数据
-// 可以看做是一个简化版的播放器
-// 还是需要把打开/关闭做到单独线程队列中
-// 避免在本身线程回调又调用相应操作,导致锁状态不对。
 class SourcePlayer : public ISourcePlayer,
                      public BasePlayer,
                      public IRawSourceOb,

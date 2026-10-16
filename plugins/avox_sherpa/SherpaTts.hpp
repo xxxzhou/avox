@@ -15,11 +15,8 @@ namespace avox {
 
 /**
  * @brief Sherpa-onnx 离线 TTS 引擎 (对称 SherpaRecognizer)
- *
  * 纯同步合成引擎, 不管理线程/队列; 由 SherpaAudioTts 在 RunTask 线程调用。
  * 模型对象级常驻 (首次 loadModel, 跨句复用, 避免每句重载)。
- * generate 用 sherpa progress callback 增量投递 PCM 块 (句级流式);
- * cancelFlag 控制 barge-in 中断 (callback 返回 0 提前停止)。
  */
 class SherpaTts : public avox::Observer<ISherpaTtsOb> {
  public:

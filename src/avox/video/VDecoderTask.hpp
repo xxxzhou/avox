@@ -14,7 +14,6 @@ namespace avox {
 // 原VideoDecoder与MediaPlayer绑定比较深
 // 主要开启线程从VideoTrack读取IO队列,解码给VideoTrack
 // 原来与VideoTrack绑定的部分移到这里
-// 而VideoDecoder只负责输入数据，解码数据，输出数据
 class VDecoderTask : public IPlayerContext, public RunTask {
 public:
   VDecoderTask();

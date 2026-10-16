@@ -23,7 +23,6 @@ bool isValidUtf8(const std::string& text);
 
 // 只把非法序列替换成 U+FFFD, 其余字节原样保留。用于「整体已合法的文本里混进零星
 // 脏字节」的修补 —— 如已序列化的 JSON 行: Json::dump 会转义全部结构性字符, 非法
-// 字节只可能出现在字符串字面量内, 修补不会碰坏 JSON 结构。
 std::string patchInvalidUtf8(const std::string& text);
 
 // 外部文本的整体卫生: 合法 UTF-8 直通; 否则视为本机 ANSI (中文 Windows = GBK/936)

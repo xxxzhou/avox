@@ -7,7 +7,6 @@ namespace avox {
 // 静态图像渲染器 - 显示单张图片,不用RunTask循环
 // 继承SurfaceRenderVk获得VkVideoRender + ISurfaceRender接口
 // 额外持有Window用于窗口创建和呈现
-// 调用render(IImageBuffer*)时触发单次渲染+窗口呈现
 class AVOX_EXPORT ImageRender : public SurfaceRenderVk,
                                public IImageRender,
                                public IWindowOb {

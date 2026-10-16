@@ -22,7 +22,6 @@ namespace avox {
 // 把所有播放相关对象，track,render创建与释放都尽量统一到播放器自身线程上执行
 // 减少相关对象需要同步导致的问题
 // 注意一定要先调用onOpen，然后再能调用onPacket
-// 只有先onOpen再能得到trackid,streamid与流对应关系
 class MediaPlayer : public IMediaPlayer,
                     public IAVSourceOb,
                     public IMuxerOb,
@@ -189,9 +188,8 @@ class MediaPlayer : public IMediaPlayer,
   RawMuxer* getRawMuxer() { return rawMuxer.get(); }
   SubtitleView* getSubtitleView() { return subtitleView.get(); }
   SyncType getSyncType() { return syncType; }
-  // I帧渲染模式: 源级I帧模式(源只发I帧) 或 >4x只解I帧生效(bIFrameOnlyActive)时
-  // 都为true。渲染节奏/音频静音/外部调用统一用这个判断"当前是否处于稀疏I帧渲染",
-  // 避免全包流>4x丢P/B后帧队列只剩I帧却仍走普通渲染路径(长GOP被误判跳变/丢帧)
+// I帧渲染模式: 源级I帧模式(源只发I帧) 或 >4x只解I帧生效(bIFrameOnlyActive)时
+// 都为true。渲染节奏/音频静音/外部调用统一用这个判断"当前是否处于稀疏I帧渲染",
   bool getIFrameMode() { return bIFrameMode || bIFrameOnlyActive.load(); }
   // >4x只I帧是否生效中(选项开 且 倍速>4): onPacket 丢 P/B+音频包的判据,
   // 音频解码线程(ADecoderTask)据此免掉解码超时判定。可跨线程读

@@ -33,14 +33,7 @@ namespace avox {
 
 // agent-instructions 插件的配置。字段均驼峰/无下划线 (工程约定禁用下划线命名)。
 // agent.json 顶层 "agentInstructions" 节点结构:
-//   "agentInstructions": {
-//     "enabled": true,                       // 走 AgentConfig.enableAgentInstructions
-//     "projectRootMarkers": [".git"],        // 标识项目根的目录条目 (向上查找)
-//     "instructionFileCandidates": ["AGENTS.md", "CLAUDE.md"],
-//     "localInstructionFileCandidates": ["AGENTS.local.md", "CLAUDE.local.md"],
-//     "maxBytes": 32768,                     // 单次注入的渲染字节预算
-//     "maxSourceBytes": 1048576              // 单文件读取上限 (超过则忽略)
-//   }
+// "agentInstructions": {
 struct AgentInstructionsConfig {
   std::vector<std::string> projectRootMarkers = {".git"};
   std::vector<std::string> instructionFileCandidates = {"AGENTS.md", "CLAUDE.md"};

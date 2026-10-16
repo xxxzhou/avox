@@ -390,10 +390,8 @@ void H264Decoder::decodingProcessForPictureNumbers() {
 void H264Decoder::initializationProcessForReferencePictureLists() {
   refPictures0.clear();
   refPictures1.clear();
-  // 8.2.4.2.1 Initialization process for the reference picture list for P and
-  // SP slices in frames
-  // https://www.cnblogs.com/TaigaCon/p/3715276.html
-  // P帧排序,短期PicNum大的在前，长期LongTermPicNum大的在后
+// 8.2.4.2.1 Initialization process for the reference picture list for P and
+// SP slices in frames
   if ((slice->slice_type == H264SliceType::MMP_H264_P_SLICE ||
        slice->slice_type == H264SliceType::MMP_H264_SP_SLICE) &&
       slice->field_pic_flag == 0) {
@@ -436,10 +434,8 @@ void H264Decoder::initializationProcessForReferencePictureLists() {
     // Hint : not support field for now
     assert(false);
   }
-  // 8.2.4.2.3 Initialization process for reference picture lists for B slices
-  // in frames
-  // B 帧排序 refPicList0 短期从小到大curpos,长期从小到大
-  //  refPicList0 长期从大到小curpos,长期从小到
+// 8.2.4.2.3 Initialization process for reference picture lists for B slices
+// in frames
   else if ((slice->slice_type == H264SliceType::MMP_H264_B_SLICE) &&
            slice->field_pic_flag == 0) {
     int32_t curPoc = PicOrderCnt(curPicture);
@@ -569,11 +565,8 @@ void H264Decoder::modificationProcessForReferencePictureLists(
   uint64_t CurrPicNum = 0;
   int64_t picNumLX = 0;
   size_t index = 0;
-  // determine CurrPicNum
-  // The variable CurrPicNum is derived as follows:
-  // - If field_pic_flag is equal to 0, CurrPicNum is set equal to frame_num.
-  // - Otherwise (field_pic_flag is equal to 1), CurrPicNum is set equal to 2 *
-  // frame_num + 1.
+// determine CurrPicNum
+// The variable CurrPicNum is derived as follows:
 
   if (slice->field_pic_flag == 0) {
     CurrPicNum = slice->frame_num;
@@ -607,12 +600,8 @@ void H264Decoder::modificationProcessForReferencePictureLists(
     // short-term reference pictures
     if (modification_of_pic_nums_idc == 0 ||
         modification_of_pic_nums_idc == 1) {
-      // Hint :
-      //   When the process specified in this subclause
-      // is invoked the first time for a slice (that is, for the first
-      // occurrence of modification_of_pic_nums_idc equal to 0 or 1 in the
-      // ref_pic_list_modification( ) syntax), picNumL0Pred and
-      // picNumL1Pred are initially set equal to CurrPicNum.
+// Hint :
+// When the process specified in this subclause
       if (initPicNumLXPred == false) {
         picNumLXPred = CurrPicNum;
         initPicNumLXPred = true;
@@ -655,15 +644,8 @@ void H264Decoder::modificationProcessForReferencePictureLists(
       // (8-37)
       {
         auto PicNumF = [MaxPicNum](H264PicturePtr picture) -> int64_t {
-          // Hint :
-          // The function PicNumF( RefPicListX[ cIdx ] ) is derived as
-          // follows:
-          // - If the picture RefPicListX[ cIdx ] is marked as "used for
-          // short-term reference", PicNumF( RefPicListX[ cIdx ] ) is
-          //   the PicNum of the picture RefPicListX[ cIdx ].
-          // - Otherwise (the picture RefPicListX[ cIdx ] is not marked as
-          // "used for short-term reference"),
-          //   PicNumF( RefPicListX[ cIdx ] ) is equal to MaxPicNum.
+// Hint :
+// The function PicNumF( RefPicListX[ cIdx ] ) is derived as
           if (picture &&
               (picture->referenceFlag & used_for_short_term_reference)) {
             return picture->PicNum;

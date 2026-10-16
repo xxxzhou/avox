@@ -72,11 +72,7 @@ static void shellCvWait(std::unique_lock<std::mutex>& lk, Pred pred) {
 }
 
 // 从输入队列取一行 (替代 cmdReadLine, 不与输入线程抢 stdin)。false = 输入耗尽/quitShell。
-//
 // eof 只在**队列排空后**才终止主循环: 输入线程可能一口气读完全部行再置 eof (stdin 是管道
-// 或文件时必然如此), 先看 eof 会把已经读进来的命令整批丢掉。quitShell 相反, 它是用户按
-// Ctrl+C 要求立刻退出, 残留行必须作废。
-// prompt 非空时只在真的要等 (队列已空) 才打印, 免得连续几条已缓冲的命令刷出一串空提示符。
 static bool shellNextLine(std::string& out, const char* prompt = nullptr) {
   std::unique_lock<std::mutex> lk(gShell.mtx);
   if (gShell.inputQueue.empty()) {
@@ -159,7 +155,6 @@ static void inputThreadFn() {
 #ifdef _WIN32
 // Ctrl+C 统一处理: 生成中 → agent->cancel (driver 收敛, whenIdle 返回) + interruptGen 留标;
 // 空闲 → quitShell 退出。cooked 模式由 agentCtrlHandler 调, raw 模式由 readLineRawWin
-// 经 setCtrlCInterceptor 钩子调 (raw 关了 ENABLE_PROCESSED_INPUT, 收不到 CTRL_C_EVENT)。
 static void requestCancelOrQuit() {
   Agent* agent = gShell.agent.load();
   LOGFLF(LogLevel::warn, "[cancel] requestCancelOrQuit: generating=",
@@ -194,9 +189,6 @@ static void agentSigHandler(int) {
 // ========== 等待指示器 ==========
 // 静默达 kSilentMs (等首 token / 工具执行) 时, 在独占一行显示 计时 + 旋转词, 避免静默期
 // 界面像卡死。真实输出到达即清掉该行。
-//   - 流式进行中 (activeStream=true) 绝不显示: token 间短停顿不触发, 否则 \r 覆写会把
-//     指示混进正在流的内容里。
-//   - 指示独占一行; 首次显示先 \n 新起一行; 刷新用 \r 覆写定宽。
 class ConsoleThrobber {
  public:
   void start() {
@@ -315,12 +307,8 @@ class ConsoleThrobber {
 };
 
 // ========== 会话事件观察者: 渲染流式输出与工具卡片 ==========
-//
 // 直接吃 SessionEvent 而不是经导出层的 JSON 回调: shell 与 core 在同一个 DLL 里, 类型
 // 安全且零序列化成本。跨语言的消费者才走 export/ 的 C 接口。
-//
-// 一条重要契约: 本回调运行在 agent 的会话临界区内, **不得回调进 agent 的方法** (会死锁)。
-// 所以这里只做输出, 取消之类的动作经 gShell 标志转交主循环或 Ctrl+C handler。
 class ShellSessionObserver : public SessionObserver {
  public:
   void onSessionEvent(const Session& session, const SessionEvent& event) override {
@@ -582,10 +570,7 @@ static bool interactiveNewConfig() {
 }
 
 // ========== provider / agent 两个配置文件的管理 (/list /use /add) ==========
-//
 // 模型选择 (agent.json 顶层 provider/model) 与端点细节 (providers.json) 分离。
-// 这几个命令就针对这两个文件: /list 枚举、/use 改 agent.json 的 provider/model、
-// /add 往 providers.json 增厂商。
 
 static Json loadProvidersRoot() {
   const auto raw = AssetLoader::loadToMemory("config/providers.json");
@@ -605,7 +590,6 @@ static bool saveProvidersJson(const Json& root) {
 
 // providers.json 缺失时, 把内建免费厂商目录落盘为两层结构
 // { "providers": { "<厂商>": { apiUrl, apiPath, apiKey, free, models: { "<模型>": {...} } } } },
-// 保证 launch 后 /list、/use 与端点解析 (DeploymentLoader) 都有据可依。
 static void bootstrapProvidersJson() {
   Json root(Json::JsonObject{});
   Json provs(Json::JsonObject{});
@@ -666,10 +650,7 @@ static void bootstrapProvidersJson() {
 }
 
 // 枚举可用厂商/模型条目: 优先 providers.json, 缺失/为空则回退内建免费目录。
-//
 // 只返回能当对话模型用的条目 (chat=true)。/list 与 /use 选的是「对话后端」, 纯视觉
-// (如 anionex/gemini, 其端点要求每次请求都带图) 与纯生图 (cogview) 不该混进来当对话用——
-// 它们仍由 vision-toolkit 作视觉工具供应商, 只是不进入对话候选列表。
 static std::vector<ProviderEntry> listCatalogEntries() {
   std::vector<ProviderEntry> all;
   Json root = loadProvidersRoot();
@@ -693,7 +674,6 @@ static std::vector<ProviderEntry> listCatalogEntries() {
 
 // 是否存在可用的对话大模型: providers.json 里至少一个 chat 模型, 且 apiKey 已就绪
 // (非占位符)。只带占位密钥的免费模型 (YOUR_* 等, 需用户另行申请) 不算可用 —— 这类
-// 模型虽然标记为 free, 但没有有效密钥时根本发不出请求。
 static bool hasUsableConversationModel() {
   Json root = loadProvidersRoot();
   if (!root.bObject()) return false;
@@ -708,7 +688,6 @@ static bool hasUsableConversationModel() {
 
 // 没有任何可用的对话大模型时, 引导用户只输入 DeepSeek API Key, 自动把其余参数配好:
 // provider=deepseek, apiUrl=https://api.deepseek.com, apiPath=/chat/completions,
-// 模型默认 deepseek-v4-flash。providers.json 与 agent.json 一并落盘。回车跳过。
 static bool interactiveDeepSeekSetup() {
   printf("\n当前没有任何可用的对话大模型 (免费模型也需配有效 API Key 才算可用)。\n");
   printf("最快接入 DeepSeek: 只输入 API Key, 其余参数自动设置, 默认模型 deepseek-v4-flash。\n");
@@ -920,8 +899,7 @@ static void printEvents(ShellRuntime& runtime, size_t count) {
 }
 
 // 打印积分状态栏 (Claude Code 风格, 显示在当前输入行下方), 分两组:
-//   [当前] 本轮 (turn) 的 输入/缓存/输出/积分;  [总] 当前会话累计的 输入/缓存/输出/积分。
-// token-meter 关闭时不显示。
+// [当前] 本轮 (turn) 的 输入/缓存/输出/积分;  [总] 当前会话累计的 输入/缓存/输出/积分。
 static void printCreditBar(Agent* agent, const AgentConfig& config, int turn) {
   if (agent == nullptr || !config.enableTokenMeter) return;
   const TurnCredit current =
@@ -964,9 +942,8 @@ int AgentShell::run() {
 #else
   std::signal(SIGINT, agentSigHandler);
 #endif
-  // 控制台写线程: 回复期全部 shell 输出经它落屏 — conhost 的 QuickEdit 框选/点击会
-  // 冻结本进程的控制台写, 走写线程后冻住的只是显示 (队列缓冲, 松开即追平), agent 的
-  // driver 回调/spinner/主循环照常推进, QuickEdit 因此可以全程保持可用。
+// 控制台写线程: 回复期全部 shell 输出经它落屏 — conhost 的 QuickEdit 框选/点击会
+// 冻结本进程的控制台写, 走写线程后冻住的只是显示 (队列缓冲, 松开即追平), agent 的
   cmdWriterStart();
   // 排空异步日志队列, 让 avox 初始化阶段的少量诊断日志先打到屏幕。
   flushLog();
@@ -986,9 +963,8 @@ int AgentShell::run() {
     bootstrapProvidersJson();
   }
 
-  // 没有任何可用的对话大模型 (只带占位密钥的免费模型不算可用) 时, 引导用户只输入
-  // DeepSeek API Key, 自动把其余参数配好 (默认模型 deepseek-v4-flash)。
-  // 非交互管道 (AVOX_AGENT_ALLOW_NONTTY 冒烟回归) 不弹向导, 保持原行为。
+// 没有任何可用的对话大模型 (只带占位密钥的免费模型不算可用) 时, 引导用户只输入
+// DeepSeek API Key, 自动把其余参数配好 (默认模型 deepseek-v4-flash)。
   if (!forceRun && !hasUsableConversationModel()) {
     interactiveDeepSeekSetup();
   }
@@ -1285,11 +1261,8 @@ int AgentShell::run() {
       continue;
     }
 
-    // ---- 对话 ----
-    //
-    // 一句话就够: 投递输入 + 等静止。turn/step 的推进、工具执行、历史落盘、压缩、
-    // 循环卫生全在驱动与策略里, shell 只负责渲染。
-    // 修复模式下 agent 未就绪, 不进入对话, 引导先用命令把配置修好。
+// ---- 对话 ----
+// 一句话就够: 投递输入 + 等静止。turn/step 的推进、工具执行、历史落盘、压缩、
     if (runtime.agent == nullptr) {
       printf("(agent 未就绪: 先用 /list 查看、/add 新增或用 /use 切换, 再开始对话)\n");
       continue;

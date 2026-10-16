@@ -7,7 +7,6 @@ namespace avox {
 // 音频变速不变调处理器: 解码后 packed PCM 进 → 同格式 PCM 出(总量≈输入/tempo)。
 // 实现由插件提供(avox_tempo loadModule 时 reg "soundtouch"), 未装插件时调用方降级。
 // 注意: 输出块边界与输入帧不对齐(内部攒窗); receive 返回的缓冲仅在下次
-// process/receive/reset 前有效。
 class IAudioTempo {
  public:
   virtual ~IAudioTempo() = default;

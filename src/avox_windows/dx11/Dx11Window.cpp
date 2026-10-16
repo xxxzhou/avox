@@ -60,9 +60,8 @@ Dx11Window::~Dx11Window() {}
 bool Dx11Window::onValidWin() { return bInitDevice; }
 
 void Dx11Window::onChangeSize() {
-  // 如果设备已初始化，使用 ResizeBuffers 调整大小
-  // 避免重新创建设备导致 "Only one flip model swap chain can be associate with
-  // an HWND" 错误
+// 如果设备已初始化，使用 ResizeBuffers 调整大小
+// 避免重新创建设备导致 "Only one flip model swap chain can be associate with
   if (bInitDevice && swapChain) {
     // 方案②(§3.4.1): 本调用来自 onPreTick/updateSize(渲染线程持 mtx), 但
     // setHdrPassthrough 侧也会摸 bHdrPending, 统一走 bufMtx 护住
@@ -101,19 +100,11 @@ void Dx11Window::onTickWin() {
     LOGFLF(LogLevel::warn, "dx11 device not init");
     return;
   }
-  // 方案②(§3.4.1): 交换链翻转落在此处 —— 本函数由 WindowRender::run() 持 mtx
-  // 调用(WindowRender.cpp:323), 与 Present 同一临界区, 消除宿主线程拆交换链的
-  // 竞态 A。翻转窗口内双端都停旧口径 = 过渡帧不出值域错配
+// 方案②(§3.4.1): 交换链翻转落在此处 —— 本函数由 WindowRender::run() 持 mtx
+// 调用(WindowRender.cpp:323), 与 Present 同一临界区, 消除宿主线程拆交换链的
   applyPendingHdr();
-  // 窗口观察者下发(§4.2 统一检查点): 本窗口原先**不派发** onRenderWindow ⇒
-  // WindowRender::onRenderWindow 从不执行 ⇒ pVideoRender->renderWindow(window)
-  // 从不调用 ⇒ targetWindow 恒空 ⇒ CPU 帧腿(软解)恒 "no window device" 而失败
-  // (ProRes 等无硬解编解码器恒走 CPU 帧)。VkWindow(:251)/Dx12Window(:193) 都派发,
-  // 本处补齐。
-  // ⚠️ 必须在下面 `if (!sharedTexture) return;` **之前** —— 首帧正是靠它把窗口交给
-  // 渲染器, 渲染器才能建图产出共享纹理(否则先有鸡, 永远到不了下面)。
-  // 本函数由 WindowRender::run() 持 mtx 调用; 观察者侧(renderWindow → setTargetWindow)
-  // 只写指针 + 读 hdrPassthroughActive() 原子位, 不取 mtx ⇒ 无死锁(与 applyPendingHdr 同理)。
+// 窗口观察者下发(§4.2 统一检查点): 本窗口原先**不派发** onRenderWindow ⇒
+// WindowRender::onRenderWindow 从不执行 ⇒ pVideoRender->renderWindow(window)
   dispatch(&IWindowOb::onRenderWindow);
   // 初始化 shader
   if (!bInitShader) {
@@ -291,8 +282,6 @@ void Dx11Window::detectHdrDisplay() {
 
 // forceHDR 时把交换链切 10bit+PQ 色彩空间, 内容原样上屏;
 // SDR 显示器恒 no-op(返回 false), 行为零变化。
-// 方案②(§3.4.1): 本函数只在宿主线程做「能力检查 + 挂意愿」, 不当场改交换链 ——
-// 实翻由渲染线程在 onTickWin 的 mtx 临界区内经 applyPendingHdr() 完成
 bool Dx11Window::setHdrPassthrough(bool bPassthrough) {
   if (!swapChain || !bInitDevice) {
     return false;
@@ -307,9 +296,8 @@ bool Dx11Window::setHdrPassthrough(bool bPassthrough) {
     }
   }
   if (!bPassthrough && !bHdrDisplay) {
-    // SDR 屏永远到不了直通态: 实态/意愿一并压 false。只 return true 不清
-    // pending 的话, 宿主降档每次都白发, applyPendingHdr 会把 PQ 交换链
-    // 重放回来(10/1 跨屏品灰案的根因之一)
+// SDR 屏永远到不了直通态: 实态/意愿一并压 false。只 return true 不清
+// pending 的话, 宿主降档每次都白发, applyPendingHdr 会把 PQ 交换链
     std::lock_guard<std::mutex> lck(bufMtx);
     bHdrPending = false;
     bHdrActive = false;
@@ -336,7 +324,6 @@ bool Dx11Window::setHdrPassthrough(bool bPassthrough) {
 
 // 方案②实翻点: 由渲染线程在 onTickWin 内(持 WindowRender::mtx)调用。
 // PQ 直通需 10bit 交换链; 切回恢复 8bit。改完提交 bHdrActive, 令
-// hdrPassthroughActive() 与输出端检查点(checkTargetPassthrough)在同一帧看到新值
 void Dx11Window::applyPendingHdr() {
   bool want = false;
   {
@@ -403,7 +390,6 @@ bool Dx11Window::applyHdrSwapchainState() {
 
 // ST2086 转 DXGI_HDR_METADATA_HDR10: 基色/白点单位 1/50000, 四亮度字段
 // 单位 1/10000 nits(HdrMeta.minLuminance 原生即此单位, 其余为 nits 乘 1e4)。
-// 无亮度标记不冒充(系统按默认映射); 基色缺按 BT.2020/D65 兜底。
 void Dx11Window::updateHdrMetaData() {
   if (!bHdrActive || !swapChain) {
     return;

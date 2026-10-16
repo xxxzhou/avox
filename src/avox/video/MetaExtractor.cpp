@@ -254,14 +254,6 @@ void MetaExtractor::parseSei(const uint8_t* rbsp, int32_t size, HdrMeta& meta) {
 
 // T.35 user data → HDR10+(SMPTE ST 2094-10 Application 4) L1 还原。
 // 位语法(载荷已反仿真, MSB first, 与 hdr10plus_tool/ffmpeg itut35.c 同源):
-//   num_windows u(2) [多窗时每窗 153bit 处理窗描述]
-//   targeted_display_max_luminance u(27) actual_peak_flag u(1)
-//     [flag=1 时: rows u(5) cols u(5) + rows*cols×u(4), v1 流必无, 防御性跳过]
-//   逐窗 L1: maxscl 3×u(17) average u(17) num_dist u(4) 每项 u(7)+u(17)
-//            fraction_bright_pixels u(10)
-//   [其后再是 mastering 标志/逐窗膝点贝塞尔/色饱和映射, L1 不需要, 不读]
-// 还原口径: l1Max=各窗 maxscl 峰值, l1Avg=窗0 average, l1Min 恒 0(流内无逐帧
-// 最小信号); 17bit 码 = PQ 信号×100000, pqToNits 与 DV L1 同式。
 bool MetaExtractor::parseHdr10plusL1(const uint8_t* d, int32_t size,
                                      HdrMeta& meta) {
   if (size < kT35St2094HeaderSize || d[0] != kT35CountryUs) {

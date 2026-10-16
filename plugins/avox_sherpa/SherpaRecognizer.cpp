@@ -134,10 +134,8 @@ void SherpaRecognizer::unloadModel() {
 
 void SherpaRecognizer::reset() {
   if (recognizer && stream) {
-    // OnlineStreamReset 非完全重置: 上轮结果非空时保留 encoder 隐状态 + 末尾
-    // context_size 个 token 作下段上下文, 且不丢弃底层未消费音频
-    // (见 sherpa-onnx online-recognizer-transducer-impl.h Reset)。跨录音会串话。
-    // 这里销毁重建 stream 拿到全新状态 (recognizer 模型对象级常驻, 只换轻量 stream)。
+// OnlineStreamReset 非完全重置: 上轮结果非空时保留 encoder 隐状态 + 末尾
+// context_size 个 token 作下段上下文, 且不丢弃底层未消费音频
     SherpaOnnxDestroyOnlineStream(stream);
     stream = SherpaOnnxCreateOnlineStream(recognizer);
     lastText.clear();

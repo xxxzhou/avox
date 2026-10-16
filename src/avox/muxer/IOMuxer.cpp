@@ -12,7 +12,6 @@ namespace avox {
 namespace {
 // G14: 纯非VCL访问单元判定。产物开头出现过 28B/8B 的纯 SEI 访问单元(无任何
 // VCL NAL), 写进 MP4 是无用 sample 且部分播放器起播异常; SEI+slice 混合包
-// (HDR 带内元数据随帧)不命中, 不会误杀。首 NAL 是 SEI 才整包扫描, 常规包零开销
 bool bSeiNal(VCodecId vcodecId, uint8_t nal) {
   if (vcodecId == VCodecId::h264) {
     return static_cast<H264NAL>(nal) == H264NAL::NAL_SEI;
@@ -110,11 +109,8 @@ void IOMuxer::pushPacket(PacketBufPtr packet) {
   // 队列残留包(离线快速转封装时尾部几十帧全在此), 丢弃会截短成片;
   // 关闭后写的安全性由onPushPacket的fmtCtx空保护兜底
   PackType packType = (PackType)packet->packtype;
-  // 音频NOPTS合成(b6fb8af 后源层音频垃圾pts归一NOPTS透传): 播放侧靠解码采样
-  // 轴推进, 录制链没有解码轴, NOPTS 直进会把 basePts 毒化成 INT64_MIN 或写出
-  // 巨大负dts被封装端整包拒绝(RMVB/cook 录制必踩)。锚定+推进: 有效pts做锚,
-  // NOPTS包按 包duration > 已学习步进 > 40ms保底 推进; 有效锚点在合成轴之前
-  // (步进偏大跑冒)重锚回吸, 在之后只学习步进不回退(保dts单调)
+// 音频NOPTS合成(b6fb8af 后源层音频垃圾pts归一NOPTS透传): 播放侧靠解码采样
+// 轴推进, 录制链没有解码轴, NOPTS 直进会把 basePts 毒化成 INT64_MIN 或写出
   if (packType == PackType::audio) {
     if (packet->pts != AVOX_NOVALID_PTS) {
       if (packet->dts == AVOX_NOVALID_PTS) {
@@ -226,9 +222,8 @@ void IOMuxer::flushPendingAu() {
 }
 
 void IOMuxer::close() {
-  // 只 stopTask(join) 让写线程退出即可: onRunTask 退出时会 flushPendingAu 冲掉最后挂起的 AU。
-  // 不能在 stopTask 前 flush: pushPacket(写线程) 与 flushPendingAu 并发读写 preBuffer -> 堆破坏
-  // (0xC0000409)。preBuffer 生命周期完全归于写线程(pushPacket 写 / onRunTask 退出 flush)。
+// 只 stopTask(join) 让写线程退出即可: onRunTask 退出时会 flushPendingAu 冲掉最后挂起的 AU。
+// 不能在 stopTask 前 flush: pushPacket(写线程) 与 flushPendingAu 并发读写 preBuffer -> 堆破坏
   stopTask();
   onClose();
 }

@@ -25,9 +25,7 @@ inline ScopeKey scopeOfExecution(const ToolExecution& exec) {
 }
 
 // 把纯文本内容块拼成一个字符串; 含任何非文本块则返回 false。
-//
 // 溢出裁剪与循环提醒都只处理纯文本结果 —— 它们只知道最终格式化文本, 不知道工具内部结构,
-// 对着一个带图片的结果动手只会破坏它。
 inline bool flattenPlainText(const std::vector<ContentBlock>& content,
                             std::string& out) {
   out.clear();

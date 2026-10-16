@@ -12,8 +12,6 @@ namespace avox {
 // IOrientationDetector 的 OpenCV 实现: BGI CameraOrientationFromGia 忠实移植。
 // 由 OpencvModule 注册为工厂 "opencv", 业务经 orientationDetectorHub.create("opencv") 取实例。
 // 算法: 灰度→GaussianBlur→warpPolar(行=角度,列=半径)→ROI 半径带 10-80→Rotate90CCW→
-// Scharr dx→FindPeaks 左右峰→双层卷积→maxIndex+45。输出为 BGI 原始角度约定(0=右/东,
-// 顺时针, 实际取值 [45,360]); setAngleRange/setSmooth 不适用(BGI 固定算法, 被忽略)。
 class OrientationDetector : public IOrientationDetector {
  private:
   int32_t cx = 0;

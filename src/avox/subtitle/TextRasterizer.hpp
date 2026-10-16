@@ -39,8 +39,6 @@ struct TextCanvasStyle {
 
 // 排版落点合成(帧坐标系): align/margin/anchor/offset → 画布 bbox 左上角,
 // 帧内钳制。margin 按对齐方向内收(left 加在左/right 减在右/mid 不参与;
-// top 加在锚点下/bottom 减在锚点上/mid 不参与), offset 在钳制前叠加。
-// 默认样式代入即旧公式: x = anchorX*frameW - totalW/2, y = anchorY*frameH - totalH
 inline void computeTextPos(const TextCanvasStyle& s, int32_t frameW,
                            int32_t frameH, int32_t totalW, int32_t totalH,
                            int32_t* outX, int32_t* outY) {
@@ -71,13 +69,10 @@ inline void computeTextPos(const TextCanvasStyle& s, int32_t frameW,
 // 文本 → RGBA8(premultiplied) bbox 画布: 统一 canvas 通道的文本生产者
 // (计划 doc/plan/player/字幕模块合并计划.md P2)。字形经 FontCache
 // (avox_freetype), 排版/换行规则与旧 VkFontLayer 同源。
-// 线程约定: setStyle 与 render 都只在渲染线程调(调用方自行做好样式快照)。
 class AVOX_EXPORT TextRasterizer {
  public:
-  // 渲染文本到内部画布。返回内容序号: 0=无内容(调用方清层), 内容变化时递增,
-  // 文本/帧尺寸/样式版本都没变则返回上次的序号(调用方零上传)。
-  // edgeFuse: 画布将被拉伸上屏时置 true(>1080p 基准画布)——覆盖度过 S 曲线
-  // 收窄边缘过渡带(rasterDisc 式边缘写中间值), 抵消拉伸拉宽; 1:1 画布传 false。
+// 渲染文本到内部画布。返回内容序号: 0=无内容(调用方清层), 内容变化时递增,
+// 文本/帧尺寸/样式版本都没变则返回上次的序号(调用方零上传)。
   int32_t render(const char* text, int32_t frameW, int32_t frameH,
                  bool edgeFuse = false);
 

@@ -22,7 +22,6 @@ std::vector<std::string> tokenizeLine(const std::string& line);
 
 // 加载 cli 配置 (assets/config/cli.json): 缺失/空 -> 写默认值并返回。
 // 结构 { "cmds":[{cmd,desc}...], "voice":{mode,prefix} };
-// Shell 快捷命令菜单 (cmds) 与 voice 子命令 (voice) 共用同一份。
 Json loadCliConfig();
 
 }

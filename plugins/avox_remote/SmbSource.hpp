@@ -22,10 +22,6 @@ namespace avox {
 // IRemoteSource 实现(avox_remote): SMB 会话(libsmb2, 同步API跑在RunTask线程)。
 // open=smb2_connect_share 验会话, list=smb2_opendir+readdir 枚举目录,
 // resolve=拼规范 smb://host[:port]/share/path 交给 IOParseSmb(libsmb2 自定义avio)播放。
-// token 约定: share 内绝对路径, '/'开头, 目录带尾'/', 根为"/"(open 带 /sub 路径时
-// 顶层"/"映射到该子目录); 会话级连接常驻(a05-T4), 失效自动重建。
-// user 支持 "DOMAIN\user"(libsmb2 原生拆分); URL 可带 userinfo(参数优先)。
-// 线程模型同 DavSource: 单发 RunTask 工作线程跑 op, 结果锁保护读取。
 class SmbSource : public IRemoteSource, public RunTask {
  public:
   SmbSource();

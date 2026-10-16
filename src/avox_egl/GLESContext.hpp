@@ -7,11 +7,6 @@ namespace avox {
 // 1 所有线程同一EGLDisplay,不同线程使用不同EGLContext
 // 这种方式，使用不同EGLContext需要eglMakeCurrent切换
 // 不同线程使用不同EGLDisplay/EGLContext
-// 这次样不需要eglMakeCurrent切换，但是资源会多些
-// 2 不同线程独立的EGLContext,如果需要共享,在创建时传入
-// 3 GL相关函数需要EGL上下文与渲染目标，需要在EGL创建suface后才能使用
-// 4 不渲染到窗口，使用eglCreatePbufferSurface
-// 5 渲染到窗口，使用eglCreateWindowSurface
 class GLESContext : public IRenderContext {
  public:
   // sharedCtx外部传入的上下文

@@ -373,11 +373,8 @@ class ISurfaceRenderOb {
  public:
   virtual void onSurface() {};
   virtual void onWinSizeChange(int32_t width, int32_t height) {};
-  // 需要windowrender打开enableYuvOut,electron返回CPU数据给网页
-  // buf恒为packed布局(ImageType/尺寸由yuvType经yuv2ImageFormat确定: 平面类r8/r16,
-  // yuv420P/422P的UV物理行为[偶行|奇行|pad]; 交织类rgba8半宽),可直接喂GPU;
-  // 需按stride等距逐行读(ffmpeg/CPU色转)时调image2SplitYUVFrame取split的YUVFrame。
-  // buf生命周期仅限本回调内,要留用请自行拷贝
+// 需要windowrender打开enableYuvOut,electron返回CPU数据给网页
+// buf恒为packed布局(ImageType/尺寸由yuvType经yuv2ImageFormat确定: 平面类r8/r16,
   virtual void onFrame(IImageBuffer* buf, YuvType yuvType) {};
   // 每帧渲染输出事件(渲染线程): 世代/格式/互操作句柄, 回调内禁止阻塞
   virtual void onRender(const SurfaceRenderEvent* ev) {};
@@ -414,11 +411,8 @@ class ISurfaceRender {
   // tone map 曲线参数(默认软膝=历史行为), 运行时可调; 参数见 ToneMapParamet。
   // 实现面=VK/Metal/DX11 腿, EGL 腿调用只告警不改行为
   virtual void setToneMap(const ToneMapParamet& paramet) {};
-  // 调用方须先对 buf 调用 setImageFormat 设定 width/height/imageType(当前仅
-  // rgba8); 每帧按该 ImageFormat 经 GPU 缩放后零拷贝写入 buf, 读取时以
-  // buf->getImageFormat() 为准(rowPitch 可能对齐到 16 字节) buf 由调用方持有,
-  // 生命周期需维持到 disableImage 之后 在 ISurfaceRenderOb::onRender/onFrame
-  // 回调里读取 buf->getPointer() (同帧安全, graph->run 已 vkWaitForFences)
+// 调用方须先对 buf 调用 setImageFormat 设定 width/height/imageType(当前仅
+// rgba8); 每帧按该 ImageFormat 经 GPU 缩放后零拷贝写入 buf, 读取时以
   virtual void enableImage(IImageBuffer* buf) {};
   virtual void disableImage() {};
   // 自适应长宽比,默认为true,为false则是全屏
@@ -477,7 +471,6 @@ class ISurfaceRender {
 // 静态图像渲染器 - 显示单张图片,不用RunTask循环
 // 持有Window + VkVideoRender,调用render()时触发单次渲染+呈现
 // 窗口消息循环由调用者负责
-// setSurface通过getSurfaceRender()->setSurface()调用
 class IImageRender {
  public:
   IImageRender() = default;
@@ -588,7 +581,6 @@ AVOX_EXPORT void removeSurfaceRenderOb(ISurfaceRender* surfaceRender,
 
 // https://cloud.tencent.com/developer/ask/sof/115847757
 // Electorn当在32位和64位应用程序之间共享句柄时
-// 只有较低的32位是重要的，因此截断句柄是安全的(当它从64位传递到32位时
 AVOX_EXPORT void setElectronSurface(ISurfaceRender* surfaceRender,
                                    uint32_t handle);
 // window返回WindowRender输出的DX11共享NT句柄
@@ -596,18 +588,15 @@ AVOX_EXPORT void* getRenderSharedHandle(ISurfaceRender* surfaceRender);
 
 // ── VkDevice-VkDevice 输出: AVOX 写,外部读 ──
 // 创建可导出的 VkSharedImage,每帧自动从管线拷入
-// Apple: 数据通路常开,仅校验 IOSurface 就绪; w/h 不干预,出图分辨率跟随管线
 AVOX_EXPORT bool enableVkOutput(ISurfaceRender* sr, int32_t w, int32_t h);
 // 获取导出的 NT 句柄,外部在另一个 VkDevice 上导入
 // Apple: 填 ioSurface/ioSurfaceId(非所有权,见 VkSharedHandle 注释);
-// 未就绪返回 false,消费端轮询
 AVOX_EXPORT bool getVkOutputHandle(ISurfaceRender* sr, VkSharedHandle* out);
 // 断开输出交互
 AVOX_EXPORT void disableVkOutput(ISurfaceRender* sr);
 
 // ── D3D11 输出: AVOX 自建 NT 共享纹理,VK 每帧拷入,外部 DX11 设备打开复制 ──
 // 在 avox 自身 D3D11 设备上创建 MISC_SHARED_NTHANDLE 纹理并导入 VK 管线
-// (需 AVOX_ENABLE_VULKAN; 图未建时自动在构建后生效)
 AVOX_EXPORT bool enableVkOutputDx11(ISurfaceRender* sr);
 // 共享纹理 NT 句柄: 外部 DX11 设备 OpenSharedResource1 使用
 // 图未建/绑定完成前返回 0,需轮询; 分辨率变化(重绑)后需重新获取

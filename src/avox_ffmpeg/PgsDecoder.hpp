@@ -13,7 +13,6 @@ namespace avox {
 // PGS(HDMV 蓝光位图字幕)解码器(计划 ASS字幕渲染计划.md §3.6):
 // FFmpeg pgssub 解码器 → 位图矩形 + 调色板查表 → RGBA(premultiplied)全帧
 // 画布 → 复用 IAssOverlay 的通用 canvas 通道上屏(不经 libass, 无文字
-// 可排)。解码只在选中该轨时由 IO 线程喂包, 成本近零、零新增三方库。
 class PgsDecoder {
  public:
   PgsDecoder() = default;

@@ -29,14 +29,8 @@ class ISubtitleCandidate {
 };
 
 // 观感设置生效矩阵(样式计划 doc/plan/player/字幕样式设计.md):
-//   纯文本样式(setFont/setColor/setAlign/setPosition/setPositionMargin/
-//   setMaxWidth) → 仅 SRT/ASR 文本路径生效; 内封 ASS 轨/外挂 .ass 样式归
-//   片源(libass)、PGS 是位图, 静默忽略。
-//   全局变换(setScale/setOffset/setOpacity) → 三层通用: 文本在 CPU 侧重
-//   栅格化(放大清晰), ASS/PGS 在 canvas 合成处重采样。
-//   ASS 轨覆盖(setAssScale/setAssFont) → 仅内封 ASS 轨/外挂 .ass 的 libass
-//   排版层生效(libass 重排, 放大清晰非位图拉伸), 叠加在全局变换之上;
-//   SRT/ASR 文本路径与 PGS 忽略。
+// 纯文本样式(setFont/setColor/setAlign/setPosition/setPositionMargin/
+// setMaxWidth) → 仅 SRT/ASR 文本路径生效; 内封 ASS 轨/外挂 .ass 样式归
 class ISubtitle {
  public:
   virtual ~ISubtitle() = default;
@@ -277,9 +271,8 @@ class IMediaPlayer {
   // 获取开始时间,注意如果有跳变的PTS,可能从跳变的PTS开始
   virtual int64_t getStartTime() = 0;
 
-  // 源信息(需状态ready后): 仅 onReady 回调窗口内、同一线程调用, 需要的数据在
-  // 窗口内取出/拷贝(含 desc/subtitleDesc 的字符串), 指针不得保存或跨线程传递
-  // ——窗口外该指针随时可能被 close/换片释放
+// 源信息(需状态ready后): 仅 onReady 回调窗口内、同一线程调用, 需要的数据在
+// 窗口内取出/拷贝(含 desc/subtitleDesc 的字符串), 指针不得保存或跨线程传递
   virtual ISourceInfo* getSourceInfo() = 0;
   // 获取码率Kb/s,bAvg表示平均还是实时
   virtual double getRate(TrackType type, bool bAvg) = 0;
@@ -344,9 +337,6 @@ enum class RtpDirection {
 // RTC专属事件回调(独立接口, 与IMediaPlayerOb并列不继承; 经IRtcPlayer::addOb注册,
 // addRtcPlayerOb对同时实现二者的对象自动双注册)
 // 实现方持有IRtcPlayer指针用于信令回填(自己创建的player, 构造时传入)
-// 信令逻辑: onLocalSdp送服务器 → 服务器返回answer → 调player->setRemoteSdp
-//           (onIceCandidate同; 也可挂createZlTestSdpAgent走内置ZLM/WHEP信令免写交换)
-// onConnectionState/onLocalSdp等来自播放器内部线程, 已做必要保护, 回调内勿重入player
 class IRtcEventOb {
  public:
   virtual ~IRtcEventOb() = default;
@@ -382,10 +372,8 @@ class IRtcPlayer {
   virtual ~IRtcPlayer() = default;
 
  public:
-  // ============ 配置(需在open()前调用, 非线程安全) ============
-  // 有长连接信令通道 → 客户端适合作为 Answer 方（被动等待）
-  // 没有长连接信令通道 → 客户端适合作为 Offer 方（主动请求）
-  // Answer/Offer,其SetLocalDescription/SetRemoteDescription顺序不同
+// ============ 配置(需在open()前调用, 非线程安全) ============
+// 有长连接信令通道 → 客户端适合作为 Answer 方（被动等待）
   virtual void setRollType(RtcRollType type) = 0;
   // STUN/TURN服务器,可多次调用; 不配置仅默认STUN(局域网/同网段可直连)
   virtual void addIceServer(const char* uri, const char* username,
@@ -459,9 +447,8 @@ class IRtcPlayer {
   virtual bool sendDataChannel(const char* data, int32_t size) = 0;
 
  public:
-  // ============ 观察者 ============
-  // rtc扩展回调(onConnectionState/onFirstVideoFrame/onDataChannelMsg)
-  // addRtcPlayerOb对IRtcEventOb实例会自动走到这
+// ============ 观察者 ============
+// rtc扩展回调(onConnectionState/onFirstVideoFrame/onDataChannelMsg)
   virtual void addOb(IRtcEventOb* ob) = 0;
   virtual void removeOb(IRtcEventOb* ob) = 0;
 };

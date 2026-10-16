@@ -7,7 +7,6 @@ namespace avox {
 // 平台渲染对接 - 管理 pVideoRender 与 SurfaceRenderVk 的数据流
 // 持有平台 VideoRender（DX11/EGL/Metal），负责原生 GPU NV12→RGBA 转换和 Vulkan
 // 对接 setVulkan 控制数据流走向： 开启 Vulkan → RGBA 给 Vk 接手处理 关闭 Vulkan
-// → RGBA 给对应 surface 显示
 class AVOX_EXPORT SurfaceRenderNative : public SurfaceRenderVk {
  public:
   SurfaceRenderNative();
@@ -18,9 +17,8 @@ class AVOX_EXPORT SurfaceRenderNative : public SurfaceRenderVk {
   std::unique_ptr<VideoRender> pVideoRender = nullptr;
 
  public:
-  // setVulkan: 控制双路对接
-  // true: pVideoRender 做 NV12→RGBA，交给 Vk 接手处理
-  // false: pVideoRender 做 NV12→RGBA，给对应 surface 显示
+// setVulkan: 控制双路对接
+// true: pVideoRender 做 NV12→RGBA，交给 Vk 接手处理
   virtual void setVulkan(bool bVulkan) override;
   // 颜色/HDR 参数双路转发: vk lane 进 UBO, 原生 lane 进平台转换器
   // (硬解 YUV->RGB 在 pVideoRender 里发生, 不转发则原生车道拿不到 tone map 参数)

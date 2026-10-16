@@ -152,10 +152,8 @@ bool TranscodeRecorder::open(const char* url, const char* file) {
     videoFilter.reset();
   }
   source->setTransMode(transMode);
-  // 音频直拷前置判定注入: 目标容器容不下源音频编码(rmvb 的 cook 进 mp4/mov 无
-  // tag)时让源层直接改走转码, 不等封装层写头失败 —— 那条路 muxer 只是静默停摆,
-  // 录制器拿不到终态事件, 任务会永久停在 0%(2026-09-29 画质增强案)。
-  // 容器能力问 muxer 实现层(它才认识 ffmpeg 的容器 tag 表)。
+// 音频直拷前置判定注入: 目标容器容不下源音频编码(rmvb 的 cook 进 mp4/mov 无
+// tag)时让源层直接改走转码, 不等封装层写头失败 —— 那条路 muxer 只是静默停摆,
   if (bAudioCopy) {
     const MuxerType type = muxerType;
     const std::string out = outputFile;
@@ -310,9 +308,8 @@ void TranscodeRecorder::onReady() {
     // 直拷与否以源层裁决为准: 目标容器容不下该编码时源层已回退转码(见 open 注入
     // 的 audioCopySupported), 这里必须跟着接解码后的 PCM 走转码分支
     if (bAudioCopy && source->isAudioCopy()) {
-      // 音频直拷: 绕过RawMuxer编码/重采样接线, 容器轨desc(带源编码aac)
-      // 原样进封装(IOMuxerFF输出流编码取自inDesc); 不解码,
-      // fdk等兼容性问题整段绕开
+// 音频直拷: 绕过RawMuxer编码/重采样接线, 容器轨desc(带源编码aac)
+// 原样进封装(IOMuxerFF输出流编码取自inDesc); 不解码,
       if (muxer && ioSource && !ioSource->getAudioTracks().empty()) {
         muxer->MediaMuxer::setInAudioDesc(ioSource->getAudioTracks()[0]);
         LOGFLF(LogLevel::info, "audio copy mode, set in desc:",
@@ -329,9 +326,8 @@ void TranscodeRecorder::onReady() {
       }
       // AudioRender setDesc(源格式),tap 可在之后 open
       audioRender->setDesc(aTracks[0].desc);
-      // 无视频帧产出(源无视频轨,或视频已关 VCodecId::none → source 层不开视频
-      // 解码):音频解码不限速,tap 是慢端 → 阻塞反压;有视频时由视频 onFrame
-      // 主导反压到 IO
+// 无视频帧产出(源无视频轨,或视频已关 VCodecId::none → source 层不开视频
+// 解码):音频解码不限速,tap 是慢端 → 阻塞反压;有视频时由视频 onFrame
       if (vTracks.empty() || vCodecId == VCodecId::none) {
         audioRender->setTapBlock(true);
       }
@@ -661,9 +657,6 @@ ISourceInfo* TranscodeRecorder::getSourceInfo() {
 
 // 编码线程执行:关闭队列→清帧→flush 解码/编码→seekTo(内含
 // pause/resume)→清帧→恢复队列 不用 ioSource->pause(true): 会停 IO
-// 线程,对部分源(RTSP)导致 seek 后收不到数据 用 setClose(true) 关闭队列:
-// enqueueWait 不阻塞直接返回,dequeue 返回 false TranscodeRecorder seek
-// 仅对本地文件(duration>0)生效,seekTo 内部自管 pause/resume
 void TranscodeRecorder::doSeek() {
   if (state != RecorderState::recording || !ioSource || !source) {
     return;

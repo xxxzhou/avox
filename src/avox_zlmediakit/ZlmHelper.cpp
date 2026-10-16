@@ -13,16 +13,6 @@ namespace avox {
 
 // 对应zltookit里的socket.h,不知是否正常
 // Error type enumeration
-// typedef enum {
-//     Err_success = 0, //成功 success
-//     Err_eof, //eof
-//     Err_timeout, //超时 socket timeout
-//     Err_refused,//连接被拒绝 socket refused
-//     Err_reset,//连接被重置  socket reset
-//     Err_dns,//dns解析失败 dns resolve failed
-//     Err_shutdown,//主动关闭 socket shutdown
-//     Err_other = 0xFF,//其他错误 other error
-// } ErrCode;
 AVError zlIoError(int32_t errCode) {
   switch (errCode) {
     case 0:

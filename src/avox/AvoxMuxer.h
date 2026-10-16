@@ -130,7 +130,6 @@ enum class TransMode : int32_t {
 // 流录制器,三个作用
 // 1 bTranscode为false,直接保存/转发原始流
 // 2 bTranscode为true,转录原始流,ISurfaceRender处理图像
-// 3 bTranscode为true,并且outputUrl为null,用来离屏处理
 class IRecorder {
  public:
   virtual ~IRecorder() = default;
@@ -168,10 +167,8 @@ class IRecorder {
   // 拉流结束及IO错误也会自动关闭
   virtual void close() = 0;
   virtual RecorderState getState() = 0;
-  // seek 到相对位置(毫秒),内部自动加 basetime;
-  // 未 recording/源不可 seek 返回false
-  // seek 进行中状态机切到 seeking(经 onStateChange 事件对外), 完成回
-  // recording; 调用方亦可轮询 getState()==seeking
+// seek 到相对位置(毫秒),内部自动加 basetime;
+// 未 recording/源不可 seek 返回false
   virtual bool seek(int64_t posMs) { return false; }
   // 源总时长(毫秒),<=0 表示直播/未知(不可 seek);recording 后有效
   virtual int64_t getDuration() { return 0; }

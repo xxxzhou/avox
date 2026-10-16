@@ -182,9 +182,8 @@ bool H264Parse::parseHrdSyntax(H264HrdSyntax &hrd) {
   // See also : ISO 14496/10(2020) - E.1.2 HRD parameters syntax
   br.ue(hrd.cpb_cnt_minus1);
   {
-    // Hint : cpb_cnt_minus1 plus 1 specifies the number of alternative CPB
-    // specifications in the bitstream. The value of cpb_cnt_minus1 shall be
-    // in the range of 0 to 31, inclusive.
+// Hint : cpb_cnt_minus1 plus 1 specifies the number of alternative CPB
+// specifications in the bitstream. The value of cpb_cnt_minus1 shall be
     MPP_H26X_SYNTAXT_STRICT_CHECK(
         hrd.cpb_cnt_minus1 >= 0 && hrd.cpb_cnt_minus1 < 31,
         "[hrd] cpb_cnt_minus1 out of range", return false);
@@ -643,14 +642,8 @@ bool H264Parse::parseSliceHeaderSyntax(H264NalUnitPtr unit,
   if (IdrPicFlag) {
     br.ue(slice.idr_pic_id);
     {
-      // Hint :
-      // idr_pic_id identifies an IDR picture. The values of idr_pic_id in all
-      // the slices of an IDR picture shall remain unchanged. When two
-      // consecutive access units in decoding order are both IDR access units,
-      // the value of idr_pic_id in the slices of the first such IDR access
-      // unit shall differ from the idr_pic_id in the second such IDR access
-      // unit-> The value of idr_pic_id shall be in the range of 0 to 65535,
-      // inclusive.
+// Hint :
+// idr_pic_id identifies an IDR picture. The values of idr_pic_id in all
       MPP_H26X_SYNTAXT_STRICT_CHECK(
           /* slice.idr_pic_id >= 0 && */ slice.idr_pic_id <= 65535,
           "[slice] idr_pic_id out of range", return false);
@@ -807,9 +800,8 @@ bool H264Parse::parseSubSpsSyntax(H264SpsSyntax &sps,
     return false;
   }
   if (sps.profile_idc == 83 || sps.profile_idc == 86) {
-    // TODO
-    // See aslo : ISO 14496/10(2020) - F.3.3.2.1.4 Sequence parameter set SVC
-    // extension syntax
+// TODO
+// See aslo : ISO 14496/10(2020) - F.3.3.2.1.4 Sequence parameter set SVC
     assert(false);
     return false;
   } else if (sps.profile_idc == 118 || sps.profile_idc == 128 ||
@@ -828,17 +820,13 @@ bool H264Parse::parseSubSpsSyntax(H264SpsSyntax &sps,
     assert(false);
     return false;
   } else if (sps.profile_idc == 138 || sps.profile_idc == 135) {
-    // TODO
-    // See aslo : ISO 14496/10(2020) - H.3.3.2.1.5 Sequence parameter set MVCD
-    // extension syntax
+// TODO
+// See aslo : ISO 14496/10(2020) - H.3.3.2.1.5 Sequence parameter set MVCD
     assert(false);
     return false;
   } else if (sps.profile_idc == 139) {
-    // TODO
-    // See aslo : ISO 14496/10(2020) - H.3.3.2.1.5 Sequence parameter set MVCD
-    // extension syntax
-    //                                 I.3.3.2.1.5 Sequence parameter set MVCD
-    //                                 extension syntax
+// TODO
+// See aslo : ISO 14496/10(2020) - H.3.3.2.1.5 Sequence parameter set MVCD
     assert(false);
     return false;
   }
@@ -1015,19 +1003,8 @@ bool H264Parse::parsePpsSyntax() {
   br.ue(pps.num_ref_idx_l0_default_active_minus1);
   br.ue(pps.num_ref_idx_l1_default_active_minus1);
   {
-    // Hint :
-    // num_ref_idx_l0_default_active_minus1
-    //   num_ref_idx_l0_default_active_minus1 specifies how
-    //   num_ref_idx_l0_active_minus1 is inferred for P, SP, and B
-    // slices with num_ref_idx_active_override_flag equal to 0. The value of
-    // num_ref_idx_l0_default_active_minus1 shall be in the range of 0 to 31,
-    // inclusive. num_ref_idx_l1_default_active_minus1
-    //   num_ref_idx_l1_default_active_minus1 specifies how
-    //   num_ref_idx_l1_active_minus1 is inferred for B slices with
-    // num_ref_idx_active_override_flag equal to 0. The value of
-    // num_ref_idx_l1_default_active_minus1 shall be in the range of 0 to 31,
-    // inclusive.
-    //
+// Hint :
+// num_ref_idx_l0_default_active_minus1
     MPP_H26X_SYNTAXT_STRICT_CHECK(
         pps.num_ref_idx_l0_default_active_minus1 >= 0 &&
             pps.num_ref_idx_l0_default_active_minus1 <= 31,
@@ -1044,10 +1021,8 @@ bool H264Parse::parsePpsSyntax() {
   br.se(pps.pic_init_qs_minus26);
   br.se(pps.chroma_qp_index_offset);
   {
-    // Hint : chroma_qp_index_offset specifies the offset that shall be added
-    // to QPY and QSY for addressing the table of QPC values for the Cb chroma
-    // component. The value of chroma_qp_index_offset shall be in the range of
-    // −12 to +12, inclusive.
+// Hint : chroma_qp_index_offset specifies the offset that shall be added
+// to QPY and QSY for addressing the table of QPC values for the Cb chroma
     MPP_H26X_SYNTAXT_STRICT_CHECK(
         pps.chroma_qp_index_offset >= -12 && pps.chroma_qp_index_offset <= 12,
         "[sps] chroma_qp_index_offset out of range", return false);
@@ -1265,9 +1240,8 @@ bool H264Parse::parsePredictionWeightTableSyntax(
       sps.separate_colour_plane_flag == 1 ? 0 : sps.chroma_format_idc;
   br.ue(pwt.luma_log2_weight_denom);
   {
-    // Hint : luma_log2_weight_denom is the base 2 logarithm of the
-    // denominator for all luma weighting factors. The value of
-    // luma_log2_weight_denom shall be in the range of 0 to 7, inclusive.
+// Hint : luma_log2_weight_denom is the base 2 logarithm of the
+// denominator for all luma weighting factors. The value of
     MPP_H26X_SYNTAXT_STRICT_CHECK(
         pwt.luma_log2_weight_denom >= 0 && pwt.luma_log2_weight_denom <= 7,
         "[pwt] luma_log2_weight_denom out of range", return false);
@@ -1275,9 +1249,8 @@ bool H264Parse::parsePredictionWeightTableSyntax(
   if (ChromaArrayType != 0) {
     br.ue(pwt.chroma_log2_weight_denom);
     {
-      // Hint : chroma_log2_weight_denom is the base 2 logarithm of the
-      // denominator for all chroma weighting factors. The value of
-      // chroma_log2_weight_denom shall be in the range of 0 to 7, inclusive.
+// Hint : chroma_log2_weight_denom is the base 2 logarithm of the
+// denominator for all chroma weighting factors. The value of
       MPP_H26X_SYNTAXT_STRICT_CHECK(
           pwt.chroma_log2_weight_denom >= 0 &&
               pwt.chroma_log2_weight_denom <= 7,
@@ -1392,11 +1365,8 @@ bool H264Parse::parseSeiBufferPeriodSyntax(H264SeiBufferPeriodSyntax &bp) {
           ? 1
           : 0;
 
-  // Hint :  initial_cpb_removal_delay and initial_cpb_removal_delay_offset
-  //         The syntax element has a length in bits given by
-  //         initial_cpb_removal_delay_length_minus1 + 1.
-  // See also : ISO 14496/10(2020) - D.2.2 Buffering period SEI message
-  // semantics
+// Hint :  initial_cpb_removal_delay and initial_cpb_removal_delay_offset
+// The syntax element has a length in bits given by
 
   if (NalHrdBpPresentFlag) {
     int32_t cpb_cnt_minus1 =
@@ -1494,21 +1464,8 @@ bool H264Parse::parseSeiPictureTimingSyntax(const H264VuiSyntax &vui,
           ? 1
           : 0;
   if (CpbDpbDelaysPresentFlag) {
-    // Hint : cpb_removal_delay
-    // NOTE 2 The value of cpb_removal_delay_length_minus1 that determines the
-    // length (in bits) of the syntax element cpb_removal_delay is the value
-    // of cpb_removal_delay_length_minus1 coded in the sequence parameter set
-    // that is active for the primary coded picture associated with the
-    // picture timing SEI message, although cpb_removal_delay specifies a
-    // number of clock ticks relative to the removal time of the preceding
-    // access unit containing a buffering period SEI message, which could be
-    // an access unit of a different coded video sequence.
-    //
-    // Hint : dpb_output_delay
-    // The length of the syntax element dpb_output_delay is given in bits by
-    // dpb_output_delay_length_minus1 + 1. When max_dec_frame_buffering is
-    // equal to 0, dpb_output_delay shall be equal to 0.
-    //
+// Hint : cpb_removal_delay
+// NOTE 2 The value of cpb_removal_delay_length_minus1 that determines the
     if (vui.nal_hrd_parameters_present_flag) {
       br.u(vui.nal_hrd_parameters.cpb_removal_delay_length_minus1,
            pt.cpb_removal_delay);

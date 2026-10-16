@@ -16,7 +16,6 @@ namespace avox {
 // WASAPI 采集公共基类
 // Activate/Initialize/GetBufferSize 与读包逻辑在此公共化
 // 麦(event驱动)与 loopback(定时轮询)的差异由子类的 streamFlags/onRunTask 决定
-// 基类继承 RunTask, 故 onOpen/onClose/bOpening 公共; onRunTask 仍由子类实现
 class WasAudioBase : public AudioSource, public RunTask {
  public:
   WasAudioBase(MComPtr<IMMDevice> device, ADeviceKind kind);

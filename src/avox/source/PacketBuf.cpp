@@ -144,9 +144,6 @@ int32_t PacketBuf::getNaluType(VCodecId codeId) const {
 
 // 参数集id提取: 同id才允许替换。同一条流可有多个不同id的PPS/SPS并存
 // (微信导出HEVC实测: IDR切片用pps_id=0、非IDR切片用pps_id=1, 缺一个
-// 解码全灭), 按类型整体替换会挤掉另一个id → extradata缺一半参数集。
-// id取法: h265 VPS/SPS = nal头后u(4); h265 PPS = 头后ue(v);
-//         h264 SPS = 头后跳profile/constraints/level 3字节ue(v); h264 PPS = ue(v)
 static int32_t paramSetId(VCodecId codecId, const PacketBuf& buf) {
   int32_t left = buf.size - buf.prefixSize;
   const uint8_t* p = buf.buff.data() + buf.prefixSize;

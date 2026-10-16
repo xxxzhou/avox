@@ -30,11 +30,8 @@ void AVSource::setSpeed(double speed_) {
   speed = speed_;
   // 先让 IO 侧应用倍速并标定 bSpeedAble
   onSpeed();
-  // 倍速时预判进入I帧模式，收到P/B帧会自动退出。
-  // 仅对 IO 有真倍速语义的源(zlmediakit): 服务端切流有 I 帧窗口期。
-  // ffmpeg 本地/VOD 包流不随倍速改变, 预判只会静音音频+把时钟交给
-  // 静音车道硬灌(2x 下 pos 锯齿、tap 断流, tempo.pipe.* 实证), 且退出
-  // 依赖 P/B 包抵达 singleVideo, 视频消费链一旦背压就可能长期滞留。
+// 倍速时预判进入I帧模式，收到P/B帧会自动退出。
+// 仅对 IO 有真倍速语义的源(zlmediakit): 服务端切流有 I 帧窗口期。
   if (speed > 1 && bSpeedAble && !bIFrameMode) {
     bIFrameMode = true;
     iFrameCount = 0;
@@ -236,9 +233,8 @@ void AVSource::processVideo(AvoxPacket& packet) {
   // log(LogLevel::info, "pts:", packet.pts, " dts:", packet.dts);
   // 视频配置帧,有些IO可能会把多个配置帧与一个I帧合并发送
   VCodecId vcodecId = videoTracks[packet.index].codecId;
-  // 非NALU编码(rv40/wmv3/vc1/mpeg2等)整包直发: 码流里的00 00 01只是巧合
-  // 字节, annexb拆片从起始码起头, 首个伪起始码之前的前导字节不落入任何
-  // 分片被丢弃, 回拼后整帧截断 → 参考链污染全程花屏 (RM/RV40 实证)
+// 非NALU编码(rv40/wmv3/vc1/mpeg2等)整包直发: 码流里的00 00 01只是巧合
+// 字节, annexb拆片从起始码起头, 首个伪起始码之前的前导字节不落入任何
   if (vcodecId != VCodecId::h264 && vcodecId != VCodecId::h265) {
     singleVideo(packet);
     return;
@@ -266,12 +262,8 @@ void AVSource::processVideo(AvoxPacket& packet) {
     pocRestamper->setup(vcodecId, fps);
   }
   pocRestamper->feed(packet);
-  // 几个点.
-  // 组合类型(配置帧组+I帧)(配置帧组+SEI+I帧)
-  // 拆分类型(多个I帧)(多个P帧)
-  // IOS,非avcc,解码时要拆包并把annexb转成avcc/hvcc
-  // android,非annexb,解码时要拆包并把avcc/hvcc转成annexb
-  // 推流,非annexb,拆包并把avcc/hvcc转成annexb
+// 几个点.
+// 组合类型(配置帧组+I帧)(配置帧组+SEI+I帧)
   if (bvcc) {
     uint32_t naluLength = (packet.data.data[0] << 24) |
                           (packet.data.data[1] << 16) |
@@ -294,9 +286,8 @@ void AVSource::processVideo(AvoxPacket& packet) {
       } else {
         if (combineBufs.size() > 0) {
           AvoxPacket& lastBuf = combineBufs.back();
-          // 前一个是配置帧(VPS/SPS/PPS)时,不把后续SEI等非配置NALU并进配置包,
-          // 否则addConfigPacket整段比较会把变化的SEI误判成update,触发假更新;
-          // SEI 单独成组随流下发(载 HDR 元数据,解码侧靠它兜底)
+// 前一个是配置帧(VPS/SPS/PPS)时,不把后续SEI等非配置NALU并进配置包,
+// 否则addConfigPacket整段比较会把变化的SEI误判成update,触发假更新;
           if (naluConfigFrame(vcodecId, getNalUnit(vcodecId, lastBuf))) {
             combineBufs.push_back(buf);
           } else {
@@ -323,8 +314,6 @@ void AVSource::processVideo(AvoxPacket& packet) {
 
 // 整组扫描随机访问NAL(h264:IDR / h265:IRAP), 返回其长度前缀在组内的字节
 // 偏移(可直接作截断起点), 无则-1. 分组启发式(h264NaluNewFrame的first_mb
-// 高位检查)会把IDR切片误判成"未起新帧"并进前帧组(霍小玉.mkv实证), 组首
-// NAL判不出关键帧, seek落点闸需要全组扫描
 static int32_t groupRandomAccessOffset(const AvoxPacket& packet, VCodecId vc,
                                        bool bvcc) {
   const uint8_t* p = packet.data.data;
@@ -365,10 +354,8 @@ static int32_t groupRandomAccessOffset(const AvoxPacket& packet, VCodecId vc,
 void AVSource::singleVideo(AvoxPacket& packet) {
   VCodecId vcodecId = videoTracks[packet.index].codecId;
   uint8_t nalu = getNalUnit(vcodecId, packet);
-  // AUD单独成包,每帧喂一个无slice的空包,解码器会持续刷"no frame!"。
-  // 但[AUD][SEI..]合并组不能整组丢——SEI载带内HDR元数据(mdcv/clli),
-  // 跳过头AUD按下一NAL重新起头; 丢弃点必须在这里而不是合并循环:
-  // 合并循环跳AUD会破坏组内连续性(size扩展跨过跳过的字节,包内容错位)
+// AUD单独成包,每帧喂一个无slice的空包,解码器会持续刷"no frame!"。
+// 但[AUD][SEI..]合并组不能整组丢——SEI载带内HDR元数据(mdcv/clli),
   if (naluDropAble(vcodecId, nalu)) {
     std::vector<AvoxPacket> nalus;
     if (bvcc) {
@@ -426,14 +413,8 @@ void AVSource::singleVideo(AvoxPacket& packet) {
   if (bSeeking && !bKeyFrame && !bConfig &&
       (vcodecId == VCodecId::h264 || vcodecId == VCodecId::h265)) {
     idrOff = groupRandomAccessOffset(packet, vcodecId, bvcc);
-    // 入口选择(优先级从上到下):
-    // ① 组内真IDR(nal:5): 截断到IDR起解, 最干净入口
-    // ② 容器关键帧组(open-GOP恢复点): 直接作入口按I帧放行——解码器seek时
-    //    已整体重建(干净POC)+OUTPUT_CORRUPT, 恢复期短花屏可容忍(VLC同款);
-    //    全流无真IDR的修复版重封装若硬等IDR, 只能防呆放行解缺参考垃圾
-    //    (panvox 62min处seek实测: 黑屏数秒+Missing reference刷屏)
-    // ③ 都不是(索引坏落GOP中间的P/B): 一直丢到下一个IDR/关键帧组, 丢弃是
-    //    IO速度远快于解垃圾; 仅kSeekIdrDropMax防呆防真无关键帧流永久黑屏
+// 入口选择(优先级从上到下):
+// ① 组内真IDR(nal:5): 截断到IDR起解, 最干净入口
     if (idrOff < 0 && containerKey != 1) {
       ++seekIdrDrops;
       if (seekIdrDrops <= kSeekIdrDropMax) {
@@ -745,9 +726,8 @@ void AVSource::checkJump(AvoxPacket& packet) {
   }
   // 如果时间跳了
   if (spanPaket > maxSyncAvTime) {
-    // 只标记同步失效, 通知播放器重新同步
-    // 不修改basePts: 跳变可能是分片重叠(PTS会追上)或正常的seek/断线恢复,
-    // 改basePts反而会破坏已有的时间基准, 导致baseTimeMS和相对时间全部乱掉
+// 只标记同步失效, 通知播放器重新同步
+// 不修改basePts: 跳变可能是分片重叠(PTS会追上)或正常的seek/断线恢复,
     LOGFLF(LogLevel::warn, "pts jump,now pts:", packet.pts,
            " pre pts:", type == PackType::video ? videoPrePts : audioPrePts,
            " track:", type == PackType::video ? "video" : "audio", " backward:",

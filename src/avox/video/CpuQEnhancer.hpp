@@ -15,7 +15,6 @@ class IONNXSession;
 // 离线画质增强器 (转码录制器专用; MediaPlayer/实时轨走图内 VkQEnhanceLayer, 不经过此处)
 // 架构: Vulkan 管线出 rgba CPU 帧 → vFrameQueue(满则反压解码) → 编码线程侧
 // 本器逐帧: rgba 打包 NCHW → Real-ESRGAN 推理(OpenVINO GPU→ORT CPU 降级)
-// → 解包转 yuv。推理慢时整线按推理速度节拍, 天然逐帧有序, 无渲染图内时序补丁。
 class CpuQEnhancer {
  public:
   CpuQEnhancer() = default;

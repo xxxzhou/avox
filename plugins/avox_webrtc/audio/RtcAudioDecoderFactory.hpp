@@ -13,12 +13,8 @@ namespace avox {
 //   virtual ~RtcAudioDecoderFactory() {}
 
 // public:
-//   virtual std::vector<AudioCodecSpec> GetSupportedDecoders() override;
-//   virtual bool IsSupportedDecoder(const SdpAudioFormat &format) override;
-//   virtual absl_nullable std::unique_ptr<AudioDecoder>
-//   Create(const Environment &env, const SdpAudioFormat &format,
-//          std::optional<AudioCodecPairId> codec_pair_id) override;
-// };
+// virtual std::vector<AudioCodecSpec> GetSupportedDecoders() override;
+// virtual bool IsSupportedDecoder(const SdpAudioFormat &format) override;
 
 struct AudioDecoderAAC {
   struct Config {

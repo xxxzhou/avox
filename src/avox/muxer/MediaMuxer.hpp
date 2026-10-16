@@ -10,8 +10,6 @@ using RDOB = Observer<IRecorderOb>;
 // 媒体封装器,用于封装已经编码后的acc/h264/h265数据
 // 创建MediaMuxer对象的类需要实现IRecorderOb接口
 // 在IRecorderOb::onStateChange回调中获取状态
-// 原本是把AVSource和设置AvSource,由AvSource来驱动
-// 但是上层需要同时知道AVSource和MediaMuxer状态并控制
 class MediaMuxer : public IMediaMuxer, public Observer<IRecorderOb> {
  public:
   MediaMuxer();

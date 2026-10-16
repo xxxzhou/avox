@@ -14,8 +14,6 @@ namespace avox {
 // 考虑移除锁
 // 如果有类用Observer与RenTask的组合,需要注意
 // 开始时调用addObserver，再startTask
-// 关闭时先stopTask，再removeObserver
-// 但是如果是有Observer,还是需要锁
 template <typename T>
 class Observer {
  protected:
@@ -96,9 +94,8 @@ class Observer {
       return;
     }
     std::shared_lock<std::shared_mutex> lock(mtxOb);
-    // 回调在lock下，一定注意这个回调如果再到有锁的情况可能导致死锁
-    // 比如在回调中调用removeObserver，就会导致死锁，除非使用递归锁
-    // 并且removeObserver会导致迭代器失效，所以需要重新遍历
+// 回调在lock下，一定注意这个回调如果再到有锁的情况可能导致死锁
+// 比如在回调中调用removeObserver，就会导致死锁，除非使用递归锁
     for (T* observer : observers) {
       // 使用成员函数指针调用观察者的方法
       (observer->*func)(std::forward<Args>(args)...);

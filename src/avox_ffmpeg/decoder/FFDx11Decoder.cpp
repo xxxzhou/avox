@@ -141,9 +141,8 @@ bool FFDx11Decoder::onVaild() {
 }
 
 void FFDx11Decoder::onAttachContext() {
-  // 设备复用: 已有hwBuffer(典型为seek重置onPreDecoder重入)直接挂到新ctx,
-  // 不重建设备 —— 重建会让渲染侧setDevice持有的旧device与解码新device分家,
-  // 共享纹理互拷失效
+// 设备复用: 已有hwBuffer(典型为seek重置onPreDecoder重入)直接挂到新ctx,
+// 不重建设备 —— 重建会让渲染侧setDevice持有的旧device与解码新device分家,
   if (hwBuffer) {
     codecCtx->hw_device_ctx = av_buffer_ref(hwBuffer);
     return;

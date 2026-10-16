@@ -159,7 +159,6 @@ struct PointCorners {
 // 角点三维顶点容器 + 图案识别 (棋盘格/Aruco/用户注入)。
 // 3D 点来源: 1) setChessboardInfo 自动生成 2) setPoints 注入 (如 LED 幕墙 Mesh 顶点)。
 // Aruco 契约: markerId m 的第 c 个角点对应 3D 点索引 (m - startArucoId) * 4 + c,
-// 注入点集必须按此排列。识别/检测细节由标定类内部使用。
 class IImagePoints {
  public:
   virtual ~IImagePoints() = default;
@@ -248,7 +247,6 @@ class IPnpCameraPose {
 // LED 幕墙 mesh → Aruco 标定 (移植自 aoce WallMeshBuild):
 // 加载幕墙网格 (ISceneImport, AvoxScene.h) → 按 UV 栅格化面板 →
 // 分配各块 markerId → 生成 3D 角点 (IImagePoints, arucoId 契约对齐) + 标定贴图。
-// 贴图播放到 LED 屏上拍摄即可标定; markerId = startId + 块内列 + 行*列数。
 class ILedMeshBuild {
  public:
   virtual ~ILedMeshBuild() = default;

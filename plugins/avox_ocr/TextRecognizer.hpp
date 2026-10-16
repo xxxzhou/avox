@@ -15,7 +15,6 @@ namespace avox {
 // ITextRecognizer 的 PP-OCRv6 实现 (det DBNet + rec CRNN/CTC)
 // 由 OcrModule 注册为工厂 "ppocr", 业务经 createTextRecognizer() 取实例
 // 推理走 avox_onnx 的 IONNXSession (onnxSessionHub.create("onnx")); det 用 runShaped(动态 H/W)
-// 后处理参考: RapidAI/RapidOcrOnnx
 class TextRecognizer : public ITextRecognizer, public OnnxModelUser {
  private:
   // 识别结果 (内部用, 含文字串; 边界不暴露 std::string)

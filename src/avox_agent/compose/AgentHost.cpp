@@ -140,9 +140,8 @@ Agent* AgentHost::openAgent(const std::string& sessionId) {
   if (std::filesystem::exists(currentSessionPath)) {
     // resume: 恢复完整历史 (含工具调用与结果) 与未做完的 inbox 工作。
     LoadedSession loaded = loadSession(currentSessionPath);
-    // 路径与头行互证 (dsh assertStoredIdentity): 目录名由 id 编码而来, 头行必须一致;
-    // cwd 不符说明日志被搬过目录, 拒读比静默混录安全。比较整份 optional: 会话是否
-    // 绑定了项目目录必须与本次显式配置一致 ("有 cwd" 与 "无 cwd" 都算一个状态)。
+// 路径与头行互证 (dsh assertStoredIdentity): 目录名由 id 编码而来, 头行必须一致;
+// cwd 不符说明日志被搬过目录, 拒读比静默混录安全。比较整份 optional: 会话是否
     if (loaded.header.id != SessionId(id)) {
       throw std::runtime_error("会话日志头行 id ("
                                + loaded.header.id.value + ") 与目录名 ("
@@ -205,9 +204,8 @@ Agent* AgentHost::openAgent(const std::string& sessionId) {
   payload.agent = agent.get();
   extensionPoints.created.emit(payload, agent->scope());
 
-  // ---- Agent Teams (enableTeam): Lead 会话隐式成队 ----
-  // 服务绑定本会话: 恢复 = 重折叠 team/* 事件 + provisioning 冷裁定 + 邮箱补投。
-  // 坏 Lead 日志 (折叠不变式炸) 只废掉队伍, 不拖垮主会话。
+// ---- Agent Teams (enableTeam): Lead 会话隐式成队 ----
+// 服务绑定本会话: 恢复 = 重折叠 team/* 事件 + provisioning 冷裁定 + 邮箱补投。
   if (hostConfig.enableTeam) {
     TeamRosterDeps teamDeps;
     teamDeps.lead = agent.get();

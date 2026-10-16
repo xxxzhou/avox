@@ -44,7 +44,6 @@ struct MatchResult {
 // 图标/模板匹配接口
 // 跨 DLL 安全: 方法签名只用 IImageBuffer* + 原始类型/枚举, 不传 STL
 // (见 doc/plan/动态加载组件设计.md §6); 结果用多段 getter 取出。
-// 范本: IWatermarkRemoval (本文件, 见下方水印去除段)
 class ITemplateMatcher {
  public:
   virtual ~ITemplateMatcher() = default;
@@ -294,7 +293,6 @@ struct MapMatchResult {
 // 地图定位接口 (通用小地图定位引擎; 算法对照 BGI SceneBaseMapByTemplateMatch)
 // 通用: 只认"小地图 + (可选)掩码 + 大地图", 不含任何场景知识。朝向检测/掩码生成/
 // 坐标换算由上层负责 (朝向用 IOrientationDetector, 掩码用 IMaskBuilder)。
-// 跨 DLL 安全: 方法签名只用 IImageBuffer* + 原始类型/枚举, 不传 STL
 class IMapMatcher {
  public:
   virtual ~IMapMatcher() = default;

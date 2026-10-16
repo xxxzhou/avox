@@ -28,7 +28,6 @@ class AgentHost;
 
 // conversationImageInput: 会话主模型是否支持图片输入 (ProviderCatalog imageInput)。
 // true 时 see-image 的 description 把"通用看图"引导到 read_image, 把 OCR/对比/locate
-// 等专项任务留给自己; false 时 see-image 是唯一看图入口, 维持原描述。
 ToolDefinition makeSeeImageTool(bool conversationImageInput);
 ToolDefinition makeLocateTool();
 ToolDefinition makeOcrScreenshotTool(bool conversationImageInput);
@@ -39,8 +38,6 @@ ToolDefinition makeExtractForegroundTool();
 
 // 统一注册到 host。catalog 由装配期 (composeDiagnosticAgent) 传入, 供应商彻底统一走
 // ProviderCatalog (图像理解取 catalog.inputProviders(), 文生图取 catalog.genProviders())。
-// conversationImageInput: 同上, 影响 see-image / ocr-screenshot 的 description 文案路由。
-// 返回每个工具注册的撤销器 (单个失败由调用方记录, 尽量装完)。
 std::vector<Disposer> registerVisionTools(AgentHost& host, const ProviderCatalog& catalog,
                                           bool conversationImageInput);
 

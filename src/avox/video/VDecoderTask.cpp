@@ -51,10 +51,8 @@ bool VDecoderTask::start(class VideoTrack* context) {
       (bHard && !sOverrideName.empty()) ? sOverrideName.c_str() : nullptr;
   const char* sName = sOverride ? sOverride : getDefaultDecoderName(codecId, bHard);
   const char* sFallback = bHard ? getDefaultDecoderName(codecId, false) : nullptr;
-  // AV1 软解归一(1003, 同 AMediaSource): 构建带 dav1d 时软解走 libdav1d;
-  // 注册表没有 dav1d(如 Windows 无该库)则原生 "av1" 是 hwaccel-only 空壳, 无
-  // hwaccel 上下文每包 ENOSYS ⇒ 软解车道不存在, 首选直接改硬解名(空壳能建能
-  // setContext, 挂备路永远不会被试到, 必须换主路)。
+// AV1 软解归一(1003, 同 AMediaSource): 构建带 dav1d 时软解走 libdav1d;
+// 注册表没有 dav1d(如 Windows 无该库)则原生 "av1" 是 hwaccel-only 空壳, 无
   if (!sOverride && codecId == VCodecId::av1) {
     bool bHasDav1d = false;
     for (size_t i = 0; i < decodes.size(); ++i) {
@@ -197,14 +195,8 @@ void VDecoderTask::flush() {
   // 9/25 16:15真机crash), 也可能与在解的包并发操作codecCtx
   // seek 会连同包队列一起清掉, 扣着的簇属于旧位置, 一起作废
   flattener.reset();
-  // 解码器状态必须整体重建: hw车道(实测d3d11va) avcodec_flush_buffers 清不掉
-  // h264 POC/frame_num, open-GOP 恢复点落点(non-IDR I帧带KEY标志)解码会
-  // Frame num gap 螺旋到持续 0 帧(霍小玉.mkv seek冻结实证); 由解码线程在
-  // 下一轮循环消费本标志(重建时在owner线程flush旧ctx), 避免并发操作codecCtx
-  // Android MediaCodec 例外: 重建(拆实例)连坐 SurfaceTexture/EGL, 渲染层
-  // needReset 按新 GLESContext 判变, 每逢 seek 拆一次 GL 图(AHB/VK 重绑),
-  // 重建窗口 AHB 未定义 → VK 合成黑帧上屏(1015 真机 44 连 seek 18 黑实锤);
-  // 原地 flush 保画面, 喂包由 seek keyframe/idr gate 保证 sync frame 起
+// 解码器状态必须整体重建: hw车道(实测d3d11va) avcodec_flush_buffers 清不掉
+// h264 POC/frame_num, open-GOP 恢复点落点(non-IDR I帧带KEY标志)解码会
   if (decode && decode->getCodecTh() == VCodecTh::androidMC) {
     bFlushCtx = true;
     return;
@@ -271,10 +263,8 @@ void VDecoderTask::onRunTask() {
       bGotFrame = false;
       bOpenDecode = false;
       supplyMarkMs = 0;
-      // 起播阶段换道: 视频队列吸到下一个关键帧起解。换道时IO已灌了数秒包,
-      // 新车道若从GOP中段起解只会产出缺参考坏帧(实测POC 0/6/12连环报错);
-      // 摊平器扣着的半簇同属旧落点, 随队列一起作废。队列无IDR(直播尾簇)
-      // 则保持原位不动
+// 起播阶段换道: 视频队列吸到下一个关键帧起解。换道时IO已灌了数秒包,
+// 新车道若从GOP中段起解只会产出缺参考坏帧(实测POC 0/6/12连环报错);
       if (!bHadFrame) {
         int32_t dropped = trackContext->getPacketQueue().dropUntil(
             [](const PacketBufPtr& pkt) {
@@ -346,9 +336,8 @@ void VDecoderTask::onRunTask() {
         }
         // 配置帧变了,不需要退出当前线程
         if (bDecodeUpdate && topItem->frameType == 1) {
-          // 如果是硬解，重置后相关GPU的上下文可能失效
-          // 原保存的frame也失效。只丢帧不丢包: 本地文件IO常在此时已读完全部
-          // 包(EOF), 清包队列会让切换分辨率后的包无处补充, 解码线程静默饿死
+// 如果是硬解，重置后相关GPU的上下文可能失效
+// 原保存的frame也失效。只丢帧不丢包: 本地文件IO常在此时已读完全部
           if (bHardDecode) {
             trackContext->flushFrames();
           }
@@ -375,10 +364,8 @@ void VDecoderTask::onRunTask() {
       bGet = packetQueue.dequeueAction(
           [&](const PacketBufPtr& packetPtr) { tempPtr->form(*packetPtr); });
     }
-    // 尾簇: 输入排空(本地文件常已读完全部包)后必须放出来, 否则最后一簇扣死.
-    // 用排空轮数而不是队列 close 来判, 直播长静默也会走到这里, 但一次只错一簇。
-    // IO 已确认读完(ioExhausted)时用短阈值: 此时不可能是直播静默, 再等 300 轮
-    // 只会把流尾拖后数秒, 连带把重排缓冲的尾帧也顶到后面
+// 尾簇: 输入排空(本地文件常已读完全部包)后必须放出来, 否则最后一簇扣死.
+// 用排空轮数而不是队列 close 来判, 直播长静默也会走到这里, 但一次只错一簇。
     if (!bGet && flattener.pending() && packetQueue.empty() &&
         ++idleRounds > (mediaPlayer->ioExhausted() ? kEndIdleRounds
                                                    : kTailIdleRounds)) {
@@ -408,10 +395,8 @@ void VDecoderTask::onRunTask() {
       if (tempPtr->configType()) {
         // log(LogLevel::info, "xxxx ", tempPtr->size);
         ConfigAddType type = decode->pushConfig(*tempPtr);
-        // 配置帧变了，重置不?
-        // 直播有时频繁更新，但是老的也能继续解码
-        // 直接重置不确定是否是一个好的策略
-        // 或是检查大小是否变化，只有引起大小变化才重置？
+// 配置帧变了，重置不?
+// 直播有时频繁更新，但是老的也能继续解码
         if (type == ConfigAddType::updateSize) {
           bDecodeUpdate = true;
         }
@@ -493,9 +478,8 @@ void VDecoderTask::onRunTask() {
       // 没取到包 / 参数集还没齐: 阻塞等待下一轮, 避免空转
       sleepTask(false, 10);
     } else {
-      // 正常处理了数据: 必须全速继续, 不能睡。
-      // 原写法 sleepTask(result == noConfig, 10) 语义反了 —— 解出数据反而 sleep 10ms,
-      // 单包耗时被抬到 10ms+, 50fps 源实测只能出 ~33fps(帧间隔 28ms)。
+// 正常处理了数据: 必须全速继续, 不能睡。
+// 原写法 sleepTask(result == noConfig, 10) 语义反了 —— 解出数据反而 sleep 10ms,
       sleepTask(true);
     }
   }

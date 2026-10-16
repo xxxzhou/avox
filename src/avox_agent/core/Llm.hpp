@@ -37,10 +37,8 @@ struct LlmRequest {
 };
 
 // 流式分片回调。
-//
 // 在 provider 的读取线程上同步调用, 必须短小: 驱动在这里把分片落进日志并转发给 UI。
 // 分片即 dsh 的 StreamChunk (7 变体) —— 驱动逐分片落 assistant/chunk 事件, token 级
-// 回放保真; usage/finish 分片同样经过这里 (它们也进日志)。
 struct LlmStreamHandler {
   std::function<void(const StreamChunk& chunk)> onChunk;
 };
@@ -66,11 +64,8 @@ struct LlmFinish {
 };
 
 // 一次已解析路由的调用。
-//
 // adapterDefaults 标记哪些字段是 adapter 物化的而非调用方提议的 —— 驱动据此在把折叠出的
 // header 喂给下一次 agent/request 之前删掉它们, 于是切换路由后新 adapter 会重新物化自己
-// 的默认值, 而用户显式设的值跨 step、跨路由保留。(免费模型轮换直接吃这条: 轮到另一个
-// 模型时 maxTokens 该重算, temperature 该保留。)
 struct PreparedLlmCall {
   LlmCallConfig config;
   LlmCallConfigAdapterDefaults adapterDefaults;
@@ -84,22 +79,15 @@ class LlmProvider {
   // 解析路由并物化默认值。路由不可用时抛 std::runtime_error。
   virtual PreparedLlmCall prepareCall(const LlmCallConfig& proposed) = 0;
 
-  // 发一次请求并把分片交给 handler。
-  //
-  // **同步阻塞**直到流结束或被取消。取消时必须让已建立的连接与线程到达静止后才返回 ——
-  // 驱动不会抛弃这个调用。
+// 发一次请求并把分片交给 handler。
+// **同步阻塞**直到流结束或被取消。取消时必须让已建立的连接与线程到达静止后才返回 ——
   virtual LlmFinish stream(const LlmRequest& request,
                           const LlmStreamHandler& handler) = 0;
 };
 
 // 把流式分片组装成一条 assistant 消息。
-//
 // 对齐 dsh 的 BlockAssembler: 分片按块索引归属 (block-start 开槽, delta 追加到槽,
 // block-end 定稿), 块在消息 content 里的顺序 = 块首次出现的顺序 —— 文本与工具调用
-// 交错时, 顺序就是模型的输出顺序。工具调用的 arguments 由分片累积, 流式期间不 parse,
-// 攒齐再交给工具。
-//
-// usage 与 finish 分片不属于内容, 进来直接忽略 (它们只进日志)。
 class BlockAssembler {
  public:
   void push(const StreamChunk& chunk);
@@ -114,9 +102,8 @@ class BlockAssembler {
   // 工具调用块 (按出现顺序)。
   std::vector<ToolCallBlock> toolCalls() const;
 
-  // 被取消流的已送达前缀 (dsh interruptedBlocks): 按流顺序返回内容非空白的
-  // text 与 reasoning 块 —— 已闭合与未闭合都算。打断先于分派, 没有真实工具
-  // 结果, 故省略 tool-call 块; 空白块与空结果同样省略。空结果 = 不追加消息。
+// 被取消流的已送达前缀 (dsh interruptedBlocks): 按流顺序返回内容非空白的
+// text 与 reasoning 块 —— 已闭合与未闭合都算。打断先于分派, 没有真实工具
   std::vector<ContentBlock> interruptedBlocks() const;
 
  private:

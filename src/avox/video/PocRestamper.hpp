@@ -11,23 +11,7 @@ class H265Parse;
 
 // 丢 ctts 的 B 帧流显示时间戳重建器
 // 症状: mp4/转码产物缺 ctts(直播录制重封装常见), pts==dts 按解码序直出,
-//       B 帧内容在显示序上往复 → 画面来回闪动
-// 做法: 流内证据激活——全 pts==dts 且 POC 出现倒挂才工作; 激活后解码序不变,
-//       pts 按帧内 POC 平移到显示格(pts = 首帧pts + 显示位*帧长, µs 精度格,
-//       ms 整数格对 29.97 这类非整帧率每帧欠 ~0.4ms 会累积成周期丢帧), 等效把
-//       丢掉的 ctts 注回时间轴。dts 不动, 解码两条车道(VT 按 max(pts-dts)
-//       推重排深度 / FFmpeg 按 pts 重排)自然恢复
-// 恒等性: armed 只记账不改写; 正常流(pts!=dts)在 feed() 入口首帧即永久旁路,
-//       全程零触碰; pts==dts 且 VUI 权威声明 num_reorder_frames>0 的流首帧即
-//       预激活(接缝归零, 首帧 dispUnits=0 恒等不改写), 无此声明则仍等 POC 倒挂实证
-// 绝对基准: 显示格原点(pts0/fullPoc0)常态只锚首帧(轴绝对均匀); 另在 IRAP 上
-//       校验本轴与容器时间, 偏差超 1s 即判定 seek 落点并重锚回容器时钟——IRAP
-//       解码位次与显示位次重合, 其 dts 即该帧显示时刻。缺此校验时 seek 后帧
-//       计数轴原地续数会与容器错开整段(实测 84 分钟), 音频被 alignPacketPts
-//       拉去追视频 → 持续抖动
-// 激活点接缝由下游 restampFramePts 兜底, 但接缝错位可达数个显示格(非 1ms 级),
-// 故预激活优先; poc_type!=0 / 解不出 SPS / 多帧包: 该包不改写不记账, 后续帧
-// lsb 差分吸收
+// B 帧内容在显示序上往复 → 画面来回闪动
 class AVOX_EXPORT PocRestamper {
  public:
   PocRestamper();

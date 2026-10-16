@@ -44,9 +44,7 @@ void splitUrl(const std::string& url, std::string& baseUrl, std::string& pathPar
 }
 
 // HTTP 状态 → 语义失败码。
-//
 // ModelRoutePolicy 认的是这些码而不是 HTTP 数字: 换后端时策略不用改, 而「连接失败」与
-// 「限流」的处置本来就不同 (换模型对网络问题没用)。
 std::string codeOfStatus(int status) {
   if (status == 429 || status == 402) return "RATE_LIMITED";
   if (status >= 500) return "UPSTREAM_ERROR";
@@ -56,9 +54,7 @@ std::string codeOfStatus(int status) {
 }
 
 // ImageBlock -> data URL (OpenAI 兼容 wire 的图片形态)。
-//
 // 日志里只有附件引用, 字节从附件仓取 (dsh attachment 模型); 没有仓或对象缺失都是
-// 配置级错误 —— 静默丢图等于对模型撒谎, 必须响亮失败。
 std::string imageUrlOf(const ImageBlock& block, AttachmentStore* store) {
   if (store == nullptr) {
     throw std::runtime_error("消息含图片块但没有附件仓 (ImageBlock 需要 "
@@ -111,10 +107,8 @@ ProviderRequest toProviderRequest(const LlmRequest& request,
         if (const auto* t = std::get_if<TextBlock>(&block)) {
           text += t->text;
         } else if (const auto* call = std::get_if<ToolCallBlock>(&block)) {
-          // 生成 OpenAI 兼容的 tool_calls wire。
-          //
-          // 后端严格要求 assistant.tool_calls[].id 与每条 role:tool 的 tool_call_id
-          // 一一对应, 否则续发直接 400 —— 而 id 来自流式期间的 index→id 映射。
+// 生成 OpenAI 兼容的 tool_calls wire。
+// 后端严格要求 assistant.tool_calls[].id 与每条 role:tool 的 tool_call_id
           Json entry(Json::JsonObject{});
           entry["id"] = call->id.value;
           entry["type"] = "function";
@@ -261,11 +255,8 @@ PreparedLlmCall LlmProviderAdapter::prepareCall(const LlmCallConfig& proposed) {
   if (prepared.config.model.empty()) prepared.config.model = config.model;
   if (prepared.config.provider.empty()) prepared.config.provider = config.providerName;
 
-  // 物化默认值并标记来源: 标记让驱动在下一次请求前把它们摘掉重解, 而用户显式设的值保留。
-  //
-  // temperature 物化但不标记 —— dsh 的 adapterDefaults wire 只放得下
-  // {reasoningEffort, maxTokens}, avox 因此约定「永远显式写 temperature」: 轮换模型时
-  // temperature 保留 (与旧行为一致), maxTokens 重算。
+// 物化默认值并标记来源: 标记让驱动在下一次请求前把它们摘掉重解, 而用户显式设的值保留。
+// temperature 物化但不标记 —— dsh 的 adapterDefaults wire 只放得下
   if (!prepared.config.temperature.has_value()) {
     prepared.config.temperature = config.temperature;
   }
@@ -273,9 +264,8 @@ PreparedLlmCall LlmProviderAdapter::prepareCall(const LlmCallConfig& proposed) {
     prepared.config.maxTokens = config.maxTokens;
     prepared.adapterDefaults.maxTokens = true;
   }
-  // reasoning_effort 走 dsh adapterDefaults wire 的 {reasoningEffort, maxTokens} 标记规则
-  // (SessionCodec.cpp:728 注释) —— 物化时打标, requestProposal 在切路由前摘除重算。
-  // 与 maxTokens 同档: 不是用户显式设的就重算, 用户/UI 选模型时显式设的跨路由保留。
+// reasoning_effort 走 dsh adapterDefaults wire 的 {reasoningEffort, maxTokens} 标记规则
+// (SessionCodec.cpp:728 注释) —— 物化时打标, requestProposal 在切路由前摘除重算。
   if (!prepared.config.reasoningEffort.has_value()) {
     prepared.config.reasoningEffort = config.reasoningEffort;
     prepared.adapterDefaults.reasoningEffort = true;

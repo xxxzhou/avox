@@ -42,12 +42,6 @@ class SubtitleCandidateItem : public ISubtitleCandidate {
 // 统一字幕视图(计划 doc/plan/player/字幕模块合并计划.md P3): 三槽位(内封轨/
 // 外挂文件/ASR)状态与仲裁内聚, 后激活者胜, 空窗不回落。全部内容统一产出
 // RGBA8 bbox canvas 经同一个 ICanvasLayer sourceOver 混合: 轨槽走 libass
-// 插件(chunk 流)/PGS 画布; 外挂按扩展名分流(.ass/.ssa→插件, 其余→
-// TextRasterizer); ASR 走 TextRasterizer。未装 avox_ass 插件时轨通道降级
-// 为不渲染, 纯文本照常。
-// 线程约定: activate*/deactivate*/load*/closeSubtitle/resetEvents 只在播放器
-// 线程; pushChunk/setPgsCanvas 在 IO 线程; onRender 在渲染线程(内部互斥);
-// ISubtitle 观感 setter 任意线程可调(含 open 前, 不触发图重建)。
 class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
  public:
   using Slot = SubtitleSlots::Slot;
@@ -128,9 +122,8 @@ class SubtitleView : public ISubtitle, public ISurfaceRenderOb {
   // 关 ASR 槽(仅当 ASR 本就是胜者, 不影响轨/外挂), 返回是否真的关了
   bool deactivateAsr();
 
-  // ---- 轨槽通道(内封 ASS/PGS 与外挂样式文件共用) ----
-  // 建通道: assOverlayHub 查表 + libass init(视频分辨率坐标系)。
-  // 返回 false = 无插件/初始化失败(降级), 调用方按无字幕轨处理。
+// ---- 轨槽通道(内封 ASS/PGS 与外挂样式文件共用) ----
+// 建通道: assOverlayHub 查表 + libass init(视频分辨率坐标系)。
   bool openTrackChannel();
   bool trackOpened() const { return overlay != nullptr; }
   // libass 轨是否已就绪(未就绪时 pushChunk 丢弃, 调用方应先排队)

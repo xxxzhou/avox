@@ -15,11 +15,7 @@ namespace avox {
 namespace {
 
 // 把入参规范化: 深度 key 排序后重新序列化。
-//
 // 本项目的 Json 对象底层是 std::map, 所以 dump 出来天然是键排序的, 嵌套层也一样 ——
-// 于是「属性顺序不同但内容相同」的两次调用会得到同一个串, 正是需要的比较基准。
-//
-// 解析失败 (模型产出了坏 JSON) 时退回原文: 那种情况下原文相同也确实算同一次调用。
 std::string canonicalizeArguments(const std::string& argumentsJson) {
   const Json parsed = parserJson(argumentsJson.c_str());
   if (!parsed.bObject() && !parsed.bArray()) return argumentsJson;

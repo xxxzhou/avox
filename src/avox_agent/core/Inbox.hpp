@@ -29,10 +29,8 @@
 namespace avox {
 
 // 队列变更的通知。
-//
 // claim 只发 claimed: 被取走的消息是**被消费**了, 不是被取消, 所以既不发 discarded 也
 // 不在事件里记 canceled。这个区分让「用户的话被丢了」与「用户的话被处理了」在日志与 UI
-// 上不会混淆。
 struct InboxNotifications {
   std::function<void(const UserMessage&)> inserted;
   std::function<void(const UserMessage&)> discarded;
@@ -41,10 +39,8 @@ struct InboxNotifications {
 
 class Inbox {
  public:
-  // session: 借用引用, 必须比本对象活得久。
-  //
-  // 构造时从 session.events() 里的 agent/inbox/spliced 事件折叠出当前队列 —— resume
-  // 出来的会话因此恢复它未做完的工作, 且折叠期间不发任何通知 (那些消息不是刚到的)。
+// session: 借用引用, 必须比本对象活得久。
+// 构造时从 session.events() 里的 agent/inbox/spliced 事件折叠出当前队列 —— resume
   Inbox(Session& session, InboxNotifications notifications);
 
   Inbox(const Inbox&) = delete;
@@ -57,18 +53,12 @@ class Inbox {
     return !nextTurnQueue.empty() || !nextStepQueue.empty();
   }
 
-  // 取走本 step 要处理的消息。
-  //
-  // 永远先全量取 next-step; target 为 NextTurn 时再取**一条** next-turn。
-  // 纯删除语义: 不发 discarded, 不在事件里标 canceled。
+// 取走本 step 要处理的消息。
+// 永远先全量取 next-step; target 为 NextTurn 时再取**一条** next-turn。
   std::vector<UserMessage> claim(InboxTarget target, int turn);
 
-  // 标准 splice 语义 + 持久记录。
-  //
-  // start 超出队列长度时截断为「追加到尾部」; deleteCount 截断到可删除的上限。
-  // deleteCount 为 0 且 inserted 为空时是空操作 (不落事件)。
-  //
-  // 返回被移除的消息。
+// 标准 splice 语义 + 持久记录。
+// start 超出队列长度时截断为「追加到尾部」; deleteCount 截断到可删除的上限。
   std::vector<UserMessage> splice(InboxTarget target, size_t start,
                                   size_t deleteCount,
                                   std::vector<UserMessage> inserted);

@@ -9,7 +9,6 @@ namespace avox {
 // 视频→身体姿态 33 点 内部基类: 对称 VideoFace (src/avox/avatar/VideoFace.hpp)。
 // IBody 对外接口 + Observer<IBodyOb> 回调分发;
 // 推理逻辑纯虚留给 MediaPipeBody 等子类 (avox_avatar 插件)。
-// 方向: RGBA 进 (feed) → MediaPipe Pose 33 点身体 landmark 出 (经 IBodyOb)。
 class AVOX_EXPORT BodyImpl : public IBody, public Observer<IBodyOb> {
  public:
   BodyImpl() = default;

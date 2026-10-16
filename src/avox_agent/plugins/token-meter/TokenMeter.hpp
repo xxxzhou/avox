@@ -21,11 +21,8 @@
 namespace avox {
 
 // 每轮积分的计费配置。
-//
 // 积分 = 实际花费, 按「1 积分 = 1 分钱 (0.01 元)」折算, 因此典型的一轮 agent turn
 // (输入上万 token + 缓存命中 + 输出) 约为 1 积分。默认值即 DeepSeek v4-flash 官方单价
-// (元/百万 tokens), 见 https://api-docs.deepseek.com/zh-cn/quick_start/pricing。
-// 价格变动时改这里即可, 可调参数不允许硬编码在策略里。
 struct TokenMeterConfig {
   double inputPricePerMillion = 1.0;         // 输入 (缓存未命中)
   double cachedInputPricePerMillion = 0.02;  // 输入 (缓存命中)

@@ -299,7 +299,6 @@ void onTencentHttpResponse(void* user_data, int code,
 
 // HttpTranslator 运行期工厂: 在 AvoxManager::init() 中由 regHttpTranslator()
 // 调用, SubtitleAsr 通过 translatorHub.create("http") 查表拿实例(解除核心对
-// HttpTranslator 的编译期 include 依赖)
 void regHttpTranslator() {
   AvoxManager::Get().translatorHub.reg(
       "http", []() -> BaseTranslator* { return new HttpTranslator(); });

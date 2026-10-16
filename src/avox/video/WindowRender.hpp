@@ -35,11 +35,6 @@ const char* getSyncResultStr(SyncResult syncResult);
 // 窗口渲染 - 继承 SurfaceRenderNative，覆盖需要 window 的方法
 // 管理多平台窗口与处理渲染的关系
 // VideoRender不同RenderType不同渲染
-// VideoFrame到具体的VideoRender的渲染分支不同
-// 比如CPUFrame肯定是Vk来渲染
-// egl/metal是先由eglrender/metalrender先把YUV转RGBA8
-// 然后根据选择窗口来决定是直接给窗口还是转Vk图像处理
-// 以及窗口的Tick刷新，以及没有窗口时的处理
 class AVOX_EXPORT WindowRender : public SurfaceRenderNative,
                                 public RunTask,
                                 public IWindowOb {

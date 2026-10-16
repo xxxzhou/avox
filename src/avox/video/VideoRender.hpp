@@ -22,12 +22,6 @@ struct VRenderDesc {
 // 视频渲染主要负责平台窗口渲染
 // 整合VideoGraph,自己不Tick,由窗口Tick
 // 1. 各平台硬解的原生GPU数据，转为RGBA8格式的GPU数据
-// 2. 根据窗口呈现，确定是渲染到窗口还是纹理上。
-// 3. 包含原生DX11/OpenGL/Metal与Vulkan交互
-// VideoRender由windows窗口驱动,每次Tick检查是否需要重置,脱离状态
-// 考虑会渲染解码帧的情况,其解码线程与渲染线程可能不同
-// 也有可能渲染线程拿取设备直出的GPU数据
-// 故要考虑输入帧与渲染不同GPU上下文的情况
 class AVOX_EXPORT VideoRender : public OptionLink {
  public:
   VideoRender();
@@ -123,9 +117,8 @@ class AVOX_EXPORT VideoRender : public OptionLink {
   }
   // 当前输入是否为CPU帧(软解/软编透传),供外层判交付格式
   bool bCpuInput() { return cpuIn; }
-  // 颜色空间与HDR参数: vk lane 进 UBO, dx11 lane 进 CS 常量
-  // (硬解 YUV->RGB 转换在 dx11 CS 里, tone map 参数必须送到这一层)
-  // 基类存档, checkShot 的 CPU 兜底转换取用; 派生类覆写请带基类调用
+// 颜色空间与HDR参数: vk lane 进 UBO, dx11 lane 进 CS 常量
+// (硬解 YUV->RGB 转换在 dx11 CS 里, tone map 参数必须送到这一层)
   virtual void setColorSpace(const ColorSpaceDesc& c) { colorSpace = c; };
   // 当前帧编码所用色彩空间(YUVFrame→RGBA 快照须与之一致)
   ColorSpaceDesc colorSpace = {};
@@ -157,11 +150,8 @@ class AVOX_EXPORT VideoRender : public OptionLink {
   void renderFrame(IImageBuffer* buffer);
   // 这个是Vk调用，把DX11/OpenGL/Metal的RGBA纹理映射为Vk的GPU纹理
   void renderFrame(const avox::VideoFrame& videoBuffer, IRenderContext* context);
-  // 抓帧发起一般不在渲染线程，所以这需要别的线程调用设置flag
-  // 在渲染线程检测到flag后，调用fetchFrame,并发送通知
-  // 发起线程在得到通知后，返回数据，这样调用方可在任意数据同步获取数据
-  // 设置最多1秒超时，最长可能堵塞调用方1秒; 超时作废后buffer可能被释放,
-  // 渲染线程靠shotGen校验弃写
+// 抓帧发起一般不在渲染线程，所以这需要别的线程调用设置flag
+// 在渲染线程检测到flag后，调用fetchFrame,并发送通知
   bool screenShot(ImageBuffer* imageBuffer);
   void checkShot();
   // 拆线/重置前作废在飞截帧单并等渲染线程出干活段: 作废在飞单(等待方立即拿到
@@ -209,25 +199,22 @@ class AVOX_EXPORT VideoRender : public OptionLink {
   virtual IRenderContext* getGpuContext() = 0;
   // 把DX11/OpenGL/Metal的RGBA纹理GPU映射到Vulkan的GPU数据
   virtual void renderGpuFrame(IRenderContext* context) {};
-  //  Vk/dx11输出到窗口,Vk计算与呈现分离
-  // 基类实现只做「记窗口 + 立刻刷一次实态」, 派生覆写请带基类调用
-  // (实现在 .cpp: 避免内联体引入跨 TU 的 setTargetWindow 未解析符号)
+// Vk/dx11输出到窗口,Vk计算与呈现分离
+// 基类实现只做「记窗口 + 立刻刷一次实态」, 派生覆写请带基类调用
   virtual void renderWindow(Window* window);
   // 各平台GPU输出buffer
   virtual void* getOutGpuBuffer() { return nullptr; }
 
-  // 字幕画布混合层挂口(字幕画布多后端渲染计划 P0): 返回稳定前端(CanvasRender
-  // 归实现方所有), 不支持返回 nullptr。lane 语义: 实现方仅在自身输出为呈现
-  // 终点时可接 — lane=0 的平台腿输出是 VK 对接面, 禁挂(双重字幕+被超分)
+// 字幕画布混合层挂口(字幕画布多后端渲染计划 P0): 返回稳定前端(CanvasRender
+// 归实现方所有), 不支持返回 nullptr。lane 语义: 实现方仅在自身输出为呈现
   virtual ICanvasLayer* enableRenderCanvas() { return nullptr; }
   virtual void disableRenderCanvas() {}
 
  protected:
   // 记录目标窗口并立即刷新一次直通实态缓存(§4.2)
   void setTargetWindow(Window* window);
-  // 呈现面直通实态统一检查点(§4.2): 读 hdrPassthroughActive() 与缓存比对,
-  // 不一致则更新缓存并返回 true(派生据此置 bResetFlag 重建输出端)。
-  // 渲染线程每帧入口或 vaildAndInitGraph 首行调用; 无窗口恒 false
+// 呈现面直通实态统一检查点(§4.2): 读 hdrPassthroughActive() 与缓存比对,
+// 不一致则更新缓存并返回 true(派生据此置 bResetFlag 重建输出端)。
   bool checkTargetPassthrough();
 
  public:
@@ -239,13 +226,11 @@ class AVOX_EXPORT VideoRender : public OptionLink {
 /**
  * @param swidth  窗口宽度
  * @param sheight 窗口高度
- * @param aspect  视频长宽比 (width / height)
  */
 vec4i getViewRect(int swidth, int sheight, float aspect);
 /**
  * @param texWidth  纹理宽度
  * @param texHeight 纹理高度
- * @param aspect    窗口长宽比 (width / height)
  */
 vec4i getTextureRect(int texWidth, int texHeight, float aspect);
 

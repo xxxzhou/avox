@@ -40,10 +40,8 @@ class TiledInpainter {
   void setTileSize(int size) { tileSize = size; }
   void setOverlap(int overlap_) { overlap = overlap_; }
 
-  // 分块修复
-  // inpainterFn: 实际执行修复的回调函数
-  //   bool inpainterFn(const uint8_t* tileImage, const uint8_t* tileMask,
-  //                    int tileWidth, int tileHeight, uint8_t* tileOutput)
+// 分块修复
+// inpainterFn: 实际执行修复的回调函数
   bool inpaint(const uint8_t* rgbImage,
                const uint8_t* mask,
                int width, int height,

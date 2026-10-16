@@ -51,9 +51,7 @@ enum H264ChromaFormat {
 /**
  * @brief H.264 视频编码标准中的切片类型枚举
  * @sa ISO 14496/10(2020) - Table 7-6 – Name association to slice_type
- *
  * 该枚举定义了 H.264
- * 视频编码标准中不同的切片类型，每个类型都对应一个唯一的整数值。
  */
 enum H264SliceType {
   // P 切片（预测切片）
@@ -471,11 +469,8 @@ struct H264SeiSyntax {
 
 /**
  * @brief H.264可伸缩视频编码（SVC）序列参数集（SPS）扩展语法结构
- *
  * 该结构定义了H.264 SVC SPS的扩展语法元素，用于描述可伸缩视频编码的参数。
- *
  * @sa ISO 14496/10(2020) - F.3.3.2.1.4 Sequence parameter set SVC extension
- * syntax
  */
 struct H264SpsSvcSynctax {
   // 层间去块滤波器控制存在标志
@@ -508,11 +503,8 @@ struct H264SpsSvcSynctax {
 
 /**
  * @brief H.264多视图编码（MVC）序列参数集（SPS）语法结构
- *
  * 该结构定义了H.264 MVC SPS的语法元素，用于描述多视图视频编码的参数。
- *
  * @sa ISO 14496/10(2020) - G.3.3.2.1.4 Sequence parameter set MVC extension
- * syntax
  */
 struct H264SpsMvcSyntax {
   // 视图数量减1
@@ -553,9 +545,7 @@ struct H264SpsMvcSyntax {
 
 /**
  * @brief H.264多视图编码（MVC）视频用户接口（VUI）参数扩展语法结构
- *
  * 该结构定义了H.264 MVC VUI的扩展语法元素，用于描述多视图视频编码的VUI参数。
- *
  * @sa ISO 14496/10(2020) - G.10.1 MVC VUI parameters extension syntax
  */
 struct H264MvcVuiSyntax {
@@ -657,9 +647,7 @@ struct H264SubSpsSyntax {
 
 /**
  * @brief H.264视频编码标准的序列参数集上下文结构
- *
  * 该结构定义了H.264视频编码标准中序列参数集的上下文信息。
- *
  * @sa ISO 14496/10(2020) - 7.3.2.1 Sequence parameter set RBSP syntax
  */
 struct H264SpsContext {
@@ -699,9 +687,7 @@ struct H264SpsContext {
 
 /**
  * @brief H.264视频编码标准的序列参数集语法结构
- *
  * 该结构定义了H.264视频编码标准中序列参数集的语法元素。
- *
  * @sa ISO 14496/10(2020) - 7.3.2.1 Sequence parameter set RBSP syntax
  */
 struct H264SpsSyntax {  
@@ -795,9 +781,7 @@ struct H264SpsSyntax {
 
 /**
  * @brief H.264视频编码标准的图片参数集语法结构
- *
  * 该结构定义了H.264视频编码标准中图片参数集的语法元素。
- *
  * @sa ISO 14496/10(2020) - 7.3.2.2 Picture parameter set RBSP syntax
  */
 struct H264PpsSyntax {  
@@ -853,9 +837,7 @@ struct H264PpsSyntax {
 
 /**
  * @brief H.264视频编码标准的切片头语法结构
- *
  * 该结构定义了H.264视频编码标准中切片头的语法元素。
- *
  * @sa ISO 14496/10(2020) - 7.3.3 Slice header syntax
  */
 struct H264SliceHeaderSyntax {

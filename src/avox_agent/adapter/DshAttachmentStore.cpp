@@ -259,9 +259,8 @@ ImageAttachmentRef DshAttachmentStore::publish(const uint8_t* data, size_t size,
   if (width <= 0 || height <= 0) {
     throw std::runtime_error("图片解码成功但尺寸非法");
   }
-  // 解码像素/单边限额 (dsh IMAGE_TOO_MANY_PIXELS / IMAGE_DIMENSION_TOO_LARGE)。
-  // 部署的路由会拒绝边长超限的历史图, 而入仓图随历史搭每一次后续请求 ——
-  // 拒在准入线, 指引同 dsh read_image: 缩小后读小图 (可恢复的工具错误, 不进历史)。
+// 解码像素/单边限额 (dsh IMAGE_TOO_MANY_PIXELS / IMAGE_DIMENSION_TOO_LARGE)。
+// 部署的路由会拒绝边长超限的历史图, 而入仓图随历史搭每一次后续请求 ——
   if (width * height > limits.maxImagePixels) {
     throw std::runtime_error("图片解码像素超限 (IMAGE_TOO_MANY_PIXELS): "
                              + std::to_string(width) + "x" + std::to_string(height)

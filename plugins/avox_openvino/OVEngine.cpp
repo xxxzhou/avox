@@ -33,8 +33,6 @@ OVEngine::~OVEngine() {
 
 // 在指定 device 上编译模型 (reshape 推理分辨率 [1,3,H,W])。
 // GPU: FP16(Intel iGPU 最快); CPU: FP32(python 实测 CPU FP16 反慢)。
-// 分步 try/catch(...): /EHa 下 catch(...) 能捕获 SEH 硬件异常(avox 已用 Vulkan 占住 GPU,
-// OpenVINO init 可能抢 driver → access violation); 任一步失败即降级到下一 device/ORT。
 bool OVEngine::tryCompile(const std::string& modelPath, int H, int W, int scale,
                           const std::string& dev) {
   // ① read_model: 首次经 sharedCore() 构造 ov::Core(加载 plugin/扫描设备/初始化 TBB)

@@ -719,9 +719,8 @@ Command cmdPlay() {
     };
     while (gCmdRunning) {
 #ifdef _WIN32
-      // 窗口被用户关闭 (点X/Alt+F4) -> 退出播放, 回到调用方 (shell)。
-      // render->getSurface() 在 Win32 窗口模式即 HWND, DestroyWindow 后
-      // IsWindow 为 FALSE。
+// 窗口被用户关闭 (点X/Alt+F4) -> 退出播放, 回到调用方 (shell)。
+// render->getSurface() 在 Win32 窗口模式即 HWND, DestroyWindow 后
       if (interactive && render->getSurface() &&
           !IsWindow((HWND)render->getSurface())) {
         printf("Window closed\n");

@@ -8,9 +8,6 @@ namespace avox {
 // 几何叠加层：在视频帧上绘制 线/矩形/点/圆
 // 复用 VkFontLayer 的 "CPU 光栅化到小 canvas(R8) -> upload -> GPU 双线性混合"
 // 管线， blend shader 用阈值硬切（α>=阈值
-// 全合并，无透明感），阈值即线宽旋钮（低=宽，高=细）。 资源随 ISurfaceRender
-// 释放自动回收。enable/disable 仅控制 VkGeometryLayer 进/出 vulkan 执行链，
-// IGeometryLayer 对象常驻（由 render 持有），disable 不释放对象。
 class IGeometryLayer {
  public:
   virtual ~IGeometryLayer() {}

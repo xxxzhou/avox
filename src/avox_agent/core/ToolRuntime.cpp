@@ -428,9 +428,8 @@ ToolResult ToolRuntime::commit(ToolExecution& exec, ToolResult toolResult) {
     }
   }
 
-  // 编码卫生: read/grep 等按字节读本地文件, 中文 Windows 的 GBK(ANSI) 日志原始字节若
-  // 进了会话, 下一次请求体就是非法 UTF-8, 服务端一律 400 且每次必现。commit 是全部
-  // 工具结果的唯一出口, 在这单点洗净即覆盖所有工具 (含被 post-execute 改写/阻断的路径)。
+// 编码卫生: read/grep 等按字节读本地文件, 中文 Windows 的 GBK(ANSI) 日志原始字节若
+// 进了会话, 下一次请求体就是非法 UTF-8, 服务端一律 400 且每次必现。commit 是全部
   for (ContentBlock& block : toolResult.content) {
     if (auto* text = std::get_if<TextBlock>(&block)) {
       text->text = ensureUtf8(text->text);

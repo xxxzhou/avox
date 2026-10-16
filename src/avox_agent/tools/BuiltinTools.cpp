@@ -70,10 +70,8 @@ std::vector<Disposer> registerBuiltinTools(AgentHost& host,
     define(makeSubagentTool(host));
   }
 
-  // Agent Teams durable runtime (对齐 dsh experimental/agent-team + tool-agent-team):
-  // 十个 team 工具 + team:policy 提示段。全局层一次注册 —— TeamService 在 openAgent
-  // 后才创建, 处理体经 host.team() 晚绑定, 队友与 one-shot 子代理共享本注册表
-  // (非成员的调用在归属解析处响亮失败)。按 agent.json 的 team.enabled 开关。
+// Agent Teams durable runtime (对齐 dsh experimental/agent-team + tool-agent-team):
+// 十个 team 工具 + team:policy 提示段。全局层一次注册 —— TeamService 在 openAgent
   if (host.config().enableTeam) {
     try {
       std::vector<Disposer> teamDisposers = installTeamTools(host);

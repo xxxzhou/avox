@@ -35,10 +35,6 @@ struct FaceDetection {
 // mediapipe 后端: RGBA 帧 -> ARKit52 blendshape + 478 landmarks (视频驱动 avatar)。
 // 三明治继承: VideoFace(对外接口+Observer 分发) + RunTask(worker 推理) + OnnxModelUser(共享 session)。
 // 数据流: feed(渲染线程) 深拷 rgba8 入队 -> onRunTask 取帧跑 5 步管线
-//   (1 BlazeFace 检测 -> 2 眼角对齐 warp -> 3 landmarker 478 点 -> 4 blendshape 52 ->
-//    5 landmark 经 M 反投回输入帧坐标) -> dispatch onFaceBlendshape + onFaceLandmarks。
-// 数学严格移植自 tmp/face_pipeline.py (Python 已对照官方 mediapipe 校准: jawOpen MAE 0.016,
-// 对齐对所有侧倾角 0-46° 鲁棒)。换后端只换本插件内部, IVideoFace 不变。
 class MediaPipeFace : public VideoFace,
                       public RunTask,
                       public OnnxModelUser {

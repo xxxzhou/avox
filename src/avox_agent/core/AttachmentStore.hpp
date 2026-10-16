@@ -62,10 +62,8 @@ class AttachmentStore {
     return ImageAdmissionLimits{};
   }
 
-  // 把一段图片编码字节存入附件仓, 返回内容寻址引用。
-  //
-  // mediaType: image/png | image/jpeg | image/webp | image/gif。
-  // name: 展示名 (不含本地路径信息), 可省。
+// 把一段图片编码字节存入附件仓, 返回内容寻址引用。
+// mediaType: image/png | image/jpeg | image/webp | image/gif。
   virtual ImageAttachmentRef publish(const uint8_t* data, size_t size,
                                      std::string mediaType,
                                      std::optional<std::string> name) = 0;

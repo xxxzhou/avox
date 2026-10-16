@@ -127,9 +127,8 @@ ParsedArgs ArgParser::parse(int argc, const char* const* argv) const {
     }
     // 查找匹配的 Arg 定义
     const Arg* def = findArg(token);
-    // 如果精确匹配失败，尝试只用长名模式匹配 (用户可能用了 --
-    // 前缀但只定义了短名，或反之) 这里严格匹配: token 必须是 shortName 或
-    // longName
+// 如果精确匹配失败，尝试只用长名模式匹配 (用户可能用了 --
+// 前缀但只定义了短名，或反之) 这里严格匹配: token 必须是 shortName 或
     if (!def) {
       fprintf(stderr, "Unknown option: %s\n", token.c_str());
       ++i;

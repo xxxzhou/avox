@@ -111,19 +111,14 @@ class SystemPrompt {
   // 注册一个 {{name}} 插值变量。
   Disposer variable(std::string name, std::string value, ScopeKey owner = nullptr);
 
-  // 设置工具 schema 的来源 (由 compose 接到 ToolRuntime)。
-  //
-  // 与 dsh 的偏离: dsh 允许注册多个 tools provider 并累加, 因为它要让 tools 的来源可扩展。
-  // avox 这里只接一个 —— ToolRuntime 的分层注册表本身就是那个可扩展点 (MCP 桥、skill 派生
-  // 工具都往它注册), 再套一层累加只会有两处需要维护排序与去重。
+// 设置工具 schema 的来源 (由 compose 接到 ToolRuntime)。
+// 与 dsh 的偏离: dsh 允许注册多个 tools provider 并累加, 因为它要让 tools 的来源可扩展。
   void setToolsProvider(std::function<std::string(const AssembleContext&)> provider) {
     toolsProvider = std::move(provider);
   }
 
-  // 装配一次。
-  //
-  // 变量插值是严格的: 引用了未注册的变量则抛 —— 静默留下一个 {{foo}} 会直接进模型请求,
-  // 那比装配失败难查得多。
+// 装配一次。
+// 变量插值是严格的: 引用了未注册的变量则抛 —— 静默留下一个 {{foo}} 会直接进模型请求,
   PromptAssembly assemble(const AssembleContext& context) const;
 
   // 提示词组成发生变化 (注册或撤销)。
@@ -135,10 +130,8 @@ class SystemPrompt {
 };
 
 // 动态运行时上下文的历史投影。
-//
 // 把易变信息 (工作目录、播放器状态、打开的日志) 放到历史尾部而不是 system 里, 是保住 KV
 // cache 前缀的一半; 另一半是**只在与上次注入的文本不同时才产出**, 相同就不发, 于是历史
-// 保持 append-only 而不是每轮堆一条重复消息。
 class RuntimeContextProjection {
  public:
   // session: 借用引用。构造时从日志里反向找最后一条本投影产出的消息, 于是 resume 出来的

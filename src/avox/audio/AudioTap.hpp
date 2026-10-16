@@ -12,7 +12,6 @@ namespace avox {
 // 音频 tap: 从 AudioRender 抽取正在播放的音频数据,深拷贝入队,
 // tap 线程排空 → 重采样/切片(AudioReshaper) → 回调上层(IAudioTapOb)
 // 默认关闭,open() 才启动;关闭时 AudioRender::render() 只多一个 atomic
-// 判断,零成本
 class AudioTap : public RunTask,
                  public AudioReshaper,
                  public Observer<IAudioTapOb> {

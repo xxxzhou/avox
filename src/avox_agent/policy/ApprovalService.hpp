@@ -69,10 +69,8 @@ class ApprovalService : public ApprovalAnswerer {
   // 纯 fold 而不是独立的可变状态机 —— resume 不需要任何补追机制, 因为重放日志就是状态。
   ApprovalPolicy effectivePolicy(Session& session) const;
 
-  // 切换一个活 agent 的策略: 落日志 + 给下一步注入一条通知。
-  //
-  // 注入通知是「模型可见 ⟺ 已记录」的落地: 策略变化会改变模型能做什么, 所以模型必须
-  // 通过一条已记录的消息知道它。
+// 切换一个活 agent 的策略: 落日志 + 给下一步注入一条通知。
+// 注入通知是「模型可见 ⟺ 已记录」的落地: 策略变化会改变模型能做什么, 所以模型必须
   void setPolicy(Agent& agent, ApprovalPolicy policy);
 
   // ApprovalAnswerer: 由 ToolRuntime 在收到 ask 决策后调用。

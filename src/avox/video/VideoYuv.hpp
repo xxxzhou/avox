@@ -7,8 +7,6 @@ namespace avox {
 // 视频编码前处理，各平台GPU相应RGBA纹理转NV12
 // 1. Vulkan资源，先映射到DX11/OpenGL/Metal纹理
 // 2. DX11/OpenGL/Metal转相应的NV12处理
-// 3. GPU相应的NV12纹理硬编
-// 和VideoRender不同,VideoYuv可以限定和传入的frame上下文一致
 class VideoYuv {
  public:
   VideoYuv() = default;

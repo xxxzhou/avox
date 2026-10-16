@@ -678,9 +678,8 @@ Json encode(const LlmCallConfig& config) {
   obj["provider"] = config.provider;
   obj["model"] = config.model;
   writeOpt(obj, "reasoningEffort", config.reasoningEffort);
-  // temperature 直接落 number (dsh 形状)。Json 的 Number 序列化走 std::to_string,
-  // 理论上受 LC_NUMERIC 影响 —— 但本进程全链路无 setlocale 调用 (已核对), C locale
-  // 恒为 "C", 小数点恒为 '.'; 旧实现的 temperatureMilli 定点方案因 dsh wire 不认而移除。
+// temperature 直接落 number (dsh 形状)。Json 的 Number 序列化走 std::to_string,
+// 理论上受 LC_NUMERIC 影响 —— 但本进程全链路无 setlocale 调用 (已核对), C locale
   if (config.temperature.has_value()) {
     obj["temperature"] = static_cast<double>(*config.temperature);
   }
@@ -1541,12 +1540,8 @@ std::string encodeEvent(const SessionEvent& event) {
   obj["time"] = event.timeMs;
   obj["data"] = encodeData(event.data);
   if (event.surfaceOp.has_value()) obj["surfaceOp"] = encode(*event.surfaceOp);
-  // 空集合落盘时省略 (与 dsh 的偏离)。
-  //
-  // dsh 区分「不带该字段」与「带一个空数组」, 后者表示「已知的空 provider 流」。这个区分
-  // 对重建历史没有任何影响 —— 它只是一条元信息 —— 而本项目的 JSON 解析器不把 "[]" 识别
-  // 成数组类型, 依赖它往返等于把持久格式的正确性押在一个第三方库的边缘行为上。
-  // 内存里仍保留 optional (Session 的校验用得上: 只有 assistant/message 允许空集合)。
+// 空集合落盘时省略 (与 dsh 的偏离)。
+// dsh 区分「不带该字段」与「带一个空数组」, 后者表示「已知的空 provider 流」。这个区分
   if (event.sourceEventSeqs.has_value() && !event.sourceEventSeqs->empty()) {
     Json arr(Json::JsonArray{});
     for (size_t seq : *event.sourceEventSeqs) {
@@ -1555,9 +1550,8 @@ std::string encodeEvent(const SessionEvent& event) {
     obj["sourceEventSeqs"] = std::move(arr);
   }
   if (event.ignorable) obj["ignorable"] = true;
-  // 落盘行必须是合法 UTF-8: 根目录里混进一条非 UTF-8 行, dsh 的 checkRootEncoding 会
-  // 拒收整个 root。只修补不重编码 —— Json::dump 已转义全部结构性字符, 非法字节只可能
-  // 在字符串字面量内, U+FFFD 修补不会碰坏 JSON 结构。
+// 落盘行必须是合法 UTF-8: 根目录里混进一条非 UTF-8 行, dsh 的 checkRootEncoding 会
+// 拒收整个 root。只修补不重编码 —— Json::dump 已转义全部结构性字符, 非法字节只可能
   return patchInvalidUtf8(obj.dump());
 }
 

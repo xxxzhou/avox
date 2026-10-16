@@ -9,10 +9,6 @@ namespace avox {
 // ========== 流式 Markdown 渲染器 (轻量, 与 spinner/卡片交错) ==========
 // 不是整文档渲染 (那样要等全部 token 到齐, 无法流式); 而是流式状态机:
 // 逐 token 喂入, 维护"当前在/不在代码块""列表缩进"等状态, 边收边产出 (带 ANSI 着色)。
-// 设计约束:
-//   - 不直接写 stdout: 渲染结果 append 到 public 成员 pending, 调用方一次 cmdWrite
-//     落屏 (整段原子入队, 避免 conhost 框选冻结/多线程交错把一行撕开), 取走后 clear。
-//   - 输出与 ConsoleThrobber 互斥 (调用方加锁), 不自管锁。
 class MarkdownRenderer {
  public:
   // 喂入一个 token 片段, 渲染结果累积进 pending。flushToken=true 在回复结束时调,

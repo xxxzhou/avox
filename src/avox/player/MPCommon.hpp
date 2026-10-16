@@ -272,7 +272,6 @@ public:
 // track里pack/frame队列进出变化
 // IO线程产生packet包
 // 解码线程消费packet产生frame
-// 渲染线程消费frame
 struct PBQueueSize : public PBCommon {
 public:
   virtual ~PBQueueSize() = default;

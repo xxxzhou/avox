@@ -135,11 +135,7 @@ void ImageRender::onRenderWindow() {
 IImageRender* createImageRender() { return new ImageRender(); }
 
 // 按帧宽高比猜VR参数(启发式, AvoxLayer.h 声明):
-//   >3:1 -> SBS等距柱状360        ~2:1 -> SBS鱼眼180(VR180主流=左右双眼,
-//   §六415追二 用户实证拍板; 单目全景罕见化, 判错由宿主手改)
-//   16:9等宽幅 -> SBS鱼眼180(VR180主流, 与2:1的分界取1.85)
-//   近方形 -> OU鱼眼180
-// 判错由宿主手改再 enableVr; 圆心/半径交默认值(内切每眼画幅高、居中)
+// >3:1 -> SBS等距柱状360        ~2:1 -> SBS鱼眼180(VR180主流=左右双眼,
 bool guessVrParamet(int32_t width, int32_t height, VrParamet* out) {
   if (width <= 0 || height <= 0 || !out) {
     return false;

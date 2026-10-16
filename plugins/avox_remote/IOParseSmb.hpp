@@ -21,8 +21,6 @@ namespace avox {
 // SMB 数据源: libsmb2 直读 + FFmpeg自定义avio解封装。
 // 解封装/包处理管线与IOParseFF/IOParseTorrent一致(AVSource基类processPacket等
 // 全复用), 差异仅在输入侧: avio_alloc_context的read/seek回调对接libsmb2
-// 同步API(smb2_pread/smb2_lseek), 无本地中转。
-// URL: smb://[user:pass@]host[:port]/share/path(鉴权嵌userinfo, 与DAV同风格)。
 class IOParseSmb : public AVSource, public RunTask {
  public:
   IOParseSmb();

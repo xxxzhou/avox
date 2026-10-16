@@ -101,9 +101,8 @@ private:
   void onSelectedSubtitle(int32_t localIndex) override;
   // avformat_open_input(重)打开, fmtCtx 接管; FFmpeg9 保底补查须重开, 不能同上下文二次探测
   int reopenInput();
-  // http 头部预扫(顺序读 64KB 窗口, 常规文件零额外连接): 识别「moov 之后跟
-  // mdat 且该 mdat 不延伸到文件尾」的多 box 结构(迅雷/Twitch 逐段落盘产物),
-  // 命中则记第一 mdat 末尾到 mdat1End
+// http 头部预扫(顺序读 64KB 窗口, 常规文件零额外连接): 识别「moov 之后跟
+// mdat 且该 mdat 不延伸到文件尾」的多 box 结构(迅雷/Twitch 逐段落盘产物),
   bool prescanHttpBoxes();
   // 释放 wrapper+底层 avio: 先放 fmtCtx(CUSTOM_IO 下 close_input 不动 pb),
   // 再放 wrapper(缓冲随上下文一起), 最后 avio_closep 底层 http 通道
@@ -125,14 +124,12 @@ private:
   void evictHttpSeg(bool bPin);
   // PGS 位图字幕解码(§3.6): 选中该轨时 IO 循环喂包, 出 RGBA 画布
   bool parsePgsFrame(int32_t streamId, const AVPacket* pkt, int64_t ptsMs);
-  // seek 落点校验: 直读 fmtCtx 到首个视频包记落点(ms), 到首个关键视频包停
-  // (包数/时长兜底); 读出的包进 seekStash 回灌. 返回是否拿到视频落点.
-  // budgetMs: 网络流找关键帧要过 GOP 顺序拉流, 本地 1s 预算不够, 由调用方调
+// seek 落点校验: 直读 fmtCtx 到首个视频包记落点(ms), 到首个关键视频包停
+// (包数/时长兜底); 读出的包进 seekStash 回灌. 返回是否拿到视频落点.
   bool verifySeekLanding(int32_t videoStreamId, int64_t& landedMs,
                          bool& sawKey, int32_t budgetMs = 1000);
-  // flv 网络流 seek: 索引直跳(flvdec 自建索引不自用, 这里取目标前最近条目
-  // Range 落位) → 无覆盖时平均码率估算字节位直跳+tag 重同步+落点修正。原
-  // avformat_seek_file 退化为从当前位向前顺序整扫, 实测 987s 直链要 25s+
+// flv 网络流 seek: 索引直跳(flvdec 自建索引不自用, 这里取目标前最近条目
+// Range 落位) → 无覆盖时平均码率估算字节位直跳+tag 重同步+落点修正。原
   bool flvEstimateSeek(int64_t posMs, int32_t videoStreamId, int64_t& landedMs,
                        bool& sawKey);
   // 从 from 起窗口扫 FLV tag 同步点(prevTagSize 自洽+type+零流号), 命中挪读位

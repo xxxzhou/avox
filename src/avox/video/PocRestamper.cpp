@@ -98,11 +98,8 @@ bool PocRestamper::processPacketNals(AvoxPacket& packet, bool& bIdr) {
             return false;
           }
           bPocReady = true;
-          // VUI 权威声明有重排帧 → 流必然乱序显示, pts==dts 即 ctts 缺失。
-          // 据此首帧即预激活, 消掉「等 POC 倒挂实证」期间的接缝错位(激活前已
-          // 下发的参考帧保持解码序戳, 显示位实测错后 3 格而非 1ms 级)。
-          // 无此声明则维持原样, 仍等倒挂实证; 有 ctts 的正常流在 feed() 入口
-          // 首帧 pts!=dts 即被 bypass 闸拦下, 不激活也不改写
+// VUI 权威声明有重排帧 → 流必然乱序显示, pts==dts 即 ctts 缺失。
+// 据此首帧即预激活, 消掉「等 POC 倒挂实证」期间的接缝错位(激活前已
           if (sps->vui_parameters_present_flag &&
               sps->vui_seq_parameters.bitstream_restriction_flag &&
               sps->vui_seq_parameters.num_reorder_frames > 0) {
@@ -214,11 +211,8 @@ bool PocRestamper::feed(AvoxPacket& packet) {
   if (bAnchor && bSaneDts && packet.dts < lastDts - frameDurMs * kSeekRewindFrames) {
     reset();
   }
-  // 容器本就有显示时间戳(pts!=dts): 不是丢 ctts 的流, 永久旁路。
-  // 此处不待 bAnchor: 锚定发生在 processPacketNals() 内部, 若要求已锚定则首包
-  // 永远轮不到本闸 —— 而 VUI 预激活会在同一包的 NAL 遍历里把 mode 置成 active,
-  // 于是正常 ctts 流首帧虚假激活, 还打一条 "poc restamp active" 误导日志
-  // (排查判据正是 grep 这行, 会假阳性)。首包 pts!=dts 已足以判定容器带 ctts
+// 容器本就有显示时间戳(pts!=dts): 不是丢 ctts 的流, 永久旁路。
+// 此处不待 bAnchor: 锚定发生在 processPacketNals() 内部, 若要求已锚定则首包
   if (bSanePts && packet.pts != packet.dts) {
     if (mode == Mode::active) {
       log(LogLevel::warn, "poc restamp: container pts!=dts, stop restamp");
@@ -236,13 +230,8 @@ bool PocRestamper::feed(AvoxPacket& packet) {
   if (bSaneDts) {
     lastDts = packet.dts;
   }
-  // 显示格原点常态只锚首帧——轴绝对均匀(实测 33/34ms 严格交替, 无格点抖动)。
-  // 但帧计数轴只在连续播放时与容器时间轴重合: seek 后容器时间大跳、轴却原地
-  // 续数, 实测 seek 到 1:24:13 后轴停在 10.4s(容器已到 5051s), 音频被
-  // alignPacketPts 拉去追视频 → 持续抖动。故在 IRAP 上校验本轴与容器时间是否
-  // 严重不符(正常流两者只差容器自身的毫秒级取整, 实测 ≤7ms), 是则重锚到该
-  // IRAP 的容器戳——IRAP 解码位次与显示位次重合, 容器戳即其显示时刻。用 dts
-  // 而非 pts 做基准: dts 单调且无 NOPTS 类野值, 是解封装侧最可靠的时钟
+// 显示格原点常态只锚首帧——轴绝对均匀(实测 33/34ms 严格交替, 无格点抖动)。
+// 但帧计数轴只在连续播放时与容器时间轴重合: seek 后容器时间大跳、轴却原地
   if (bIdr && bPts0 && bSaneDts) {
     const int64_t axisMs = (pts0Us + (fullPoc - fullPoc0) * frameDurUs / pocStep) / 1000;
     const int64_t offMs = packet.dts - axisMs;

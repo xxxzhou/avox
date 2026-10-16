@@ -184,9 +184,8 @@ bool IOParseFF::parseStream(int32_t streamId, AVCodecParameters* codecpar) {
       updateConfig(vpack);
     }
   }
-  // 字幕轨: ASS/SSA 的 extradata(MKV [Script Info]/[V4+ Styles] 剧本头)以
-  // sconfig 包旁路下发, MediaPlayer 侧留存, 选轨时喂 libass(计划 §3.2)。
-  // index 与 subtitles 包一致走局部轨索引(与选轨号同域)
+// 字幕轨: ASS/SSA 的 extradata(MKV [Script Info]/[V4+ Styles] 剧本头)以
+// sconfig 包旁路下发, MediaPlayer 侧留存, 选轨时喂 libass(计划 §3.2)。
   if (codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE) {
     if (codecpar->codec_id == AV_CODEC_ID_HDMV_PGS_SUBTITLE) {
       std::lock_guard<std::mutex> pgsLock(pgsMtx);
@@ -339,7 +338,6 @@ bool IOParseFF::parsePgsFrame(int32_t streamId, const AVPacket* pkt,
 
 // 选轨重定向(AVSource 钩子覆写, 命令线程): 选中另一条 PGS 流时按其 codecpar
 // 换解码器 —— 此前解码器钉死首个 PGS 流, 多 PGS 轨的蓝光原盘选第 2 条会错出
-// 第 1 条的字幕。非 PGS 轨/未映射不动(视图侧仲裁显示)
 void IOParseFF::onSelectedSubtitle(int32_t localIndex) {
   std::lock_guard<std::mutex> pgsLock(pgsMtx);
   if (localIndex < 0 || !fmtCtx ||
@@ -371,7 +369,6 @@ void IOParseFF::onSelectedSubtitle(int32_t localIndex) {
 
 // 重建探测字典并 avformat_open_input(fmtCtx 接管), 返回 ffmpeg 错误码(0=成功)。
 // FFmpeg9 起 find_stream_info 返回即释放各流探测态(sti->info), 同上下文二次调用踩空指针,
-// fast probe 保底补查只能整链重开, 故从 onRunTask 抽出复用。
 int IOParseFF::reopenInput() {
 #ifndef _WIN32
   // Android TLS 证书链(1006 https 全灭第三层, 三段定谳): ①openssl 编译期
@@ -492,9 +489,8 @@ int IOParseFF::reopenInput() {
   av_dict_set(&dict, "reorder_queue_size", "2000", 0);
   // 10MB 缓冲区
   av_dict_set(&dict, "buffer_size", "10485760", 0);
-  // HTTP/HTTPS 断线自动重连: OSS/CDN 的 keep-alive 被 server 单方面断开时
-  // (seek 后命中死连接 -> "partial file" / TLS 握手失败),
-  // 自动重建连接而非致命错误. 不开 reconnect_at_eof, 避免真直播流无限重连
+// HTTP/HTTPS 断线自动重连: OSS/CDN 的 keep-alive 被 server 单方面断开时
+// (seek 后命中死连接 -> "partial file" / TLS 握手失败),
   av_dict_set(&dict, "reconnect", "1", 0);
   av_dict_set(&dict, "reconnect_streamed", "1", 0);
   av_dict_set(&dict, "reconnect_delay_max", "5", 0);
@@ -504,12 +500,8 @@ int IOParseFF::reopenInput() {
     av_dict_set(&dict, "ca_file", caBundle.c_str(), 0);
   }
 #endif
-  // 关闭 http 连接复用(keep-alive): 半开死连接(对端静默丢弃)若被复用, 重连
-  // 后仍走死连接拿不到数据; 关闭后每次读取新建连接, 半开故障自然隔离.
-  // fmp4 本就多 range 短连接, 性能影响可忽略
-  // 仅音频转录等 seek 密集场景经 io.http.persistent 开 keep-alive:
-  // discard 视频后音频采样在文件里被视频数据隔开, 每 seek 一次 range 请求,
-  // 短连接下就是一次 TCP+TLS 握手, 公网上开销不可忽略
+// 关闭 http 连接复用(keep-alive): 半开死连接(对端静默丢弃)若被复用, 重连
+// 后仍走死连接拿不到数据; 关闭后每次读取新建连接, 半开故障自然隔离.
   av_dict_set(&dict, "http_persistent", httpPersistent ? "1" : "0", 0);
   // 云盘直链等校验 UA/携带鉴权头的源(io.http.useragent / io.http.headers);
   // 头块为 CRLF 分隔的 "Key: value" 行, 仅 http 协议消费, 本地文件无感
@@ -519,11 +511,8 @@ int IOParseFF::reopenInput() {
   if (!httpHeaders.empty()) {
     av_dict_set(&dict, "headers", httpHeaders.c_str(), 0);
   }
-  // 私网源经隧道(io.http.proxy, per-open): 走 avox-tunnel 本地网关口发出,
-  // URL 不变; http 由本协议直接吃该项, https 走 tls 腿经 httpproxy 协议 CONNECT
-  // (故 FFmpeg 须编入 httpproxy, 见 script/ffmpeg/*)。只对私网目标注入 —— 网关
-  // ACL 只放行已共享设备, 公网源走代理必 403; 严禁改走进程级 http_proxy 环境
-  // 变量(那会把公网源也塞进隧道)
+// 私网源经隧道(io.http.proxy, per-open): 走 avox-tunnel 本地网关口发出,
+// URL 不变; http 由本协议直接吃该项, https 走 tls 腿经 httpproxy 协议 CONNECT
   if (!httpProxy.empty()) {
     av_dict_set(&dict, "http_proxy", httpProxy.c_str(), 0);
   }
@@ -602,9 +591,6 @@ int IOParseFF::reopenInput() {
 
 // http 头部预扫: 顺序读一个 64KB 窗口解析顶层 box(faststart 的 ftyp/moov 头
 // 乃至小 moov 后的 mdat 头都在窗口内, 常规文件零 seek 零额外连接); moov 过大
-// 时 mdat 头落窗口外, 用一次 seek+16B 读补齐。命中「moov 后跟 mdat 且该 mdat
-// 不延伸到文件尾」的多 box 结构(逐段落盘特征)返回 true 并记 mdat1End; 常规
-// 单 mdat(含 moov 在尾/无 moov)返回 false 走原生路径
 bool IOParseFF::prescanHttpBoxes() {
   mdat1End = 0;
   if (!httpPb) {
@@ -616,14 +602,8 @@ bool IOParseFF::prescanHttpBoxes() {
   if (n < 8) {
     return false;
   }
-  // RIFF/AVI 慢开两族(迅雷类虚拟盘), open 期全量索引加载被 http 逐段重连
-  // 拖成 6-15s 静默, 分而治之: ①申报虚报(夜巡321: 1.07GB vs 1.39GB)时
-  // avi_load_index 从申报 movi_end 逐块爬找 idx1 把 GB 级尾区走网爬完, 且
-  // 此类半截片尾本无 idx1(实锤)——记剪尾线+置 open 窗口内跳索引开关, seek
-  // 仍走 avidec 自身钳边(数据缺失, 无索引可要); ②ODML indx 主索引(夜巡
-  // 383: 布局健康)时 read_odml_index 逐 ix## 叶 ~32MB 步进跨全文件追读
-  // (AVOX_SEG_TRACE=1 实锤 37 次 ~150ms 重连)——传 use_odml=0 只免逐叶追读,
-  // idx1 照常在 open 期加载(就在 movi_end, 半秒), 索引/seek/时钟全保留
+// RIFF/AVI 慢开两族(迅雷类虚拟盘), open 期全量索引加载被 http 逐段重连
+// 拖成 6-15s 静默, 分而治之: ①申报虚报(夜巡321: 1.07GB vs 1.39GB)时
   if (n >= 12 && AV_RL32(win.data()) == AV_RL32("RIFF") &&
       AV_RL32(win.data() + 8) == AV_RL32("AVI ")) {
     const int64_t declared = (int64_t)AV_RL32(win.data() + 4) + 8;
@@ -799,9 +779,8 @@ int64_t IOParseFF::wrapSeekCb(void* opaque, int64_t offset, int whence) {
   if (offset < 0) {
     return AVERROR(EINVAL);
   }
-  // 逻辑 seek 是打断/读错残留的清零点: demuxer 寻位后的解析应从干净状态开始
-  // (matroska 解析失败时直接读 pb->error 定死因, 陈年旧错会把合法 seek 毒死;
-  // 且 avio_seek 小距离分支只挪指针不清 latch, 必须在此显式清)
+// 逻辑 seek 是打断/读错残留的清零点: demuxer 寻位后的解析应从干净状态开始
+// (matroska 解析失败时直接读 pb->error 定死因, 陈年旧错会把合法 seek 毒死;
   if (self->wrapPb) {
     self->wrapPb->error = 0;
     self->wrapPb->eof_reached = 0;
@@ -899,15 +878,8 @@ IOParseFF::HttpSeg* IOParseFF::fetchHttpSeg(int64_t segStart, bool bAnchor) {
       return nullptr;
     }
   }
-  // 服务端瞬断单次即败会退化成 mov partial 风暴: demuxer 对音频样本逐个回退
-  // 重试, 音频供给断流 A/V 撕裂(极空间 seek 后实测), 错位包还会喂出垃圾帧。
-  // 底层抓取自带短间隔重试吸收瞬断; 重试都失败才交回上层(上层自有无穷重试)。
-  // 打断窗口(seek 暂停/close)内 avio_seek 恒吐 AVERROR_EXIT, 重试纯空转,
-  // 立即放弃——恢复读循环后按新读位重新取段。
-  // 预算 10 次: 每次抓取 avio_seek 新建连接(旧连接被服务端收尾后 seek 即重连),
-  // 恶劣网关按连接随机掐杀(极空间 0926 夜实测单连被掐率~25%)时, 耗尽 3 次
-  // 的概率~1.6% → 截断包漏给 demuxer 拼成 Invalid NAL → 周期跳帧; 拉到 10 次
-  // 后连杀概率降到百万分之一量级
+// 服务端瞬断单次即败会退化成 mov partial 风暴: demuxer 对音频样本逐个回退
+// 重试, 音频供给断流 A/V 撕裂(极空间 seek 后实测), 错位包还会喂出垃圾帧。
   for (int32_t attempt = 0; attempt < 10; ++attempt) {
     HttpSeg* seg = fetchHttpSegOnce(segStart, bAnchor);
     if (seg) {
@@ -956,10 +928,8 @@ IOParseFF::HttpSeg* IOParseFF::fetchHttpSegOnce(int64_t segStart,
       break;
     }
     if (n <= 0) {
-      // 已读若干字节后吃错: 仅当正好读满文件尾(段起+已读==底层文件大小)才
-      // 入库短段——尾部数据是完整事实, 打断/连接收尾杂音不构成丢弃理由(mkv
-      // seek 解析尾部 Cues 必经此路, 丢段=seek 判死掉进分钟级内部扫描);
-      // 中途吃错照旧丢弃(半截段入库会让后续读到假 EOF)
+// 已读若干字节后吃错: 仅当正好读满文件尾(段起+已读==底层文件大小)才
+// 入库短段——尾部数据是完整事实, 打断/连接收尾杂音不构成丢弃理由(mkv
       if (total > 0) {
         const int64_t sz = avio_size(httpPb);
         if (sz > 0 && segStart + total >= sz) {
@@ -1003,9 +973,8 @@ IOParseFF::HttpSeg* IOParseFF::fetchHttpSegOnce(int64_t segStart,
          lst.size() > (size_t)(bAnchor ? 1 : 0)) {
     evictHttpSeg(bAnchor);
   }
-  // 顺流预读: 基段抓满才继续(短段=文件尾); 预读段恒进 LRU, 只在 EOF 短段
-  // (真文件尾)入库短段, 中途吃错的半截段一律丢弃即停——半截段入库会让后续
-  // 读到假 EOF(基段同规则)
+// 顺流预读: 基段抓满才继续(短段=文件尾); 预读段恒进 LRU, 只在 EOF 短段
+// (真文件尾)入库短段, 中途吃错的半截段一律丢弃即停——半截段入库会让后续
   for (int32_t k = 1; k < kHttpSegPrefetchSegs && total >= kHttpSegSize; ++k) {
     const int64_t next = segStart + (int64_t)k * kHttpSegSize;
     HttpSeg pre;
@@ -1271,10 +1240,8 @@ void IOParseFF::onRunTask() {
                       (st->disposition & AV_DISPOSITION_FORCED) != 0);
     }
   }
-  // 禁用的流打 AVDISCARD_ALL: 带采样索引的 demuxer(mov/mp4) 对 discard 流不再
-  // seek/读字节, 配合可 seek 的 IO(HTTP Range/SMB/本地) 后网络量从整文件降到
-  // 所选轨——仅音频转录场景视频字节根本不过网; 顺序读型 demuxer(matroska/mpegts)
-  // 只是跳过投递, 不省流量但也无害。必须在 trackReady() 之前(它会把空轨补置禁用)。
+// 禁用的流打 AVDISCARD_ALL: 带采样索引的 demuxer(mov/mp4) 对 discard 流不再
+// seek/读字节, 配合可 seek 的 IO(HTTP Range/SMB/本地) 后网络量从整文件降到
   if (bDisableVideo || bDisableAudio) {
     for (int32_t i = 0; i < fmtCtx->nb_streams; i++) {
       auto& st = fmtCtx->streams[i];
@@ -1368,9 +1335,8 @@ void IOParseFF::onRunTask() {
       continue;
     }
     if (bAtEof.load()) {
-      // EOF 停放: 不 break(拆线程)。尾包可能还有几十秒数据没被消费, 且之后很可能
-      // seek —— 线程一退, seek 只挪了 demuxer 位置却无人再读, 管道从此静止。
-      // 这里等 seekTo 复位(bEofReset)或 running() 变假(close), 不再调 av_read_frame
+// EOF 停放: 不 break(拆线程)。尾包可能还有几十秒数据没被消费, 且之后很可能
+// seek —— 线程一退, seek 只挪了 demuxer 位置却无人再读, 管道从此静止。
       if (bEofReset.exchange(false)) {
         bAtEof.store(false);
         continue;
@@ -1385,11 +1351,8 @@ void IOParseFF::onRunTask() {
       pkt = getUniquePtr(seekStash.front());
       seekStash.pop_front();
     } else {
-      // wrapper 模式读前不信任 pb->error: 打断窗口内在飞取段的 EIO/EXIT 会
-      // 闩进去, 而小距离 seek 落在 wrapPb 缓冲内时 wrapSeekCb 不被调用、清
-      // 不到, 恢复后 fill_buffer 见闩即毙, 首读 2ms 内 onError(极空间拖动
-      // 风暴实测, 全程五分钟只撞一次的罕见组合)。自定义读路径每轮都给出
-      // 新鲜错误, 闩值一律作废; 本地文件的原生 avio 语义不动
+// wrapper 模式读前不信任 pb->error: 打断窗口内在飞取段的 EIO/EXIT 会
+// 闩进去, 而小距离 seek 落在 wrapPb 缓冲内时 wrapSeekCb 不被调用、清
       if (fmtCtx->pb && fmtCtx->pb == wrapPb.get() && !interruptIo()) {
         fmtCtx->pb->error = 0;
       }
@@ -1402,14 +1365,11 @@ void IOParseFF::onRunTask() {
           }
           continue;
         }
-        // 被 seek 打断(interrupt_callback 返回1)或非阻塞暂无数据: 继续循环,
-        // 循环顶会处理暂停. 打断窗口(preSeek→pauseTask 之间约 50ms)内循环顶尚
-        // 未暂停, 会在此 EXIT→continue 裸转, 必须阻塞 sleep 避免 100% CPU 空转
+// 被 seek 打断(interrupt_callback 返回1)或非阻塞暂无数据: 继续循环,
+// 循环顶会处理暂停. 打断窗口(preSeek→pauseTask 之间约 50ms)内循环顶尚
         if (ret == AVERROR_EXIT || ret == AVERROR(EAGAIN)) {
-          // seek 打断窗口的首个 EXIT 会被 avio 闩进 pb->error: 窗口结束后
-          // 回调已不打断(intr 清零), av_read_frame 仍恒吐闩值, 读线程从此
-          // 空转, EOF 永远到不了 -> onComplete 不发, 播放器在片尾 buffering
-          // 到看门狗超时(短视频 seek 尾部必撞). 判为闩残留, 清掉重读
+// seek 打断窗口的首个 EXIT 会被 avio 闩进 pb->error: 窗口结束后
+// 回调已不打断(intr 清零), av_read_frame 仍恒吐闩值, 读线程从此
           if (ret == AVERROR_EXIT && !interruptIo() && fmtCtx &&
               fmtCtx->pb && fmtCtx->pb->error == AVERROR_EXIT) {
             fmtCtx->pb->error = 0;
@@ -1417,16 +1377,13 @@ void IOParseFF::onRunTask() {
           sleepTask(false, 1);
           continue;
         }
-        // seek 打断窗口内(preSeek/seekTo 置位 bInterruptRead)的 INVALIDDATA
-        // 是打断的副产物: 网络读被截停时 mov demuxer 把它报成 "partial
-        // file"(而非干净的 EXIT), 不是真实故障. 直接 continue 回循环顶, 等
-        // seekTo pauseTask→pauseing() 持 ack 安全重定位
+// seek 打断窗口内(preSeek/seekTo 置位 bInterruptRead)的 INVALIDDATA
+// 是打断的副产物: 网络读被截停时 mov demuxer 把它报成 "partial
         if (bInterruptRead.load()) {
           continue;
         }
-        // 其余 IO 错误(OSS 截断 range 致 INVALIDDATA / 连接断开等): 上报错误。
-        // close 在拆(bStopIo)时的 EIO 是打断在飞读取的副产物, 不上报——
-        // 否则每次正常关闭都给 app 发一条假错误污染日志与归因
+// 其余 IO 错误(OSS 截断 range 致 INVALIDDATA / 连接断开等): 上报错误。
+// close 在拆(bStopIo)时的 EIO 是打断在飞读取的副产物, 不上报——
         AVOX_FFMEPG_LOG(ret, "read frame failed");
         if (!bStopIo.load()) {
           dispatch(&IAVSourceOb::onError, ffIoError(ret), "read frame failed");
@@ -1636,10 +1593,8 @@ bool IOParseFF::seekTo(int64_t pos) {
   }
   const bool bIoAcked = bIoPausedAck.load();
   if (!bIoAcked) {
-    // 静默超时是历史盲点: 读线程当时不在循环顶(多半正阻塞在下游 enqueueWait /
-    // dispatch 里, 例如消费端卡住), 此时继续 avformat_seek_file 与 av_read_frame
-    // 并发操作 fmtCtx 有风险, 而现场只会看到"seek 后没数据"这种无痕症状。
-    // 留痕并带上等待时长/目标位置, 便于定位
+// 静默超时是历史盲点: 读线程当时不在循环顶(多半正阻塞在下游 enqueueWait /
+// dispatch 里, 例如消费端卡住), 此时继续 avformat_seek_file 与 av_read_frame
     LOGFLF(LogLevel::warn, "seek: IO thread not paused in ", ackWait * 20,
            "ms (no bIoPausedAck), seeking fmtCtx anyway. pos:", pos);
   }
@@ -1724,9 +1679,8 @@ bool IOParseFF::seekTo(int64_t pos) {
                pos, " key:", sawKey ? 1 : 0, " stash:",
                (int32_t)seekStash.size());
       } else {
-        // 估算路径失手(重同步不出/落点修不进容差): 退整扫前把读位挪到目标
-        // 前约 30s 的估算字节处——整扫的兜底实现是从当前位向前顺序读, 从 0
-        // 扫等于全片过网, 贴着目标前起扫一般一秒内落准
+// 估算路径失手(重同步不出/落点修不进容差): 退整扫前把读位挪到目标
+// 前约 30s 的估算字节处——整扫的兜底实现是从当前位向前顺序读, 从 0
         LOGFLF(LogLevel::info, "flv fastseek fallback, landed:", landedMs,
                " target:", pos);
         clearSeekStash();
@@ -1834,9 +1788,8 @@ bool IOParseFF::seekTo(int64_t pos) {
     bWaitKeyframe.store(!sawKey && !bH26xStream);
     waitKeyframeDrops = 0;
   }
-  // seek 落点在 wrapPb 缓冲内时 avio_seek 走快速路径不进 wrapSeekCb, 打断
-  // 窗口闩进来的错误清不到, 恢复后首读即毙(seek 后不动→结束定谳②); 兜底
-  // 显式清一次, 本地文件 wrapPb 为空不受影响
+// seek 落点在 wrapPb 缓冲内时 avio_seek 走快速路径不进 wrapSeekCb, 打断
+// 窗口闩进来的错误清不到, 恢复后首读即毙(seek 后不动→结束定谳②); 兜底
   if (bSeek && wrapPb) {
     wrapPb->error = 0;
     wrapPb->eof_reached = 0;

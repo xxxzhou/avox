@@ -281,9 +281,8 @@ void VkAnime4KLayer::onInitNode() {
                      paramet.mode == Anime4KMode::ModeB);
   bool useUpscale = true;
   bool useClamp = paramet.enableClampHighlights;
-  // Wire Restore output layer (8 inputs):
-  //   input 0 (MAIN): original rgba8 input (from external, via setStartNode)
-  //   inputs 1-7: conv0..conv6 outputs (from conv chain, via addLine)
+// Wire Restore output layer (8 inputs):
+// input 0 (MAIN): original rgba8 input (from external, via setStartNode)
   if (useRestore) {
     restoreConv0Layer->addLine(restoreOutputLayer, 0, 1);
     for (int32_t i = 0; i < (int32_t)restoreConvLayers.size(); i++) {
@@ -302,15 +301,13 @@ void VkAnime4KLayer::onInitNode() {
     //   input 1 (convLast): upscale output (via addLine)
     upscaleOutputLayer->addLine(d2sLayer, 0, 1);
   }
-  // Wire Clamp apply (2 inputs):
-  //   input 0 (srcTex): final processing output (via addLine from last processing)
-  //   input 1 (statsMaxTex): clampVPass output (via addLine)
+// Wire Clamp apply (2 inputs):
+// input 0 (srcTex): final processing output (via addLine from last processing)
   if (useClamp) {
     clampVPass->addLine(clampApplyPass, 0, 1);
   }
-  // Set endNode to the actual final processing sub-layer
-  // (GroupLayer's output must come from a sub-layer that writes compute output,
-  //  not from the group node itself which has no shader)
+// Set endNode to the actual final processing sub-layer
+// (GroupLayer's output must come from a sub-layer that writes compute output,
   if (useUpscale && useClamp) {
     d2sLayer->addLine(clampApplyPass, 0, 0);
     setEndNode(clampApplyPass);
@@ -326,9 +323,8 @@ void VkAnime4KLayer::onInitNode() {
   if (useRestore && useUpscale) {
     restoreOutputLayer->addLine(upscaleConv0Layer);
   }
-  // Set start nodes: all layers that need the external rgba8 input
-  // Multiple setStartNode calls register multiple start nodes for the same
-  // group input slot — PipeGraph connects external input to all of them.
+// Set start nodes: all layers that need the external rgba8 input
+// Multiple setStartNode calls register multiple start nodes for the same
   if (useRestore) {
     setStartNode(restoreConv0Layer, 0, 0);
   } else {

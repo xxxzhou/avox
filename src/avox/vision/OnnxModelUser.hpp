@@ -15,9 +15,6 @@ namespace avox {
 // ONNX 模型消费者基类: 统一"类加载、对象复用"。子类 (TextRecognizer/YOLODetector/OnnxTranslator/...)
 // 继承它, 经 session() 取 session, 不再自己 onnxSessionHub.create + loadModel。
 // - Shared (默认): 经 OnnxSessionCache 全局复用, 不 unload 则常驻; 退出随进程泄漏。
-// - Private: 本对象独占 (不入全局 cache), 析构由 unique_ptr 自动释放 (运行期安全) —— 等价旧行为,
-//   用于隔离 numThreads/GPU 配置或真并行推理 (现状无人需要)。
-// 两种模式都返回借用裸指针, 调用方不要 delete。
 class OnnxModelUser {
  public:
   enum class Mode { Shared, Private };

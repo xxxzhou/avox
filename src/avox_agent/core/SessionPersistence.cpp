@@ -46,10 +46,7 @@ bool hasZstdMagic(const std::string& bytes) {
 }
 
 // ---------- 打包存储行 (dsh chunk-rows.ts 的读侧) ----------
-//
 // text-chunks / reasoning-chunks / tool-call-chunks 不是事件类型, 是存储层把一串
-// 连续同块 delta 分片压成一行的编码。读侧必须展开 (dsh 读是 layout-blind 的,
-// 明文日志里也混着打包行); 形状非法响亮抛错 —— 静默跳过等于丢一整段回复。
 
 bool isChunkRowTag(const std::string& tag) {
   return tag == "text-chunks" || tag == "reasoning-chunks"
@@ -328,9 +325,7 @@ OpenTail findOpenTail(const std::vector<SessionEvent>& events) {
 }
 
 // 给未闭合的尾部补写收尾标记。
-//
 // 顺序必须是先 step/end 再 turn/end —— 与驱动正常退出时 RAII 析构的顺序一致, 否则
-// 回放出来的边界嵌套是错的。
 void repairOpenTail(std::vector<SessionEvent>& events, bool& repaired) {
   const OpenTail tail = findOpenTail(events);
   if (!tail.hasOpenTurn) return;
@@ -452,9 +447,8 @@ void SessionWriter::onSessionEvent(const Session& session,
   std::lock_guard<std::mutex> lock(mtx);
   if (!file.is_open()) return;
   writeLine(encodeEvent(event));
-  // 分片不刷盘: 它们量大 (一次回复几百条), 而丢失只影响 token 级回放保真, 不影响模型
-  // 历史重建 —— 后者靠 assistant/message。其余事件立即刷, 于是任何崩溃最多丢掉最后
-  // 一次回复的逐字回放, 派生历史与边界结构完整。
+// 分片不刷盘: 它们量大 (一次回复几百条), 而丢失只影响 token 级回放保真, 不影响模型
+// 历史重建 —— 后者靠 assistant/message。其余事件立即刷, 于是任何崩溃最多丢掉最后
   if (event.type != EventType::AssistantChunk) file.flush();
 }
 
@@ -539,9 +533,8 @@ LoadedSession loadSession(const std::string& path) {
            " 尾部有撕裂行 (无换行符收尾), 已按 dsh 语义丢弃该行");
   }
 
-  // seq 连续性: 跳过 ignorable 事件会让后续 seq 出现空洞, 而 seq == 下标 是全系统依赖
-  // 的契约。出现空洞就意味着这份日志对当前运行时不可用 —— 明确拒绝, 而不是悄悄重编号
-  // (重编号会让 sourceEventSeqs 与 surfaceOp 的区间全部指向错误的位置)。
+// seq 连续性: 跳过 ignorable 事件会让后续 seq 出现空洞, 而 seq == 下标 是全系统依赖
+// 的契约。出现空洞就意味着这份日志对当前运行时不可用 —— 明确拒绝, 而不是悄悄重编号
   for (size_t index = 0; index < loaded.events.size(); ++index) {
     if (loaded.events[index].seq == index) continue;
     throw std::runtime_error(

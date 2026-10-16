@@ -21,8 +21,6 @@ namespace avox {
 // IRemoteSource 实现(avox_remote): WebDAV 会话 (兼容 Alist/OpenList 的 /dav 端点)。
 // open=PROPFIND Depth0 验会话, list=PROPFIND Depth1 列目录 (Basic 认证),
 // resolve=token 拼 http(s) 直链(带 userinfo)交给现有 http IO 播放。
-// token 约定: 解码后的服务器绝对路径, 目录带尾'/', 根为入口路径(补尾'/')。
-// 线程模型同 TorrentSource: 单发 RunTask 工作线程跑 op, 结果锁保护读取。
 class DavSource : public IRemoteSource, public RunTask {
  public:
   DavSource();
@@ -49,9 +47,8 @@ class DavSource : public IRemoteSource, public RunTask {
   virtual const char* getEntryToken(int32_t i) override;
   virtual const char* getSessionField(const char* key) override;
   virtual const char* resolve(int32_t entryIndex, IOption* option) override;
-  // 直链失效重取 (a05-T3 契约 §2): 对文件条目重发 PROPFIND Depth0, 以服务端
-  // 重签的 href 换新直链(alist/网盘形态 URL 有时效; 静态 DAV 返回同路径)。
-  // 同步阻塞(至多 opTimeoutMs), 失败 nullptr(原因见 getLastError)。
+// 直链失效重取 (a05-T3 契约 §2): 对文件条目重发 PROPFIND Depth0, 以服务端
+// 重签的 href 换新直链(alist/网盘形态 URL 有时效; 静态 DAV 返回同路径)。
   virtual const char* refresh(int32_t entryIndex, IOption* option) override;
   // 会话中途鉴权过期后的重授权 (a05 §1): 新凭据即刻生效并重新武装 onAuthExpired
   // (同一会话至多抛一次, 重授权成功后可再抛); entryIndex>=0 时同步重取该条目

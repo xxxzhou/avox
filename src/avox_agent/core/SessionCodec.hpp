@@ -40,12 +40,7 @@ struct DecodedEvent {
 };
 
 // 解码 JSONL 的一行事件。
-//
 // 类型未识别且**没有** ignorable 标记时抛 std::runtime_error: 读者必须拒绝重建整个会话,
-// 而不是静默丢弃 —— 一个未识别的必需事件可能改变其余日志的解释方式 (例如一个 replace,
-// 丢了它就会把已被遮蔽的旧轮次重新喂给模型)。
-//
-// 结构非法 (缺字段、类型不符、枚举值不认识) 同样抛。
 DecodedEvent decodeEvent(const std::string& line);
 
 // 解码 JSONL 首行的存储元数据。

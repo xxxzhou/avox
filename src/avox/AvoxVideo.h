@@ -163,11 +163,9 @@ AVOX_EXPORT void image2YUVFormat(const ImageFormat& imFormat, YuvType yuvType,
                                 YUVFormat& format);
 // 判定"单块连续 + UV步长为Y步长的整数分之一"的紧凑排布(此时连续split与packed字节重合)
 // 注意它不代表无padding: yuv420P/422P带padding时packed([偶|奇|pad])与split(等距行)不一致,
-// 直接引用外部帧还需满足stride[0]==width
 AVOX_EXPORT bool bTightlyPacked(const YUVFrame& yuvFrame);
 // 把平面frame的数据复制到紧湊的buffer中
 // 确保yrowpitch是双倍,让UV交及可放一行Y,或是二行uv可放一行Y
-// YUV420P/YUV422P有padding的,还会处理UV的padding适合提交GPU
 AVOX_EXPORT void copyPlaneYUV2TightlyBuffer(const YUVFrame& frame,
                                            uint8_t* bfdata);
 // 从IImageBuffer得到YUVFrame,Image为R8类型
@@ -182,18 +180,10 @@ AVOX_EXPORT bool image2SplitYUVFrame(IImageBuffer* buffer, YuvType yuvType,
 
 // YUVFrame → RGBA 转换（根据 format.type 自动分发，内部设置 buffer 格式）
 // 注意IImageBuffer在yuv420P/yuv422P的情况下
-// 如果是和GPU交互的,其UV的padding类似[前半width/2 | 后半width/2 | padding]
-// 如果要给ffmpeg交互，需要改成[前半width/2 | pad/2 | 后半width/2 | pad/2]
-// cs须与帧编码时的色彩空间一致(引擎侧getOutColorSpace), 否则limited/bt709
-// 流的快照会发灰(白235当满量程显示、色度压缩~0.88)
 AVOX_EXPORT bool yuvframe2Rgba(const YUVFrame& frame, IImageBuffer* buffer,
                                const ColorSpaceDesc& cs);
 // shader把U/V按width×(height/4)紧凑打包(每物理行2条逻辑UV行),
 // 加padding后每物理行布局: [前半width/2 | 后半width/2 | padding]
-// 重排为: [前半width/2 | pad/2 | 后半width/2 | pad/2]
-// 这样stride=rowPitch/2,FFmpeg按等距读取即可
-// @deprecated 原地把packed UV重排为split, 会破坏"IImageBuffer恒packed"契约, 新代码勿用;
-// 取split帧用 image2SplitYUVFrame(不修改buffer)
 AVOX_EXPORT void unpackGpuYUV(IImageBuffer* buffer, YuvType yuvType);
 }
 

@@ -19,7 +19,6 @@ namespace avox {
 #if AVOX_ENABLE_TRANSLATION
 /**
  * @brief ONNX Runtime 翻译器
- *
  * 使用 ONNX Runtime 加载 opus-mt-ja-zh MarianMT 模型进行翻译
  * 模型架构: encoder-decoder 分离
  */

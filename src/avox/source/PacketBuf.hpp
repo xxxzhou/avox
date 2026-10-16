@@ -17,8 +17,6 @@ AVOX_EXPORT bool checkAvccPacket(const uint8_t* data, int32_t size);
 // AvoxPacket放入队列的数据，每个包尽量不重新分配
 // 主要就是分配的空间如果大于现在要用，就只复制
 // 这样会导致包的大小越到后面就越大，分配的次数就变少
-// 一般来说，音频包大小差异不大，所以这个设计没问题
-// 而视频因为I帧和P/B帧空间差异大，后面的空间全是I帧空间,有些浪费，后面优化吧
 class AVOX_EXPORT PacketBuf {
  public:
   PacketBuf() = default;

@@ -9,8 +9,6 @@ namespace avox {
 // 音频→blendshape 内部基类: 对称 AudioStt/AudioTts。
 // IAudioFace 对外接口 + Observer<IAudioFaceOb> 回调分发;
 // 通用配置(modelLevel)在基类, 推理逻辑纯虚留给 Wav2ArkitFace 等子类(avox_avatar
-// 插件)。 方向: PCM 进(feed) → ARKit52 blendshape 出(经
-// IAudioFaceOb::onFaceBlendshape)。
 class AVOX_EXPORT AudioFace : public IAudioFace, public Observer<IAudioFaceOb> {
  public:
   AudioFace() = default;

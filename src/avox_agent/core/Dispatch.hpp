@@ -34,9 +34,7 @@ void reportDispatchError(const char* pointName, const char* detail);
 namespace dispatch_detail {
 
 // 监听器是否应当收到这次派发。
-//
 // owner == nullptr 是无主监听器 (部署级), 全收。有主监听器沿派发作用域的祖先链匹配:
-// 父作用域能观察它下面组合出的所有 agent, 兄弟之间互不可见。
 inline bool receives(ScopeKey owner, ScopeKey dispatchScope) {
   if (owner == nullptr) return true;
   for (ScopeKey it = dispatchScope; it != nullptr; it = it->parent) {
@@ -110,20 +108,16 @@ class Chain {
 
   explicit Chain(const char* pointName) : pointName(pointName) {}
 
-  // prepend: 必须排在普通注册之前的少数场合用。
-  //
-  // 典型是「先让下游定稿, 再对结果做统一处理」的策略 (结果溢出裁剪就是这种):
-  // 它注册在最前, 但第一件事是调 next(), 于是它拿到的是下游已经敲定的结果。
+// prepend: 必须排在普通注册之前的少数场合用。
+// 典型是「先让下游定稿, 再对结果做统一处理」的策略 (结果溢出裁剪就是这种):
   Disposer on(Handler handler, ScopeKey owner = nullptr, bool prepend = false) {
     Entry entry{std::move(handler), owner};
     return prepend ? prepended.insert(std::move(entry))
                    : appended.insert(std::move(entry));
   }
 
-  // 跑一遍链。terminal 是全部委托到底之后的默认行为。
-  //
-  // handler 抛出的异常**不隔离**: 责任链的每一环都参与决策, 一环失败意味着这次决策不完整,
-  // 让它传播给调用方去决定 (通常是把它变成一个模型可见的失败结果)。
+// 跑一遍链。terminal 是全部委托到底之后的默认行为。
+// handler 抛出的异常**不隔离**: 责任链的每一环都参与决策, 一环失败意味着这次决策不完整,
   Result run(Payload& payload, ScopeKey scope, const Next& terminal) const {
     std::vector<Handler> applicable;
     const auto collect = [&](const Entry& entry) {
@@ -174,13 +168,8 @@ class Serial {
     return listeners.insert(Entry{std::move(listener), owner});
   }
 
-  // 按注册序逐个调用。
-  //
-  // 与 Notify 的区别不在实现而在契约: 这里的 payload 携带可操作的句柄 (例如 agent),
-  // 监听器通过副作用表达意见, 调用方随后**重新读取数据**来决定后续行为。于是监听器
-  // 顺序不影响结果 —— 这是「数据决定」的落地方式。
-  //
-  // 异常仍然隔离: 一个监听器的失败不该让 turn 边界卡住。
+// 按注册序逐个调用。
+// 与 Notify 的区别不在实现而在契约: 这里的 payload 携带可操作的句柄 (例如 agent),
   void run(const Payload& payload, ScopeKey scope = nullptr) const {
     std::vector<Listener> applicable;
     listeners.forEach([&](const Entry& entry) {

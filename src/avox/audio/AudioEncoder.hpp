@@ -13,8 +13,6 @@ namespace avox {
 // 音频编码器
 // 基类主要做二件事
 // 一是把输入音频重采样成编码器需要的格式
-// 二是把音频帧填充到编码器需要的固定帧大小上
-// 子类具体实现编码器并回调转发
 class AudioEncoder : public AVEncoder, public Observer<IEncoderOb> {
 public:
   AudioEncoder();

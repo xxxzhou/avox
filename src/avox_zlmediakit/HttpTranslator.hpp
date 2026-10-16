@@ -14,9 +14,7 @@ namespace avox {
 /**
  * @brief HTTP 云翻译器（腾讯云翻译 API）
  * https://cloud.tencent.com/document/product/551/15619
- *
  * 使用 ZLMediaKit 的 HTTP 客户端发送翻译请求
- * 仅在 AVOX_ENABLE_ZLMEDIAKIT 编译时可用
  */
 
 class HttpTranslator : public BaseTranslator {

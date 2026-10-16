@@ -17,9 +17,6 @@ struct ARenderDesc {
 // 音频渲染通用中间层
 // 负责:模板方法 render()(3A 处理 +
 // 设备分发)、AudioProcess(AEC/3A)、AudioTap(外部读取)
-// 设备专属方法(empty/full/getQueueMS/pause/flush/speed)不在本层,见 AudioOutput
-// 裸 AudioRender(不派生 AudioOutput)可用于无设备场景(如转码),onRender
-// 默认空体不发声,tap 照常工作
 class AVOX_EXPORT AudioRender : public IAudioRender, public IAudioProcessOb {
  public:
   AudioRender();

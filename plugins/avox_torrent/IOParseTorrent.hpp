@@ -15,7 +15,6 @@ namespace avox {
 // 磁力/BT 数据源: libtorrent顺序下载 + FFmpeg自定义avio直读piece解封装
 // 解封装/包处理管线与IOParseFF一致(AVSource基类processPacket等全复用),
 // 差异仅在输入侧: 用avio_alloc_context的read/seek回调对接TorrentEngine,
-// 不经过协议层, 无本地HTTP中转。
 class IOParseTorrent : public AVSource, public RunTask {
  public:
   IOParseTorrent();

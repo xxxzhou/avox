@@ -348,9 +348,3 @@ ISurfaceRender* render = player->getSurfaceRender(); // 托管，不释放
 - **[doc/reports/README.md](doc/reports/README.md)** - 排查案例集：已定谳案例（根因、修复提交号、可复用判据）
 - **[DeveloperGuide.md](DeveloperGuide.md)** - C++ 编码规范与跨 DLL 安全规范
 - **[CLAUDE.md](CLAUDE.md)** - 项目结构概览与 AI 辅助开发指引
-
-## 许可证
-
-- 本项目核心代码基于 [GNU AGPL-3.0](LICENSE) 开源：可自由使用、学习、修改和分发；基于本 SDK 的衍生作品（含插件）分发时须同样以 AGPL-3.0 开源。
-- **商业授权** - 闭源商用场景（商业插件、嵌入式产品集成等）可联系作者获取商业授权（[天天不在](https://www.zhihu.com/people/zhou-xin-12-70-21/posts) / GitHub Issues）。
-- 第三方依赖（FFmpeg、WebRTC、OpenCV 等）遵循各自的开源协议，详见 [3rdparty/README.md](3rdparty/README.md)。

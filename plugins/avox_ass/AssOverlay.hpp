@@ -8,13 +8,8 @@
 namespace avox {
 
 // IAssOverlay 实现(libass 封装)。
-//
 // 依赖策略: libass/fribidi/harfbuzz 在独立仓 avox-ass-deps 预编译(计划见
 // doc/plan/player/ASS字幕渲染计划.md)。CMake 变量 AVOX_ASS_DEPS_DIR 指向产物
-// 时链接 libass 并定义 AVOX_ASS_HAVE_LIBASS=1 走真实渲染;未指到则只编骨架,
-// init() 返回 false → 调用方降级(等价无插件), 核心构建零污染。
-//
-// libass 句柄以 void* 持有(头文件不引 ass/*.h, 消费方零 libass 依赖)。
 class AssOverlay : public IAssOverlay {
  public:
   AssOverlay() = default;

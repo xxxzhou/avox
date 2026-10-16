@@ -423,9 +423,8 @@ void IOParseSmb::onRunTask() {
       continue;
     }
     if (bEof.load()) {
-      // EOF 停放: 不 break。小文件起播即读完, 尾包可能还有几十秒数据没被
-      // 消费, 且之后很可能 seek —— 线程一退, seek 只挪了 demuxer 位置却
-      // 无人再读, 管道从此静止。等 seekTo 复位(bEofReset)或 close
+// EOF 停放: 不 break。小文件起播即读完, 尾包可能还有几十秒数据没被
+// 消费, 且之后很可能 seek —— 线程一退, seek 只挪了 demuxer 位置却
       if (bEofReset.exchange(false)) {
         bEof.store(false);
         continue;

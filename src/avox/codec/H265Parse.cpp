@@ -286,9 +286,8 @@ bool H265Parse::parsePpsSyntax() {
   if (pps.tiles_enabled_flag) {
     br.ue(pps.num_tile_columns_minus1);
     {
-      // Hint : num_tile_columns_minus1 plus 1 specifies the number of tile
-      // columns partitioning the picture. num_tile_columns_minus1 shall be in
-      // the range of 0 to PicWidthInCtbsY − 1, inclusive.
+// Hint : num_tile_columns_minus1 plus 1 specifies the number of tile
+// columns partitioning the picture. num_tile_columns_minus1 shall be in
       MPP_H26X_SYNTAXT_STRICT_CHECK(
           pps.num_tile_columns_minus1 <= sps->context.PicWidthInCtbsY - 1,
           "[pps] num_tile_columns_minus1 out of range", return false);
@@ -756,9 +755,8 @@ bool H265Parse::parseSliceHeaderSyntax(H265NalUnitPtr nal,
     }
     br.ue(slice->slice_type);
     {
-      // 0 - B (B slice)
-      // 1 - P (P slice)
-      // 2 - I (I slice)
+// 0 - B (B slice)
+// 1 - P (P slice)
       MPP_H26X_SYNTAXT_STRICT_CHECK(slice->slice_type <= 2,
                                     "[slice] slice_type out of range",
                                     return false);
@@ -1002,16 +1000,8 @@ bool H265Parse::parsePpsRangeSyntax(H265SpsPtr sps, H265PpsSyntax &pps,
   if (pps.transform_skip_enabled_flag) {
     br.ue(ppsRange.log2_max_transform_skip_block_size_minus2);
     {
-      //
-      // MaxTbLog2SizeY
-      // The variable MaxTbLog2SizeY is set equal to
-      // log2_min_luma_transform_block_size_minus2 + 2 +
-      // log2_diff_max_min_luma_transform_block_size.
-      //
-      // Hint : When present, the value of
-      // log2_max_transform_skip_block_size_minus2 shall be less than or equal
-      // to MaxTbLog2SizeY − 2.
-      //
+// MaxTbLog2SizeY
+// The variable MaxTbLog2SizeY is set equal to
       MPP_H26X_SYNTAXT_STRICT_CHECK(
           ppsRange.log2_max_transform_skip_block_size_minus2 <=
               (sps->log2_min_luma_transform_block_size_minus2 + 2 +
@@ -1025,9 +1015,8 @@ bool H265Parse::parsePpsRangeSyntax(H265SpsPtr sps, H265PpsSyntax &pps,
   }
   br.u(1, ppsRange.cross_component_prediction_enabled_flag);
   {
-    // Hint : When ChromaArrayType is not equal to 3, it is a requirement of
-    // bitstream conformance that the value of
-    // cross_component_prediction_enabled_flag shall be equal to 0.
+// Hint : When ChromaArrayType is not equal to 3, it is a requirement of
+// bitstream conformance that the value of
     MPP_H26X_SYNTAXT_STRICT_CHECK(
         (sps->separate_colour_plane_flag == 0 ? sps->chroma_format_idc
                                               : 0) /* ChromaArrayType */
@@ -1123,9 +1112,8 @@ bool H265Parse::parsePpsSccSyntax(H265PpsSccSyntax &ppsScc) {
     br.se(ppsScc.pps_act_cb_qp_offset_plus5);
     br.se(ppsScc.pps_act_cr_qp_offset_plus3);
     {
-      // Hint : It is a requirement of bitstream conformance that the values
-      // of PpsActQpOffsetY, PpsActQpOffsetCb, and PpsActQpOffsetCr shall be
-      // in the range of −12 to +12, inclusive.
+// Hint : It is a requirement of bitstream conformance that the values
+// of PpsActQpOffsetY, PpsActQpOffsetCb, and PpsActQpOffsetCr shall be
       MPP_H26X_SYNTAXT_STRICT_CHECK(
           ppsScc.pps_act_y_qp_offset_plus5 - 5 >= -12 &&
               ppsScc.pps_act_y_qp_offset_plus5 - 5 <= 12,
@@ -1589,11 +1577,8 @@ bool H265Parse::parsePTLSyntax(uint8_t profilePresentFlag,
     // Hint : when general_profile_space is equal to 0, indicates a profile to
     // which the CVS conforms as specified in Annex A.
     {
-      // Reference : MediaSDK.git
-      // (https://github.com/Intel-Media-SDK/MediaSDK.git -
-      // 7a72de33a15d6e7cdb842b12b901a003f7154f0a)
-      //             umc_h265_bitstream_headers.cpp -> void
-      //             H265HeadersBitstream::parseProfileTier(H265PTL *ptl)
+// Reference : MediaSDK.git
+// (https://github.com/Intel-Media-SDK/MediaSDK.git -
       if (ptl.general_profile_idc) {
         for (uint32_t j = 0; j < 32; j++) {
           if (ptl.general_profile_compatibility_flag[j] == 1) {
@@ -1848,7 +1833,6 @@ bool H265Parse::parseScalingListDataSyntax(H265ScalingListDataSyntax &sld) {
 /**
  * @param[in] stRpsIdx : short term reference picture set index
  * @sa        ITU-T H.265 (2021) - 7.4.8 Short-term reference picture set
- * semantics
  */
 bool H265Parse::parseStRefPicSetSyntax(H265SpsSyntax &sps, uint32_t stRpsIdx,
                                        H265StRefPicSetSyntax &stps) {

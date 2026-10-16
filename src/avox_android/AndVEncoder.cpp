@@ -229,9 +229,8 @@ DecodeResult AndVEncoder::encode() {
   AMediaCodecBufferInfo info = {};
   ssize_t outputBufferIndex =
       AMediaCodec_dequeueOutputBuffer(mediaCodec, &info, 5000);
-  //  LOGFLF(LogLevel::info, "cpu outputBufferIndex:", outputBufferIndex,
-  //         " info size:", info.size, " epts:", info.presentationTimeUs);
-  // 处理输出数据
+// LOGFLF(LogLevel::info, "cpu outputBufferIndex:", outputBufferIndex,
+// " info size:", info.size, " epts:", info.presentationTimeUs);
   while (outputBufferIndex >= 0) {
     if (info.flags & AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM) {
       LOGFLF(LogLevel::info, "end of stream reached");

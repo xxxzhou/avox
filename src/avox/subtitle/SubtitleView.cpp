@@ -19,8 +19,6 @@ static constexpr int32_t kMaxPendingChunks = 512;
 
 // 内封文本采样 → ass_process_chunk 对白行("ReadOrder,Layer,Style,...,Text",
 // 时间走调用入参)。mov_text(tx3g) 样本是 2 字节大端长度 + UTF-8 文本(可尾随
-// 样式 atom); MKV SRT 无前缀 — 前缀长度对不上就整包按文本。剥富文本标签,
-// 换行折 \N, 剥花括号防 ASS 覆盖块注入。
 static std::string textSampleToAssChunk(const char* data, int32_t size) {
   if (!data || size <= 0) {
     return {};
@@ -320,7 +318,6 @@ void SubtitleView::setMaxWidth(float ratio) {
 
 // 全局变换按胜者槽位二选一下发到画布层前端: 文本槽的 scale/offset/opacity
 // 已被 CPU 侧重栅格化消费, 层侧必须置单位值, 否则双份缩放; 轨槽(ASS/PGS)与
-// 外挂 .ass/.ssa(libass 通道)由 canvas 合成消费, 直发用户值
 void SubtitleView::pushCanvasTransform() {
   if (!canvasLayer) {
     return;

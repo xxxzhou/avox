@@ -79,11 +79,7 @@ bool headerEquals(const EpochHeader& a, const EpochHeader& b) {
 }
 
 // 把折叠出的 header 变成下一次请求的提议: 删掉 adapter 物化的默认值。
-//
 // 于是切换路由后新 adapter 会重新物化自己的默认值, 而用户显式设的值跨 step、跨路由保留。
-// temperature 不在摘除之列 —— dsh 的 adapterDefaults 只放 {reasoningEffort, maxTokens},
-// avox 约定永远显式写 temperature (轮换模型时保留)。reasoningEffort 走同档: 物化时标记,
-// 切路由前摘除重算 (DSH 同款, 见 packages/llm/llm/src/call-config.ts)。
 LlmCallConfig requestProposal(const EpochHeader& header) {
   LlmCallConfig proposal = header.config;
   if (header.adapterDefaults.has_value()) {
@@ -559,10 +555,8 @@ std::optional<TurnEndReason> ReactLoopAgent::runStep(
     std::vector<size_t> chunkSeqs;
     LlmStreamHandler handler;
     handler.onChunk = [&](const StreamChunk& chunk) {
-      // 分片逐条落日志 (token 级回放保真, 含 usage/finish), 同时喂给组装器。
-      //
-      // 这里不检查取消也不抛: provider 已经拿到 signal, 由它自己观察并返回 Aborted ——
-      // 从回调里抛异常会穿过 provider 的调用栈, 那是资源泄漏的常见来源。
+// 分片逐条落日志 (token 级回放保真, 含 usage/finish), 同时喂给组装器。
+// 这里不检查取消也不抛: provider 已经拿到 signal, 由它自己观察并返回 Aborted ——
       std::lock_guard<std::mutex> lock(mtx);
       chunkSeqs.push_back(
           sessionOwned->append(AssistantChunkData{turn, step, chunk}));
@@ -571,11 +565,8 @@ std::optional<TurnEndReason> ReactLoopAgent::runStep(
 
     const LlmFinish finish = deps.llm->stream(built.request, handler);
 
-    // 取消定稿 (dsh #2134): 流消费期间被取消时, 已送达前缀收尾成 assistant/message
-    // (interrupted: true), 先于 aborted 的 turn/end —— 追问与分支要包含用户已读到的
-    // 内容。工具调用块从未分派, 由 interruptedBlocks 省略。失败的 attempt 永不收尾:
-    // error 走下面的 waterfall, 重试窗口内落地的取消也不复活它的前缀 (本分支只认
-    // provider 观察到的流内取消)。
+// 取消定稿 (dsh #2134): 流消费期间被取消时, 已送达前缀收尾成 assistant/message
+// (interrupted: true), 先于 aborted 的 turn/end —— 追问与分支要包含用户已读到的
     if (finish.kind == LlmFinishKind::Aborted && signal->aborted()) {
       std::vector<ContentBlock> prefix = assembler.interruptedBlocks();
       if (!prefix.empty()) {

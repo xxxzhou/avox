@@ -295,9 +295,8 @@ void WindowRender::pause(bool bPause) {
 
 void WindowRender::onRunTask() {
 #ifdef WIN32
-  // Windows 默认定时器粒度 15.6ms 把下面 sleep_for(帧间隔-2ms) 量化成 3格/2格
-  // 交替: 拍长双峰 47/32ms(23.976fps 实测), 每帧停留时长抖动呈持续微抖;
-  // 1ms 粒度后拍长锁定内容帧节拍(41.7ms 单峰, 98.6%), 与在线播放器观感对齐
+// Windows 默认定时器粒度 15.6ms 把下面 sleep_for(帧间隔-2ms) 量化成 3格/2格
+// 交替: 拍长双峰 47/32ms(23.976fps 实测), 每帧停留时长抖动呈持续微抖;
   timeBeginPeriod(1);
 #endif
   // 窗口渲染线程，把videoRender的结果渲染到窗口
@@ -383,10 +382,8 @@ void WindowRender::onRunTask() {
       sleepTick = 0;
     }
     if (sleepTick > 50000 && syncResult != SyncResult::slow) {
-      // tick -> ms, 提前 2ms 唤醒: 睡眠目标来自帧率标签, 标签可能偏大于真实
-      // PTS 步进(23.98 标签实为 24000/1001, 43.5ms vs 41.7ms), 唤醒节拍一旦
-      // 低于 PTS 步进, 视频钟线性落后音频钟(0101.mkv 实测 +41ms/s); 提前量
-      // 由 syncVideo 的 quick 门吸收, 节拍永不低于内容速率
+// tick -> ms, 提前 2ms 唤醒: 睡眠目标来自帧率标签, 标签可能偏大于真实
+// PTS 步进(23.98 标签实为 24000/1001, 43.5ms vs 41.7ms), 唤醒节拍一旦
       std::this_thread::sleep_for(std::chrono::milliseconds(
           sleepMs > 3 ? sleepMs - 2 : 1));
 #ifdef WIN32
@@ -430,9 +427,8 @@ void WindowRender::onRenderWindow() {
   if (pauseing()) {
     return;
   }
-  // 两路都下发窗口指针: 派生据此每帧比对 hdrPassthroughActive() 实态,
-  // 翻转时置 bResetFlag 重建输出端(§4.2 统一检查点)。window 可能为空
-  // (贴图腿/离屏), 基类判空即安全
+// 两路都下发窗口指针: 派生据此每帧比对 hdrPassthroughActive() 实态,
+// 翻转时置 bResetFlag 重建输出端(§4.2 统一检查点)。window 可能为空
   if (pVideoRender) {
     pVideoRender->renderWindow(window.get());
   }

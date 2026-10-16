@@ -33,7 +33,6 @@ const char* kSpawnProviderName = "spawn";
 
 // dsh delegationDepthOf: 深度地板 = max(父会话头行 delegationDepth, 父 options 的
 // subagentDepth)。头行是冷恢复的持久真相, options 是本次进程内组合的显式地板 ——
-// 取 max 保证单调, resume 出来的子会话不会因进程重启而变浅。
 int delegationDepthOf(const SessionHeader& header, const AgentOptions& options) {
   const int persisted = header.delegationDepth.value_or(0);
   return persisted > options.subagentDepth ? persisted : options.subagentDepth;
@@ -41,7 +40,6 @@ int delegationDepthOf(const SessionHeader& header, const AgentOptions& options) 
 
 // 子会话 id: 沿用宿主的 "session-<秒级时间戳>" 命名; 同秒已占用时加 "-<n>" 后缀
 // (父会话与同批兄弟都可能占住本秒)。zstd 档也算占用 —— 一个 id 不能同时存在明文与
-// 压缩两份日志 (dsh 根目录拒绝混编码)。
 std::string allocateChildSessionId(const std::string& sessionRoot,
                                    const std::optional<std::string>& cwd,
                                    const SessionId& parentId) {
@@ -94,7 +92,6 @@ const char* subagentStopReasonName(SubagentStopReason reason) {
 
 // dsh finalAssistantOutput: 末条非空 assistant/message 的 content; 没有装配级消息
 // (流中途死掉、max-tokens 截在流内) 时回退为全部 text-delta 分片的累积。
-// 选择与 stopReason 无关 —— 取消/截断的运行也把已产出的部分交回父会话。
 std::vector<ContentBlock> finalAssistantOutput(const Session& session) {
   const std::vector<SessionEvent>& events = session.events();
   for (auto it = events.rbegin(); it != events.rend(); ++it) {
@@ -269,10 +266,8 @@ SubagentRunOutcome runSubagentOneShot(
     task.content = std::move(prompt);
     task.source = userSource();
     child->followup(std::move(task));
-    // 交接缝关门: cancel 对空闲 agent 是空操作 —— 若父取消落在「注册级联 → 驱动
-    // 起跑」之间, 那次 cancel 只清了 inbox 没能 latch。followup 后复检一次: 已
-    // abort 则补一刀 (RunningPhase 已立则生效; 尚未起跑则 inbox 已空, 子会话只会
-    // 开一个不花模型调用的空 turn 立即收尾 —— 日志仍然自洽)。
+// 交接缝关门: cancel 对空闲 agent 是空操作 —— 若父取消落在「注册级联 → 驱动
+// 起跑」之间, 那次 cancel 只清了 inbox 没能 latch。followup 后复检一次: 已
     if (signal != nullptr && signal->aborted()) {
       cancelled->store(true);
       child->cancel(AgentCancelCause{CancelByParent{}});

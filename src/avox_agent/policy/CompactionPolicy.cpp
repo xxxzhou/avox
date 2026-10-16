@@ -22,11 +22,7 @@ const char* kCheckpointPreamble =
     "checkpoint.";
 
 // 当前上下文占用量: 最近一条带 usage 的 assistant/message 的记账。
-//
 // dsh 的 inputTokens 只含未命中缓存的部分, 命中的记在 cacheReadTokens —— 但对上下文
-// 窗口而言两者都占位, 所以相加。那是上一次请求实际消耗的输入规模, 比任何字符估算都
-// 准。没有 usage (首轮、后端不报) 时返回 0 = 不触发压缩 —— 宁可不压也不要凭猜测砍掉
-// 历史。
 int64_t currentPromptTokens(const Session& session) {
   const std::vector<SessionEvent>& events = session.events();
   for (size_t i = events.size(); i > 0; --i) {
@@ -69,7 +65,6 @@ int64_t textPrice(const std::string& text) {
 
 // image 走 dsh estimateContent 的 default 分支: 解码后块的 JSON.stringify 长度。
 // avox 的 ImageBlock 与 dsh 同构 (type + attachment, 字段序一致), 按同一形状手工
-// 序列化; name 缺省省略 (JSON.stringify 跳过 undefined, 两侧一致)。
 int64_t imagePrice(const ImageAttachmentRef& attachment) {
   std::string json = "{\"type\":\"image\",\"attachment\":{\"attachmentId\":\""
       + attachment.attachmentId + "\",\"mediaType\":\"" + attachment.mediaType
@@ -119,7 +114,6 @@ int64_t estimateBlocks(const std::vector<ContentBlock>& content) {
 
 // 一条表面事件的估算价 (estimate.ts estimateMessage + surface.ts
 // deriveEventMessage): 三类消息事件按内容块求和加角色开销; 空内容 assistant
-// 消息不上表面, 计 0。
 int64_t estimateSurfaceEvent(const SessionEvent& event) {
   switch (event.type) {
     case EventType::UserMessageEvent: {
@@ -148,9 +142,7 @@ int64_t estimateSurfaceEvent(const SessionEvent& event) {
 }
 
 // 是否有未闭合的 compaction/start。
-//
 // 这条持久标记本身就是锁: 一个未配对的 start 意味着压缩正在进行, 或是崩溃遗留。
-// 后者靠 session/end-seed 区分 —— 它之前的未配对 start 属于一个已经结束的生命周期。
 bool hasActiveCompaction(const Session& session) {
   const std::vector<SessionEvent>& events = session.events();
   size_t liveFrom = 0;

@@ -13,8 +13,6 @@ namespace avox {
 
 // buffer 内坐标 → 屏幕坐标: 截图原点即窗口屏幕左上角。
 // 缩放因子: 截图 buffer 可能被渲染层归一化(如 4K 窗口 → 1080p buffer),
-// 屏幕坐标 = 窗口左上 + buffer 坐标 × (窗口尺寸 / buffer 尺寸)。默认 scale=1(1:1)。
-// 公共 helper: 任何组合 shot + 屏幕坐标的 op 都可复用 (findText/findImage 用它做转换)。
 vec2i toScreen(const WindowShotInfo& info, vec2i imgCenter) {
   vec2i s;
   s.x = info.left + static_cast<int32_t>(imgCenter.x * info.scaleX);

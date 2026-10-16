@@ -21,10 +21,8 @@ namespace avox {
 namespace {
 
 // 通用辅助工具的名字与一句话说明。
-//
 // 写成常量表而不是从 AgentHost 的注册表反查, 是因为**能力目录进的是 system prompt 前缀**:
 // 它必须逐字稳定, 而注册表的内容取决于装配。目录描述与实际可调工具的偏差由工具 schema
-// 兜底 —— 模型看得到真实的工具列表。
 struct HelperToolDoc {
   const char* name;
   const char* summary;
@@ -140,8 +138,6 @@ static bool parseSkillMd(const std::string& content, ParsedSkillMd& out) {
 
 // 扫描一个 skill 根下每个子目录的 SKILL.md, 解析 front-matter 注册为 Skill (一切皆 skill)。
 // 对齐 dsh: source=传入的 sourceTag, provider="filesystem",
-// resourceBase={kind:"directory", path:<目录>}, path=<SKILL.md 绝对路径>, content=正文。
-// 同名不覆盖 (先加载者胜)。调用方按 DSH 优先级从高到低依次传入多个根, 高优先级先加载即胜出。
 static void loadSkillsFromRoot(SkillRegistry& reg, const std::filesystem::path& root,
                                const std::string& sourceTag) {
   namespace fs = std::filesystem;
@@ -211,9 +207,6 @@ std::vector<std::string> SkillRegistry::names() const {
 
 // 给 VLM 的 system prompt: 从外部骨架文件读 + 动态拼能力目录。
 // 骨架文件: assets/agent/system_prompt.md (或 getSystemConfigPath()/agent/system_prompt.md 覆盖),
-// 含 {{能力目录}} 占位符, 替换为 skill/helper 两栏清单 (GUI 操作入口摘要在骨架文件里写死)。
-// skill 目录语义对齐 dsh: 只列模型可调 (invocation.modelInvocable) 的 skill, 每条一行
-// `- `name`: description` (description 做文本转义), 加载交给单一 skill 工具。
 std::string SkillRegistry::systemPrompt() const {
   // skill 名集合: 枚举辅助工具时排除同名者 (已在上面的 skill 栏, 不重复进辅助工具)。
   std::set<std::string> skillNames;
@@ -317,9 +310,8 @@ void prepareBuiltinSkillRegistry(std::vector<std::string> customSkillDirs) {
 static void loadSkills(SkillRegistry& reg) {
   namespace fs = std::filesystem;
   std::vector<DefaultRoot> roots = defaultSkillRoots();
-  // customSkillDirs 插在 rank 300, 即 project-agents (200) 之后。
-  // DSH 排序: rank 升序 — bundled (200) 先于 custom (300) 加载, custom 内的相对顺序
-  // 由 AgentConfig 数组顺序决定, 用户显式列在前面的同名 skill 胜出。
+// customSkillDirs 插在 rank 300, 即 project-agents (200) 之后。
+// DSH 排序: rank 升序 — bundled (200) 先于 custom (300) 加载, custom 内的相对顺序
   for (const auto& dir : g_pendingCustomDirs) {
     roots.push_back({300, dir, "custom"});
   }

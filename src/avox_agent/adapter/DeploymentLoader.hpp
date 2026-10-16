@@ -38,12 +38,7 @@ struct AgentDeployment {
 };
 
 // 装载一份部署。
-//
 // agentJson: agent.json 的完整内容 (顶层平铺)。
-// dataRoot: 会话日志与溢出文件的根目录 (通常是 <avox>/logs)。
-//
-// provider 对应 providers.json 里的厂商名, model 对应厂商 models 下的模型名。
-// 缺 provider/url/字段表、策略参数非法时抛 std::runtime_error —— 配错响亮地失败。
 AgentDeployment loadDeployment(const std::string& agentJson,
                               const std::string& dataRoot);
 

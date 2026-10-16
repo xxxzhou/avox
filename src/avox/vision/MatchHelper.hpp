@@ -15,7 +15,6 @@ std::vector<MatchResult> matchAll(IImageBuffer* scene, IImageBuffer* tmpl,
 
 // 图像模板匹配: 在 buffer 内匹配 tBuffer (取首个命中) → imgCenter。纯视觉,
 // 不转坐标、不动作。 命中填 out(found/score/imgCenter) 并返回 true;
-// 未命中/插件不可用返回 false。
 bool locateImage(IImageBuffer* buffer, IImageBuffer* tBuffer, double threshold,
                  LocateResult* out);
 

@@ -72,7 +72,6 @@ class WasDeviceNotifier : public IMMNotificationClient {
 
 // 软件音量缩放:按样本格式逐点乘 vol 后写入 dst,整数格式做饱和钳位
 // 用于替代 WASAPI ISimpleAudioVolume:那个接口改的是音频会话音量,
-// 会联动 Windows 音量混合器(系统级),软件缩放只改本进程输出波形
 static void scalePcm(void* dst, const void* src, size_t size, AudioFormat fmt,
                      float vol) {
   switch (fmt) {

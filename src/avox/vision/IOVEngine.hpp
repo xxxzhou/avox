@@ -7,21 +7,14 @@
 namespace avox {
 
 // ============== OpenVINO 推理引擎 ==============
-//
 // 对应 IONNXSession, 但 OpenVINO 的 Core/CompiledModel/InferRequest 是有状态对象池,
 // 抽象形状不同 (device + FP16/LATENCY + reshape), 故独立接口而非扩展 IONNXSession。
-// 实现在 plugins/avox_openvino (OVEngine), 经 AvoxManager::openvinoEngineHub 取。
-//
-// VkQEnhanceLayer 优先用此 (Intel iGPU/CPU, 实测 UHD770 GPU FP16 ~131ms),
-// plugin 没装/全失败时降级 IONNXSession (ORT CPU)。一个 binary 跨硬件最优。
 class IOVEngine {
  public:
   virtual ~IOVEngine() = default;
 
-  // 加载并编译模型。内部自动选最优 device:
-  //   试 GPU(Intel iGPU, FP16) → 失败试 CPU(Intel/AMD 通用, FP32) → 全失败返回 false。
-  // inferHeight/inferWidth: 推理输入分辨率 (NCHW [1,3,H,W]); scale: 输出 = 推理×scale。
-  // modelPath: .onnx 路径 (OV read_model 直接吃 ONNX, 不转 IR)。
+// 加载并编译模型。内部自动选最优 device:
+// 试 GPU(Intel iGPU, FP16) → 失败试 CPU(Intel/AMD 通用, FP32) → 全失败返回 false。
   virtual bool loadModel(const std::string& modelPath,
                          int inferHeight, int inferWidth, int scale) = 0;
 

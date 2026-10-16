@@ -186,9 +186,8 @@ class IVideoManager {
   virtual IVideoSource* getDevice(int32_t index) = 0;
   virtual IVideoSource* findDevice(const char* id) = 0;
   virtual int32_t getDeviceCount() = 0;
-  // virtual const char* getDeviceName(int32_t index) = 0;
-  // 刷新设备列表，注意刷新可能让外部IDeviceSource的指针失效
-  // 需要确保外部不在使用刷新前的IDeviceSource,否则别用
+// virtual const char* getDeviceName(int32_t index) = 0;
+// 刷新设备列表，注意刷新可能让外部IDeviceSource的指针失效
   virtual void refreshDevices() {};
 };
 
@@ -200,9 +199,8 @@ class IAudioManager {
   virtual IAudioSource* getDevice(int32_t index) = 0;
   virtual IAudioSource* findDevice(const char* id) = 0;
   virtual int32_t getDeviceCount() = 0;
-  // virtual const char* getDeviceName(int32_t index) = 0;
-  // 刷新设备列表，注意刷新可能让外部IDeviceSource的指针失效
-  // 需要确保外部不在使用刷新前的IDeviceSource,否则别用
+// virtual const char* getDeviceName(int32_t index) = 0;
+// 刷新设备列表，注意刷新可能让外部IDeviceSource的指针失效
   virtual void refreshDevices() {};
 };
 
@@ -281,7 +279,6 @@ class IRawSourceOb {
 // 原始数据源，如YUV/GPUTexture/PCM
 // 回调是IRawSourceOb
 // 如果是从ISourcePlayer里得到的,请不要直接调用open/close
-// 请调用ISourcePlayer::open/close
 class IRawSource {
  public:
   IRawSource() = default;

@@ -16,7 +16,6 @@ void MaskProcessor::process(std::vector<uint8_t>& mask, int width, int height,
 
 // #ifdef AVOX_ENABLE_OPENCV
 // void MaskProcessor::processOpenCV(...) { ... }
-// #endif
 
 void MaskProcessor::processCPU(std::vector<uint8_t>& mask, int width, int height,
                                 int dilateSize, int erodeSize, int blur,

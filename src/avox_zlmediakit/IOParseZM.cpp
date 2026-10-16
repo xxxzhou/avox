@@ -61,11 +61,8 @@ void initZmEnv() {
     static auto* leakedZlLogger =
         new std::shared_ptr<toolkit::Logger>(toolkit::Logger::Instance().shared_from_this());
     (void)leakedZlLogger;
-    // 泄漏只挡 ~Logger 自身: ZLM 日志线程活到进程死, 退出期最后几条日志仍会经
-    // on_mk_log 回调进已析构的 avox 静态对象(TrackMgr::mtx) -> system_error
-    // 无人接 -> abort(2026-09-24 panvox 实证)。atexit 按注册逆序执行, 排在
-    // 加载期静态析构之前, 在此摘回调并 mk_env_release(停 server + join 日志
-    // 线程), 正是 mk_env_release 文档要求的时机; s_env_inited 守卫下重复调无害。
+// 泄漏只挡 ~Logger 自身: ZLM 日志线程活到进程死, 退出期最后几条日志仍会经
+// on_mk_log 回调进已析构的 avox 静态对象(TrackMgr::mtx) -> system_error
     atexit([]() {
       mk_events_listen(nullptr);
       mk_env_release();
@@ -92,9 +89,8 @@ void regZmIO() {
                      }};
   AvoxManager::Get().initFuncs.push_back(regFunc);
   RegFunc cleanFunc = {"zlmediakit io clean", []() {
-                         // 停 server + 异步日志线程并摘除 EventChannel(见
-                         // mk_common.cpp mk_env_release 注释); 必须在静态析构前
-                         // 调, 否则 Logger/NoticeCenter 析构序倒挂会在退出时崩
+// 停 server + 异步日志线程并摘除 EventChannel(见
+// mk_common.cpp mk_env_release 注释); 必须在静态析构前
                          mk_env_release();
                          // 清空事件回调(含 on_mk_log), 退出时 ZL 不再回调到 avox
                          // 已析构对象
@@ -117,11 +113,8 @@ IOParseZM::~IOParseZM() { close(); }
 void IOParseZM::onResume() { dispatch(&IAVSourceOb::onReopen); }
 
 void IOParseZM::sampleStats() {
-  // 在 poller 线程执行(onPacket 回调)。ZLMediaKit
-  // 内部状态(_rtcp_context/_demuxer) 仅在 poller 线程访问安全, 这里采样后
-  // player 线程的 getter 只读缓存, 不再跨线程裸读。 否则 mk_player_loss_rate
-  // 内部拷 _rtcp_context 的 shared_ptr 时, 会与 poller 线程的 track
-  // reset/teardown 并发, 拷到悬空控制块(lock inc [rcx+8])而崩。
+// 在 poller 线程执行(onPacket 回调)。ZLMediaKit
+// 内部状态(_rtcp_context/_demuxer) 仅在 poller 线程访问安全, 这里采样后
   if (!zlPlayer) {
     return;
   }
@@ -213,11 +206,8 @@ bool IOParseZM::onOpen() {
     zlMerger = mk_frame_merger_create(1);
   }
   mk_frame_merger_clear(zlMerger);
-  // 设置一些选项
-  // mk_set_option("general.addMuteAudio", "1");
-  // wait_add_track_ms: 只有1个Track时等第二个Track来, 用trackReadyMs(默认3s)
-  // wait_track_ready_ms: Track有了但未就绪(等配置帧), 用timeoutMs(默认8s,
-  // 首帧可能较慢)
+// 设置一些选项
+// mk_set_option("general.addMuteAudio", "1");
   mk_set_option("general.wait_track_ready_ms",
                 std::to_string(timeoutMs).c_str());
   mk_set_option("general.wait_add_track_ms",
@@ -355,9 +345,8 @@ void IOParseZM::onClose() {
     }
     zlPlayer = nullptr;
   }
-  // merger必须在player release(帧回调全部停止)之后释放: 若先释放,
-  // ZLM线程可能正拿着merger在onPacket/mk_frame_merger_input里,
-  // 访问已释放内存 = mk_api.dll 0xC0000005 (转码/转封装stop时偶现)
+// merger必须在player release(帧回调全部停止)之后释放: 若先释放,
+// ZLM线程可能正拿着merger在onPacket/mk_frame_merger_input里,
   if (zlMerger) {
     mk_frame_merger_release(zlMerger);
     zlMerger = nullptr;
@@ -434,9 +423,8 @@ void IOParseZM::onSpeed() {
 }
 
 float IOParseZM::getLossRate(TrackType type) {
-  // 直接读 poller 线程采样的缓存; 不再调 mk_player_loss_rate(其内部读
-  // _rtcp_context, 与 poller 线程的 track reset/teardown 并发会拷到悬空
-  // shared_ptr 而崩)
+// 直接读 poller 线程采样的缓存; 不再调 mk_player_loss_rate(其内部读
+// _rtcp_context, 与 poller 线程的 track reset/teardown 并发会拷到悬空
   return (type == TrackType::video) ? cLossRateVideo : cLossRateAudio;
 }
 

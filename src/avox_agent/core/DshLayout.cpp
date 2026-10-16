@@ -27,9 +27,6 @@ void appendEscape(std::string& out, uint16_t unit) {
 
 // UTF-8 字节流 -> UTF-16 码单元序列 (增补平面拆代理对), 逐单元喂转义 —— 与 dsh
 // 在 JS 字符串上逐 charCodeAt 处理逐字节一致。
-//
-// 非法 UTF-8 序列按每个坏字节一个 U+FFFD 处理 (dsh 域内不会出现非法序列, 这里只求
-// 不崩溃且可恢复)。返回码单元个数 (含代理对占两席)。
 size_t appendUnits(const std::string& text, std::vector<uint16_t>& units) {
   const size_t start = units.size();
   size_t i = 0;

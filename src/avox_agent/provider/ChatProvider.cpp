@@ -32,7 +32,6 @@ static Json partToWire(const ProviderPart& p) {
 
 // tool 消息 wire (dsh #2724): role:tool 的 content 只收 string, 带不了图 —— 文本
 // join 留下, 图片外提到 pendingImages (调用方在后续 user 消息里 flush)。空输出占位
-// 与 dsh 逐字一致: 有图无文本 "(see attached image)", 全空 "(no output)"。
 static Json toolToWire(const ProviderMessage& m, std::vector<Json>& pendingImages) {
   Json j(Json::JsonObject{});
   j["role"] = "tool";

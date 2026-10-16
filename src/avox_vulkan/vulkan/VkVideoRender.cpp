@@ -155,7 +155,6 @@ void VkVideoRender::setDoviMeta(const DoviMeta& meta) {
 
 // HDR 输出模式: forceHDR 过界重建拓扑, 非过界仅参数。
 // 状态化(10/1 UAF 案, sess_75d44d7c): setter 只落成员(+过界置重建请求),
-// 不跨线程触节点——节点下发由渲染线程消费(onParametUpdate 收敛 + 重建尾重放)
 void VkVideoRender::setHdrMode(HdrMode mode) {
   if (mode == hdrMode) {
     return;
@@ -649,10 +648,8 @@ bool VkVideoRender::vaildAndInitGraph() {
       geometryRender->setLayer(geometryLayer->get());
     }
   }
-  // 字幕画布层豁免直通裁剪(V2 兑现, 字幕画布多后端渲染计划 §5.4): forceHDR
-  // 拓扑照挂线, 帧在 16F 线性域走 canvasBlendHDR 变体(shader 内线性化×参考白);
-  // RGBA 直入(IImageBuffer 的 SDR 内容不升样)不升域。其余 font/geometry/
-  // 画质层在 bPt 仍全裁
+// 字幕画布层豁免直通裁剪(V2 兑现, 字幕画布多后端渲染计划 §5.4): forceHDR
+// 拓扑照挂线, 帧在 16F 线性域走 canvasBlendHDR 变体(shader 内线性化×参考白);
   if (bEnableCanvas) {
     // 域开关经构造参数进(addNode 同步 attach→onInitGraph, 后置设置来不及):
     // forceHDR 拓扑 in/out rgba16f + canvasBlendHDR; RGBA 直入不升域
@@ -737,9 +734,8 @@ bool VkVideoRender::vaildAndInitGraph() {
     outNode = outNode->addLine(fontLayer);
   }
 #endif
-  // 字幕画布层在字体(OSD/SRT)之后、几何层之前: ASS/PGS 与 SRT 互斥,
-  // 顺序晚于所有画质层, 保证字幕不被超分/增强重采样(计划 §3.4 挂载位);
-  // 直通态也连(bEnableCanvas 豁免, V2)
+// 字幕画布层在字体(OSD/SRT)之后、几何层之前: ASS/PGS 与 SRT 互斥,
+// 顺序晚于所有画质层, 保证字幕不被超分/增强重采样(计划 §3.4 挂载位);
   if (canvasLayer) {
     outNode = outNode->addLine(canvasLayer);
   }
@@ -759,9 +755,8 @@ bool VkVideoRender::vaildAndInitGraph() {
     rgba2YUV->addLine(yuvOutLayer);
     outNode->addLine(rgba2YUV);
   }
-  // enableImage: 每帧把处理后的 RGBA 经 GPU 缩放到 imageOutFormat
-  // 后零拷贝写入用户 buf 不设 observer (区别于 YUV 的 onCpuData), 用
-  // setOutputBuffer 直投; resetGraph 重建会重新 pin
+// enableImage: 每帧把处理后的 RGBA 经 GPU 缩放到 imageOutFormat
+// 后零拷贝写入用户 buf 不设 observer (区别于 YUV 的 onCpuData), 用
   if (bEnableImage && imageOutBuffer && !bPt) {
     imageResizeLayer = graph->addNode<VkResizeLayer>();
     ReSizeParamet imgResize = {};

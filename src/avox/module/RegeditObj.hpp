@@ -86,7 +86,6 @@ public:
 // 插件工厂注册(string key + C函数指针, 无CLASSDESC, 跨DLL安全)
 // 用 C 函数指针(非 std::function): std::function 的 type-erasure manager 实例化在
 // plugin 的 reg 调用点(plugin dll), 进程退出 AvoxManager 析构晚于 plugin 卸载 -> 调已卸载 manager 崩溃。
-// 裸函数指针析构不调代码, 无此患; 无捕获 lambda 隐式转换。
 template <typename OBJCLASS> struct RegeditFactory {
   using Factory = OBJCLASS *(*)();
 
@@ -145,10 +144,6 @@ public:
 // 插件单例注册(string key + C函数指针 + 不delete实例, 跨DLL安全)
 // 与 RegeditMgr 类似: 每个key只有一个全局实例, 首次get()时lazy创建。
 // 与 RegeditMgr 的区别:
-//   - 用C函数指针(非std::function) → 跨DLL安全(同RegeditFactory的理由)
-//   - 不delete实例 → 退出时随进程/DLL卸载自动清理(不调已卸载DLL的析构)
-//   - get()而非getMgr() → 语义"拿全局单例"(非"拿管理器")
-// 典型用例: IPyRunner (Python 执行器是进程全局单例, 不可delete)
 template <typename OBJCLASS> struct RegeditSingleton {
   using Factory = OBJCLASS *(*)();
 

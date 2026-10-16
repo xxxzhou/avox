@@ -18,12 +18,8 @@ class SherpaTts;
 
 /**
  * @brief Sherpa-onnx TTS 统一管理层 (对称 SherpaAudioStt)
- *
  * 继承 AudioTts (对外接口) + RunTask (worker 合成) + ISherpaTtsOb (SherpaTts 回调)。
  * synthesize 文本入队 -> RunTask worker 取出 -> SherpaTts::generate (sherpa progress
- * callback 增量产 PCM) -> onSherpaTtsAudio -> float->s16 打包 -> dispatch 对外 onTtsAudio。
- * stop() 置 cancelFlag: generate 的 callback 见之返回 0, sherpa 提前停 (barge-in)。
- * 模型对象级常驻 (首次 initEngine, 跨句/跨轮复用, 不每句重载)。
  */
 class SherpaAudioTts : public AudioTts,
                       public RunTask,

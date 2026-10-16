@@ -20,9 +20,8 @@ bool OpencvModule::loadModule(IOption* option) {
   // 能编进 dll + 运行期拿到非空字符串 = opencv_world4xx.dll 加载成功
   std::string info = cv::getBuildInformation();
   if (info.empty()) return false;
-  // 模板匹配工厂: new TemplateMatcher() 在本 plugin 内(同一堆);
-  // 业务经 templateMatcherHub.create("opencv") 查表拿实例
-  // (解除核心对 avox_opencv 的编译期 include 依赖, OpenCV 缺失时 create 返回 nullptr 降级)
+// 模板匹配工厂: new TemplateMatcher() 在本 plugin 内(同一堆);
+// 业务经 templateMatcherHub.create("opencv") 查表拿实例
   AvoxManager::Get().templateMatcherHub.reg(
       "opencv", []() -> ITemplateMatcher* { return new TemplateMatcher(); });
   AvoxManager::Get().featureMatcherHub.reg(

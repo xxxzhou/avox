@@ -25,14 +25,6 @@ struct Wav2ArkitChunk {
 // wav2arkit_cpu 后端: PCM -> ARKit52 blendshape (虚拟人口型)。
 // 对称 SherpaAudioStt 的三明治继承: AudioFace(对外接口+Observer 分发)
 // + AudioReshaper(任意 PCM -> 16kHz mono float32) + RunTask(worker 推理) +
-// OnnxModelUser(共享 session)。 数据流: feed -> AudioReshaper::process
-// 重采样/切 0.5s 帧 -> onProcess 深拷贝入块队列
-// -> onRunTask 取块 runShaped -> [1,frames,52] 逐帧 dispatch onFaceBlendshape
-//   (pts=块pts+f*1000/30, 30fps; raw52 bRef 指向 outputs, dispatch
-//   同步期内有效)。
-// 模型经 OnnxSessionCache 全局复用 (385MB 加载一次); CPU 推理 ~45ms/秒 (22x
-// 实时), 0.5s 块 ~22ms。 接口稳定: 换 LAM/NeuroSync 只换本插件内部 + manifest,
-// IAudioFace 不变。
 class Wav2ArkitFace : public AudioFace,
                       public AudioReshaper,
                       public RunTask,

@@ -11,7 +11,6 @@ namespace avox {
 // 稳定的 ICanvasLayer 前端(字幕画布多后端渲染计划 P0, 自 VkCanvasLayer.hpp 下沉):
 // 外部(字幕视图)持它, 图重建时后端层指针会换, 由它转发 + 暂存建图期间的来件。
 // 全局变换与内容丢失信号也存这里(权威副本), setCanvasLayer 时补发/置位。
-// 后端(VkCanvasLayer/平台腿)只实现 ICanvasLayer, 不感知本类。
 class CanvasRender : public ICanvasLayer {
  public:
   ~CanvasRender() override { setCanvasLayer(nullptr); }

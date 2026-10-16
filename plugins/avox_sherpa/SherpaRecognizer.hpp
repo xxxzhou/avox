@@ -13,10 +13,8 @@ namespace avox {
 
 /**
  * @brief Sherpa-onnx 流式语音识别引擎
- *
  * 纯同步识别引擎，不管理线程/队列
  * 通过 Observer 回调识别结果
- * 由 SherpaAudioStt 统一管理层调用
  */
 class SherpaRecognizer : public avox::Observer<ISherpaRecognizerOb> {
  public:
@@ -33,10 +31,8 @@ class SherpaRecognizer : public avox::Observer<ISherpaRecognizerOb> {
   bool bLoad() const;
   void unloadModel();
 
-  // ========== 同步识别接口 ==========
-  // 处理音频数据（16kHz mono float）
-  // streamBasePts: 识别流开始时的 PTS 基准
-  // 识别结果通过 Observer 回调给订阅者
+// ========== 同步识别接口 ==========
+// 处理音频数据（16kHz mono float）
   void processAudio(const float* samples, int32_t count, bool flushing,
                     int64_t streamBasePts);
 

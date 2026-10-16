@@ -163,8 +163,6 @@ static std::vector<QuickCmd> buildQuickFromDefaults() {
 
 // 加载 cli 配置 (assets/config/cli.json):
 // 缺失/空 -> 写默认值 (cmds+voice) 并返回; 解析失败 -> 返回内存默认 (不覆盖文件)。
-// 返回对象结构: { "cmds":[{cmd,desc}...], "voice":{mode,prefix} }
-// Shell 快捷菜单 (cmds) 与 voice 子命令 (voice) 共用同一份。
 Json loadCliConfig() {
   std::string path = cliConfigPath();
   std::ifstream f(path);
@@ -228,11 +226,6 @@ static void printQuickMenu(const std::vector<QuickCmd>& cmds) {
 
 // 展开快速命令为最终 tokens。
 // rest 非空 (一行直输 1 <链接>) -> base + rest;
-// rest 为空 (只输编号):
-//   base 自包含 (末尾无待补值的 -i) -> 直接执行;
-//   base 需补值 -> 预设命令预填进输入行 (raw 行编辑器), 用户可整行编辑 (删参数/改参数)
-//   后再补链接, 回车执行; 清空行回车 = 取消; raw 不可用 (管道/重定向) 退回打印续行只读
-//   链接的老路径; EOF 返回空。
 static std::vector<std::string> resolveQuick(
     const QuickCmd& q, const std::vector<std::string>& rest) {
   std::vector<std::string> base = tokenizeLine(q.base);
@@ -394,9 +387,8 @@ int Shell::run(CmdRegistry& registry) {
     installShellCtrlHandler();
     // 排空异步日志队列: cmdPlay/cmdRecord 收尾残留此时已写回各自日志文件, 不会打到 shell
     flushLog();
-    // 等命令异步收尾日志输出完再出提示符:
-    // zlmediakit 关流后 poller 线程的 TEARDOWN/析构走自带日志系统, 不经 avox 观察者,
-    // 会洒在提示符后。等一会儿让它们先打完, 提示符再出现就清晰了。
+// 等命令异步收尾日志输出完再出提示符:
+// zlmediakit 关流后 poller 线程的 TEARDOWN/析构走自带日志系统, 不经 avox 观察者,
     std::this_thread::sleep_for(std::chrono::milliseconds(150));
     if (rc != 0) {
       printf("Command returned: %d\n", rc);

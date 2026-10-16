@@ -16,8 +16,6 @@ using MComPtr = Microsoft::WRL::ComPtr<T>;
 // DX11 字幕画布层(字幕画布多后端渲染计划 §5.1): 数据面在 CanvasState(多后端
 // 共享), 本层做 D3D11 纹理上传与参数常量。混合由 CS canvas 变体完成(第二 SRV
 // t2 + cbuffer b1, 写 UAV 前逐像素叠加), 无内容不绑不分发(零字幕零影响)。
-// HDR 直通(R10G10B10A2, PQ 码域)走 CPU 侧 PQ 预编码画布(拍板 §二.1, LUT 见
-// CanvasBlendMath.hpp)——GPU 混合代码与 SDR 完全同一条; 域翻转重编码不上抛。
 class DxCanvasLayer : public ICanvasLayer {
  public:
   // ICanvasLayer(数据面全委托 CanvasState)

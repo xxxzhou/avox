@@ -149,14 +149,12 @@ AVOX_EXPORT bool checkValidInputAction(const char* action);
 AVOX_EXPORT IInputController* createInputController();
 // 按窗口标题(子串匹配, name 为 UTF-8)查找顶层窗口, 返回其原生句柄
 // (HWND / Window); 找不到或非桌面平台返回 nullptr。供调用方做 scene->屏幕
-// 坐标转换(用句柄 ClientToScreen)等使用。
 AVOX_EXPORT void* findWindowByName(const char* name);
 // 获取当前激活(前台)的顶层窗口句柄(HWND / Window); 没有前台窗口或非桌面
 // 平台返回 nullptr。用途同 findWindowByName, 只是查找方式为"当前激活"。
 AVOX_EXPORT void* getActiveWindow();
 // 获取窗口标题(UTF-8)。hwnd 为 findWindowByName / getActiveWindow 返回的句柄;
 // 无效句柄、无标题或非桌面平台返回 nullptr。返回指针指向线程局部缓冲, 下次本
-// 线程调用本函数前一直有效, 调用方无需释放。
 AVOX_EXPORT const char* getWindowName(void* hwnd);
 // buffer 内坐标 → 屏幕坐标 (实现于 ops/Ops.cpp)
 AVOX_EXPORT vec2i toScreen(const WindowShotInfo& info, vec2i imgCenter);

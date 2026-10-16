@@ -43,18 +43,8 @@ class SessionWriter : public SessionObserver {
   SessionWriter(const SessionWriter&) = delete;
   SessionWriter& operator=(const SessionWriter&) = delete;
 
-  // 挂到一个会话上并对齐文件与内存, 然后注册为观察者。
-  //
-  // 文件不存在: 写元数据行, 再写 session.events() 的全部事件。
-  // 文件已存在: 数出已有的事件数 N (打包行按成员数计), 只补写 seq >= N 的部分; 尾部
-  // 撕裂行 (无换行符收尾) 先截掉再续写。
-  //
-  // 为什么必须对齐: resume 的路径是 loadSession -> 构造 Session -> attach。前两步会在
-  // 内存里产生文件中没有的事件 (给崩溃遗留 turn 补的 interrupted、构造补的
-  // session/end-seed), 若不在 attach 时补齐, 下次 resume 会再补一遍, 日志里就会堆出
-  // 一串重复的收尾标记。
-  //
-  // 返回是否成功打开; 失败原因见 lastError()。
+// 挂到一个会话上并对齐文件与内存, 然后注册为观察者。
+// 文件不存在: 写元数据行, 再写 session.events() 的全部事件。
   bool attach(Session& session, const std::string& path);
 
   // 注销观察者并关闭文件 (幂等)。
@@ -94,12 +84,7 @@ struct LoadedSession {
 };
 
 // 读回一份会话日志。
-//
 // 除了解码, 还做一件事: 给崩溃遗留的未闭合 turn (以及它里面未闭合的 step) 补写收尾标记,
-// 让日志恢复结构自洽。补写的事件成为 seed 的一部分, 由 SessionWriter::attach 落盘。
-//
-// 文件不存在、元数据行非法、版本不符、事件 seq 不连续、或遇到未识别的必需事件时抛
-// std::runtime_error —— 坏日志必须拒绝, 而不是静默恢复出一个被掏空的会话。
 LoadedSession loadSession(const std::string& path);
 
 }

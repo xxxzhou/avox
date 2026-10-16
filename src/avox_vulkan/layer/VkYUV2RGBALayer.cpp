@@ -186,9 +186,8 @@ void VkYUV2RGBALayer::onInitLayer() {
     sizeX = divUp(outFormats[0].width, 2 * groupX);
     sizeY = divUp(outFormats[0].height, groupY);
   }
-  // 直通变体输出格式收口(G4): 上面共用归一化段会按输入类型把 outFormats[0]
-  // 重置成 rgba8, 故 16F 覆盖必须放在它之后 —— 否则 yuv2rgbaHDR 写出的 >1 线性
-  // 值进 8bit 纹理被钳 1.0, 高光全丢。仅 HDR 变体(10bit + forceHDR)需要
+// 直通变体输出格式收口(G4): 上面共用归一化段会按输入类型把 outFormats[0]
+// 重置成 rgba8, 故 16F 覆盖必须放在它之后 —— 否则 yuv2rgbaHDR 写出的 >1 线性
   if ((paramet == YuvType::yuv420P10 || paramet == YuvType::p010 ||
        paramet == YuvType::yuv422P10) &&
       hdrMode == HdrMode::forceHDR) {

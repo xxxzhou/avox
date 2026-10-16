@@ -87,9 +87,8 @@ class InitialPromptWatch final : public SessionObserver {
     if (recorded || turnEnded) cv.notify_all();
   }
 
-  // 等到 recorded 或 turnEnded。signal 触发时对 agent 补一刀 cancel (交接缝关门,
-  // 与 Subagents 的复检同理: cancel 对空闲 agent 是空操作), 之后继续等到收尾。
-  // 返回是否 recorded。
+// 等到 recorded 或 turnEnded。signal 触发时对 agent 补一刀 cancel (交接缝关门,
+// 与 Subagents 的复检同理: cancel 对空闲 agent 是空操作), 之后继续等到收尾。
   bool waitOutcome(int64_t timeoutMs, const std::shared_ptr<AbortSignal>& signal,
                    Agent& agent) {
     std::unique_lock<std::mutex> lock(mtx);

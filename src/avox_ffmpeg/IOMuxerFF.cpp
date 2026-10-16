@@ -145,11 +145,6 @@ bool IOMuxerFF::onInit() {
 
 // 容器能否容纳该音频编码: 与 onInit 的格式选择同一套规则(mp4 装不下非 AAC 时
 // 改道 mov), 再按容器 tag 表查 —— movenc 写头前正是这一步查不到就
-// "Could not find tag for codec X ... codec not currently supported in container"
-// 并以 EINVAL 收场。提前问一次, 让录制器改走音频转码而不是等写头失败(9/29 案)。
-// 口径: 以容器自身 tag 表为准, 不算 movenc 的 MS 风格兜底标签 —— 只能靠兜底
-// 标签进容器的编码(wma 系/mlp 等)一并走转码, 产物更通用, 也免掉 'ms' 标签轨
-// 的兼容性隐患(方向保守: 多转一次码, 不会漏判成直拷)。
 bool IOMuxerFF::canStoreAudio(const char* outUrl, ACodecId codecId) {
   if (!outUrl || !outUrl[0]) {
     return true;

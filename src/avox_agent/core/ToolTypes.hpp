@@ -132,11 +132,8 @@ struct ToolDefinition {
   // 入参的 JSON Schema (OpenAI function calling 的 parameters 字段)。
   std::string parametersJson;
 
-  // 执行一次已获准的调用。
-  //
-  // 异步工作必须观察或转发 exec.signal, 并且只在自己拥有的工作到达静止后才返回 ——
-  // 注册表不会抛弃已启动的调用 (同进程代码杀不掉, 抛弃它会留下写了一半的文件或残留
-  // 子进程), 但它也无法硬杀。
+// 执行一次已获准的调用。
+// 异步工作必须观察或转发 exec.signal, 并且只在自己拥有的工作到达静止后才返回 ——
   std::function<ToolResult(const ToolExecution&)> execute;
 
   // 协作式超时预算 (毫秒); 0 表示无期限。

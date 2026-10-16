@@ -187,9 +187,8 @@ std::vector<WatermarkSeg> YOLODetector::postprocessSeg(
 
   std::vector<WatermarkSeg> candidates;
 
-  // ONNX 输出格式: [1, numAnchors, channels] -> [anchors, channels]
-  // channels = 38: 0-3=xyxy(bbox), 4=obj_conf, 5=class_conf(单类为0), 6-37=mask_coeffs
-  // 对于单类检测，直接使用 obj_conf 作为置信度
+// ONNX 输出格式: [1, numAnchors, channels] -> [anchors, channels]
+// channels = 38: 0-3=xyxy(bbox), 4=obj_conf, 5=class_conf(单类为0), 6-37=mask_coeffs
   for (int i = 0; i < numAnchors; i++) {
     // 获取置信度 (单类检测直接用 obj_conf)
     float conf = detOutput[i * channels + 4];
@@ -309,9 +308,8 @@ std::vector<WatermarkBBox> YOLODetector::postprocess(
 
   std::vector<WatermarkBBox> candidates;
 
-  // ONNX 输出格式: [anchors, channels]
-  // channels = 38: 0-3=xyxy(bbox), 4=obj_conf, 5=class_conf(单类为0), 6-37=mask_coeffs
-  // 对于单类检测，直接使用 obj_conf 作为置信度
+// ONNX 输出格式: [anchors, channels]
+// channels = 38: 0-3=xyxy(bbox), 4=obj_conf, 5=class_conf(单类为0), 6-37=mask_coeffs
   for (int i = 0; i < numAnchors; i++) {
     // 获取置信度 (单类检测直接用 obj_conf)
     float conf = outputData[i * channels + 4];

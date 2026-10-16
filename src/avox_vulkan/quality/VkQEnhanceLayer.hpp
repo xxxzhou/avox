@@ -15,11 +15,7 @@ class VkCommand;
 
 // Real-ESRGAN 画质增强层
 // 数据流:
-//   主管线 onCommand: preprocess shader (inTexs RGBA → resize+RGBA→NCHW → SSBO_A)
-//   主线程 onFrame:   map SSBO_A → 提交给推理线程
-//   RunTask 线程:     ONNX(SSBO_A) → 写 SSBO_B NCHW float32
-//   主线程 onFrame:   检查推理完成 → postprocess shader (SSBO_B → outTexs RGBA)
-// 推理分辨率 = dstWidth/scale × dstHeight/scale (如 Upscale2x 2560×1440 → 推理 640×360)
+// 主管线 onCommand: preprocess shader (inTexs RGBA → resize+RGBA→NCHW → SSBO_A)
 class VkQEnhanceLayer : public VkLayer,
                               public IParamet<QualityEnhanceParamet>,
                               public RunTask {

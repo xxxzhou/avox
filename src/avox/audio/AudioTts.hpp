@@ -9,8 +9,6 @@ namespace avox {
 // 语音合成内部基类: 对称 AudioStt。
 // IAudioTts 对外接口 + Observer<IAudioTtsOb> 回调分发;
 // 通用配置(modelLevel/speed/sid)在基类, 合成逻辑纯虚留给 SherpaAudioTts
-// 等子类。 与 STT 方向相反: 文本进(synthesize) → PCM 出(经
-// IAudioTtsOb::onTtsAudio)。
 class AVOX_EXPORT AudioTts : public IAudioTts, public Observer<IAudioTtsOb> {
  public:
   AudioTts() = default;

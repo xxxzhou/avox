@@ -18,7 +18,6 @@ void initZmEnv();
 // Observer<IAVSourceOb>能转发回调到多个对象上
 // ZL里的MediaPlayer主要是解析网络协议的功能，没有同步/渲染等播放功能
 // mediakit::MediaPlayer本身回调转IOParseOb上
-// MediaPlayer自身会开启socket线程，解协议
 class IOParseZM : public AVSource {
 public:
   IOParseZM();

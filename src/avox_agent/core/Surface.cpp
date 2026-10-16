@@ -158,13 +158,7 @@ bool sameToolResultError(const std::optional<ToolResultError>& a,
 }
 
 // 把 tool/result 的替换限制为「只改这一次结果的正文」。
-//
 // 这是给结果裁剪 (压缩阶段的 tool-result pruner) 开的窄口子: 它需要把一条历史工具结果
-// 换成更短的文本, 但绝不能改这次调用的身份或成败 —— 那会让日志与模型看到的因果关系
-// 不一致。
-//
-// 与 dsh 的偏离: dsh 用 JSON 深比较「把 content 置空后剩余部分」, 本实现改为逐字段比较
-// 且允许 content 的块数变化。语义更清楚 (正文可改、身份与成败不可改), 代价是比 dsh 略宽松。
 void assertToolResultRewrite(const SessionEvent& event,
                              const std::vector<size_t>& shadowedSeqs,
                              const std::vector<SessionEvent>& eventLog) {

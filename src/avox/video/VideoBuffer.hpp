@@ -39,7 +39,6 @@ public:
 // 在ImageBuffer的基础上，增加与YUVFrame交互的功能
 // 非YUV连续块,自动由ImageBuffer变成连续的,保留Y的stride
 // 在类似YUV420P/422P如果不是Y stride的一半,会自动变成一半
-// 方便提交到GPU
 class AVOX_EXPORT SwVideoBuffer : public VideoBuffer, public ImageBuffer {
 public:
   SwVideoBuffer();

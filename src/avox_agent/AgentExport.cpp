@@ -87,10 +87,8 @@ class ObserverBridge : public SessionObserver {
       snapshot = observers;
     }
 
-    // 便利回调走快路径。它们**不替代** onSessionEvent —— 同一条事件两边都会到, 于是只订阅
-    // JSON 通道的绑定不会漏掉任何东西, 而只要卡片的绑定不必解析 JSON。
-    //
-    // 每个回调都各自 try/catch: 事件已经提交, 一个绑定的失败不能影响其余绑定。
+// 便利回调走快路径。它们**不替代** onSessionEvent —— 同一条事件两边都会到, 于是只订阅
+// JSON 通道的绑定不会漏掉任何东西, 而只要卡片的绑定不必解析 JSON。
     dispatchConvenience(event, snapshot);
 
     std::string payload;

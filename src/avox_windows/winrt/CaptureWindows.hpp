@@ -28,7 +28,6 @@ namespace avox {
 // Windows 平台窗口捕获基类:
 // 两个抓取器(CaptureWindows/RTCaptureWindows)的公共字段与 setWindow。
 // device/context(MComPtr) 有意与基类 Dx11Context 的裸指针同名隐藏,
-// 自管生命周期, 行为同原实现。
 class WinCaptureBase : public VideoSource, public Dx11Context {
  public:
   WinCaptureBase() = default;
@@ -73,8 +72,6 @@ class CaptureWindows : public WinCaptureBase, public RunTask {
 // WinRT Graphics Capture: 能抓硬件加速窗口(Chromium/UWP 等), 主路径。
 // 与 CaptureWindows 同样用 RunTask 独立线程, 在 onRunTask 里按 fps 轮询
 // framePool.TryGetNextFrame(), 不依赖 FrameArrived 回调。framePool 的
-// 创建/TryGetNextFrame/Recreate 全在该线程, 既回避跨线程 apartment 问题,
-// 也回避回调内同步 Recreate 让帧池停止派发的禁忌。
 class RTCaptureWindows : public WinCaptureBase, public RunTask {
  public:
   RTCaptureWindows();

@@ -31,7 +31,6 @@ inline bool findLineNode(NodeLinePtr line,
 // 有向无环图
 // T表示具体实现,如vulkan图像处理管线里为VkLayer
 // layer的创建和释放由PipeGraph负责
-// 外部接口创建layer时，需要指定PipeGraph
 template <typename T>
 class PipeGraph : public IPipeGraph {
  public:

@@ -196,15 +196,8 @@ inline ContentBlock asContentBlock(const ToolResultContent& item) {
 }
 
 // 一条消息的来源。dsh 的 MessageSourceMap 是 merge-extensible 的闭联类型:
-//   {kind:'user'}
-//   {kind:'plugin', plugin, form?}          — 插件合成注入 (含压缩摘要节点)
-//   {kind:'model', provider, model}         — assistant 消息
-//   {kind:'tool', callId}                   — tool/result 消息
-//   {kind:'skill-invocation', name, form:'instructions'}  — dsh-skill 注入
-//   {kind:'team-message', teamId, messageId, senderId, senderName}
-//                                           — Agent Teams 的队友消息 (experimental 包)
-// C++ 侧用一个扁平结构体承载 (字段按 kind 条件编解码), 避免多套小结构 +
-// 二重 variant 的访问噪音。不发明 dsh 没有的 kind。
+// {kind:'user'}
+// {kind:'plugin', plugin, form?}          — 插件合成注入 (含压缩摘要节点)
 enum class MessageSourceKind {
   // 真人直接输入 (shell 里敲的那行)。
   User,
@@ -448,26 +441,16 @@ struct LlmCallConfig {
 };
 
 // 哪些 config 字段是由确切 adapter 物化的, 而非调用方提议的。
-//
 // 这个标记的用途: 把折叠出的 header 喂给下一次请求钩子之前, 先删掉被标记的字段, 于是
 // 切换路由后新 adapter 会重新物化自己的默认值, 而用户显式设的值跨 step、跨路由保留。
-// (avox 的 auto 免费模型轮换直接吃这条: 轮到另一个模型时 maxTokens 该重算。)
-//
-// dsh 的 wire 形状**恰好只允许** {reasoningEffort?, maxTokens?} 两个键 —— temperature
-// 的物化标志放不下。avox 因此改为永远显式写 temperature (prepareCall 物化默认值但不
-// 标记), 语义不受损: 轮换模型时 temperature 保留, 与旧行为一致。
 struct LlmCallConfigAdapterDefaults {
   bool reasoningEffort = false;
   bool maxTokens = false;
 };
 
 // 请求中「非派生」部分的持久锚点: 配置 + system + 工具 schema。
-//
 // 「header 不变」等价于「请求前缀字节相同」, 这就是 KV cache 命中的判据, 也是一条
 // 可断言的结构性质: 一次不动 prompt 的正常会话, request/header 事件应当只有一条。
-//
-// toolsJson 存 OpenAI function calling 数组的 JSON 文本; dsh wire 上 tools 是数组
-// 本体 (ToolSchema[]), 编解码层做 string <-> array 的往返 (同库解析/序列化, 稳定)。
 struct EpochHeader {
   LlmCallConfig config;
   std::optional<LlmCallConfigAdapterDefaults> adapterDefaults;
@@ -539,12 +522,8 @@ using TurnEndReason =
 struct SurfaceAppend {};
 
 // 用本节点替换 surface 上 [start, end] 区间内的既有节点 (两端均含)。
-//
 // start 与 end 是 **事件 seq**, 不是节点下标 —— 节点下标会随每次 replace 漂移,
 // seq 永久稳定。两者都必须是当前 surface 上存在的节点; start == end 替换单个节点。
-// 本事件的 sourceEventSeqs 必须覆盖每一个被遮蔽的节点。
-//
-// 压缩用它; 任何替换 surface 的产出方都可以用。
 struct SurfaceReplace {
   size_t start = 0;
   size_t end = 0;
@@ -675,10 +654,8 @@ struct RequestContextData {
 };
 
 // inbox 的一次规范化 splice。wire 事件名是 agent/inbox/spliced。
-//
 // 持久事件先提交、活投影后变更, 于是同步观察者看到的是 splice 前的队列, 并能从
 // 规范化坐标重建被移除的消息。「待处理工作」因此也是日志的投影 —— 崩溃重启后
-// 仍然知道有什么没做完。
 enum class InboxTarget {
   // 排队的后续 turn: FIFO, 每条各占一个 turn。wire 'next-turn'。
   NextTurn,
@@ -698,14 +675,7 @@ struct InboxSplicedData {
 
 // 标记一段构造 seed 的结束。它之前的事件 seq 更小、来自 seed (resume / fork / replay),
 // 本生命周期没有产出它们中的任何一条。
-//
 // 载荷为空 —— 位置与 time 承载全部含义。
-//
-// 用途: 一个独立开闭配对的拥有者 (compaction/start … compaction/end) 靠它区分 seed
-// 历史与活跃工作 —— 二者在字节上完全同形。本事件之前一个未配对的开标记属于一个已经
-// 结束的生命周期, 无论是什么结束了它。
-//
-// 只有 Session 的构造函数是合法写入方。
 struct SessionEndSeedData {};
 
 // ---- 压缩 ----
@@ -805,10 +775,8 @@ struct TodoItem {
 };
 
 // todo 列表快照 (wire 'todo/write'): 展示层状态, 永不上模型 surface。
-//
 // dsh 语义 (packages/todo/tool-todo): 整表快照, 重放时最新一条生效 (latest write wins);
 // turn/start 把投影清回 null —— todo 是「当前 turn 的工作面」, 跨 turn 不保留待办。
-// 日志层永远保留全部历史写入; 清空只是投影语义。
 struct TodoWriteData {
   std::vector<TodoItem> todos;
 };
@@ -834,15 +802,8 @@ struct SubagentToolFilter {
 };
 
 // 子代理的持久身份与生命周期模式 (wire 事件 subagent/descriptor)。
-//
 // 建立子会话的 provider 在子会话首个 turn 内、首次请求之前恰好追加一条。仅记日志:
 // 不带 surfaceOp, 不进模型历史, 压缩不删。枚举层靠它不重放父会话工具结果就识别出
-// 子会话 (label 是创建标签, 不暴露子代理提示词)。
-//
-// 描述符刻意快照显式字段而非 merge-extensible 的 AgentOptions: 无关的扩展值不会
-// 仅因不是 JSON 就让续跑失败。它不含 subagentDepth (冷恢复信任持久化头行的
-// delegationDepth 这个单调地板), 也不含 maxTokens/outputSchema 这类只属于单次
-// 激活的预算。
 struct SubagentDescriptorData {
   // 描述符格式版本; 恒为 SUBAGENT_DESCRIPTOR_VERSION。
   int version = SUBAGENT_DESCRIPTOR_VERSION;
@@ -969,7 +930,6 @@ struct TeamMessageDeliveredData {
 // 装载 dsh 日志时, 「已知与 surface 无关但 avox 无语义」的事件 (hook/*、
 // plan/mode 等, 见 SessionPersistence 的名单) 逐条变成本墓碑: 原始 JSON 行原样保存,
 // 重写时逐字节回放。内存里它占住 seq 槽位 (seq == 下标 契约不破), Surface 天然忽略,
-// 活跃 append 永不产生 (Session::appendImpl 拒绝)。
 struct OpaqueEventData {
   // 原始事件类型名 (如 "todo/write")。
   std::string typeName;
@@ -1032,13 +992,8 @@ static_assert(std::variant_size_v<EventData> == 26,
               "SessionCodec 的编解码, 以及 Surface 的投影 switch");
 
 // 日志中的一条不可变条目。
-//
 // surfaceOp 与 sourceEventSeqs 是条件字段: 只有可上 surface 的事件类型
 // (user/message、assistant/message、tool/result) 才允许带。非 surface 事件
-// (边界标记、分片、header) 永不携带 surface 元数据 —— Session::append 在提交前校验。
-//
-// wire 信封**恰好** {type,seq,time,data(,surfaceOp)(,sourceEventSeqs)(,ignorable)}
-// 这几个键 —— dsh 装载对信封做 exact-key 校验, 多一个键整份日志拒读。
 struct SessionEvent {
   EventType type = EventType::TurnStart;
   // 会话内单调序号, 恒等于它在日志中的下标 (全系统依赖这条连续性契约)。
@@ -1072,10 +1027,7 @@ const char* eventTypeName(EventType type);
 std::optional<EventType> fromEventTypeName(const std::string& name);
 
 // dsh KNOWN_SESSION_EVENT_TYPES 里 avox 没有语义的事件类型名 (23 种)。
-//
 // 装载 dsh 日志时, 这些类型逐条落成 OpaqueEventData 墓碑 (原始行原样保留, 重写时
-// 逐字节回放); 名单之外的未知类型仍走「ignorable 才可跳过, 否则拒绝」的铁律。
-// 逐条依据见 SessionTypes.cpp 的名单注释。
 bool isDshLogOnlyEventTypeName(const std::string& name);
 
 // 从 EventData 的变体下标推出事件类型。
@@ -1095,10 +1047,6 @@ inline bool isSurfaceEvent(const SessionEvent& e) {
 
 // 是否是 append 来源的 surface 事件: 在自己的日志位置进入 surface, 本身从不是
 // 一个替换副本。
-//
-// 模型可见的 surface 有意遮蔽被替换的区间, 所以它是人类 transcript 的错误来源 ——
-// 一个落地的替换会擦掉用户已经看过的对话。append 来源的事件才是 transcript 的持久
-// 素材, 替换副本只对模型可见。(avox shell 展示历史时必须走这个判定, 不能走 surface。)
 inline bool isAppendSurfaceEvent(const SessionEvent& e) {
   return isSurfaceEvent(e) && std::holds_alternative<SurfaceAppend>(*e.surfaceOp);
 }

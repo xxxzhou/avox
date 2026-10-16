@@ -21,9 +21,7 @@ constexpr const char* kAskSentence =
 constexpr int kPolicyContextOrder = 115;
 
 // 日志当前是否处在一个打开的 turn 里。
-//
 // 审批对必须被 turn 包住: turn 是持久日志的提交/回放边界, turn 之间的裸事件在重载时与
-// 崩溃尾无法区分, 会被丢掉。
 bool hasOpenTurn(const std::vector<SessionEvent>& events) {
   for (size_t i = events.size(); i > 0; --i) {
     const EventType type = events[i - 1].type;

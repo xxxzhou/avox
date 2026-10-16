@@ -61,19 +61,15 @@ class AgentHost {
   // 可轮换模型池 (借用指针); 未设置时模型路由策略只保留重试能力。
   void setModelPool(ModelPool* pool) { modelPool = pool; }
 
-  // 审批应答方 (通常是 shell 的交互确认)。
-  //
-  // 不设 = fail closed: 所有列入 requireApproval 的工具全被拒。C 导出与无人值守路径
-  // 就该保持不设。
+// 审批应答方 (通常是 shell 的交互确认)。
+// 不设 = fail closed: 所有列入 requireApproval 的工具全被拒。C 导出与无人值守路径
   void setApprovalAnswerer(std::function<ApprovalOutcome(const ApprovalRequest&)> answerer);
 
   // 注册一个工具 (全局层)。
   Disposer defineTool(ToolDefinition definition);
 
-  // 注册一段静态 system prompt 片段。
-  //
-  // 会话开始后修改会使 KV cache 从变动处失效 —— 需要运行期告诉模型什么, 用
-  // agent->inject() 或 setRuntimeContext。
+// 注册一段静态 system prompt 片段。
+// 会话开始后修改会使 KV cache 从变动处失效 —— 需要运行期告诉模型什么, 用
   Disposer addPromptSection(std::string name, int order, std::string text);
 
   // 注册一段动态运行时上下文 (进历史尾部, 前缀不动)。
@@ -89,13 +85,8 @@ class AgentHost {
 
   // ---- 会话 ----
 
-  // 打开一个会话。
-  //
-  // sessionId 为空则新建一个 (以时间戳命名); 非空且对应 track 文件存在则 resume ——
-  // resume 会恢复完整历史 (含工具调用与结果) 与未做完的 inbox 工作, 并给崩溃遗留的
-  // 未闭合 turn 补写 interrupted。
-  //
-  // 已有打开的会话时抛 std::runtime_error (单会话宿主)。
+// 打开一个会话。
+// sessionId 为空则新建一个 (以时间戳命名); 非空且对应 track 文件存在则 resume ——
   Agent* openAgent(const std::string& sessionId);
 
   // 关闭当前会话: 停驱动、等静止、flush 日志。幂等。

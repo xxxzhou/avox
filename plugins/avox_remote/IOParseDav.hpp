@@ -20,10 +20,6 @@ namespace avox {
 // WebDAV 直链数据源(a05-T2): http(s) range 读 + 预读窗口 + FFmpeg自定义avio
 // 解封装。解封装/包处理管线与 IOParseSmb/IOParseFF 一致(AVSource 基类全复用),
 // 差异仅在输入侧: avio read 回调对接 cpp-httplib 的 Range GET, 单线程预读
-// 窗口(顺序读摊薄请求次数, seek 落窗口内零请求)。
-// URL: http(s)://[user:pass@]host[:port]/path(DavSource::entryUrl 直链原样),
-// 另收 dav://(映射http)/davs://(映射https) 别名; userinfo 百分号编码态入,
-// Basic 认证前解码。
 class IOParseDav : public AVSource, public RunTask {
  public:
   IOParseDav();
@@ -93,9 +89,8 @@ class IOParseDav : public AVSource, public RunTask {
   // range 拉取 [start, end] 入 out: 返回 206=成功, 其他=http 状态码, 0=连接级失败
   // (内部对连接死重建会话重试一次)
   int fetchRange(uint64_t start, uint64_t end, std::vector<uint8_t>* out);
-  // 预读窗口未覆盖 ioPosition 时重新拉取; 失败按 a05-T3 分类自愈
-  // (瞬时类退避重试, 401/403/404/410 走断链桥 refresh 换新直链), 全部
-  // 尝试耗尽才返回 false —— 上层 avio 拿 EIO 走既有终错路径
+// 预读窗口未覆盖 ioPosition 时重新拉取; 失败按 a05-T3 分类自愈
+// (瞬时类退避重试, 401/403/404/410 走断链桥 refresh 换新直链), 全部
   bool refillWindow();
   // 退避等待(1s/2s/4s, 分片轮询 bInterruptRead; 被打断返回 false)
   bool backoffSleep(int retry);

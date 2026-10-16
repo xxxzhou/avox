@@ -13,8 +13,6 @@ namespace avox {
 // IInputController 的核心基类: 组合输入接口 + 拟人化基础设施 (RNG / 贝塞尔轨迹 / 抖动)。
 // 平台实现 (WinInputController / NoopInputController) 继承它, 复用拟人化机制。
 // 拟人化配置 setter 不进公共 IInputController (保持公共接口最小, 跨 DLL 安全),
-// 经本基类暴露, 调用方 dynamic_cast<BaseInputController*> 设置 (同 addTextRecognizerOb cross-cast)。
-// 范本: BaseTextRecognizer (组合 ITextRecognizer + Observer)。
 class BaseInputController : public IInputController {
  public:
   // 构造时用随机设备播种 (默认不可复现); setJitterSeed(>0) 可换成固定种子做可复现回放

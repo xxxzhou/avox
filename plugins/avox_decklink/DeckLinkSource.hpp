@@ -21,7 +21,6 @@ namespace avox {
 // DeckLink(Blackmagic)采集卡设备源, 移植自aoce_decklink
 // 信号制式跟随: 支持FormatDetection的设备带bmdVideoInputEnableFormatDetection打开,
 // 输入信号变化由VideoInputFormatChanged重启; 帧固定bmdFormat8BitYUV(uyvyI)
-// DeckLink回调线程只做拷贝入队, 推帧统一在RunTask线程(渲染发生在onFrame调用线程)
 class DeckLinkSource : public VideoSource, public RunTask,
                        public IDeckLinkInputCallback {
  public:

@@ -280,9 +280,8 @@ void VkPipeGraph::onRun() {
     VkContext::markLost();
     return;
   }
-  // log(LogLevel::info, "vk pipe cost 3:", clock.recordLast());
-  // [TEST] 撕裂排查: 同步等待本次 submit 完成,确认 graph 与 window
-  // 之间是否缺同步
+// log(LogLevel::info, "vk pipe cost 3:", clock.recordLast());
+// [TEST] 撕裂排查: 同步等待本次 submit 完成,确认 graph 与 window
   vkWaitForFences(vkDevice, 1, &cmdFences[currentCmdIndex], VK_TRUE,
                   UINT64_MAX);
   // log(LogLevel::info, "vk pipe cost 4:", clock.recordLast());

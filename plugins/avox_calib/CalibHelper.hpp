@@ -75,9 +75,6 @@ void calibNormalRot(cv::Mat& rotate);
 
 // Tsai 手眼标定 + scale 列改进:
 // 传统 Tsai 位移方程 (Rgij-I)*Tcg = Rcg*Tcij - Tgij 要求追踪器与摄像机位移同尺寸;
-// 改进为 (Rgij-I | -Rcg*Tcij)·[Tcg, Scale]^T = -Tgij, 一次 SVD 同时解出平移与缩放
-// (Redspy 等光学追踪器位移存在未知缩放时必须开启)。
-// 输入 t_cam2gripper 为 4x1, 第 4 分量 = Scale, 位移 = 前三分量 * Scale。
 void calibrateHandEyeScale(cv::InputArrayOfArrays R_gripper2base,
                            cv::InputArrayOfArrays t_gripper2base,
                            cv::InputArrayOfArrays R_target2cam,

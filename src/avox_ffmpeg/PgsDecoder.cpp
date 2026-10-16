@@ -12,8 +12,6 @@ namespace {
 
 // AVPALETTE 项 → 预乘 RGBA(浮点 0..255, r*a 已除 255): 缩放重采样的插值空间
 // 必须预乘, 否则半透明边缘会被当成暗色糊边。AVPALETTE 为 0xAARRGGBB
-// (pgssubdec 的 RGBA 宏把 R 放第 16 位), 低字节是 B —— 与 ASS 路径(libass
-// color 高字节 R)同族, 都填进 RGBA 画布
 inline void palPremul(const uint32_t* pal, uint8_t idx, float out[4]) {
   const uint32_t entry = pal[idx];
   const float a = (float)(uint8_t)(entry >> 24);
@@ -75,7 +73,6 @@ void blitRect(const AVSubtitleRect* rect, std::vector<uint8_t>& dst,
 
 // 图形平面 → 视频帧的缩放版 blit: 目标像素中心反查平面坐标(边界钳进 rect,
 // 按边缘像素延展), 四邻域双线性插值后 src-over。PGS 位图是 1/8 位调色板索引,
-// 直接最近邻放大 2 倍会把字边缘放大成硬块, 双线性与 GPU 采样画布同观感。
 void blitRectScaled(const AVSubtitleRect* rect, std::vector<uint8_t>& dst,
                     int32_t frameW, int32_t frameH, float scaleX,
                     float scaleY) {

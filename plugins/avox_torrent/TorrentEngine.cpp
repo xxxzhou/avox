@@ -140,7 +140,6 @@ settings_pack baseSessionPack(const TorrentEngine::Config& cfg) {
 
 // 会话状态持久化(DHT路由表): 进程重启免DHT冷bootstrap(实测2~5s)。
 // 存系统temp/avox_torrent(不随业务cacheDir被清理), 只存dht state——
-// settings不存(防旧存档覆盖新调优参数, 干扰A/B对比)
 std::string sessionStatePath() {
   std::error_code fec;
   std::filesystem::path base = std::filesystem::temp_directory_path(fec);
@@ -192,10 +191,6 @@ void saveSessionStateThrottled(const std::shared_ptr<libtorrent::session>& s) {
 
 // 进程级共享会话(播放与探测共用): 热DHT/peer/路由缓存让探测→播放全链路
 // 免掉每次冷启动 bootstrap(2~5s), 探测期发现的peer直接供起播使用。
-// 会话随进程存活(空转近零开销)。同一info-hash多引擎并发存活由进程级引用
-// 计数保护(g_torrentRefs), 摘种子只在引用归零时执行。引擎逻辑全部轮询
-// 句柄状态(have_piece/torrent_file), 不依赖alert驱动; alert是单队列pop,
-// 并发引擎互抢只影响日志(见onRunTask按句柄过滤)。
 std::shared_ptr<libtorrent::session> sharedTorrentSession(
     const TorrentEngine::Config& cfg) {
   static std::mutex mtx;
@@ -405,11 +400,8 @@ bool TorrentEngine::start(const std::string& url, const Config& cfg,
          " pieceLen:", pieceLen, " pieces:", totalPieces);
   // 首轮调度: 头部起播段(top+deadline)与尾部索引段(MP4 moov/MKV cues尾部场景)
   updatePlayhead(0, true);
-  // 首2片落地后才返回: avformat探测第一步就是读文件头, 把下载ramp期的
-  // 不确定性挡在open内(预算与元数据同级, 冷swarm场景可经option放宽)。
-  // 注意必须在 fileIn.open 之前: 缓存快路径 waitMetadata 秒回时 libtorrent
-  // 还没把目标文件分配出来, 先开文件必失败; 有片落地则文件必已创建。
-  // 片序号按目标文件首片起算(多文件种子文件起点非种子起点)
+// 首2片落地后才返回: avformat探测第一步就是读文件头, 把下载ramp期的
+// 不确定性挡在open内(预算与元数据同级, 冷swarm场景可经option放宽)。
   for (int32_t p = fileFirstPiece;
        p < fileFirstPiece + 2 && p <= fileLastPiece; ++p) {
     ReadResult r = ReadResult::ok;
@@ -420,9 +412,8 @@ bool TorrentEngine::start(const std::string& url, const Config& cfg,
     }
   }
   LOGFLF(LogLevel::info, "[torrent] stage head_ready");
-  // 尾片: 目标文件末片(MP4 moov/MKV cues 在文件尾部), 不等齐就 open 会拿到
-  // 截断索引, demux 只注册出视频轨 (实测 no audio track); 超时不阻塞(兼容
-  // moov 在头部的 faststart 封装, 尾片只是普通数据)
+// 尾片: 目标文件末片(MP4 moov/MKV cues 在文件尾部), 不等齐就 open 会拿到
+// 截断索引, demux 只注册出视频轨 (实测 no audio track); 超时不阻塞(兼容
   if (fileLastPiece > fileFirstPiece + 1) {
     if (!waitForPiece(fileLastPiece,
                       std::max<int32_t>(config.metaTimeoutMs, 30000),
@@ -501,8 +492,6 @@ static void httpMetaFetch(HttpMetaCtx* ctx);
 
 // HTTP 元数据缓存通道: itorrents.org 按 info-hash 直取 .torrent, 解析校验
 // info-hash 与磁力一致后 set_metadata 注入运行中的磁力(免等 BEP-9)。
-// 命中后顺带落元数据缓存(下次秒开)。线程只碰ctx快照, shutdown置停止位后
-// 限时等待, 超时detach由ctx自持寿命(最坏阻塞从网络超时16s降到500ms)
 void TorrentEngine::startHttpMetaFetch() {
   std::string hash = hashDirName(params->info_hashes.get_best());
   auto ctx = std::make_shared<HttpMetaCtx>();
@@ -599,9 +588,8 @@ void TorrentEngine::shutdown() {
              "[torrent] http meta thread detached (network slow)");
     }
   }
-  // 等在途读线程退出: readAt 内的 waitForPiece/ensureRange 以 running() 为
-  // 退出条件(stopTask 后 ≤100ms 内返回), 此处按读者计数排空后再释放,
-  // 否则 handle/session 释放与读线程解引用并发 = 播放中关闭即 UAF 崩溃
+// 等在途读线程退出: readAt 内的 waitForPiece/ensureRange 以 running() 为
+// 退出条件(stopTask 后 ≤100ms 内返回), 此处按读者计数排空后再释放,
   for (int i = 0; i < 40 && readers.load() > 0; ++i) {
     sleepMillis(50);
   }
@@ -851,9 +839,8 @@ bool TorrentEngine::selectFile(std::string* errMsg) {
   lastWindowEnd = -1;
   std::vector<download_priority_t> prios(nFiles, dont_download);
   prios[fileInfo.index] = low_priority;
-  // 与目标文件共享边缘piece的邻接文件提到default(只多下几十~几百KB):
-  // 完全跳过会让头/尾piece永不落地(open超时); low也会拖——本版本file优先级
-  // 盖过piece优先级, 实测头片28s+才到, default档才能让头片跟上piece调度
+// 与目标文件共享边缘piece的邻接文件提到default(只多下几十~几百KB):
+// 完全跳过会让头/尾piece永不落地(open超时); low也会拖——本版本file优先级
   for (int32_t i = 0; i < nFiles; ++i) {
     if (i == fileInfo.index ||
         (fs.file_flags(i) & file_storage::flag_pad_file)) {
@@ -1031,9 +1018,8 @@ bool TorrentEngine::waitForPiece(int32_t pieceIndex, int64_t budgetMs,
       handle->set_piece_deadline(piece_index_t(pieceIndex), 0);
       lastDeadlineAt = waited;
     }
-    // peers归零且无进度: 等下去没有意义, 提前判定swarm无响应
-    // (webseed连接不计数为peers, 有url seed时0 peers不代表swarm死)。
-    // status()是会话线程往返, 降频到1s一次, 50ms轮询只查have_piece
+// peers归零且无进度: 等下去没有意义, 提前判定swarm无响应
+// (webseed连接不计数为peers, 有url seed时0 peers不代表swarm死)。
     if (waited % 1000 == 0) {
       auto st = handle->status();
       if (st.num_peers == 0 && handle->url_seeds().empty() && waited > 15000) {

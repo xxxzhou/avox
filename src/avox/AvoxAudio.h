@@ -58,7 +58,6 @@ struct AudioAec {
 // 多声道→少声道下混系数(播放下混; 增益单位 dB)。仅当源道数多于设备道数、
 // 需要转换时才生效(无需转换时链路短路, 见 FFResample::init):
 // 5.1 源在双声道设备上默认把中置(对白)压 -3dB, 抬高 centerGainDb 即对白增强。
-// 三个增益 <= -60dB 统一视为不混入
 enum class DownmixPreset {
   none = 0,    // 不干预: 用音频库默认(中置/环绕 -3dB, LFE 丢弃), 历史行为
   itu = 1,     // ITU-R BS.775: 中置/环绕 -3dB, LFE 丢弃

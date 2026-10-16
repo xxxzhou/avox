@@ -36,8 +36,6 @@ struct BodyDetection {
 // mediapipe 后端: RGBA 帧 -> MediaPipe Pose 33 点身体 landmark (身体/手势驱动 avatar)。
 // 三明治继承: BodyImpl(对外接口+Observer 分发) + RunTask(worker 推理) + OnnxModelUser(共享 session)。
 // 数据流: feed(渲染线程) 深拷 rgba8 入队 -> onRunTask 取帧跑 3 步管线
-//   (1 BlazePose 检测 2254 锚 -> 2 人体旋转包围盒对齐 warp 到 256 -> 3 pose_landmarker 33 点)
-//   -> dispatch onBodyLandmarks。锚框解码对齐 MediaPipe SsdAnchorsCalculator (strides=[8,16,32,32,32])。
 class MediaPipeBody : public BodyImpl,
                       public RunTask,
                       public OnnxModelUser {

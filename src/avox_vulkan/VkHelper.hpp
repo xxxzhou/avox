@@ -117,7 +117,6 @@ void imageToBuffer(VkCommandBuffer cmd, const class VkTexture *texture,
                    class VkWrapBuffer *buffer, int32_t rowPitch = 0);
 // 如果类似1199的宽度,假设对齐宽度32,对齐后1216
 // 如果是RGBA8,则rowPitch=1216*4=4864
-// 这里pitchWidth表示对齐后的宽度是1216，非4864
 void imageToBuffer(VkCommandBuffer cmd, VkImage texture, VkBuffer buffer,
                    int32_t width, int32_t height, int32_t pitchWidth = 0);
 void blitFillImage(VkCommandBuffer cmd, const class VkTexture *src,

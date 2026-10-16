@@ -10,8 +10,6 @@ namespace avox {
 // IPyRunner 的子进程实现: spawn 机器 Python (不再嵌入 CPython, 不绑定版本)。
 // runCode  → python -c "<code>"
 // runScript → python <path>
-// runChain  → python <path> <input>
-// 均经管道收 stdout+stderr, 返回缓冲 (下次调失效, 同 PyRunner 约定)。
 class SubprocessRunner : public IPyRunner {
  public:
   bool available() override;

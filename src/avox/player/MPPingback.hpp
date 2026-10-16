@@ -132,10 +132,8 @@ public:
     auto pingback = std::make_shared<XMPPingback<T>>(data);
     pingback->timespan = {localTimeStampMS() * 10000};
     pingback->mpid = mpid;
-    // 队列满直接丢弃: 埋点是统计性数据不可反压帧路径 — 满时若在调用线程
-    // 同步 depueuePB, 宿主回调链(shim→Dart)的慢会拖住渲染/解码线程
-    // (panvox 每秒顿实证 2026-10-01, 禁回调后 PTS 步进 33-50 宽散→39-43 紧凑)
-    // enqueue 满时不写入并返回 false(见 RingBuffer::enqueue), 排空交给 onRunTask 线程
+// 队列满直接丢弃: 埋点是统计性数据不可反压帧路径 — 满时若在调用线程
+// 同步 depueuePB, 宿主回调链(shim→Dart)的慢会拖住渲染/解码线程
     if (!mpPingbacks.enqueue(pingback)) {
       droppedCount.fetch_add(1, std::memory_order_relaxed);
     }

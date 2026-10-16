@@ -52,8 +52,6 @@ int32_t windowScreenIndex(HWND hwnd) {
 }
 // 在局部 CaptureWindowsMgr 里按 wndName 子串(大小写不敏感)收集所有匹配窗口
 // hwnd。 用局部 mgr (构造即枚举), 不影响全局设备表; 返回 hwnd 值副本(mgr
-// 析构后仍安全)。 不能返回 WinCaptureBase*: 其生命期随局部 mgr 结束而失效。
-// wndName 为空/null 时不过滤, 收集全部窗口 (供 findWindows 无筛选列举)。
 std::vector<HWND> findWindowHwnds(const char* wndName) {
   std::vector<HWND> hwnds;
   CaptureWindowsMgr mgr;  // 构造即枚举 (勿再 refreshDevices, 会重复 append)
@@ -71,7 +69,6 @@ std::vector<HWND> findWindowHwnds(const char* wndName) {
 }
 // 前置窗口: 最小化先恢复, 再用一次 Alt 按放绕过前台锁后
 // SetForegroundWindow+置顶。 shotWindow 与 activeWindow 共用; shotWindow
-// 要操作已选定的确切 hwnd, 故单独提函数。
 bool bringToFront(HWND hwnd) {
   if (!hwnd) return false;
   if (IsIconic(hwnd)) ShowWindow(hwnd, SW_RESTORE);

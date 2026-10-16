@@ -41,7 +41,6 @@ inline uint8_t clamp255(float v) {
 
 // 后置锐化(RCAS, 同 glsl/fsr_rcas.comp 的对比度自适应式, 去掉实时路的 5x 调试
 // 乘子): 平坦/噪声区 lobe 自适应收敛, 不在无细节处放大噪声。原地处理 ——
-// 每线程先把本段+上下 halo 行快照到本地再回写, 邻行读快照, 线程间零重叠。
 void rcasSharpenY(uint8_t* y, int32_t w, int32_t h, float strength) {
   if (strength <= 0.0f || w < 3 || h < 3) return;
   // 上限取官方值 0.1875: 4*lobe+1 >= 0.25, 分母恒正不会爆放大

@@ -337,9 +337,8 @@ bool image2YUVFrame(IImageBuffer* buffer, YUVFrame& yuvFrame, YuvType yuvType) {
     yuvFrame.data[2] = yuvFrame.data[1] + uvSize;
     yuvFrame.stride[1] = uvPitch;
     yuvFrame.stride[2] = uvPitch;
-    // p010 缓冲经 copyPlaneYUV2TightlyBuffer 装箱后恒为归一化(低对齐)平面紧排
-    // 布局, 字节与 yuv420P10 同构: 视图改标类型, 否则下游按半平面 p010 语义
-    // 二次走归一化装箱 → >>6 再来一次致数据塌缩(真机实证 1023→15)
+// p010 缓冲经 copyPlaneYUV2TightlyBuffer 装箱后恒为归一化(低对齐)平面紧排
+// 布局, 字节与 yuv420P10 同构: 视图改标类型, 否则下游按半平面 p010 语义
     if (yuvType == YuvType::p010) {
       yuvFrame.format.type = YuvType::yuv420P10;
     }

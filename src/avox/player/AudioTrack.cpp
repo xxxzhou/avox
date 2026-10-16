@@ -68,10 +68,8 @@ void AudioTrack::onDecode(const AvoxAFrame& frame) {
   int32_t size = frame.buffer.size;
   // frame的开始pts
   int64_t spts = frame.pts;
-  // RMVB/cook 在无AVOX_NOVALID_PTS时
-  // 重新锚定采样数才是唯一准确的时间度量。
-  // 游标微秒精度: 碎片音轨(TrueHD 40采样/包=0.83ms)按ms推进截断为0, 游标
-  // 冻结→音频钟锯齿→视频快进/冻结循环(全片跳帧)
+// RMVB/cook 在无AVOX_NOVALID_PTS时
+// 重新锚定采样数才是唯一准确的时间度量。
   if (nextPtsUs != AVOX_NOVALID_PTS) {
     if (spts != AVOX_NOVALID_PTS &&
         std::abs(spts * 1000 - nextPtsUs) >

@@ -139,11 +139,8 @@ AgentDeployment loadDeployment(const std::string& agentJson,
   deployment.llm.temperature =
       static_cast<float>(readNumber(node, "temperature", 0.7));
   deployment.llm.maxTokens = readInt(node, "maxTokens", 16384);
-  // 推理等级 (reasoning_effort, OpenAI 兼容 wire)。优先级: providers.json 模型级 >
-  // 厂商级 > agent.json 顶层 > 内建 "medium" (o3/o4-mini/gpt-5/r1 的中间档, DSH 同款)。
-  // 模型/厂商级显式写 "" = 该档不发字段 (非推理模型如 GPT-4o 不踩雷)。
-  // 各厂商合法档位不一: zhipu 的 GLM-5.3 / 5.3-flash 强制思考且只认 low/high/max,
-  // medium 直接 HTTP 400 (错误码 1210), 这类模型要在 providers.json 里显式配好。
+// 推理等级 (reasoning_effort, OpenAI 兼容 wire)。优先级: providers.json 模型级 >
+// 厂商级 > agent.json 顶层 > 内建 "medium" (o3/o4-mini/gpt-5/r1 的中间档, DSH 同款)。
   if (hasModel && has(catalogModel, "reasoningEffort")
       && catalogModel["reasoningEffort"].bString()) {
     deployment.llm.reasoningEffort = catalogModel["reasoningEffort"].get<std::string>();
@@ -181,14 +178,8 @@ AgentDeployment loadDeployment(const std::string& agentJson,
                                         static_cast<double>(deployment.imageLimits.maxMessageImageBytes)));
   }
 
-  // ---- AgentConfig ----
-  //
-  // 复用 AgentConfig::fromJson 解析顶层: 那里已经有全部字段的校验与默认值, 在这里
-  // 再抄一遍等于两处需要同步。把整个文件喂进去, 忽略未知键即可。
-  //
-  // 先把部署期默认路径写进 JSON 再交给 fromJson: 最小配置把 spillRoot/sessionRoot 留空,
-  // fromJson 的跨字段校验 (开了溢出就得有目录) 会在这里的默认值生效前先抛错。把「按环境
-  // 推导」的默认值在此落进 JSON, 校验与落盘就都对得上。
+// ---- AgentConfig ----
+// 复用 AgentConfig::fromJson 解析顶层: 那里已经有全部字段的校验与默认值, 在这里
   if (root.bObject()) {
     if (has(root, "spill") && root["spill"].bObject()) {
       Json& spillNode = root["spill"];
@@ -231,10 +222,8 @@ AgentDeployment loadDeployment(const std::string& agentJson,
     deployment.agent.spill.maxInlineBytes = 32768;
   }
 
-  // auto 模型: 打开模型路由策略。
-  //
-  // 现有 openrouter 配置的 model 就是 "auto", 旧实现在 SSE 循环里硬编码轮换; 新架构靠这个
-  // 开关把它交给 ModelRoutePolicy。
+// auto 模型: 打开模型路由策略。
+// 现有 openrouter 配置的 model 就是 "auto", 旧实现在 SSE 循环里硬编码轮换; 新架构靠这个
   if (deployment.llm.model == deployment.agent.modelRoute.autoKeyword) {
     deployment.agent.enableModelRoute = true;
   }

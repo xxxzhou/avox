@@ -58,12 +58,7 @@ struct ComposedAgent {
 };
 
 // 从 agent.json 装配一份完整可用的诊断 agent (**不打开会话**)。
-//
 // agentJson: agent.json 的完整内容 (顶层平铺)。
-// dataRoot: 会话日志与溢出文件的根目录 (通常 <avox>/logs)。
-// error: 失败原因。
-//
-// 返回是否成功。失败时 out 已被 reset (不留半套装配)。
 bool composeDiagnosticAgent(ComposedAgent& out, const std::string& agentJson,
                            const std::string& dataRoot, std::string& error);
 

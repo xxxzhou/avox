@@ -87,8 +87,6 @@ float3 linearToPq(float3 lin);
 static const char* kShaderDv = R"(
 // UBO 的 dvNl/dvLm 是列主序(dvNl[c][r] = M[r][c], 与 GLSL mat3(列构造)×v = M×v
 // 对齐): M×v 的第 r 个分量 = 第 r 行 (c0[r],c1[r],c2[r]) 与 v 的点积。
-// 旧实现 dot(c_r, v) 算成了 Mᵀ×v —— 色度行/列互换, G 通道被 U 系数(m01≈0)吞掉,
-// 实测硬解 DV 画面变品红(255,0,255), 亮度均值被误读为"整体变暗"。
 float3 dvApplyCols(float3 v, float4 c0, float4 c1, float4 c2) {
     return float3(dot(float3(c0[0], c1[0], c2[0]), v),
                   dot(float3(c0[1], c1[1], c2[1]), v),
@@ -215,7 +213,6 @@ float3 linearToBt709(float3 c) {
 
 // BT.2390 EETF(与 VK/Metal 腿同源, 语义对齐 libplacebo pl_tone_map_bt2390):
 // PQ 码域 Hermite 膝点, 膝点以下 1:1, 以上滚降到目标峰值码(offset=1.0);
-// ks 钳 0 防目标白点极低时黑位抬升
 float3 bt2390Eetf(float3 pq, float srcPeakPq, float dstPeakPq) {
     float ks = max(2.0 * dstPeakPq - srcPeakPq, 0.0);
     if (ks >= srcPeakPq) {
@@ -310,9 +307,6 @@ float4 p010Point(uint2 pix, float a) {
 
 // yuv422P10: 与 p010Point 同款 16-bit 视图采样, **唯一差别是色度平面全高**
 // (4:2:2 垂直不降采样) ⇒ UV 行号取 pix.y, 不除 2。BT.2020 tv-range 展开与矩阵同款。
-// 注: 不注入 DV 分支 —— 422P10 只来自 CPU 帧腿(软解), 而该腿恒用非 DV 变体
-// (renderCpuFrame → selectShader(false)); 且 %%DV_BRANCH%% 占位符在 buildShaderSource
-// 里只替换**第一处**, 放第二份会留下未替换的字面量导致编译失败
 float4 p422Point(uint2 pix, float a) {
     float k = 65535.0 / 64.0 / 1023.0;
     float y = yTex.Load(int3(pix, 0)).r * k;
@@ -645,7 +639,6 @@ void Dx11CSVideoRender::releaseGraph() {
 
 // CPU 帧腿(G9): CPU 无解码 D3D11 设备, 借用呈现窗口的设备建上传纹理。
 // 输出共享纹理由该设备创建后交给同设备的 Dx11Window 开 NT 句柄(同适配器,
-// 与硬解腿「解码设备→窗口设备」的跨设备句柄共享路径互不干扰)
 bool Dx11CSVideoRender::initGraphCpu(const YUVFrame& frame) {
   const YuvType yuvType = frame.format.type;
   // b422: 平面式 4:2:2 10bit(ProRes 等软解帧); 色度平面**全高** ⇒ UV 另起纹理
@@ -1020,10 +1013,8 @@ void Dx11CSVideoRender::createProgram() {
          " passthrough:", bTargetPassthrough ? 1 : 0, " dxgi:",
          (int32_t)outFormat);
   outSharedTex->initTexture(device);
-  // 创建输入复制纹理
-  // CPU 帧腿(G9): inTexture 与 y/uv SRV 已由 initGraphCpu 按 DYNAMIC 上传
-  // 需求建好(硬解腿要的是 USAGE_DEFAULT 解码拷贝纹理), 此处跳过, 否则会把
-  // 上传纹理覆盖成不可 Map 的 DEFAULT 纹理
+// 创建输入复制纹理
+// CPU 帧腿(G9): inTexture 与 y/uv SRV 已由 initGraphCpu 按 DYNAMIC 上传
   if (cpuInFormat == DXGI_FORMAT_UNKNOWN) {
     D3D11_TEXTURE2D_DESC inCopyDesc = yuvDesc;
     inCopyDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
@@ -1112,7 +1103,6 @@ ID3D11ComputeShader* Dx11CSVideoRender::selectShader() {
 
 // 变体选择 + canvas 资源绑定(render 线程): canvas 活跃帧走 canvas 变体
 // (prepareAndBind 同步建纹理/上传/刷参数), 空窗/编译失败回退非 canvas 变体
-// (零字幕零影响); allowDv=false 供 CPU 帧腿(既有行为不吃 DV 链)
 ID3D11ComputeShader* Dx11CSVideoRender::selectShader(bool allowDv) {
   syncCanvasLayer();
   const bool bDv = allowDv && doviMeta.valid;

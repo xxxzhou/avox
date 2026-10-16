@@ -14,8 +14,6 @@ namespace avox {
 // 共享 ONNX session 缓存: 按 (path, useGPU, deviceId) 缓存已加载 IONNXSession,
 // 全局加载一次、对象复用。acquire 命中返回借用指针; 未命中则经 onnxSessionHub 新建 + loadModel。
 // 模型随进程常驻 (无 unload 接口; AvoxManager heap-only、从不析构, 跨 DLL 析构不安全故不卸载)。
-// 线程安全: 内部 mutex; Ort::Session::Run 自身并发安全, 共享 session 跨线程 run 安全。
-// sherpa 不在此缓存 (走 sherpa-onnx C API, 不经 IONNXSession)。
 class AVOX_EXPORT OnnxSessionCache {
  public:
   OnnxSessionCache() = default;

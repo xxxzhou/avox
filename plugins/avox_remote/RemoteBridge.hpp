@@ -24,7 +24,6 @@ namespace davbridge {
 
 // 代理地址解析(隧道网关用): 值形如 "http://127.0.0.1:17817", 剥 scheme/
 // userinfo/路径取 host+port。两处 cpp-httplib 客户端(IOParseDav 播放 /
-// DavSource 列表)共用; 端口缺失或非法返回 false(调用方忽略代理并告警)。
 inline bool parseProxyUrl(const std::string& url, std::string* host,
                           int32_t* port) {
   std::string s = url;

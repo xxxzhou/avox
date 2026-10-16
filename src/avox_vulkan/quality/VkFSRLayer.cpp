@@ -40,9 +40,8 @@ void VkFSRLayer::onUpdateParamet() {
   if (rcasLayer) {
     rcasLayer->get()->setSharpness(paramet.rcasSharpness);
   }
-  // 仅结构性变化才重建: scale/enableRCAS/deblockMode 变→子层组合变。
-  // deblockStrength/rcasSharpness 只改 UBO/参数, 不重建。
-  // enableLinear 不再重建: decode/encode 始终存在, sRGB↔linear 不影响子层结构。
+// 仅结构性变化才重建: scale/enableRCAS/deblockMode 变→子层组合变。
+// deblockStrength/rcasSharpness 只改 UBO/参数, 不重建。
   if (paramet.scale != oldParamet.scale ||
       paramet.enableRCAS != oldParamet.enableRCAS ||
       paramet.deblockMode != oldParamet.deblockMode) {
@@ -114,9 +113,8 @@ void VkFSRLayer::onInitGroup() {
     sharpenParamet.sharpness = 0.3f;
     sharpenLayer->get()->updateParamet(sharpenParamet);
   }
-  // 串联: deblock(sRGB) → decode(sRGB→linear) → EASU? → RCAS/Sharpen → encode(linear→sRGB)
-  // 注: VKTNodePtr 类型不同, 不能用三元运算符, 必须用 if/else
-  // deblock → decode
+// 串联: deblock(sRGB) → decode(sRGB→linear) → EASU? → RCAS/Sharpen → encode(linear→sRGB)
+// 注: VKTNodePtr 类型不同, 不能用三元运算符, 必须用 if/else
   if (useGuided) {
     guidedDeblockLayer->addLine(decodeLayer);
   } else {

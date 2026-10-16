@@ -15,9 +15,7 @@
 namespace avox {
 
 // 解析模型给的 arguments JSON; 空或非法返回 Null Json (后续取字段一律走默认值)。
-//
 // 不抛异常: 模型产出坏 JSON 是常态而非异常, 工具应当返回一条模型可读的错误结果, 让它
-// 自己修正参数重试。
 inline Json parseToolArgs(const std::string& argumentsJson) {
   if (argumentsJson.empty()) return Json();
   try {

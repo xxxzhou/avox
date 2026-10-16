@@ -116,9 +116,8 @@ bool AndVDecoder::createCodec() {
   if (!mediaCodec) {
     return false;
   }
-  // VP9/AV1: createDecoderByType 在无硬解设备上会落平台软实现(c2.android.*),
-  // 按名字排除并回退软解。AMediaCodec_getName API 28+ 才有, 编译目标 26,
-  // 运行期 dlsym 探测; 拿不到名字(老设备)保留原样, 不误杀
+// VP9/AV1: createDecoderByType 在无硬解设备上会落平台软实现(c2.android.*),
+// 按名字排除并回退软解。AMediaCodec_getName API 28+ 才有, 编译目标 26,
   if (codecId == VCodecId::vp9 || codecId == VCodecId::av1) {
     using GetNameFn = media_status_t (*)(AMediaCodec*, const char**);
     using FreeNameFn = void (*)(const char*);
@@ -148,9 +147,8 @@ bool AndVDecoder::createCodec() {
 bool AndVDecoder::onVaild() { return createCodec(); }
 
 DecodeResult AndVDecoder::onPreDecoder() {
-  // seek复位/bDecodeUpdate 会在 codec 仍处 Executing 态时重入本函数:
-  // MediaCodec 不允许运行中重配, 直接 configure 必吃 -10000(Java 层
-  // IllegalStateException 被 NDK 包装吞掉)——先完整拆旧再重建
+// seek复位/bDecodeUpdate 会在 codec 仍处 Executing 态时重入本函数:
+// MediaCodec 不允许运行中重配, 直接 configure 必吃 -10000(Java 层
   if (mediaCodec) {
     onClose();
     if (!createCodec()) {
@@ -158,9 +156,8 @@ DecodeResult AndVDecoder::onPreDecoder() {
     }
   }
   auto& packets = configPackets;
-  // csd 必须是AnnexB: mp4/rtmp 的 config 是avcc/hvcc长度前缀, 不转MediaCodec解析不了csd, 静默无输出
-  // (已是AnnexB的包长度对不上, avcc2AnnexbPacket 自动跳过); AV1 的 av1C 是
-  // 自成结构的配置记录, 非 NALU, 不过转换
+// csd 必须是AnnexB: mp4/rtmp 的 config 是avcc/hvcc长度前缀, 不转MediaCodec解析不了csd, 静默无输出
+// (已是AnnexB的包长度对不上, avcc2AnnexbPacket 自动跳过); AV1 的 av1C 是
   if (codecDesc.vcodecId != VCodecId::av1) {
     for (auto& packet : packets) {
       AvoxPacket view = {};
@@ -169,9 +166,8 @@ DecodeResult AndVDecoder::onPreDecoder() {
     }
   }
   if (codecDesc.vcodecId == VCodecId::av1) {
-    // AV1: mp4 的 extradata 即 av1C 配置记录, 原样作 csd-0(MP4 demuxer 侧
-    // IOParseFF 对非 H26x 编码整段透传, 见 parseStream); mkv 的 CodecPrivate
-    // 同构。 configure 不吃时走 openFailed → 选型链回退软解
+// AV1: mp4 的 extradata 即 av1C 配置记录, 原样作 csd-0(MP4 demuxer 侧
+// IOParseFF 对非 H26x 编码整段透传, 见 parseStream); mkv 的 CodecPrivate
     if (packets.empty()) {
       return DecodeResult::noConfig;
     }

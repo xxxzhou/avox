@@ -64,9 +64,8 @@ class ArgParser {
   // ArgType 映射: Boolean→boolean, Int→integer, Number→number, String→string
   std::string toJsonSchema() const;
 
-  // 生成精简用法摘要 (供 AI 工具描述自动拼接, 让 AI 知道参数含义和组合方式)
-  // 格式: 每行 "  -short/--long <type> : desc [默认: val]"
-  // Boolean 型不显示 <type>, 只显示旗标名
+// 生成精简用法摘要 (供 AI 工具描述自动拼接, 让 AI 知道参数含义和组合方式)
+// 格式: 每行 "  -short/--long <type> : desc [默认: val]"
   std::string usageSummary() const;
 };
 

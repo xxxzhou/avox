@@ -113,7 +113,6 @@ AVOX_EXPORT YuvType getYuvType(int32_t format);
 
 // 位深修正: chroma_format_idc 只带抽样格式不带位深, 4:2:0 且双分量位深一致>8
 // 时升 p010。不修则 10bit 流被按 8bit 请求解码输出而静默截断
-// (HDR 锚点/hi10p/10bit 车道; 2026-09-30 Android 锚点假红根因之一)
 AVOX_EXPORT void applyBitDepthToYuvType(DecoderParams& params);
 
 AVOX_EXPORT vec2i getSize(const H264SpsSyntax& sps);

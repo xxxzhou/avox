@@ -151,11 +151,8 @@ void ADecoderTask::onRunTask() {
       pushPB<MPPBType::AudioInfo>(mpPingback, pbInfo);
       bOpenDecode = true;
     }
-    // 特定时间没有解码成功
-    // >4x只I帧生效中: 音频包被MediaPlayer::onPacket丢弃, 无包是预期, 持续reset
-    // 期限, 超时从降速那一刻重新起算(否则降回4x后首次迭代就误判timeout杀掉音频轨)。
-    // 判据用 iframeOnlyActive() 而非 speed>4: 选项关掉时音频包正常流, 不能豁免,
-    // 否则真实解码故障在高倍速下被永久吞掉
+// 特定时间没有解码成功
+// >4x只I帧生效中: 音频包被MediaPlayer::onPacket丢弃, 无包是预期, 持续reset
     if (mediaPlayer && mediaPlayer->iframeOnlyActive()) {
       check.reset();
     }
@@ -181,9 +178,8 @@ void ADecoderTask::onRunTask() {
       decode->dispatch(&IAudioDecoderOb::onAudioComplete);
       return;
     }
-    // 空转(队列无包)才休眠让出CPU; 处理了包不垫睡——碎片化音轨实测~3000包/
-    // 内容秒, 逐包5ms会把消费上限钉在200包/s, 包队列(200)被灌满后enqueueWait
-    // 反向堵死demux, 视频包断供画面慢放(TrueHD碎片轨实证18倍慢)
+// 空转(队列无包)才休眠让出CPU; 处理了包不垫睡——碎片化音轨实测~3000包/
+// 内容秒, 逐包5ms会把消费上限钉在200包/s, 包队列(200)被灌满后enqueueWait
     if (!bGet) {
       sleepTask(false, 5);
     }

@@ -41,9 +41,8 @@ class ISessionObserver {
  public:
   virtual ~ISessionObserver() = default;
 
-  // 任意一条会话事件。
-  // typeName 是稳定的 wire 名 ("turn/start" / "tool/call" / ...)。
-  // eventJson 是完整事件行 (含 seq / time / data)。
+// 任意一条会话事件。
+// typeName 是稳定的 wire 名 ("turn/start" / "tool/call" / ...)。
   virtual void onSessionEvent(size_t seq, const char* typeName,
                              const char* eventJson) {}
 
@@ -53,10 +52,8 @@ class ISessionObserver {
   // 推理分片 (仅展示, 不进模型历史正文)。
   virtual void onReasoning(const char* text) {}
 
-  // 模型请求了一次工具调用 (argsJson 是模型原样产出的完整入参)。
-  //
-  // 有专用回调而不是让消费者自己从 onSessionEvent 的 JSON 里挖: 工具调用是每个 UI 都要
-  // 渲染的东西, 让每个绑定各写一遍 JSON 解析是重复劳动, 也容易与内部字段名脱节。
+// 模型请求了一次工具调用 (argsJson 是模型原样产出的完整入参)。
+// 有专用回调而不是让消费者自己从 onSessionEvent 的 JSON 里挖: 工具调用是每个 UI 都要
   virtual void onToolCall(const char* toolName, const char* argsJson) {}
 
   // 一次工具调用的结果。ok = 未失败。
@@ -94,15 +91,8 @@ class IAgentSession {
   // 为下一次 pre-step 排入上下文, 不唤醒驱动。
   virtual void inject(const char* text) = 0;
 
-  // 带图片附件的 followup: 每张图经附件仓 publish 成 sha256 引用后, 与文字合成一条
-  // UserMessage (TextBlock + N×ImageBlock) 入队唤醒 —— 图以一等公民直进模型上下文,
-  // 不绕 see-image 工具轮次。imagesJson 为数组字符串, 元素:
-  //   {"data":"<base64,不带 data: 前缀>", "mediaType":"image/png", "name":"可选"}
-  // mediaType 白名单 image/png|jpeg|webp|gif; 字节/像素/单边限额由附件仓执行
-  // (与 dsh attachment-local 同源)。
-  //
-  // 返回 0 = 成功; 非 0 = 失败, 原因经 lastInputError() 取 —— 接口层不出异常
-  // (插件侧禁了 C++ 异常), 错误传递风格与 createAgentHost 的 error 出参一致。
+// 带图片附件的 followup: 每张图经附件仓 publish 成 sha256 引用后, 与文字合成一条
+// UserMessage (TextBlock + N×ImageBlock) 入队唤醒 —— 图以一等公民直进模型上下文,
   virtual int followupImages(const char* text, const char* imagesJson) = 0;
   // 最近一次 followupImages 失败的原因; 返回内部缓冲借用指针, 下次调用即失效。
   virtual const char* lastInputError() = 0;
@@ -150,10 +140,8 @@ class IAgentHost {
   virtual IAgentSession* openAgent(const char* sessionId) = 0;
   virtual void closeAgent() = 0;
 
-  // 注册一段静态 system prompt 片段 (进 KV cache 前缀)。
-  //
-  // 建议在 openAgent 之前调用: 会话开始后修改会使缓存前缀从变动处失效。运行期要告诉模型
-  // 什么, 用 IAgentSession::inject。
+// 注册一段静态 system prompt 片段 (进 KV cache 前缀)。
+// 建议在 openAgent 之前调用: 会话开始后修改会使缓存前缀从变动处失效。运行期要告诉模型
   virtual bool addPromptSection(const char* name, int order, const char* text) = 0;
 
   // 借用指针; 为空 = fail closed (需要审批的工具全被拒)。
@@ -165,9 +153,7 @@ class IAgentHost {
 extern "C" {
 
 // 创建宿主 (SWIG %newobject, 目标语言 GC 释放; C++ 侧 delete)。
-//
 // configJson 就是 agent.json 的内容 (多配置 + now)。校验失败返回 nullptr, 原因经
-// lastAgentHostError() 取。
 AVOX_EXPORT IAgentHost* createAgentHost(const char* configJson);
 
 // 最近一次 createAgentHost 失败的原因。
@@ -183,22 +169,6 @@ AVOX_EXPORT const char* runSkill(const char* skillName, const char* userInput);
 
 // 列出 config/providers.json 里所有可对话 (chat=true) 模型条目 ——
 // 与 AgentShell 的 /list /ls 等价, 用于在不带 shell 的前端 (网页/Electron) 里挑对话模型。
-//
-// 输出 JSON 数组, 每个元素字段:
-//   provider        厂商名 (providers.json 顶层 providers 键)
-//   model           模型名 (厂商下 models 键)
-//   name            provider/model 拼接, 便于一行展示
-//   free            true = 免费档
-//   ready           true = 密钥非占位符, 可直接发请求; false = 密钥待用户替换
-//   needsApiKey     true = apiKey 是占位符或空
-//   apiKeyHint      占位密钥对应的申请指引 (无则 "")
-//   apiUrl          端点基址
-//   apiPath         端点路径
-//   contextWindow   上下文窗口 tokens (0 = 未配置)
-//   imageInput      支持图像理解
-//   imageOutput     支持文生图
-//
-// 返回值由内部缓冲托管, 下次调用即失效。失败 (JSON 解析出错等) 返回 "[]"。
 AVOX_EXPORT const char* avoxListProviders();
 }
 

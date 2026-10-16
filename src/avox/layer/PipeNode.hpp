@@ -39,9 +39,6 @@ class ILayer : public INode {
 // 管线子图的连接信息,本身可以当做处理节点,也可以不是
 // 组不参与数据流转,只定义外部与内部节点的映射关系
 // startNodes: 外部输入槽 → 内部哪些节点接收该输入
-// endIndex:   内部哪个节点的输出作为组的输出
-// 经实践,在ILayer上实现最方便
-// 自身也可当做节点的,比如自身也有glslPath的,如VkGuidedLayer
 class IGroup {
  public:
   IGroup() { startNodes.resize(1); };
@@ -247,9 +244,8 @@ class Group : public IGroup {
   virtual ~Group() = default;
 
  public:
-  // 外部链接当前群集时,指定需要链接群集内的哪个节点
-  // 有些群集本身也有实现，内部节点链接链接时，是本身的NodeIndex
-  // 因此这个方法最好是在所有内部节点信息都设置好之后调用
+// 外部链接当前群集时,指定需要链接群集内的哪个节点
+// 有些群集本身也有实现，内部节点链接链接时，是本身的NodeIndex
   void setStartNode(std::shared_ptr<PipeNode<T>> node, int32_t index = 0,
                     int32_t nodeSite = 0) {
     IGroup::setStartNode(node.get(), index, nodeSite);

@@ -29,9 +29,8 @@ class TeamTaskBoard {
  public:
   TeamTaskBoard(Agent& lead, TeamConfig config);
 
-  // 创建任务 (revision 1)。subject 必填; blockedBy 引用不存在的任务抛
-  // TEAM_TASK_NOT_FOUND, 引用已删除任务抛 TEAM_TASK_DELETED, 超上限抛
-  // TEAM_TASK_LIMIT。
+// 创建任务 (revision 1)。subject 必填; blockedBy 引用不存在的任务抛
+// TEAM_TASK_NOT_FOUND, 引用已删除任务抛 TEAM_TASK_DELETED, 超上限抛
   TeamTaskSnapshot create(TeamJournal& journal, const CreateTeamTaskRequest& request);
 
   // CAS 变更。期望 revision 不符抛 TEAM_TASK_STALE_REVISION; 状态机/依赖/归属

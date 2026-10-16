@@ -9,8 +9,6 @@ namespace avox {
 // 经 IONNXSession 加载的 ONNX 模型身份 (OnnxSessionCache 的 key 之一).
 // level / int8 变体拆成不同 enum 值, 调用方按配置选 (它本就有这 switch/fallback).
 // 路径经 onnxModelPath() 集中构建, 调用方不再自己拼路径.
-// 注: Trans* 值仅非 Android 可用 —— Android 下 translation 走 cache 拷贝目录(运行期路径),
-// 应改用 OnnxSessionCache::acquire(string)/OnnxModelUser::session(string).
 enum class OnnxModel {
   OcrDet,        // PP-OCRv6 det
   OcrRec,        // PP-OCRv6 rec

@@ -431,10 +431,8 @@ void EglVideoRender::onSetSurface() {
 
 bool EglVideoRender::vaildAndInitGraph() {
 #ifdef __ANDROID__
-  // 统一检查点(§4.2): 呈现面直通实态翻转 → 置 bResetFlag 重建输出端。
-  // EglWindow 无 HDR 呈现面(setHdrPassthrough 恒 false), 本步恒不触发;
-  // 接线目的是让三平台走同一检查路径(§4.2「检查路径同源」), 避免日后
-  // 加 EGL HDR 口时漏挂
+// 统一检查点(§4.2): 呈现面直通实态翻转 → 置 bResetFlag 重建输出端。
+// EglWindow 无 HDR 呈现面(setHdrPassthrough 恒 false), 本步恒不触发;
   if (checkTargetPassthrough()) {
     bResetFlag = true;
   }
@@ -506,9 +504,8 @@ bool EglVideoRender::vaildAndInitGraph() {
   }
 #endif
   closeProgram();
-  // 渲染使用frameCtx解码上下文做共享
-  // 这样可以使用解码后的OES纹理
-  // window如果为空,则表明渲染到FBO对应的AHardwareBuffer上
+// 渲染使用frameCtx解码上下文做共享
+// 这样可以使用解码后的OES纹理
   initContext(frameCtx);
   if (surface) {
     createSurface(surface);
@@ -869,9 +866,8 @@ void EglVideoRender::closeProgram() {
 }
 
 bool EglVideoRender::fetchFrame(ImageBuffer* imageBuffer) {
-  // §3.4 CPU 读回防护: 与 Dx11CSVideoRender/MetalRender 同口径 —— 直通态输出
-  // 非 SDR 码, 回读是脏图。EGL 腿无 HDR 呈现面, 此闸恒不触发; 接线目的是
-  // 统一三腿义务, 防日后补 EGL HDR 口时漏挂
+// §3.4 CPU 读回防护: 与 Dx11CSVideoRender/MetalRender 同口径 —— 直通态输出
+// 非 SDR 码, 回读是脏图。EGL 腿无 HDR 呈现面, 此闸恒不触发; 接线目的是
   if (bTargetPassthrough) {
     LOGFLF(LogLevel::warn, "fetchFrame refused in hdr passthrough");
     return false;

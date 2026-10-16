@@ -384,11 +384,8 @@ void MediaPipeBody::processFrame(const BodyChunk& chunk) {
   if (!hmV) {
     return;
   }
-  // argmax 33 通道: 热图布局为 [1,64,64,39] (NHWC, 通道在最后一维)。
-  // 第 i 个空间位置 (0..4095) 的第 k 通道值 = hm[i*39 + k]; 每通道 argmax 得 (hy,hx), ×4 转 256 空间像素。
-  // 该通道置信度 = spatial softmax 后峰值 (MediaPipe 官方即如此估可信度):
-  //   热图集中(模型确信该点) → 峰值接近 1; 平坦(遮挡/模型外推) → 峰值接近 1/4096。
-  //   (Identity_3 是 logits 特征, 非概率, 直接取 argmax 峰值不可用 — 可为负/无界)
+// argmax 33 通道: 热图布局为 [1,64,64,39] (NHWC, 通道在最后一维)。
+// 第 i 个空间位置 (0..4095) 的第 k 通道值 = hm[i*39 + k]; 每通道 argmax 得 (hy,hx), ×4 转 256 空间像素。
   cv::Mat pts(kBodyLandmarkCount, 1, CV_32FC2);
   std::vector<float> conf33(kBodyLandmarkCount);  // softmax 后热图峰值置信度 (0,1]
   hmBuf.resize(kBodyLandmarkCount * 2);

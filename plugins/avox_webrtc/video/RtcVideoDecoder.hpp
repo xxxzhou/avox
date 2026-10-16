@@ -46,11 +46,8 @@ class RtcVideoDecoder : public webrtc::VideoDecoder,
 
  public:
   bool getFrameInfo(int64_t pts, uint32_t& rtp, std::optional<uint8_t>& qp);
-  // avox::VideoDecoder本身会根据需要来拆分转化annexb/avcc
-  // 所以在这只需要处理配置帧更新逻辑,不需要折分组合
-  // 1. 是否需要拆包检查是否有配置帧
-  // 1. 检查是否配置帧,用于初始化
-  // 2. 检查配置帧是否有更新,如果有更新,下个I帧前重置解码器
+// avox::VideoDecoder本身会根据需要来拆分转化annexb/avcc
+// 所以在这只需要处理配置帧更新逻辑,不需要折分组合
   void processPacket(AvoxPacket& packet);
 
  public:

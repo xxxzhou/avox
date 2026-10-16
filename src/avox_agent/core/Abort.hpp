@@ -71,10 +71,8 @@ class AbortSignal {
     throw AbortError(cause.value_or(AgentCancelCause{CancelByUser{}}));
   }
 
-  // 注册取消回调; 已取消则**立即同步调用**一次 (对齐 AbortSignal 的 once 语义,
-  // 避免「注册晚了就永远收不到」这类竞态)。
-  //
-  // 回调在调用 abort 的那个线程上运行, 必须短小且不得再取锁回本对象。
+// 注册取消回调; 已取消则**立即同步调用**一次 (对齐 AbortSignal 的 once 语义,
+// 避免「注册晚了就永远收不到」这类竞态)。
   Disposer onAbort(std::function<void()> callback) {
     if (callback == nullptr) return [] {};
     size_t id = 0;
@@ -159,12 +157,8 @@ class AbortController {
 };
 
 // 把两个取消源合并成一个。
-//
 // 用途: 工具执行同时受调用方取消与超时计时器约束, 而工具体只该看到一个 signal。
 // 任一源触发即合并信号触发, 原因取先到的那个。
-//
-// 返回的对象持有对两个源的订阅, 析构即退订 —— 于是一次调用结束后不会在长命的调用方
-// signal 上堆积回调 (那是长会话里的一种慢泄漏)。
 class FusedAbort {
  public:
   FusedAbort(const std::shared_ptr<AbortSignal>& first,

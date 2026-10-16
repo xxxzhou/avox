@@ -105,14 +105,8 @@ class ToolRuntime {
   // 按名字查找 (作用域层遮蔽全局层); 不可见返回 nullptr。
   const ToolDefinition* find(const std::string& name, ScopeKey scope) const;
 
-  // 发给模型的 schema 数组 JSON。
-  //
-  // **按名字 code-unit 字典序**排列, 与 locale 无关 —— 保证任何机器上顺序一致。
-  // 注册顺序不能作为依据: skill 派生的工具来自目录遍历, 而目录顺序不保证跨机器、跨文件
-  // 系统一致, 顺序一变 KV cache 前缀就废了。
-  //
-  // 只白名单 name / description / parameters —— timeoutMs、executionMode 这些是部署事实,
-  // 不是模型该知道的东西。
+// 发给模型的 schema 数组 JSON。
+// **按名字 code-unit 字典序**排列, 与 locale 无关 —— 保证任何机器上顺序一致。
   std::string schemasJson(ScopeKey scope) const;
 
   // 一次调用能否与兄弟调用重叠 (工具未声明则 Exclusive)。
@@ -123,10 +117,8 @@ class ToolRuntime {
   // 阶段一: 串行、可阻塞。跑准入策略链、审批、单调守卫。
   Prepared prepare(ToolExecution& exec);
 
-  // 阶段二: 唯一允许重叠的阶段。跑 around 链与工具体。
-  //
-  // 取消**不抛弃已启动的工具体**: 等它返回, 再把成功结果改写成 Aborted。同进程代码杀不掉,
-  // 抛弃它会留下写了一半的文件或残留子进程。
+// 阶段二: 唯一允许重叠的阶段。跑 around 链与工具体。
+// 取消**不抛弃已启动的工具体**: 等它返回, 再把成功结果改写成 Aborted。同进程代码杀不掉,
   ToolResult dispatch(ToolExecution& exec);
 
   // 阶段三: 严格按模型顺序。跑 post-execute 链, 然后通知最终结果。

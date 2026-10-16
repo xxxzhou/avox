@@ -20,7 +20,6 @@ class SherpaSenseVoice;
 
 /**
  * @brief Sherpa-onnx 语音识别统一管理层
- *
  * 统一管理音频队列、任务调度和识别器切换
  * 内部封装 SherpaRecognizer(流式) 和 SherpaSenseVoice(离线) 两个引擎
  */

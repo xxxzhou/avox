@@ -113,10 +113,8 @@ void SherpaAudioStt::onRunTask() {
       sleepTask(false, 10);
     }
   }
-  // running()=false (stop/stopTask): 先出 reshaper(swr/curFrame) 残余尾帧入队,
-  // 再排空队列 + 触发最终结果 + reset stream。
-  // 不 releaseEngine — 模型对象级常驻, 下次 start 复用 (避免每轮重载秒级模型)
-  // 此时 AudioTap 已被 closeTap join, recognize/process 不会再并发动 curFrame/swr, flush 安全。
+// running()=false (stop/stopTask): 先出 reshaper(swr/curFrame) 残余尾帧入队,
+// 再排空队列 + 触发最终结果 + reset stream。
   flush();
   if (bBlockingFeed()) {
     // 阻塞喂料: 生产者已被 stop() 的 setClose 释放, drain(忽略 bClose) 一次

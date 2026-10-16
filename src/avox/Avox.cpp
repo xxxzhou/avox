@@ -146,8 +146,6 @@ void flushLog() {
 
 // 进程退出前显式停异步日志线程: logTask 是文件级静态对象, CRT
 // 静态析构顺序不确定, 若 logTask 析构(join 线程)时日志线程仍在 log()
-// 访问已析构的全局(gLogOb/cout/TrackMgr), 会触发访问冲突。由
-// DllMain(DLL_PROCESS_DETACH) 在静态析构前调用本函数, 先排空 + join。
 void AvoxManager::clean() {
   // 先摘掉日志观察者: 宿主(如 godot 插件)设置的观察者对象可能在宿主 DLL
   // 卸载时 vtable 已失效(unmap), 本函数及静态析构阶段的任何 log() 都会在
@@ -447,7 +445,6 @@ std::string getAvoxPath() {
 
 // avox 运行目录 (avox.dll/exe 装载目录), extern "C" 导出 const char*。
 // 路径恒定, 首次 getAvoxPath() 结果经 static 缓存 (C++11 起线程安全), 之后直返指针。
-// C++ 侧直接用上面的 std::string getAvoxPath() 即可, 本函数供 C/SWIG 调用。
 const char* getAvoxRunDir() {
   static const std::string dir = getAvoxPath();
   return dir.c_str();
@@ -487,8 +484,6 @@ std::string expandEnvPath(const std::string& path) {
 
 // ansi用char表示多字节编码(中国ansi对应GB2312),unicode(UTF-16)用wchar表示编码(多国家同一编码)
 // uft8在unicode基础上,变长1-4Byte表示,用于传输与保存节约空间
-// https://stackoverflow.com/questions/6693010/how-do-i-use-multibytetowidechar
-// https://stackoverflow.com/questions/4804298/how-to-convert-wstring-into-string
 std::wstring utf8TWstring(const std::string& str) {
   if (str.empty()) {
     return std::wstring();
@@ -991,7 +986,6 @@ void disableVkInput(ISurfaceRender* sr) {}
 
 // ── ASS/PGS 字幕画布层(§3.4): lane 路由分派(字幕画布多后端渲染计划 P0)。
 // ISurfaceRender 公开头不加虚口, 经 SurfaceRenderVk 多态(WindowRender 链
-// 同属它)按 lane 分流: lane=0 VK 图内 / lane=1 平台腿 ──
 
 ICanvasLayer* enableRenderCanvas(ISurfaceRender* sr) {
   SurfaceRenderVk* render = dynamic_cast<SurfaceRenderVk*>(sr);

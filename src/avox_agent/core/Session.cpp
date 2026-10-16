@@ -19,10 +19,7 @@ int64_t nowMillis() {
 }
 
 // 校验一段字符串装的 JSON 确实是对象或数组。
-//
 // 为什么只认对象/数组: 本项目的 Json 在解析失败时返回 Null, 而合法的 "null" 也是 Null
-// —— 两者无法区分。而这两个字段语义上本就是对象 (meta) 与数组 (tools schema), 所以
-// 「必须是对象或数组」既是有效校验, 也避开了那个歧义。
 void assertJsonObjectOrArray(const std::string& text, const char* field) {
   const Json parsed = parserJson(text.c_str());
   if (!parsed.bObject() && !parsed.bArray()) {
@@ -93,9 +90,8 @@ Session::Session(SessionId id, std::vector<SessionEvent> seed,
     this->header.createdAt = nowMillis();
   }
 
-  // 在此追加, 于是后端捕获创建 seed 时标记已在 events() 里: 无需加载期回写。
-  // 已带该标记的 seed 不重复补 —— 冷会话在首次触碰时才 resume, 反复打开一个未改动的
-  // 会话不能让它的日志逐次变长。此刻还没有观察者, 所以这条也不会发布。
+// 在此追加, 于是后端捕获创建 seed 时标记已在 events() 里: 无需加载期回写。
+// 已带该标记的 seed 不重复补 —— 冷会话在首次触碰时才 resume, 反复打开一个未改动的
   if (hasSeed && eventLog.back().type != EventType::SessionEndSeed) {
     append(SessionEndSeedData{});
   }

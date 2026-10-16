@@ -22,9 +22,6 @@ namespace avox {
 // BitTorrent 边下边播引擎封装(libtorrent)
 // 职责: magnet/.torrent -> 会话启动 -> 元数据等待 -> 选文件+顺序调度 -> 按字节区间供数
 // 供数方式: piece下载完成即已写入目标文件且经哈希校验(have_piece),
-// 直接对目标文件做预读, 不经read_piece回调(该路径磁盘线程依赖重, 调试成本高)
-// 线程模型: 外部单线程调用(start/readAt/shutdown),
-// RunTask任务线程仅做周期状态观测与alert队列排空
 class TorrentEngine : public RunTask {
  public:
   TorrentEngine();
@@ -163,9 +160,8 @@ class TorrentEngine : public RunTask {
   virtual void onRunTask() override;
 
  public:
-  // 探测: 只等元数据建文件列表, 不选文件不下载(stop_when_ready 元数据一到自动暂停),
-  // 元数据顺带落盘 metadata.torrent, 同 cacheDir 的 start() 命中后免 BEP-9 等待。
-  // 阻塞有界(元数据超时即返回), 返回后可读 getFileList 等结果, 引擎已关闭。
+// 探测: 只等元数据建文件列表, 不选文件不下载(stop_when_ready 元数据一到自动暂停),
+// 元数据顺带落盘 metadata.torrent, 同 cacheDir 的 start() 命中后免 BEP-9 等待。
   bool probe(const std::string& url, const Config& cfg, std::string* errMsg);
   // 打开magnet:/xxx 或本地 .torrent 文件路径
   // 阻塞有界: 元数据就绪+选好文件+首2片落地(head/tail首轮调度完成)才返回

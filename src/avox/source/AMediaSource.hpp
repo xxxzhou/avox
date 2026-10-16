@@ -18,7 +18,6 @@ class AVSource;
 // 文件/网络流解码数据源
 // 封装 IO + 解码，输出 YUV/GPU/PCM 帧
 // 类似 DeviceSource，但数据来自文件/网络流而非设备
-// 经RawSource→BaseSource已是OptionLink, linkOption/getLink直接可用
 class AMediaSource : public RawSource,
                      public IAVSourceOb,
                      public IVideoDecoderOb,
@@ -66,9 +65,8 @@ class AMediaSource : public RawSource,
  public:
   virtual bool open() override;
   virtual void close() override;
-  // 非手动调用close关闭,IO内部处理完毕
-  // 但是解码还没处理完,需要上层处理
-  // 上层有队列的话,在队列为空则IO完成,则可判定结束
+// 非手动调用close关闭,IO内部处理完毕
+// 但是解码还没处理完,需要上层处理
   bool ioComplete();
 
  public:

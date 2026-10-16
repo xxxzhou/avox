@@ -37,11 +37,8 @@ class TeamMailbox {
   // lead: Lead agent (投递目标之一, 恒活)。
   TeamMailbox(Agent& lead, TeamConfig config);
 
-  // 发送一条消息: 解析目标 -> 校验 (self/大小/邮箱上限) -> 入队 -> 尽力投递。
-  // 校验失败抛 TeamError; 结果 accepted=false 表示已持久排队但尚未投递
-  // (目标不在/冷恢复失败/确认未见 —— 恢复流程或下次交互补投)。
-  //
-  // senderName: 发送方队伍内名字 (lead 或队友名), 进消息快照与投递帧头。
+// 发送一条消息: 解析目标 -> 校验 (self/大小/邮箱上限) -> 入队 -> 尽力投递。
+// 校验失败抛 TeamError; 结果 accepted=false 表示已持久排队但尚未投递
   SendTeamMessageResult send(TeamJournal& journal, TeamRoster& roster,
                              const Agent& sender, const std::string& senderName,
                              const SendTeamMessageRequest& request);

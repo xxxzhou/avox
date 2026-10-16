@@ -25,7 +25,6 @@ ImageType getImageType(DXGI_FORMAT imageType);
 YuvType getDxFormat(DXGI_FORMAT format);
 // 创建一个Dx11环境
 // bMultithread=true 时去掉 SINGLETHREADED 标志(设备默认多线程保护),
-// 供需要跨线程访问的场景(如 WinRT 抓帧帧池)
 bool createDevice11(ID3D11Device **deviceDx11, ID3D11DeviceContext **ctxDx11,
                     bool bMultithread = false);
 // 从CPU数据传入GPU中

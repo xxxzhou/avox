@@ -30,7 +30,6 @@ std::vector<OcrItem> recognizeAll(IImageBuffer* buffer, double threshold = 0.3);
 
 // OCR 文字匹配: 在 buffer 内找含 text 的文本 (取首个命中) → imgCenter。纯视觉,
 // 不转坐标、不动作。 命中填 out(found/score/imgCenter/text) 并返回 true;
-// 未命中/插件不可用返回 false。
 bool locateText(IImageBuffer* buffer, const char* text, double threshold,
                 LocateResult* out);
 

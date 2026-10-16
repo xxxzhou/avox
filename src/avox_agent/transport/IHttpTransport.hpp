@@ -36,9 +36,7 @@ class IHttpTransport {
 
 extern "C" {
 // 校验一个 https(或 http) url 是否可达 (建连 + 一次 HEAD/GET)。
-//
 // 经 avox.dll 的 C 导出提供: 外部 exe 不能自己 include httplib —— 那会让 exe 与 avox.dll
-// 各有一份 httplib 静态状态, OpenSSL 重复初始化会崩。
 AVOX_EXPORT bool vaildHttps(const char* url);
 }
 

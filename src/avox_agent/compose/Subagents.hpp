@@ -60,15 +60,7 @@ struct SubagentRunOutcome {
 };
 
 // 前台运行一个 one-shot 子代理到终态。
-//
 // label: 工具入参 description, 进子会话 descriptor 的持久创建标签 (可空)。
-// prompt: 任务正文 (自包含 —— 子会话不继承父会话历史, 模型措辞已在工具 schema 说明)。
-// signal: 父工具调用的取消信号, 取消级联到子代理 (子会话落 turn/end{aborted})。
-//
-// 深度超限抛 SubagentDepthError; 子会话尚未创建时父已取消抛 std::runtime_error
-// (dsh: aborted before child publication) —— 二者都由工具层转成模型可见的错误结果。
-// 子会话发布之后本函数不再向上抛: 子代理的失败折叠为 stopReason=Error, 父会话的
-// 工具调用栈不该被子会话的异常穿透。
 SubagentRunOutcome runSubagentOneShot(
     AgentHost& host, Agent& parent, const std::string& label,
     std::vector<ContentBlock> prompt, const std::shared_ptr<AbortSignal>& signal);

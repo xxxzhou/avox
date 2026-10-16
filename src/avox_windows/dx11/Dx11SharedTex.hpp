@@ -7,16 +7,7 @@ namespace avox {
 
 // 跨线程共享纹理,二种主要方式
 // 一是在不能控制输入/输出创建共享纹理时使用
-//  做为输入时,别的线程结果->当前线程
-//    别的线程interopTexture(false)到共享纹理中
-//    当前线程从共享纹理中copyResource(true)到自身texture中
-//  做为输出时,当前线程结果->别的线程,做为输出
-//    当前线程从自身texture中copyResource(false)到共享纹理中
-//    别的线程interopTexture(true)从共享纹理中获取结果
-// 二是能控制输入/输出创建共享纹理时使用
-//  在产生纹理结果的线程创建共享纹理作为输出
-//  其NT句柄传递给使用别的线程共享使用
-//  更为高效,但是需要在对共享纹理操作时,外部同步
+// 做为输入时,别的线程结果->当前线程
 class Dx11SharedTex : public IDx11Context {
  public:
   Dx11SharedTex();

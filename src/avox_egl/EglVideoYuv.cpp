@@ -96,10 +96,8 @@ void EglVideoYuv::renderGpuFrame(const GpuFrame& frame) {
   if (inTexId == 0) {
     return;
   }
-  //  LOGFLF(LogLevel::info, "inTexId:", inTexId, " egl surface:", eglsurface,
-  //       " egl size:", eglSize.width, "x", eglSize.height,"
-  //       buffer:",frame.buffer);
-  // 指定当前编码的Surface
+// LOGFLF(LogLevel::info, "inTexId:", inTexId, " egl surface:", eglsurface,
+// " egl size:", eglSize.width, "x", eglSize.height,"
   makeCurrent();
 #ifdef __ANDROID__
   // 设置Surface时间戳 单位微秒,编码器需要时间戳

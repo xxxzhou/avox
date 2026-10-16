@@ -20,9 +20,8 @@ class SkillRegistry {
   std::vector<Skill*> all() const;
   std::vector<std::string> names() const;
 
-  // 给 VLM 的 system prompt: 能力目录 (cmd/skill/辅助工具) + 两层优先级 + 诊断规则。
-  // skill 目录语义对齐 dsh: 只列模型可调 (invocation.modelInvocable) 的 skill,
-  // 每条一行 `- `name`: description`, 加载交给单一 skill 工具。
+// 给 VLM 的 system prompt: 能力目录 (cmd/skill/辅助工具) + 两层优先级 + 诊断规则。
+// skill 目录语义对齐 dsh: 只列模型可调 (invocation.modelInvocable) 的 skill,
   std::string systemPrompt() const;
 
  private:
@@ -37,8 +36,6 @@ SkillRegistry& builtinSkillRegistry();
 
 // 在 builtinSkillRegistry() 首次访问之前, 注入本会话的 customSkillDirs 配置 (DSH 同款
 // customSkillDirs 语义)。在首次访问之后调用 = no-op, 已加载完成的 registry 不受影响。
-// 顺序依赖:必须在任何对 builtinSkillRegistry() 的访问 (含 systemPrompt()) 之前调用,
-// 否则 customSkillDirs 已被 frozen, 本会话该字段失效。
 void prepareBuiltinSkillRegistry(std::vector<std::string> customSkillDirs);
 
 }

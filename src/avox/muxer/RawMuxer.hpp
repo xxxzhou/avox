@@ -8,8 +8,6 @@ namespace avox {
 // 媒体封装器，在MediaMuxer基础上
 // 整合编码器处理原始YUV/PCM数据流
 // 不把RawSource与RawMuxer合一起
-// 因为上层需要同时控制并得知这二者状态
-// 后面扩展VkVideoRender设置大小,FFResample重采样
 class RawMuxer : public MediaMuxer {
  public:
   RawMuxer();

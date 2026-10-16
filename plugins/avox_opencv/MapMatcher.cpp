@@ -328,9 +328,8 @@ bool MapMatcher::roughMatch(const cv::Mat& bgrMinimap, cv::Point2f& outPos, doub
   // Σ(s·t·m) 逐位置: template=maskedMini 已掩膜, mask=0 处 t=0 自动不贡献
   cv::Mat crossSum = cv::Mat::zeros(resultSize, CV_32F);
   for (size_t i = 0; i < miniChannels.size(); ++i) {
-    // ⚠ 2026-08-15 实机 avox corr.rows 崩溃防护: matchTemplate 要求模板 ≤ 搜索区域
-    // (cv::crossCorr 断言 corr.rows <= img.rows + templ.rows - 1 否则 terminate)。
-    // 任一通道模板 > 搜索图 → 跳过该通道匹配 (返回零贡献), 不崩。
+// ⚠ 2026-08-15 实机 avox corr.rows 崩溃防护: matchTemplate 要求模板 ≤ 搜索区域
+// (cv::crossCorr 断言 corr.rows <= img.rows + templ.rows - 1 否则 terminate)。
     if (miniChannels[i].rows > searchChannels[i].rows ||
         miniChannels[i].cols > searchChannels[i].cols) {
       continue;
@@ -421,9 +420,8 @@ bool MapMatcher::exactMatch(const cv::Mat& bgrMinimap, const cv::Point2f& roughP
   }
 
   cv::Mat searchArea = fineMap(searchRect);
-  // 钳边后实际尺寸 < exactSize (或 < miniGray)，matchTemplate 内部 crossCorr 断言
-  // 崩溃 (terminate)。在调用前显式校验 searchArea.cols/rows >= miniGray.cols/rows，
-  // 不满足直接 return false (不调 matchTemplate, 不崩)。
+// 钳边后实际尺寸 < exactSize (或 < miniGray)，matchTemplate 内部 crossCorr 断言
+// 崩溃 (terminate)。在调用前显式校验 searchArea.cols/rows >= miniGray.cols/rows，
   if (searchArea.cols < miniGray.cols || searchArea.rows < miniGray.rows) {
     lastError = "exactMatch: searchArea smaller than miniGray";
     return false;

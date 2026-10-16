@@ -134,19 +134,14 @@ void VideoTrack::onDoviMeta(const DoviMeta& doviMeta) {
 
 // B帧重排输出会把包级改写过的pts按乱序吐出(best_effort_timestamp取自
 // dts链), 容器爆发戳(RM成对1ms)则过密; 两者都让duration变负/过小,
-// 触发sync jump并成对背靠背渲染。按标称帧距续格, 真实大间隔不受影响
 void VideoTrack::restampFramePts(int64_t& pts) {
   if (pts == AVOX_NOVALID_PTS) {
     return;
   }
   if (lastInPts != AVOX_NOVALID_PTS) {
     const int64_t delta = pts - lastInPts;
-    // seek 重入: 大跳(两个方向)远超任何重排/爆发戳, 直接以本帧为准重开格。
-    // 缺此判据时后向 seek 会被当成倒跳: 旧位置残留帧的 pts 大于目标位, 逃过
-    // seekDiscardPts(只丢目标位之前的帧)进入队列并顶高 lastInPts, 之后新位置
-    // 的帧全被续格前推到旧时间轴——实测 seek 200s→20s 后帧 pts 停在 213s 而
-    // 包 pts 已到 33s, 画面与音轨各走一条时间轴(前向 seek 的残留帧 pts 小于
-    // 目标位会被丢弃, 故只有后向拖中招)
+// seek 重入: 大跳(两个方向)远超任何重排/爆发戳, 直接以本帧为准重开格。
+// 缺此判据时后向 seek 会被当成倒跳: 旧位置残留帧的 pts 大于目标位, 逃过
     if (delta > kFrameJumpMs || delta < -kFrameJumpMs) {
       lastInPts = pts;
       return;
@@ -353,17 +348,8 @@ SyncResult VideoTrack::syncVideo() {
   }
   // 更新时钟并同步给播放器
   updateClock(pts);
-  // log(LogLevel::info, "main pts:", mClock, " now:", now,
-  //     " render time:", renderTime, " speed:", speed,
-  //     " speed duration:", sduration, " video pts:", pts, " pre pts:", tPts,
-  //     " queue size:", packetQueue.size(), " frame size:", frameQueue.size());
-  // 渲染时间慢了，需要丢帧
-  // I帧模式下帧少,不丢帧
-  // delay>0 才丢帧: delay==0 表示视频已落后主时钟、本就该立刻渲染,
-  // 此时再丢就等于"每帧都过期" —— 加上刷新周期(~30ms)与阈值(sduration*1.5)
-  // 同量级, 判据几乎恒成立, 会造成 ~77% 的帧被丢弃、画面卡顿/停滞。
-  // 保护窗内(warmupUntilMs)不丢: 首拍惰性初始化拖出的落后顺序快刷追平,
-  // 不把确定性初始化成本变成用户可见的跳帧(4K HDR 硬解起播簇 0930 实证)
+// log(LogLevel::info, "main pts:", mClock, " now:", now,
+// " render time:", renderTime, " speed:", speed,
   if (!bIFrameMode && now > warmupUntilMs && delay > 0 &&
       now > renderTime + sduration * 1.5 && sduration > 0) {
     int64_t dropPts = 0;
@@ -384,9 +370,8 @@ SyncResult VideoTrack::syncVideo() {
     renderTime = now;
     return SyncResult::slow;
   }
-  // 视频慢了(delay==0, computeDelay 已把落后钳成 0), 通知窗口快速刷新跳过
-  // sleep: 若不通知, 唤醒节拍被窗口线程的帧率标签钳住, 落后永远追不回
-  // (doc/player/core/播放器时间.md 同步渲染-2: duration 改 0 让窗口快速刷新)
+// 视频慢了(delay==0, computeDelay 已把落后钳成 0), 通知窗口快速刷新跳过
+// sleep: 若不通知, 唤醒节拍被窗口线程的帧率标签钳住, 落后永远追不回
   if (delay == 0) {
     return SyncResult::slow;
   }
@@ -466,9 +451,8 @@ void VideoTrack::close() {
   packetQueue.setClose(true);
   // 先通知frameQueue不可用，保证decodeTask顺利关闭
   frameQueue.setClose(true);
-  // 调整下，android下，先关闭EglVideoRender，再关闭AndVDecoder
-  // 否则可能EglVideoRender可能还在渲染纹理frame->release(true)时
-  // 而AndVDecoder已经释放了Mediacodec，导致崩溃
+// 调整下，android下，先关闭EglVideoRender，再关闭AndVDecoder
+// 否则可能EglVideoRender可能还在渲染纹理frame->release(true)时
   if (windowRender) {
     windowRender->stop();
     windowRender->setFrameSource(nullptr);

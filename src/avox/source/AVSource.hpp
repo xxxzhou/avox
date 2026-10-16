@@ -106,10 +106,6 @@ class IAVSourceOb {
 // IAVSource是给外部项目用的，这是项目内部基类
 // 特殊情况下，一路IO里可能有多个视频流，多个音频流
 // 后续需改进:
-// 1. open的是模板参数，不同设备不同的参数
-// 2. videoInfo/audioInfo单路与多路需要的信息混在一起
-// 3. AVSource需根据源类型(需解码/设备直出)来分子类，二者处理差别大
-// 4. VTrackDesc/ATrackDesc做基类，AVSource不同对应不同的子类，因记录信息不同
 class AVOX_EXPORT AVSource : public BaseSource,
                             public IAVSource,
                             public Observer<IAVSourceOb> {
@@ -231,17 +227,12 @@ class AVOX_EXPORT AVSource : public BaseSource,
 
  public:
   void processPacket(AvoxPacket& packet);
-  // 视频包的处理
-  // 1. 配置帧与I帧合并在一个包需要分开
-  // 2. 多个同PTS的I帧合并
+// 视频包的处理
+// 1. 配置帧与I帧合并在一个包需要分开
   void processVideo(AvoxPacket& packet);
   void singleVideo(AvoxPacket& packet);
-  // 对齐包时间
-  // 1. 修正异常PTS(如FFmpeg拉HLS出现的垃圾值), 用prePts+1代替, 同帧NAL共享修正值
-  // 2. 检测HLS分片重叠的重复GOP, 命中则丢弃(不进入后续基准/同步逻辑, prePts不更新)
-  // 3. 如果有视频, 以第一个I帧为基准; 如果有音频没有视频, 以第一个音频包为基准
-  // 4. 音视频基准都确定后, 如果差值<5s则统一以视频基准对齐; 否则各播各的
-  // 5. 检测PTS跳变(>5s), 跳变时重置基准时间并重新同步
+// 对齐包时间
+// 1. 修正异常PTS(如FFmpeg拉HLS出现的垃圾值), 用prePts+1代替, 同帧NAL共享修正值
   void alignPacketPts(AvoxPacket& packet);
   // 修正异常PTS, 返回true表示已修正
   bool reviseInvalidPts(AvoxPacket& packet, TrackInfos& info);

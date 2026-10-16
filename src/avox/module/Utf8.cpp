@@ -13,7 +13,6 @@ inline bool isContinuation(unsigned char c) { return (c & 0xC0) == 0x80; }
 
 // 从 i 起量一个合法 UTF-8 序列的长度; 起始非法返回 0。
 // 严格校验: 拒绝 overlong (C0/C1、E0 后 <A0、F0 后 <90)、代理区 (ED 后 >9F)、
-// 超 U+10FFFF (F4 后 >8F) 与裸续字节 (80-BF) / F5-FF。
 int sequenceLengthAt(const std::string& text, size_t i) {
   const unsigned char c = static_cast<unsigned char>(text[i]);
   const size_t left = text.size() - i;

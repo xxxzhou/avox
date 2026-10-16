@@ -125,10 +125,8 @@ void ARenderTask::onRunTask() {
       }
       int64_t currentPts = frame.getPts();
       int64_t now = timeStampMS();
-      // 首帧,或相邻帧PTS跳变(seek)时重置基准
-      // 必须用 currentPts - framePts(上一帧PTS)检测跳变:basePts 是固定锚点,
-      // 正常播放时 currentPts-basePts 会持续增长,必然超过 frameMs*2 误触发
-      // 暂停恢复由后面 sleepMs 偏差检测处理(墙钟跳了,但相邻帧PTS连续)
+// 首帧,或相邻帧PTS跳变(seek)时重置基准
+// 必须用 currentPts - framePts(上一帧PTS)检测跳变:basePts 是固定锚点,
       if (!baseSet || std::abs(currentPts - framePts) > frameMs * 2) {
         baseTime = now;
         basePts = currentPts;

@@ -30,8 +30,7 @@ struct SkillResourceBase {
 
 // skill 实体 — 一份从 SKILL.md 解析出的完整定义 (对齐 dsh 的 SkillDefinition)。
 // 命名、front-matter 契约、渲染格式与 dsh 逐项对应, 同一份 SKILL.md 资产两侧共用:
-//   * name/description 必填; whenToUse 可选; 其余未知 key 容忍 (不报错、不存储)
-//   * 正文 = content, 由 renderSkillContent() 渲染成模型可见的 <skill_content> 块
+// * name/description 必填; whenToUse 可选; 其余未知 key 容忍 (不报错、不存储)
 class Skill {
  public:
   std::string name;                    // kebab-case, 如 "diagnose-play"

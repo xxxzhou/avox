@@ -119,9 +119,6 @@ std::wstring toWstr(const std::string& utf8) {
 // ========== 增量文字注入 (Unicode 键盘事件) ==========
 // 流式 partial text 是完整的 (如 "你好" → "你好世界"), 每次不是增量。
 // 策略: 记录前一次输入的文字, 只注入新增部分;
-// 如果 partial 被修正 (如 "你好" → "你们"), 先 Backspace 删差异再注入新后缀。
-// 用 Unicode 键盘事件注入: 等同于实时打字, 兼容所有接受键盘输入的窗口 (含游戏自绘输入框)。
-// 关键: 注入前检查前台窗口, 如果是 avox_cli 自己则跳过 (焦点被抢时文字不应发到控制台)。
 
 struct TextInjector {
   std::wstring lastText;   // 已注入到目标窗口的文字 (wchar 方便算差异)
@@ -260,9 +257,6 @@ bool checkHotkeyMatch(const KBDLLHOOKSTRUCT& kb, const HotkeyConfig& cfg) {
 
 // WH_KEYBOARD_LL 钩子回调
 // 吞掉热键的全部 keydown/keyup (含按住时的自动重复 keydown): 让系统从头到尾
-// 不感知该键被按过。否则录音期间修饰键 (Alt/Ctrl/Shift) 处于按下状态, 会把
-// Unicode 注入污染成 Alt+组合/菜单快捷键语义 (WM_SYSCHAR) 导致目标窗口丢字;
-// 普通热键的自动重复也会混入多余字符。全吞后注入期间没有任何修饰键干扰。
 LRESULT CALLBACK hotkeyHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
   if (nCode == HC_ACTION && gHotkey.running.load()) {
     KBDLLHOOKSTRUCT* kb = (KBDLLHOOKSTRUCT*)lParam;
@@ -573,9 +567,8 @@ Command cmdVoice() {
     gVoiceQuit.store(false);
     SetConsoleCtrlHandler(voiceCtrlHandler, TRUE);
 
-    // 录音+识别工作线程: 按热键开始/停止录音, 流式识别 + 注入。
-    // hold: 按住→录, 松开→停; toggle: 按一次→切换录音状态。
-    // 不在主线程阻塞, 让钩子消息循环和 Ctrl+C handler 正常工作。
+// 录音+识别工作线程: 按热键开始/停止录音, 流式识别 + 注入。
+// hold: 按住→录, 松开→停; toggle: 按一次→切换录音状态。
     std::thread voiceThread([&]() {
       // 当前录音会话的采集对象 (start 创建, stop 释放)
       ISourcePlayer* player = nullptr;
@@ -627,10 +620,8 @@ Command cmdVoice() {
 
       // 停止一轮录音: 关采集 + stop 排空 flush 最终结果 + 注入
       auto stopRecording = [&]() {
-        // recording 延后到 destroySession(closeTap) 之后置 false: closeTap 内 AudioTap 会
-        // 排干队列尾部帧, 经 VoiceTapOb::onFrame(gate recording) 喂给 STT; 若先置 false,
-        // drain 的尾部帧会被 gate 丢弃 → 第二轮尾部不完整。closeTap 返回即 tap 线程已 join,
-        // 其后翻转 recording / 关 player 都不会再触发 onFrame。
+// recording 延后到 destroySession(closeTap) 之后置 false: closeTap 内 AudioTap 会
+// 排干队列尾部帧, 经 VoiceTapOb::onFrame(gate recording) 喂给 STT; 若先置 false,
         destroySession();
         voiceState.recording.store(false);
         // stop: stopTask 阻塞 join, RunTask 排空剩余帧 + flush 最终结果 + reset stream
@@ -684,10 +675,8 @@ Command cmdVoice() {
       }
     });
 
-    // 主线程: 排空显示队列 + 等退出信号。
-    // 所有控制台输出集中在此打印 (识别/录音线程只 push, 不直接 printf), 这样即便鼠标
-    // 点击/框选 conhost 阻塞了控制台输出, 也只可能让本显示线程短暂卡住, 识别与录音循环
-    // (在另外的线程) 完全不受影响, 不再出现"点一下终端就识别停摆、要 Ctrl+C"的问题。
+// 主线程: 排空显示队列 + 等退出信号。
+// 所有控制台输出集中在此打印 (识别/录音线程只 push, 不直接 printf), 这样即便鼠标
     while (!gVoiceQuit.load()) {
       std::deque<std::string> lines;
       {

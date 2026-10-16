@@ -15,8 +15,6 @@ bool shotWindow(const char* wndName, IImageBuffer* buffer, WindowShotInfo* info)
 
 // 按 wndName 子串(大小写不敏感)枚举所有匹配窗口的标题 (Windows 专用; 非Windows 返回空)。
 // 同样用局部 CaptureWindowsMgr + refreshDevices, 不影响全局设备表。
-// wndName 为空/null 时不过滤, 返回全部窗口标题 (供无筛选列举)。
-// 返回所有匹配窗口的标题; 同名多窗口都会返回, 不去重。
 std::vector<std::string> findWindows(const char* wndName);
 
 // 捕获设备条目 (窗口/显示器): title + 设备来源类别, 供 ops list 列出挑选。
@@ -28,7 +26,6 @@ struct WindowDeviceEntry {
 };
 // 枚举所有(或 wndName 子串匹配)捕获设备, 返回 title + VDeviceKind (Windows 专用; 非Windows 返回空)。
 // 同 findWindows 用局部 CaptureWindowsMgr + refreshDevices, 不影响全局设备表。
-// wndName 为空/null 时不过滤, 返回全部设备 (含显示器, 不限于窗口)。
 std::vector<WindowDeviceEntry> listWindowDevices(const char* wndName);
 
 // 激活(前置) wndName 匹配的第一个窗口 (Windows 专用; 非Windows 返回 false)。
@@ -39,8 +36,6 @@ bool activeWindow(const char* wndName);
 
 // 按原生句柄激活(前置)指定窗口 (Windows 专用; 非Windows 返回 false)。
 // hwnd 取自 WindowShotInfo::hwnd (shotWindow 实际出帧窗), 比 activeWindow(name)
-// 的"首个匹配"更精确 (UWP 内容窗/框架窗成对时区别明显)。实现同 activeWindow:
-// 最小化先恢复 + SetForegroundWindow 置顶 (Alt 按放绕前台锁)。无效句柄返回 false。
 bool activeWindowByHwnd(void* hwnd);
 
 // 截图指定显示器(桌面) → buffer, 并回填屏幕原点信息 (Windows 专用; 非Windows 返回 false)。

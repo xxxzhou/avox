@@ -13,8 +13,6 @@ namespace avox {
 // IRemoteSource 实现(avox_disc): 蓝光原盘(ISO 镜像/BDMV 目录)。
 // open=bd_open+标题枚举(本地元数据读, 快), list=标题+时长平列表(时长降序,
 // 最长在前标正片; 绝不列 BDMV/STREAM 文件树——分节 m2ts 不可读), resolve=
-// 写 disc.title 返回原链。DVD(VIDEO_TS)/AACS·BD+ 加密碟在 open 阶段明确报
-// 不支持。线程模型同 TorrentSource: 单发 RunTask, 结果纯值+结果锁。
 class DiscSource : public IRemoteSource, public RunTask {
  public:
   DiscSource();

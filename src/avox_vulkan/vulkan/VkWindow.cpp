@@ -273,9 +273,8 @@ void VkWindow::onTickWin() {
   // 提交缓冲区命令,执行完后发送信号给renderComplete
   submitInfo.commandBufferCount = 1;
   submitInfo.pCommandBuffers = &cmdBuffers[currentFrame];
-  // 等presentComplete收到信号后执行,执行完成后发送信号renderComplete
-  // 集显或是手机GPU，其vkComputeQueue/presentQueue可能是同一个
-  // 不同线程对同一队列vkQueueSubmit/vkQueuePresentKHR,需要同步
+// 等presentComplete收到信号后执行,执行完成后发送信号renderComplete
+// 集显或是手机GPU，其vkComputeQueue/presentQueue可能是同一个
   lockCommand();
   result =
       vkQueueSubmit(presentQueue, 1, &submitInfo, addCmdFences[currentFrame]);
@@ -382,11 +381,8 @@ void VkWindow::initVkSurface(ILinuxSurface* x11Surface)
 {
   VkResult ret = VK_SUCCESS;
   LOGFLF(LogLevel::info, "vk init surface");
-  // 重挂面(换片同播放器再来一个视频): 旧 surface 连同其 swapchain 必须先拆。
-  // swapchain 归属创建它的 surface, 把旧面上的 swapchain 当 oldSwapchain 传给
-  // 新面的 swapchain 是 VUID 违例 —— MoltenVK iOS 直接拒建, 而后方的
-  // vkGetSwapchainImagesKHR 不查 create 结果就对空句柄解引用必崩(10/3 真机
-  // 二挂 SIGSEGV 定谳)。swapchain 拆完旧面才可拆(销毁序要求)。
+// 重挂面(换片同播放器再来一个视频): 旧 surface 连同其 swapchain 必须先拆。
+// swapchain 归属创建它的 surface, 把旧面上的 swapchain 当 oldSwapchain 传给
   if (vkSurface != VK_NULL_HANDLE) {
     releaseSwapChain();
     vkDestroySurfaceKHR(vkInstance, vkSurface, nullptr);
@@ -494,7 +490,6 @@ void VkWindow::initVkSurface(ILinuxSurface* x11Surface)
 
 // 枚举 surface 格式并按直通意愿挑选: 直通优先 FP16 + EXTENDED_SRGB_LINEAR
 // (V0 实证: 窗口在 HDR 屏时本机 ICD 不开扩展即枚举可见, vk-hdr-lane.md);
-// 否则维持 8bit SDR 选择, 行为与历史一致
 void VkWindow::pickFormat() {
   uint32_t formatCount;
   AVOX_VULKAN_LOG(vkGetPhysicalDeviceSurfaceFormatsKHR(vkPhyDevice, vkSurface,
@@ -535,9 +530,6 @@ void VkWindow::pickFormat() {
 
 // forceHDR: 交换链切 FP16 + EXTENDED_SRGB_LINEAR(扩展线性, 1.0=SDR 白);
 // 格式不可得(SDR 屏/系统 HDR 关)恒 no-op 返回 false; 关向主动重建回落 8bit。
-// 方案②(§3.4.1): 本函数只做「选型可用性检查 + 挂意愿」, 不当场重建 swapchain ——
-// 重建涉及 renderPass/framebuffer/image view 全套, 与 onTickWin 的提交同属 GPU 资源,
-// 实翻统一放到 onTickWin 的显式临界区内(见 applyPendingHdr)
 bool VkWindow::setHdrPassthrough(bool bPassthrough) {
   if (!swapChain) {
     return false;
@@ -564,7 +556,6 @@ bool VkWindow::setHdrPassthrough(bool bPassthrough) {
 
 // 方案②实翻点: 由渲染线程在 onTickWin 内调用(vkGetFenceStatus 通过后、
 // vkAcquireNextImageKHR 之前), 重建 renderPass + swapchain 并提交 bHdrActive。
-// 与提交同护: 进出 lockCommand, 与 vkQueueSubmit/Present 串行
 void VkWindow::applyPendingHdr() {
   // 「意愿位」即重建目标: setHdrPassthrough 已按意愿探过格式, 不一致只可能是
   // 上一次被拒时还原过。此处以 bHdrPassthrough(意愿) 为目标重挑一次

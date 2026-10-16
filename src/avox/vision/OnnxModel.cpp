@@ -32,9 +32,8 @@ std::string onnxModelPath(OnnxModel m) {
       return getModelFilePath("translation/opus-mt-ja-zh") + "/decoder_model.onnx";
     case OnnxModel::QualitySpanX4:
 #ifdef __APPLE__
-      // CoreML 拒收 DML 改写版的 rank-6 中间张量(Reshape+Transpose 模拟
-      // DepthToSpace), mac 走未改写原版 + 按源钉维; 原版未下载则退回改写版
-      // (CoreML 拒收落 CPU, 慢速但正确)。
+// CoreML 拒收 DML 改写版的 rank-6 中间张量(Reshape+Transpose 模拟
+// DepthToSpace), mac 走未改写原版 + 按源钉维; 原版未下载则退回改写版
       if (std::filesystem::exists(getModelFilePath("quality/span-x4-coreml.onnx"))) {
         return getModelFilePath("quality/span-x4-coreml.onnx");
       }

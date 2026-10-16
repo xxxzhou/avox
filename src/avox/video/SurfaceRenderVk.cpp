@@ -472,9 +472,8 @@ void SurfaceRenderVk::onRenderOut() {
   if (getCpuFrameBuffer(&buf, yuvType)) {
     dispatch(&ISurfaceRenderOb::onFrame, buf, yuvType);
   }
-  // image 分支(G-frames 方案①): enableImage 直投用户缓冲无 observer, 补派发
-  // 让上层 per-frame 计数可见(enhancetest frames=0 根因); 建图期 dummy 帧
-  // 会 +1(千分位噪声, 已文档化)。yuv 模式 imageOutUser 为空不重复派发
+// image 分支(G-frames 方案①): enableImage 直投用户缓冲无 observer, 补派发
+// 让上层 per-frame 计数可见(enhancetest frames=0 根因); 建图期 dummy 帧
   else if (imageOutUser) {
     dispatch(&ISurfaceRenderOb::onFrame, imageOutUser, YuvType::other);
   }

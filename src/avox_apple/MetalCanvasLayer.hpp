@@ -12,8 +12,6 @@ namespace avox {
 // Metal 字幕画布层(字幕画布多后端渲染计划 §5.2): 数据面在 CanvasState(多后端
 // 共享), 本层做 MTLTexture 上传(replaceRegion 整画布, 内容变化时)。混合由
 // MetalRender 的第二 draw 完成(OM blend one/oneMinusSourceAlpha, premultiplied
-// source-over), 无内容整跳(零字幕零影响)。画布恒 rgba8 SDR gamma 域, f16 直通
-// 域的线性化在 shader 内做(linearScale), 域翻转无需重传内容。
 class MetalCanvasLayer : public ICanvasLayer {
  public:
   // ICanvasLayer(数据面全委托 CanvasState)

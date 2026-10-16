@@ -32,9 +32,8 @@ namespace avox {
 
 class TeamJournal {
  public:
-  // lead: Lead agent (借用, 生命周期由 AgentHost 覆盖本对象)。
-  // writer: Lead 会话的落盘观察者 (借用, 同上)。
-  // activity: 变更等待原语 (借用, 由 TeamService 持有)。
+// lead: Lead agent (借用, 生命周期由 AgentHost 覆盖本对象)。
+// writer: Lead 会话的落盘观察者 (借用, 同上)。
   TeamJournal(Agent& lead, SessionWriter& writer, TeamActivity& activity);
 
   // 串行执行一段队伍变更。fn 内可用 state() / appendAndFlush()。
@@ -48,9 +47,8 @@ class TeamJournal {
   // 在事务外读队伍状态用这个; fn 内不得调用任何写方法。
   void readState(const std::function<void(const TeamFoldState&)>& fn) const;
 
-  // 在 Lead 日志追加一条 team/* 事件并持久化: append (Lead 会话临界区) ->
-  // 增量折叠 -> writer flush -> 唤醒 waiter。**仅事务内调用**。
-  // 折叠抛异常即程序错误 (本层只产出满足不变式的事件), 原样传播。
+// 在 Lead 日志追加一条 team/* 事件并持久化: append (Lead 会话临界区) ->
+// 增量折叠 -> writer flush -> 唤醒 waiter。**仅事务内调用**。
   void appendAndFlush(const EventData& data);
 
   // 从 Lead 日志整份重折叠 (resume / fork 前缀消化后调用)。事务内执行。

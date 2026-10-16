@@ -87,9 +87,8 @@ bool composeDiagnosticAgent(ComposedAgent& out, const std::string& agentJson,
       }
     }
 
-    // 同厂商免费聊天模型池: 固定模型 (如 glm-4.7-flash) 被 429 限流时自动同厂商轮换。
-    // 前提是当前厂商在 providers.json 里至少配了 2 个免费聊天模型 (且配置的模型本身免费,
-    // 付费模型不进池, 保持单模型直连)。候选顺序保证配置的模型优先, 正常请求先用它。
+// 同厂商免费聊天模型池: 固定模型 (如 glm-4.7-flash) 被 429 限流时自动同厂商轮换。
+// 前提是当前厂商在 providers.json 里至少配了 2 个免费聊天模型 (且配置的模型本身免费,
     if (out.pool == nullptr && !out.deployment.agent.provider.empty()) {
       std::string providerJson = agentJson;
       const auto providersRawForPool = AssetLoader::loadToMemory("config/providers.json");
@@ -142,9 +141,8 @@ bool composeDiagnosticAgent(ComposedAgent& out, const std::string& agentJson,
     out.host->setLlmProvider(out.llm.get());
     if (out.pool != nullptr) out.host->setModelPool(out.pool.get());
 
-    // 顺序依赖 1b: skill 发现必须在任何 builtinSkillRegistry() 访问之前注入 customSkillDirs
-    // (首次访问即冻结, 之后再调 prepareBuiltinSkillRegistry() 是 no-op)。
-    // 下面 registerBuiltinTools / builtinSkillRegistry().systemPrompt() 会触发首次访问, 现在注入即可。
+// 顺序依赖 1b: skill 发现必须在任何 builtinSkillRegistry() 访问之前注入 customSkillDirs
+// (首次访问即冻结, 之后再调 prepareBuiltinSkillRegistry() 是 no-op)。
     prepareBuiltinSkillRegistry(out.deployment.agent.customSkillDirs);
 
     // 会话主模型是否支持图片输入 (ProviderCatalog 的 imageInput): 决定 read_image
@@ -176,9 +174,8 @@ bool composeDiagnosticAgent(ComposedAgent& out, const std::string& agentJson,
         "avox:skills", PROMPT_ORDER_TOOL_GUIDANCE,
         builtinSkillRegistry().systemPrompt()));
 
-    // 视觉工具路由提示: 仅多模态主模型下注册。主模型能自己看图, read_image 是默认;
-    // see-image 系列留给 OCR/对比/locate/像素差/抠图/生图等 read_image 不擅长的任务。
-    // 纯文本主模型下不注册本段 (此时 read_image 不可用, see-image 的 description 已自描述)。
+// 视觉工具路由提示: 仅多模态主模型下注册。主模型能自己看图, read_image 是默认;
+// see-image 系列留给 OCR/对比/locate/像素差/抠图/生图等 read_image 不擅长的任务。
     if (conversationHasImageInput) {
       const std::string visionRouting =
           "## 视觉任务路由\n"

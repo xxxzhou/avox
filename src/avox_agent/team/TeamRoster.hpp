@@ -88,9 +88,8 @@ class TeamRoster {
   // 成员当前活驱动; 不在存活表返回 nullptr (Inactive)。
   ReactLoopAgent* findLive(const SessionId& memberId) const;
 
-  // 确保一个 active 成员已冷恢复 (wakeup 投递 / 恢复期补投路径)。
-  // 已活返回其驱动; 子日志缺失或校验不符抛 std::runtime_error (调用方决定语义:
-  // 恢复期 -> failed, 投递期 -> 发送方可见的失败)。
+// 确保一个 active 成员已冷恢复 (wakeup 投递 / 恢复期补投路径)。
+// 已活返回其驱动; 子日志缺失或校验不符抛 std::runtime_error (调用方决定语义:
   ReactLoopAgent& ensureLive(const TeamMemberSnapshot& member);
 
   // 中断成员的当前活动 (dsh interrupt: keepInbox —— 已排队工作保留)。
@@ -102,9 +101,8 @@ class TeamRoster {
 
   // ---- 恢复期 ----
 
-  // 折叠状态里仍 provisioning 的成员逐个冷裁定: 子日志齐备 -> active, 否则 failed。
-  // **在 journal.transact 内调用** (TeamService 恢复流程); 只裁定不起动 ——
-  // 恢复的成员保持 Inactive, 首条 wakeup 消息到达才 ensureLive (dsh 惰性)。
+// 折叠状态里仍 provisioning 的成员逐个冷裁定: 子日志齐备 -> active, 否则 failed。
+// **在 journal.transact 内调用** (TeamService 恢复流程); 只裁定不起动 ——
   void reconcileProvisioning(TeamJournal& journal);
 
   // ---- 销毁 ----
@@ -127,9 +125,8 @@ class TeamRoster {
   // 失败抛 std::runtime_error。不投递任何输入。
   std::unique_ptr<TeamLiveMember> resumeFromDisk(const TeamMemberSnapshot& member);
 
-  // spawn 段 2 的实现: 建子会话 (含 fork 种子/审批钉/描述符) + 驱动 + 落盘发布 +
-  // followup 初始提示 + 等 checkpoint。返回未入注册表的活成员 (注册由 spawn 在
-  // settle 前完成); 任何失败抛异常且不留活驱动。
+// spawn 段 2 的实现: 建子会话 (含 fork 种子/审批钉/描述符) + 驱动 + 落盘发布 +
+// followup 初始提示 + 等 checkpoint。返回未入注册表的活成员 (注册由 spawn 在
   std::unique_ptr<TeamLiveMember> startContinuable(
       const TeamMemberSnapshot& snapshot, const SpawnTeammateRequest& request);
 

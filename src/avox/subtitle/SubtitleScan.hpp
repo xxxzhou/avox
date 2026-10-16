@@ -17,8 +17,6 @@ struct SubtitleCandidateInfo {
 
 // 同目录「同主名」字幕候选枚举(a01-T5): 主名 = 视频路径去扩展名; 候选 = 同目录
 // 「去扩展名后等于主名, 或以 主名+分隔符(.-_) 开头」且扩展名 .srt/.ass/.ssa 的
-// 文件。排序: 完全同名 > 带标记段, srt > ass, 同级按路径。非本地路径(带 ://)
-// 或目录不可读返回空。纯文件系统查询: 不打开字幕内容, 加载仍走 loadSubtitle
 int32_t listSubtitleCandidates(const std::string& videoUrl,
                                std::vector<SubtitleCandidateInfo>* out);
 

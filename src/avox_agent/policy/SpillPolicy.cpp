@@ -15,9 +15,7 @@ namespace avox {
 namespace {
 
 // 把偏移调整到 UTF-8 字符边界上 (向前退到非 continuation byte)。
-//
 // 不做这一步的话, 头尾预览会在多字节字符中间切断, 产出一个模型看到的乱码字节 ——
-// 而中文日志里这几乎必然发生。
 size_t alignBackward(const std::string& text, size_t offset) {
   while (offset > 0 && (static_cast<unsigned char>(text[offset]) & 0xC0) == 0x80) {
     --offset;

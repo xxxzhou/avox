@@ -299,9 +299,8 @@ void MediaPlayer::onReady() {
   const auto& aTracks = ioSource->getAudioTracks();
   ioDuration = ioSource->duration();
   LOGFLF(LogLevel::info, "io duration:", ioDuration);
-  // 挂载音视频轨: 音频只挂当前选中轨(selAudioTrack, 默认0), 其余轨不挂不解码
-  // 不出声(全量挂载+start会让多音轨同时出声), 上层经 getSourceInfo 枚举全轨后
-  // setAudioTrack 切换。轨位上限防越界(多码率HLS每变体各挂一套)
+// 挂载音视频轨: 音频只挂当前选中轨(selAudioTrack, 默认0), 其余轨不挂不解码
+// 不出声(全量挂载+start会让多音轨同时出声), 上层经 getSourceInfo 枚举全轨后
   if (aTracks.size() > audioTracks.size() || vTracks.size() > videoTracks.size()) {
     LOGFLF(LogLevel::warn, "source tracks exceed player max track, drop extra: audio ",
            aTracks.size(), " video ", vTracks.size());
@@ -371,7 +370,6 @@ void MediaPlayer::onError(AVError error, const char* msg) {
 
 // 这里面IO线程会用到audioTracks/videoTracks
 // 因为，需要先关闭IO线程，等IO线程关闭，此回调不在用，再关闭track
-// 还有会调用RingBuffer的enqueueWait,可能会阻塞
 void MediaPlayer::onPacket(const AvoxPacket& packet) {
   // packet.index在之前已经从全局av转化为对应a/v里的index
   int32_t index = packet.index;
@@ -427,20 +425,13 @@ void MediaPlayer::onPacket(const AvoxPacket& packet) {
       return;
     }
   }
-  // 录制优先: 录制拿完整原始流, 不受播放倍速丢帧影响 — 否则 >4x
-  // 录制只有I帧无音频 丢帧是播放策略, 不影响录制(录制内容随demux走,
-  // 倍速下超前画面属预期)
+// 录制优先: 录制拿完整原始流, 不受播放倍速丢帧影响 — 否则 >4x
+// 录制只有I帧无音频 丢帧是播放策略, 不影响录制(录制内容随demux走,
   if (mediaMuxer->getState() == RecorderState::recording) {
     mediaMuxer->pushPacket(packet);
   }
-  // 4倍以上只处理I帧: 丢弃视频P/B帧,只留I帧(配置帧照常),恰好4倍仍全量处理
-  // 音频数据包直接丢弃: >4x音频不渲染(ARenderTask静音分支), 不喂AudioTrack队列,
-  // 让音频彻底退出demux背压链 —
-  // 否则音频管线消费慢→包队列(100)堆满→enqueueWait阻塞
-  // 整个demux→视频I帧饿死(画面慢), 或消费过快→demux狂读(进度条闪).
-  // 丢弃后demux只被 视频I帧管线按speed倍速自节流, 无需音频侧任何节流调参.
-  // aconfig照常放行, 降回4x可恢复。判据是 bIFrameOnlyActive(选项+倍速合成的原子真值),
-  // 音频解码线程用同一个判据免超时判定, 见 MediaPlayer.hpp
+// 4倍以上只处理I帧: 丢弃视频P/B帧,只留I帧(配置帧照常),恰好4倍仍全量处理
+// 音频数据包直接丢弃: >4x音频不渲染(ARenderTask静音分支), 不喂AudioTrack队列,
   if (bIFrameOnlyActive.load()) {
     PackType ptype = (PackType)packet.packtype;
     if (ptype == PackType::video && packet.frameType == 0) {
@@ -509,9 +500,8 @@ void MediaPlayer::onPacket(const AvoxPacket& packet) {
 }
 
 void MediaPlayer::onPgsFrame(const AssCanvas& canvas) {
-  // PGS 解码在 IO 线程, 画布内存归源所有: 拷贝进视图(线程安全)。
-  // 不设 trackOpened 门槛: 选轨命令与首包赛跑时(libass 通道未建), 帧仍须
-  // 进视图缓冲(渲染按 pts 取用), 否则 PGS 全链在"选轨晚于首包"时永黑。
+// PGS 解码在 IO 线程, 画布内存归源所有: 拷贝进视图(线程安全)。
+// 不设 trackOpened 门槛: 选轨命令与首包赛跑时(libass 通道未建), 帧仍须
   if (!subtitleView) {
     return;
   }
@@ -690,9 +680,8 @@ void MediaPlayer::cmdSetAudioTrack(int32_t index) {
   }
   mountAudioTrack(index);
   LOGFLF(LogLevel::info, "audio track switched to:", index);
-  // 切轨时间轴重对: 未选中轨的包在播放期被丢弃(onPacket 门控), 新轨只能从解复用
-  // 读位(领先播放位约一个缓冲深度)起收 ⇒ 音频前跳数秒、音画错位且音频钟拽跳主时钟。
-  // 与倍速撤 I 帧门闸同法: 可 seek 源重定位到渲染位置, 两轨从同一起点重读。
+// 切轨时间轴重对: 未选中轨的包在播放期被丢弃(onPacket 门控), 新轨只能从解复用
+// 读位(领先播放位约一个缓冲深度)起收 ⇒ 音频前跳数秒、音画错位且音频钟拽跳主时钟。
   if (normalState() && renderTime > 0 && ioSource &&
       ioSource->seekType() != SeekType::none) {
     LOGFLF(LogLevel::info, "audio switch re-position to render time:", renderTime);
@@ -932,7 +921,6 @@ void MediaPlayer::close() {
 
 // 退出收尾(TaskTrack::stop 派发, AvoxManager::clean 静态析构前调):
 // close 先清队列丢掉排队的慢命令(慢源 cmdOpen 等), stopTask 的 join
-// 等线程退循环后的尾部 cmdClose 收完
 void MediaPlayer::stop() {
   close();
   stopTask();
@@ -1394,10 +1382,8 @@ void MediaPlayer::compateIoTime() {
     } else {
       ioPrecent = 0.0;
     }
-    // seek 后 updateSeekTime 把时钟乐观置为目标, 首个渲染帧才拉到真实落点(向后
-    // seek 落点<目标)
-    // 所以"追平"必须是见过落点回落(renderTime<seekPts)之后又爬回来;
-    // 否则乐观时钟=目标值会提前解除 bSeeking
+// seek 后 updateSeekTime 把时钟乐观置为目标, 首个渲染帧才拉到真实落点(向后
+// seek 落点<目标)
     if (bSeeking) {
       if (renderTime < seekPts) {
         bSeekSeenLanding = true;
@@ -1451,10 +1437,8 @@ void MediaPlayer::collectStatus() {
   if (cspeed > 4.0) {
     return;
   }
-  // tempo 变速播放: 音频解码轴按 speed×墙钟领先视频轴是结构性的,
-  // ioDiff/renderDiff 阈值判据会把"队列深度差"误判成"不对齐"而误关同步
-  // (关同步后滞后的视频时钟接管播放进度, 2x 长播实证 pos 塌方)。
-  // 对齐由视频 computeDelay 跟音频主时钟保证, 这里跳过看门狗。
+// tempo 变速播放: 音频解码轴按 speed×墙钟领先视频轴是结构性的,
+// ioDiff/renderDiff 阈值判据会把"队列深度差"误判成"不对齐"而误关同步
   if (bTempoPlayback.load()) {
     bAVAlign = true;
     return;
@@ -1598,10 +1582,8 @@ void MediaPlayer::cmdOpen(OpenCommandPtr cmd) {
   if (useIO == IoPlan::torrent && !bufferingTimeoutUserSet) {
     bufferChecker.setDelay(30000);
   }
-  // http/https 直链: 服务端对连发请求有秒级~十几秒的惩罚窗(连接被掐后
-  // 重试骑窗+通道重建要 10s+), 10s 看门狗在窗中途就 close player——表现
-  // 即 seek 后黑屏几秒播放被整个关闭(0926 夜极空间实测); 业务未显式
-  // 设置时同样放宽
+// http/https 直链: 服务端对连发请求有秒级~十几秒的惩罚窗(连接被掐后
+// 重试骑窗+通道重建要 10s+), 10s 看门狗在窗中途就 close player——表现
   if ((url.rfind("http://", 0) == 0 || url.rfind("https://", 0) == 0) &&
       useIO == IoPlan::ffmpeg && !bufferingTimeoutUserSet) {
     bufferChecker.setDelay(20000);
@@ -1627,11 +1609,8 @@ void MediaPlayer::cmdOpen(OpenCommandPtr cmd) {
   // 查找注册并调用初始化方法生成IoParse
   const auto& ioclass = AvoxManager::Get().ioSources.initFunc(useIO);
   ioSource = std::unique_ptr<AVSource>(ioclass.initFunc());
-  // 测试
-  // const auto &ioclass1 =
-  // AvoxManager::Get().ioSources.initFunc(IoPlan::ffmpeg); ioTest =
-  // std::unique_ptr<AVSource>(ioclass1.initFunc());
-  // ioTest->open(url.c_str());
+// 测试
+// const auto &ioclass1 =
   if (!ioSource) {
     pb.action = MediaAction::create;
     string_format(pb.msg, "create ioparse failed:", getIoPlanStr(useIO));
@@ -1919,9 +1898,8 @@ void MediaPlayer::cmdBuffering() {
 void MediaPlayer::cmdSpeed(SpeedCommandPtr cmd) {
   bool wasIFrameOnly = bIFrameOnlyActive.load();
   cspeed = cmd->getData();
-  // tempo 插件在位且非 1x: 闩锁 tempo 播放态(create 兼带触发插件懒加载)。
-  // 回 1x 不复位: 0.5x/2x 期积累的 A/V 解码轴发散要等队列排空才收敛,
-  // 期间 ioDiff 看门狗仍会误触发; 闩锁随 close/open 复位。
+// tempo 插件在位且非 1x: 闩锁 tempo 播放态(create 兼带触发插件懒加载)。
+// 回 1x 不复位: 0.5x/2x 期积累的 A/V 解码轴发散要等队列排空才收敛,
   if (cspeed != 1.0) {
     IAudioTempo* tempoProbe =
         AvoxManager::Get().audioTempoHub.create("soundtouch");
@@ -1931,24 +1909,19 @@ void MediaPlayer::cmdSpeed(SpeedCommandPtr cmd) {
   setSpeed(cspeed);
   // 倍速变了,重算 >4x 只I帧的生效真值(onPacket 与音频解码线程共用)
   updateIFrameOnly();
-  // 速度超过4倍,如果是网络源音频可能是让视频I帧发一次
-  // 而视频只有I帧,如果8倍,2秒I帧间隔,平均250ms来一个帧
-  // 原来4倍前的同步逻辑失效,4倍后播放音频也无意义
+// 速度超过4倍,如果是网络源音频可能是让视频I帧发一次
+// 而视频只有I帧,如果8倍,2秒I帧间隔,平均250ms来一个帧
   closeSync(cspeed > 4);
-  // 从>4x降到<=4x(仅播放中): >4x时音频包被丢弃+demux超前读, 音频恢复位置(超前)
-  // 与视频渲染位置错位, 进度条跟音频时钟会前后跳。可seek的源(本地/网络VOD)
-  // 重定位到渲染位置重新对齐。可seek性以各源seekType()为准(与cmdSeek同一判据,
-  // 不依赖sourceMode: ffmpeg按AVIO seekable, zlmediakit按cduration>0)
+// 从>4x降到<=4x(仅播放中): >4x时音频包被丢弃+demux超前读, 音频恢复位置(超前)
+// 与视频渲染位置错位, 进度条跟音频时钟会前后跳。可seek的源(本地/网络VOD)
   if (state == PlayerState::playing && wasIFrameOnly && cspeed <= 4 &&
       renderTime > 0 && ioSource && ioSource->seekType() != SeekType::none) {
     log(LogLevel::info, "speed down from >4x, re-position to render time:",
         renderTime);
     seek(renderTime);
   }
-  // 升速从<=4x跨入>4x(仅播放中): 全量模式已在包队列积压几十秒P/B旧包,
-  // I帧门闸(onPacket)只拦新包, 旧包要解码排干(秒级~几十秒)才进I帧模式。
-  // 可seek源重定位到渲染位置: flush冲掉旧包, demux重起步的包全过已置位
-  // 门闸, 立即以纯I帧运行。已在>4x内调速(如8x→6x)无积压不触发
+// 升速从<=4x跨入>4x(仅播放中): 全量模式已在包队列积压几十秒P/B旧包,
+// I帧门闸(onPacket)只拦新包, 旧包要解码排干(秒级~几十秒)才进I帧模式。
   if (state == PlayerState::playing && !wasIFrameOnly && cspeed > 4 &&
       renderTime > 0 && ioSource && ioSource->seekType() != SeekType::none) {
     log(LogLevel::info, "speed up to >4x, re-position to render time:",
@@ -1960,11 +1933,8 @@ void MediaPlayer::cmdSpeed(SpeedCommandPtr cmd) {
 }
 
 void MediaPlayer::cmdOption(OptionCommandPtr cmd) {
-  // 给挂载的OptionOb对象通知变化
-  // OptionData& data = cmd->getData();
-  // MPOP::dispatch(&IOptionOb::onOptionChange, data.key.c_str(), data.option);
-  // 响度均衡开关下发到在播音轨(track 生死都在播放器线程, 故走命令线程);
-  // getAudioRender 是接口指针, 具体对象恒为 AudioRender 派生(平台 AudioOutput)
+// 给挂载的OptionOb对象通知变化
+// OptionData& data = cmd->getData();
   for (const auto& track : audioTracks) {
     if (!track) {
       continue;

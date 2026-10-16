@@ -20,7 +20,6 @@ namespace avox {
 // 有长连接信令通道 → 客户端适合作为 Answer 方（被动等待）
 // 没有长连接信令通道 → 客户端适合作为 Offer 方（主动请求）
 // Answer/Offer,其SetLocalDescription/SetRemoteDescription顺序不同
-// 轨道方向语义: 发送=设置了对应源且方向允许发; 接收=方向允许收(实际以协商结果为准)
 class RtcParse : public RawSource,
                  public webrtc::PeerConnectionObserver,
                  public webrtc::RtpReceiverObserverInterface,

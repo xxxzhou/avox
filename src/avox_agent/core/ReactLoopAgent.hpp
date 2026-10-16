@@ -138,10 +138,8 @@ class ReactLoopAgent : public Agent {
 
   void driverMain();
   void kick(std::shared_ptr<AbortController> controller);
-  // 返回是否还要开下一个 turn。
-  //
-  // controller 按引用传: turn 正常结束而队列仍有工作时, 这里会**换一个新的取消令牌** ——
-  // 于是挂在旧令牌上的 latch 自然失效 (活驱动自己会 claim 队列)。
+// 返回是否还要开下一个 turn。
+// controller 按引用传: turn 正常结束而队列仍有工作时, 这里会**换一个新的取消令牌** ——
   bool runTurn(std::shared_ptr<AbortController>& controller);
   PreparedStep preStep(InboxTarget target, int turn, int step,
                        const std::shared_ptr<AbortSignal>& signal);
@@ -155,10 +153,8 @@ class ReactLoopAgent : public Agent {
                                     int turn, int step,
                                     const std::shared_ptr<AbortSignal>& signal);
 
-  // 为一个未派发的模型调用补写合成的 call/result 对。
-  //
-  // 目的纯粹是让回放保持合法: 每个 tool_call 必须有对应的 result, 否则下一次请求的消息
-  // 序列在后端侧就是非法的 (续发直接 400)。
+// 为一个未派发的模型调用补写合成的 call/result 对。
+// 目的纯粹是让回放保持合法: 每个 tool_call 必须有对应的 result, 否则下一次请求的消息
   void appendSkippedToolCall(const ToolCallBlock& call, int turn, int step);
 
   void reportError(int turn, int step, const std::string& message);

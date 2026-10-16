@@ -146,9 +146,8 @@ bool IOParseDav::ensureClient() {
   if (!p.user.empty()) {
     client->set_basic_auth(p.user.c_str(), p.pass.c_str());
   }
-  // 私网源经隧道(io.http.proxy, per-open): WebDAV 直链也走本地网关口, URL
-  // 字面不变(重写成 127.0.0.1 会毁 SNI 与 Host); https 目标由 httplib 自动
-  // 升 CONNECT 隧道。只对私网目标注入(网关 ACL 拒公网 → 403)
+// 私网源经隧道(io.http.proxy, per-open): WebDAV 直链也走本地网关口, URL
+// 字面不变(重写成 127.0.0.1 会毁 SNI 与 Host); https 目标由 httplib 自动
   if (!httpProxy.empty()) {
     std::string proxyHost;
     int32_t proxyPort = 0;
@@ -219,10 +218,8 @@ bool IOParseDav::refillWindow() {
   const uint64_t start = (uint64_t)ioPosition;
   const uint64_t end =
       fileSize > 0 ? std::min(start + win, fileSize) - 1 : start + win - 1;
-  // 断链自愈 (a05-T3): 首拉失败按状态分类 —— 401/403/404/410 直链级失效走
-  // 断链桥 refresh 换新直链立即重试; 断流/5xx 瞬时类退避重试同直链。
-  // ioPosition 在拉取失败时不前移, 恢复后从断点字节续读, PTS 无跳变;
-  // 全部尝试耗尽才 false(avio EIO → 既有终错路径)
+// 断链自愈 (a05-T3): 首拉失败按状态分类 —— 401/403/404/410 直链级失效走
+// 断链桥 refresh 换新直链立即重试; 断流/5xx 瞬时类退避重试同直链。
   for (int attempt = 0; attempt <= kRecoverRetries; ++attempt) {
     std::vector<uint8_t> data;
     const int status = fetchRange(start, end, &data);
@@ -249,9 +246,8 @@ bool IOParseDav::refillWindow() {
         client.reset();  // 新直链(换签名/凭据), 下次 ensureClient 按新 URL 重建
         continue;        // 立即重试, 不退避
       }
-      // refresh 失败且会话已置鉴权过期态 (a05 §1): onAuthExpired 已由会话抛出,
-      // 有界等待产品 reauthorize (轮询过期态清除, 不发请求不打服务器), 落地后
-      // 断链桥以新凭据换链续播; 超时/无桥(裸 URL 播放)按断流终错
+// refresh 失败且会话已置鉴权过期态 (a05 §1): onAuthExpired 已由会话抛出,
+// 有界等待产品 reauthorize (轮询过期态清除, 不发请求不打服务器), 落地后
       if (waitForReauth() && bridgeRefresh()) {
         client.reset();
         continue;
@@ -617,9 +613,8 @@ void IOParseDav::onRunTask() {
       continue;
     }
     if (bEof.load()) {
-      // EOF 停放: 不 break。小文件起播即读完, 尾包可能还有几十秒数据没被
-      // 消费, 且之后很可能 seek —— 线程一退, seek 只挪了 demuxer 位置却
-      // 无人再读, 管道从此静止。等 seekTo 复位(bEofReset)或 close
+// EOF 停放: 不 break。小文件起播即读完, 尾包可能还有几十秒数据没被
+// 消费, 且之后很可能 seek —— 线程一退, seek 只挪了 demuxer 位置却
       if (bEofReset.exchange(false)) {
         bEof.store(false);
         continue;
@@ -813,11 +808,8 @@ double IOParseDav::progress() const {
 }
 
 void IOParseDav::onOptionChange(const char* key, ArgType type) {
-  // 插件本地键: 预读窗口字节数(播放中调整下一窗生效; linkOption 建链时还会
-  // 重放既有键, open 前设置的值在这里收到)。经 option 成员上转 IOption* 取值
-  // (getLink 未导出, 见 onOpen 同注)。
-  // ⚠ 只准在变更回调里取键值, 不准对可能不存在的键主动 getString ——
-  // 本仓 JsonOption 对缺失键的读取行为未定义, 已实测进程硬死(exit 127)
+// 插件本地键: 预读窗口字节数(播放中调整下一窗生效; linkOption 建链时还会
+// 重放既有键, open 前设置的值在这里收到)。经 option 成员上转 IOption* 取值
   if (std::strcmp(key, "remote.dav.lookahead") == 0) {
     if (option != nullptr) {
       IOption* io = option;

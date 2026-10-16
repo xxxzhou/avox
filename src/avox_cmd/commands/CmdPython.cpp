@@ -43,10 +43,8 @@ Command cmdPython() {
     }
     std::string out;
     if (!code.empty()) {
-      // -e 后的代码可能被 tokenizeLine 按空格切碎成多个 positional,
-      // 把它们用空格拼回, 还原用户输入的完整内联代码。
-      // 例: python -e print('hello')  → code="print('hello", pos=["from","embedded","python')"]
-      //     拼回 → "print('hello from embedded python')"
+// -e 后的代码可能被 tokenizeLine 按空格切碎成多个 positional,
+// 把它们用空格拼回, 还原用户输入的完整内联代码。
       if (!pos.empty()) {
         for (const auto& p : pos) {
           code += " ";

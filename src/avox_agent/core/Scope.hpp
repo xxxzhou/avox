@@ -109,12 +109,8 @@ class ScopedRegistration {
 // ---------------------------------------------------------------------------
 
 // 具名条目表: 一个名字在一层里只能有一个主人。
-//
 // 用 vector 而非 map: 需要保持插入序 (装配顺序对提示词与工具 schema 的字节稳定性有意义),
 // 而一层里的条目数是几十级, 线性查找不构成成本。
-//
-// 注意: 不要在遍历回调里撤销注册 —— 那会让正在使用的迭代器失效。dsh 那边靠「表清空时
-// 换代」规避, C++ 这里选择由调用方遵守约定, 因为遍历中撤销本身就是可疑的写法。
 template <class V>
 class NamedEntries {
  public:
@@ -228,10 +224,8 @@ class ScopedLayers {
   L& global() { return globalLayer; }
   const L& global() const { return globalLayer; }
 
-  // 指定作用域**自己**的层; 不存在返回 nullptr。
-  //
-  // 故意 chain-blind: 当调用方要的是「这个作用域自己的贡献」(它自己的限制、它自己的
-  // 守卫) 时, 绝不能悄悄捡到祖先的。
+// 指定作用域**自己**的层; 不存在返回 nullptr。
+// 故意 chain-blind: 当调用方要的是「这个作用域自己的贡献」(它自己的限制、它自己的
   const L* peek(ScopeKey scope) const {
     if (scope == nullptr) return nullptr;
     const auto it = scoped.find(scope);
@@ -286,12 +280,8 @@ class ScopedLayers {
     return collected;
   }
 
-  // 把一次层变更绑定到它的撤销器上。
-  //
-  // action 接收目标层并返回它自己的 undo。撤销时执行 undo, 若该层随之变空则回收整层
-  // (免得一个早已消失的 agent 在表里留下空壳), 然后通知。
-  //
-  // action 抛出时: 若本次调用刚创建了这一层且它仍是空的, 一并回收, 于是失败不留残迹。
+// 把一次层变更绑定到它的撤销器上。
+// action 接收目标层并返回它自己的 undo。撤销时执行 undo, 若该层随之变空则回收整层
   Disposer effect(ScopeKey scope, const std::function<Disposer(L&)>& action,
                   bool notify = true) {
     L* layer = nullptr;

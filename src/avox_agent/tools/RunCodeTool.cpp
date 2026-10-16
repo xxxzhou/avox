@@ -53,10 +53,8 @@ ToolResult executeRunCode(const ToolExecution& exec) {
     output = runner->runCode(code.c_str(), input.c_str());
   }
 
-  // 子进程的失败约定: 输出以 "FAIL:" 开头。
-  //
-  // 这个字符串前缀判定留在**这一层**是对的 —— 它是与 python runner 之间的约定, 属于工具
-  // 内部实现。它不再泄漏到框架: 框架看的是本函数返回的 outcome。
+// 子进程的失败约定: 输出以 "FAIL:" 开头。
+// 这个字符串前缀判定留在**这一层**是对的 —— 它是与 python runner 之间的约定, 属于工具
   if (output.rfind("FAIL:", 0) == 0) {
     ToolResult result;
     result.outcome = ToolOutcome::Fatal;

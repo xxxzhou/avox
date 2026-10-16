@@ -69,7 +69,6 @@ enum class TranslatorType { none, http, onnx };
 // ============== Python 执行器接口 ==============
 // (跨 DLL 安全: 仅 const char* + 原始类型, 不传 STL)
 // 实现: SubprocessRunner (spawn 机器 python, 不嵌入 CPython, 不绑定版本; 编进 avox.dll 核心)
-// 返回指针指向内部静态缓冲, 下次调用失效 (同 cmdExecuteLine 约定)
 class IPyRunner {
  public:
   virtual ~IPyRunner() = default;
@@ -124,12 +123,6 @@ class IOption {
 // ============== 远程内容源统一接口 ==============
 // 只读抽象, 统一"入口→目录树→选内容→播放"形态: 磁力/.torrent/WebDAV/SMB/Alist/
 // 网盘/媒体服务器(Emby等)各实现一个。流程: open(入口)建会话 → list(token)异步列
-// 子项(目录token继续下钻) → resolve(条目)产出可直接 IMediaPlayer::open 的规范 URL,
-// 播放走现有协议路由, 播放核心零特判。list/search/listMore 共用同一结果批次。
-// 跨 DLL 安全: 仅 const char* + 原始类型, 不传 STL (同 ITranslator 约束)。
-// 实现: avox_torrent 插件 ("torrent"); 后续 avox_remote ("dav"/"smb"/"alist"/...);
-// 未装对应插件时 createRemoteSource 返回 nullptr。
-// 结果码 (onOpenResult/onListResult 的 code 参数; 0 成功, 负数失败, 同 AVError 风格)
 enum class RemoteCode : int32_t {
   ok = 0,
   canceled = -1,    // 被 stopList/close 打断
@@ -237,11 +230,8 @@ class IRemoteSource {
   virtual const char* getSessionField(const char* key) { (void)key; return ""; }
 
  public:
-  // ---- 选择播放 (统一出口; 本接口只读, 不含任何写操作) ----
-  // 把条目解析为可直接 IMediaPlayer::open 的规范 avox URL 并返回 (如 https 直链/
-  // smb://.../磁力原链), 同时把偏好写入 option (协议自读自键, 磁力即 torrent.fileIndex)。
-  // 特殊容器在此翻译: 磁力单文件/蓝光原盘(BDMV)文件夹/剧集聚合, 语义同 Kodi Resolve。
-  // 返回内部缓冲, 下次调用失效; 条目不可播返回 nullptr (原因见 getLastError)。
+// ---- 选择播放 (统一出口; 本接口只读, 不含任何写操作) ----
+// 把条目解析为可直接 IMediaPlayer::open 的规范 avox URL 并返回 (如 https 直链/
   virtual const char* resolve(int32_t entryIndex, IOption* option) = 0;
   // 解析结果过期重取 (网盘直链有时效; 磁力/SMB 无需, 返回 nullptr)
   virtual const char* refresh(int32_t entryIndex, IOption* option) { (void)entryIndex; (void)option; return nullptr; }
@@ -255,11 +245,8 @@ class IRemoteSource {
   // 最后一次错误描述 (内部缓冲, 下次调用失效)
   virtual const char* getLastError() = 0;
 
-  // 会话中途鉴权过期后的重授权入口 (onAuthExpired 触发后由产品调用): 以新凭据重建
-  // 会话并重新武装 authExpired 回调 (同一会话至多抛一次, 重授权成功后可再抛);
-  // 播放中经 refresh(entryIndex) 重取直链续播, 浏览场景下次 list 自然生效。
-  // entryIndex<0 = 仅重武装凭据不重取条目。返回 false = 不支持或重建失败 (重新 open)。
-  // 注意: 只增虚拟函数一律追加在类尾, 防 vtable 位移破坏已编译插件 (09-18 事故)
+// 会话中途鉴权过期后的重授权入口 (onAuthExpired 触发后由产品调用): 以新凭据重建
+// 会话并重新武装 authExpired 回调 (同一会话至多抛一次, 重授权成功后可再抛);
   virtual bool reauthorize(int32_t entryIndex, const char* user, const char* pass,
                            const char* token) {
     (void)entryIndex; (void)user; (void)pass; (void)token; return false;

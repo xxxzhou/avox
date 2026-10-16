@@ -60,12 +60,6 @@ namespace avox {
 // io->packetQueue->decode->frameQueue->render
 // 音频/视频Track的共同基类,在处理网络包的逻辑上，这二者差不多是相同的
 // 基本配置信息在track里带的AudioDesc/VideoDesc
-// 编码信号在带配置信息AvoxPacket包里
-// 流程:
-// 1. 知道codecid/流信息，其解码器线程就开启,不过解码器这时应该还初始化不了
-// 2. 音频需要得到音频配置(常见的通道,采样率等,还需要编码等级等信息),才能初始化
-// 3. 视频需要得到SPS/PPS,才能初始化
-// 4. 初始化成功/失败，通知外面
 class AVTrack : public IPlayerContext, public PtsUpdater {
  public:
   AVTrack();
@@ -139,9 +133,8 @@ class AVTrack : public IPlayerContext, public PtsUpdater {
   void pullPacket(PacketBufPtr packet);
 
  protected:
-  // 当IO压入队列前，需要做一些处理
-  // 当IO队列与帧队列都满了，清空帧队列数据，保持IO线程能继续
-  // 此时应该是消费端(渲染端)出问题了，直接清空
+// 当IO压入队列前，需要做一些处理
+// 当IO队列与帧队列都满了，清空帧队列数据，保持IO线程能继续
   virtual void onPrePushPacket() = 0;
 
  public:
@@ -176,9 +169,8 @@ class TAVTrack : public AVTrack {
   RingBuffer<T>& getFrameQueue() { return frameQueue; }
   // 检查帧队列数据存入多少时间
   int64_t getFrameQueueTime();
-  // 检查队列缓存了多久,返回时间 = 包尾-帧头
-  // 如果帧里没有，返回包队列的时间
-  // 如果包没有，返回帧队列的时间
+// 检查队列缓存了多久,返回时间 = 包尾-帧头
+// 如果帧里没有，返回包队列的时间
   int64_t getQueueTime();
   // 记录解码器线程生产的帧数据
   void logDecode(int64_t curPts, int32_t bKeyFrame = 0);

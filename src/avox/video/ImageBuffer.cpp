@@ -92,11 +92,8 @@ bool yuvframe2Rgba(const YUVFrame& frame, IImageBuffer* buffer,
     const uint8_t* vRow =
         bNv12 ? uRow : frame.data[2] + (size_t)(row / 2) * frame.stride[2];
     uint8_t* rgbaRow = rgba + (size_t)row * rgbaStride;
-    // NV12 色度索引: 每 2x2 图像块一组 U,V, UV 行宽 = width 字节 (宽 640 →
-    // 320 组 × 2 字节)。图像列 c → 色度列 c/2 → U 在字节 (c/2)*2, V 在 +1。
-    // 旧写法 uRow[col*2] 把色度当宽度×2 字节采样: col≥width/2 即越界读到
-    // 下一 UV 行, 最末图像行越出缓冲读零页 → 右下角大片纯绿假亮 (macOS
-    // subprobe UV 探针实证: 交付缓冲干净, 假亮全在此转换引入)
+// NV12 色度索引: 每 2x2 图像块一组 U,V, UV 行宽 = width 字节 (宽 640 →
+// 320 组 × 2 字节)。图像列 c → 色度列 c/2 → U 在字节 (c/2)*2, V 在 +1。
     for (int32_t col = 0; col < width; ++col) {
       int32_t ci = col / 2;
       // 420P色度半宽采样点ci; NV12字节交错对[ci*2]=[U,V]
@@ -118,8 +115,6 @@ bool yuvframe2Rgba(const YUVFrame& frame, IImageBuffer* buffer,
 
 // 打包侧(copyPlaneYUV2TightlyBuffer)与shader(yuv2rgbaV1/rgba2yuvV1)按width宽
 // 纹理线性摆放色度(奇数色度行时V平面起点在半行上,packed布局无法用stride表达),
-// 本函数把带padding的packed帧就地紧缩成rowPitch=width的连续split布局:
-// Y去行距 + U/V各uvSize字节紧随, 末条色度行全量保留
 void unpackGpuYUV(IImageBuffer* buffer, YuvType yuvType) {
   ImageFormat packedFormat = buffer->getImageFormat();
   int32_t rowPitch = packedFormat.rowPitch;

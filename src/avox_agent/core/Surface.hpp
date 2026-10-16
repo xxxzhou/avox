@@ -28,11 +28,7 @@ namespace avox {
 // ---------------------------------------------------------------------------
 
 // 把一条事件投影成模型历史里的一条消息; 不产出消息则返回 nullopt。
-//
 // 这是 surface 投影的全部规则, 且是纯函数: 活 surface、外部重建方与诊断工具折叠同一个
-// 函数, 就能重建出任何一次请求当初依据的确切消息。
-//
-// 有意非穷尽: 只有产出消息的事件参与派生历史, 边界标记、分片、仅记日志的记录都投影为空。
 std::optional<Message> deriveEventMessage(const SessionEvent& event);
 
 // ---------------------------------------------------------------------------
@@ -59,9 +55,7 @@ struct SurfaceFoldResult {
 };
 
 // 把一份完整日志重放过一遍规范折叠。
-//
 // 用途: seed 校验 (resume / fork 进来的日志必须能过同一套不变式) 与诊断。
-// 事件违反 surface 元数据、来源引用、区间或 tool/result 重写规则时抛 std::runtime_error。
 SurfaceFoldResult foldSurface(const std::vector<SessionEvent>& events);
 
 // ---------------------------------------------------------------------------
@@ -85,13 +79,8 @@ class SurfaceManager {
   // 一次 replace 会重写表面中段, 增量续投影不再成立。
   size_t replaceGeneration();
 
-  // 校验一条候选事件能否进入表面, 并在通过时提交状态变更。
-  //
-  // 必须在事件进入日志之前调用: 候选在入库前先完成规划, 于是校验失败不会让表面处于
-  // 半变更状态。
-  //
-  // expectedSeq 是该事件将要占据的 seq (即当前日志长度), 用于校验信封自洽。
-  // 违反任一规则时抛 std::runtime_error, 且不改变任何状态。
+// 校验一条候选事件能否进入表面, 并在通过时提交状态变更。
+// 必须在事件进入日志之前调用: 候选在入库前先完成规划, 于是校验失败不会让表面处于
   void validateNext(const SessionEvent& event, size_t expectedSeq);
 
  private:

@@ -210,9 +210,8 @@ bool cmdEnterRaw() {
   }
   DWORD raw = mode;
   raw &= ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT);
-  // 不设 ENABLE_VIRTUAL_TERMINAL_INPUT: 该标志让 conhost 以 VT 转义序列报告输入,
-  // 与 ReadConsoleInputW 的 KEY_EVENT 互斥; 启用后 Backspace 等键不再产生
-  // 正确的 KEY_EVENT, 导致 raw line editor 按键处理异常 (Backspace 被当空格插入)。
+// 不设 ENABLE_VIRTUAL_TERMINAL_INPUT: 该标志让 conhost 以 VT 转义序列报告输入,
+// 与 ReadConsoleInputW 的 KEY_EVENT 互斥; 启用后 Backspace 等键不再产生
   return SetConsoleMode(hIn, raw) != FALSE;
 #else
   if (!isatty(STDIN_FILENO)) return false;
@@ -269,12 +268,6 @@ void cmdExitRaw() {
 
 // ========== quiet-input 模式 (关 QuickEdit 选区 + 鼠标事件, 防点击终端卡死输出) ==========
 // Windows 经典控制台 (conhost) 在鼠标点击/框选时会阻塞本进程的控制台输出写。长 running
-// 的交互程序 (voice 录音循环 / agent spinner) 点一下终端, 输出线程就卡在 WriteConsole
-// 上 → 卡死。关掉 QuickEdit 选区 + ENABLE_MOUSE_INPUT 后, 点击终端不再干扰输出。
-// 与 cmdEnterRaw 同为 input 句柄模式改动, 但采用增量修改 (只关/开 QuickEdit+Mouse 位),
-// 不保存-恢复整个模式, 避免与 raw 模式的 per-readline 切换互相踩 (raw exit 恢复原始模式
-// 会覆盖 quiet 的修改, 或 quiet exit 恢复到 raw 模式但 raw 已不 active)。
-// POSIX 无此问题, no-op。非控制台 (管道/重定向) 返回 false。
 
 bool cmdEnterQuietInput() {
 #ifdef _WIN32
@@ -584,7 +577,6 @@ struct LineEdit {
 
 // 渲染当前行: 清旧内容 -> 写提示符 + buf -> 定位光标
 // 支持多行: 当 prompt+buf 超过终端宽度换行时, 先上移到首行, 清除到屏幕底部,
-// 再写完整内容, 最后定位光标 (考虑换行和宽字符占列)。
 void renderLine(const LineEdit& le) {
   int termW = cmdTerminalWidth();
   if (termW <= 0) termW = 80;
@@ -707,9 +699,6 @@ void doTabComplete(LineEdit& le) {
 #ifdef _WIN32
 // Windows: ReadConsoleInputW 事件驱动 line editor
 // 粘贴检测: conhost 粘贴时每个字符以 VK_PACKET (0xE7) 事件投递 (UnicodeChar=实际字符);
-// 末尾追加一个 VK_RETURN。检测到 VK_PACKET 后, 一次性排空缓冲区里所有连续 VK_PACKET
-// + 末尾 VK_RETURN, 合并为一次插入; 换行变空格, 粘贴的 Enter 不触发提交 (用户手动 Enter)。
-// 这从根本上解决粘贴长文本 (含换行) 被拆成多次提交的问题。
 bool readLineRawWin(LineEdit& le, CmdHistory* hist, bool& shiftEnter) {
   shiftEnter = false;
   HANDLE hIn = GetStdHandle(STD_INPUT_HANDLE);
@@ -725,9 +714,8 @@ bool readLineRawWin(LineEdit& le, CmdHistory* hist, bool& shiftEnter) {
     DWORD ctl = k.dwControlKeyState;
     bool shift = (ctl & SHIFT_PRESSED) != 0;
     bool ctrl = (ctl & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) != 0;
-    // ---- 粘贴处理 (VK_PACKET) ----
-    // conhost 粘贴: 每字符一个 VK_PACKET 事件, 末尾追加 VK_RETURN。
-    // 检测到 VK_PACKET → 一次性排空后续所有 VK_PACKET + 末尾 VK_RETURN, 合并插入。
+// ---- 粘贴处理 (VK_PACKET) ----
+// conhost 粘贴: 每字符一个 VK_PACKET 事件, 末尾追加 VK_RETURN。
     if (vk == VK_PACKET) {
       std::wstring wPaste;
       wPaste += ch;
@@ -806,9 +794,8 @@ bool readLineRawWin(LineEdit& le, CmdHistory* hist, bool& shiftEnter) {
       if (gCtrlCInterceptor) gCtrlCInterceptor();   // raw 下不进 console handler, 触发宿主 cancel
       break;
     }
-    // Ctrl+V: 读剪贴板粘贴 (经典 conhost 下终端不拦截 Ctrl+V, 否则会落进
-    // 普通字符分支被当字母 v 插入)。Windows Terminal 的 Ctrl+V 由终端自身
-    // 拦截并注入普通 KEY_EVENT, 不会走到这里, 故无重复粘贴。
+// Ctrl+V: 读剪贴板粘贴 (经典 conhost 下终端不拦截 Ctrl+V, 否则会落进
+// 普通字符分支被当字母 v 插入)。Windows Terminal 的 Ctrl+V 由终端自身
     if (ctrl && vk == 'V') {
       std::wstring wClip;
       if (OpenClipboard(nullptr)) {
@@ -898,11 +885,8 @@ bool readLineRawWin(LineEdit& le, CmdHistory* hist, bool& shiftEnter) {
     }
     // Tab: 补全
     if (vk == VK_TAB) { doTabComplete(le); continue; }
-    // 普通字符 (含 IME 合成完成): 排除控制字符 (< 0x20, 含 BS=0x08/DEL 等), 它们由上面的
-    // vk 分支处理; 否则 raw 模式下 BS 的 ch=0x08 会落入此处被插入为"空格"字符。
-    // 批量收集: 粘贴长文本时 (Windows Terminal Ctrl+V 等) 字符以普通 KEY_EVENT 快速投递
-    // (非 VK_PACKET), 逐字符 insert+renderLine 会导致终端来不及处理 \r 覆盖, 产生 N 行
-    // 重复输出。先 peek 收集连续普通字符, 一次性插入 + 单次 renderLine。
+// 普通字符 (含 IME 合成完成): 排除控制字符 (< 0x20, 含 BS=0x08/DEL 等), 它们由上面的
+// vk 分支处理; 否则 raw 模式下 BS 的 ch=0x08 会落入此处被插入为"空格"字符。
     if (ch != 0 && ch >= 0x20) {
       std::wstring wBatch;
       wBatch += ch;
@@ -965,7 +949,6 @@ bool readLineRawWin(LineEdit& le, CmdHistory* hist, bool& shiftEnter) {
 #else
 // POSIX: read() + 转义序列解析 line editor
 // 支持 bracketed paste: 终端在粘贴内容前后包裹 \x1b[2004~ 和 \x1b[2004~,
-// 粘贴期间 \n/\r 不触发提交, 换行变空格, 粘贴结束后一次性插入。
 bool readLineRawPosix(LineEdit& le, CmdHistory* hist, bool& shiftEnter) {
   shiftEnter = false;
   enum EscState { None, Esc, EscBracket };
