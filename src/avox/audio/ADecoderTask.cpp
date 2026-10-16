@@ -30,50 +30,20 @@ bool ADecoderTask::start(AudioTrack* context) {
     pushPB<MPPBType::MediaAction>(mpPingback, pb);
     return false;
   }
-  const auto& decodes = AvoxManager::Get().aDecoders.initFuncs(codecId);
-  if (decodes.size() < 0) {
+  // 排候选表并逐条建实例: 候选 = 注册表全量(优先名只决定谁先试), 兜底是否存在
+  // 不再取决于注册顺序(旧写法取的是"首选项之后的注册后继")
+  configPkts.clear();
+  if (!chain.build(codecId)) {
     pb.result = ActionResult::fail;
     string_format(pb.msg, "codecId ", getACodecName(codecId),
                   " not register decoder");
     pushPB<MPPBType::MediaAction>(mpPingback, pb);
     return false;
   }
-  size_t sIndex = 0;
-  if (codecId == ACodecId::aac) {
-    // 优先使用fdk-aac解码器
-    // fdk-aac decoder/ffmpeg_aac
-    const char* sName = "fdk-aac decoder";
-    for (size_t i = 0; i < decodes.size(); ++i) {
-      if (decodes[i].desc.name == sName) {
-        sIndex = i;
-        break;
-      }
-    }
-  }
-  auto& aDecode = decodes[sIndex];
-  // 回退链: 首选之后的注册解码器(如 fdk-aac失败后 ffmpeg_aac)
-  fallbacks.clear();
-  configPkts.clear();
-  for (size_t i = sIndex + 1; i < decodes.size(); ++i) {
-    fallbacks.emplace_back(decodes[i].desc, decodes[i].initFunc);
-  }
-  decode = std::unique_ptr<AudioDecoder>(aDecode.initFunc());
-  if (!decode) {
+  if (!chain.selectFirst(*this)) {
     pb.result = ActionResult::fail;
-    string_format(pb.msg, "codecId ", getACodecName(codecId), " select ",
-                  aDecode.desc.name, " not init");
-    pushPB<MPPBType::MediaAction>(mpPingback, pb);
-    return false;
-  }
-  // 关联mediaplayer的选项设计设置
-  decode->linkOption(trackContext->getMediaPlayer());
-  decode->setObserver(trackContext);
-  // 解码的上下文是当前track
-  bool bInit = decode->setContext(aDecode.desc, srcDesc);
-  if (!bInit) {
-    pb.result = ActionResult::fail;
-    string_format(pb.msg, "codecId ", getACodecName(codecId), " select ",
-                  aDecode.desc.name, " not support");
+    string_format(pb.msg, "codecId ", getACodecName(codecId),
+                  " select not support");
     pushPB<MPPBType::MediaAction>(mpPingback, pb);
     return false;
   }
@@ -82,13 +52,41 @@ bool ADecoderTask::start(AudioTrack* context) {
   // 记录track创建成功
   pb.result = ActionResult::success;
   string_format(pb.msg, "codecId ", getACodecName(codecId), " select ",
-                aDecode.desc.name, " init");
+                chain.implName(), " init");
   pushPB<MPPBType::MediaAction>(mpPingback, pb);
   pbInfo.codecId = codecId;
   pbInfo.channels = srcDesc.channels;
   pbInfo.sampleRate = srcDesc.sampleRate;
   pbInfo.format = srcDesc.format;
   return true;
+}
+
+// 车道链回调: 接线(播放器选项/观察者)与 setContext 一起算"这条车道能不能用"
+bool ADecoderTask::laneInit(AudioDecoder& impl, const ACodecDesc& desc) {
+  // 关联mediaplayer的选项设置
+  impl.linkOption(trackContext->getMediaPlayer());
+  impl.setObserver(trackContext);
+  // 解码的上下文是当前track
+  return impl.setContext(desc, srcDesc);
+}
+
+void ADecoderTask::laneClose(AudioDecoder& impl) {
+  impl.removeObserver(trackContext);
+}
+
+// 本腿配置包走自有缓存(configPkts), AudioDecoder 没有 copyConfigs
+void ADecoderTask::laneSaveConfigs(AudioDecoder& oldImpl) {}
+
+// 换道后重放配置包; 音频没有关键帧落点与首帧供给看门狗, 超时重起算在调用处做。
+// configPkts 不在此清空(保留给下一次换道重放, 与旧行为一致)
+void ADecoderTask::laneChanged(AudioDecoder& newImpl, bool bFirst) {
+  if (bFirst) {
+    return;
+  }
+  for (auto& cp : configPkts) {
+    newImpl.pushConfig(*cp);
+  }
+  LOGFLF(LogLevel::warn, "audio decoder fallback to:", chain.implName());
 }
 
 void ADecoderTask::onRunTask() {
@@ -107,44 +105,32 @@ void ADecoderTask::onRunTask() {
     // 窗口并发操作codecCtx(internal空必崩, 9/25 16:15视频道同根crash)
     if (bFlushCtx) {
       bFlushCtx = false;
-      decode->flush();
+      decoder()->flush();
     }
     bool bGet = trackContext->getPacketQueue().dequeueAction(
         [&](const PacketBufPtr& packetPtr) { tempPtr->form(*packetPtr); });
     if (bGet) {
-      decode->dispatch(&IAudioDecoderOb::onPacket, tempPtr);
+      decoder()->dispatch(&IAudioDecoderOb::onPacket, tempPtr);
       if (tempPtr->configType()) {
-        ConfigAddType type = decode->pushConfig(*tempPtr);
+        ConfigAddType type = decoder()->pushConfig(*tempPtr);
         addConfigRecord(type);
         // 缓存配置包, 解码器回退时重放(共享拷贝, tempPtr 会被复用)
         configPkts.push_back(std::make_shared<PacketBuf>(*tempPtr));
       }
       // 子类实际解码操作实现,视频解码本身就是一个耗时操作
-      result = decode->decoder(tempPtr);
+      result = decoder()->decoder(tempPtr);
     }
     // 首选解码器初始化失败(如fdk-aac遇到不支持的AAC profile):
-    // 换下一个注册解码器重放配置继续, 而不是直接杀音频轨
-    if (result == DecodeResult::openFailed && !fallbacks.empty()) {
-      auto next = std::move(fallbacks.front());
-      fallbacks.erase(fallbacks.begin());
-      decode = std::unique_ptr<AudioDecoder>(next.second());
-      if (decode) {
-        decode->linkOption(trackContext->getMediaPlayer());
-        decode->setObserver(trackContext);
-        decode->setContext(next.first, srcDesc);
-        for (auto& cp : configPkts) {
-          decode->pushConfig(*cp);
-        }
-        LOGFLF(LogLevel::warn, "audio decoder fallback to:", next.first.name);
-        bOpenDecode = false;
-        check.reset();
-        result = DecodeResult::dataNoReady;
-        continue;
-      }
+    // 换下一候选并重放配置继续, 而不是直接杀音频轨
+    if (result == DecodeResult::openFailed && chain.selectNext(*this)) {
+      bOpenDecode = false;
+      check.reset();
+      result = DecodeResult::dataNoReady;
+      continue;
     }
     if (result == DecodeResult::success && !bOpenDecode) {      
       // 记录编码音频信息
-      AudioDesc outDesc = decode->getOutDesc();
+      AudioDesc outDesc = decoder()->getOutDesc();
       pbInfo.xchannels = outDesc.channels;
       pbInfo.xsampleRate = outDesc.sampleRate;
       pbInfo.xformat = outDesc.format;
@@ -175,7 +161,7 @@ void ADecoderTask::onRunTask() {
     }
     // 解码器遇到完成标志
     if (result == DecodeResult::complete) {
-      decode->dispatch(&IAudioDecoderOb::onAudioComplete);
+      decoder()->dispatch(&IAudioDecoderOb::onAudioComplete);
       return;
     }
 // 空转(队列无包)才休眠让出CPU; 处理了包不垫睡——碎片化音轨实测~3000包/
@@ -202,17 +188,15 @@ void ADecoderTask::addConfigRecord(ConfigAddType type) {
 }
 
 void ADecoderTask::flush() {
-  if (decode) {
+  if (decoder()) {
     bFlushCtx = true;
   }
 }
 
 void ADecoderTask::close() {
   stopTask();
-  if (decode) {
-    decode->removeObserver(trackContext);
-    decode.reset();
-  }
+  // 链持有解码器实例, reset 内回调 laneClose 解绑
+  chain.reset(*this);
 }
 
 }

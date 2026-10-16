@@ -18,11 +18,11 @@ VideoStream::VideoStream() {
 VideoStream::~VideoStream() { stopEncoder(); }
 
 void VideoStream::stopEncoder() {
-  if (encoder) {
+  if (encoder()) {
     // 排空: 硬编 CompleteFrames 返回前把待出帧全回调完(sink 尚活时写出尾帧)
-    encoder->flush();
-    encoder.reset();
+    encoder()->flush();
   }
+  encoderChain.reset(*this);
   // 断链: 之后任何迟到包判空返回, 不再碰已释放的 muxer
   muxer = nullptr;
 }
@@ -33,62 +33,74 @@ bool VideoStream::getHardEncode() { return bHardEncoder; }
 
 void VideoStream::setVideoDesc(const VTrackDesc& desc_) {
   desc = desc_;
-  bool bFind = AvoxManager::Get().vEncoders.hasObjectId(desc.codecId);
-  if (!bFind) {
-    LOGFLF(LogLevel::warn, "not find codecId:", getVCodecName(desc.codecId));
+  // 候选 = 偏好极默认编码器名 → 注册表全量; 上层"软/硬偏好"只决定谁先试
+  if (!encoderChain.build(desc.codecId, bHardEncoder)) {
+    LOGFLF(LogLevel::warn, "not find encoder codecId:",
+           getVCodecName(desc.codecId));
     return;
   }
-  const auto& encodes = AvoxManager::Get().vEncoders.initFuncs(desc.codecId);
-  if (encodes.empty()) {
-    LOGFLF(LogLevel::warn, "not find decoder:", getVCodecName(desc.codecId));
+  if (!encoderChain.selectFirst(*this)) {
+    LOGFLF(LogLevel::warn, "no encoder lane available:",
+           getVCodecName(desc.codecId));
     return;
   }
-  // 根据播放器设置选择解码器
-  size_t sIndex = encodes.size();
-  const char* sName = getDefaultEncoderName(desc.codecId, bHardEncoder);
-  // 查找解码器
-  for (size_t i = 0; i < encodes.size(); ++i) {
-    if (encodes[i].desc.name == sName) {
-      sIndex = i;
-      break;
-    }
-  }
-  if (sIndex == encodes.size()) {
-    // 按名未命中回退首个注册编码器(如默认硬编名未注册时), 漂移必须可见
-    LOGFLF(LogLevel::warn, "not find encoder by name:", sName,
-           " fallback:", encodes[0].desc.name);
-    sIndex = 0;
-  }
-  auto& vEncode = encodes[sIndex];
-  // 初始化解码器
-  encoder = std::unique_ptr<VideoEncoder>(vEncode.initFunc());
-  if (!encoder) {
-    LOGFLF(LogLevel::warn, "init encoder failed:", sName);
-    return;
-  }
-  LOGFLF(LogLevel::info, "init encoder:", vEncode.desc.name,
+  LOGFLF(LogLevel::info, "init encoder:", encoderChain.implName(),
          " codecId:", getVCodecName(desc.codecId));
-  encoder->setDesc(desc);
-  encoder->setObserver(this);
 }
 
-void VideoStream::encoderFrame(const YUVFrame& frame) {
-  if (!encoder) {
+// 车道接线: 编码器只有 desc 与观察者要接, 开不开得起来要到首帧才知道
+bool VideoStream::laneInit(VideoEncoder& impl, const VCodecDesc&) {
+  impl.setDesc(desc);
+  impl.setObserver(this);
+  return true;
+}
+
+void VideoStream::laneClose(VideoEncoder& impl) { impl.removeObserver(this); }
+
+void VideoStream::laneSaveConfigs(VideoEncoder& oldImpl) {}
+
+// 换道后: 本车道重新开始记"是否出过包"; 首帧前的选型不动用一个在跑的编码器
+void VideoStream::laneChanged(VideoEncoder& newImpl, bool bFirst) {
+  bEmittedPacket = false;
+  bWarnedEncDead = false;
+  if (bFirst) {
+    return;
+  }
+  LOGFLF(LogLevel::warn, "video encoder fallback to:", encoderChain.implName());
+}
+
+template <typename TFrame>
+void VideoStream::encodeFrameImpl(const TFrame& frame) {
+  if (!encoder()) {
     LOGFLF(LogLevel::warn, "not find encoder");
     return;
   }
   // HighClock clock = {};
-  encoder->encode(frame);
+  const DecodeResult result = encoder()->encode(frame);
   // log(LogLevel::debug, "encoder frame:", clock.recordDelta());
-}
-
-void VideoStream::encoderFrame(const GpuFrame& frame) {
-  if (!encoder) {
-    LOGFLF(LogLevel::warn, "not find encoder");
+  if (result != DecodeResult::openFailed) {
     return;
   }
-  encoder->encode(frame);
+  // 首帧前打不开(如硬编建得起但 onPreEncoder 失败): 换同编码的下一条候选重编这一帧
+  // —— 此刻一个包都没出过, 封装头与编码描述都还没落, 换道安全。旧实现把 encode() 的
+  // 返回值直接丢掉, 硬编开不了 = 整片无视频且零日志
+  if (bEmittedPacket) {
+    return;
+  }
+  if (encoderChain.selectNext(*this)) {
+    encoder()->encode(frame);
+    return;
+  }
+  if (!bWarnedEncDead) {
+    bWarnedEncDead = true;
+    LOGFLF(LogLevel::error, "video encoder can not open:",
+           encoderChain.implName(), " codec:", getVCodecName(desc.codecId));
+  }
 }
+
+void VideoStream::encoderFrame(const YUVFrame& frame) { encodeFrameImpl(frame); }
+
+void VideoStream::encoderFrame(const GpuFrame& frame) { encodeFrameImpl(frame); }
 
 void VideoStream::onPacket(AvoxPacket& packet) {
   // [dbg] ENH_VKDBG=1: 编码器包回调
@@ -100,6 +112,8 @@ void VideoStream::onPacket(AvoxPacket& packet) {
               (unsigned)packet.data.size, (void*)muxer);
     }
   }
+  // 出了包 = 本车道确实在编码, 之后不再换道(封装头已定)
+  bEmittedPacket = true;
   if (!muxer) {
     LOGFLF(LogLevel::warn, "muxer is null");
     return;

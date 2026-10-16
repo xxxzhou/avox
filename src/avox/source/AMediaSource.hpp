@@ -5,6 +5,8 @@
 
 #include "../AvoxMuxer.h"
 #include "../audio/AudioDecoder.hpp"
+#include "../codec/AudioDecoderChain.hpp"
+#include "../codec/VideoDecoderChain.hpp"
 #include "../module/JsonOption.hpp"
 #include "../module/TickCounter.hpp"
 #include "../player/AVDecoder.hpp"
@@ -22,7 +24,9 @@ class AVSource;
 class AMediaSource : public RawSource,
                      public IAVSourceOb,
                      public IVideoDecoderOb,
-                     public IAudioDecoderOb {
+                     public IAudioDecoderOb,
+                     private VideoDecoderChain::Host,
+                     private AudioDecoderChain::Host {
  public:
   AMediaSource();
   virtual ~AMediaSource();
@@ -35,17 +39,19 @@ class AMediaSource : public RawSource,
   std::unique_ptr<AVSource> ioSource;
   // IO方案,open时创建对应ioSource(默认ffmpeg)
   IoPlan ioPlan = IoPlan::ffmpeg;
-  std::unique_ptr<VideoDecoder> videoDecoder;
-  std::unique_ptr<AudioDecoder> audioDecoder;
-  //
+  // 候选车道链: 选型与首帧前换道(与播放腿 VDecoderTask 共用同一份策略)
+  VideoDecoderChain videoChain;
+  // 视频源描述(选型时记下, 换道重建要给新车道重设上下文)
+  VideoDesc srcDesc = {};
+  // 音频侧同构: 候选链 + 源描述 + 配置包缓存(音频解码器没有 copyConfigs)
+  AudioDecoderChain audioChain;
+  AudioDesc audioSrcDesc = {};
+  std::vector<PacketBufPtr> aConfigPackets;
+
   bool bOpenVDecoder = false;
   bool bOpenADecoder = false;
   // 视频配置包缓存(首帧前换道时重喂新车道, 只收 vconfig)
   std::vector<PacketBufPtr> vConfigPackets;
-  // 首帧前降级的候选车道(按序待试)与已试车道名, 与播放腿 VDecoderTask 的
-  // openFallbacks 同构: 首选落谁由 bHard 定, 但运行期两侧都能互相兜
-  std::vector<std::string> vLaneCands;
-  std::vector<std::string> vLaneTried;
   // 换道落点: 半 GOP 起解产缺参考坏帧(播放腿实测), 吸到下一个关键帧再喂
   bool bVDropUntilIdr = false;
   // IO结束标记: IO回调线程写, 消费线程轮询读
@@ -69,6 +75,19 @@ class AMediaSource : public RawSource,
   // 编码(如 rmvb 的 cook 进 mp4/mov) → 本轨按转码走(建解码器), 不直拷。
   // 未注入 = 不设限
   std::function<bool(ACodecId)> audioCopySupported;
+
+ private:
+  // 车道链回调(视频/音频各一组, 按 impl/desc 类型重载): 只做接线/解绑/换道后处置
+  virtual bool laneInit(VideoDecoder &impl, const VCodecDesc &desc) override;
+  virtual void laneClose(VideoDecoder &impl) override;
+  virtual void laneSaveConfigs(VideoDecoder &oldImpl) override;
+  virtual void laneChanged(VideoDecoder &newImpl, bool bFirst) override;
+  virtual bool laneInit(AudioDecoder &impl, const ACodecDesc &desc) override;
+  virtual void laneClose(AudioDecoder &impl) override;
+  virtual void laneSaveConfigs(AudioDecoder &oldImpl) override;
+  virtual void laneChanged(AudioDecoder &newImpl, bool bFirst) override;
+  VideoDecoder *videoDecoder() { return videoChain.impl(); }
+  AudioDecoder *audioDecoder() { return audioChain.impl(); }
 
   // IRawSource
  public:
@@ -125,18 +144,8 @@ class AMediaSource : public RawSource,
   virtual void onOptionChange(const char* key, ArgType option) override;
 
  private:
-  bool initVideoDecoder(VCodecId codecId, const VideoDesc& srcDesc, bool bHard);
-  // 首帧前车道降级: 取候选表下一个未试过的车道重建 + 重喂配置包
-  bool downgradeVideoLane();
-  // 按名建一条车道(建不出/不支持返回 false); 只建车道, 不选型不递归
-  bool trySelectVideoLane(const std::string& name);
-  // 候选次序(与播放腿同构): vulkan备选 → 另一极默认名 → 注册表首项兜底
-  void buildVideoLaneCands(VCodecId codecId, bool bHard);
-  bool laneTried(const std::string& name) const;
-  // 带已试标记的选型递归内核: 硬软互备, 防止硬→软→硬 无限递归。
-  bool initVideoDecoderTried(VCodecId codecId, const VideoDesc& srcDesc,
-                             bool bHard, bool bTriedHard, bool bTriedSoft);
-  bool initAudioDecoder(ACodecId codecId, const AudioDesc& srcDesc);
+  bool initVideoDecoder(VCodecId codecId, const VideoDesc& srcDesc_, bool bHard);
+  bool initAudioDecoder(ACodecId codecId, const AudioDesc& srcDesc_);
   // 某 track 声明了却一直没来首包,超时后降级该 track
   void resolveTrackWaitTimeout();
 };

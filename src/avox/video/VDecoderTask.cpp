@@ -33,147 +33,103 @@ bool VDecoderTask::start(class VideoTrack* context) {
     pushPB<MPPBType::MediaAction>(mpPingback, pb);
     return false;
   }
-  // 查找解码器列表
-  const auto& decodes = AvoxManager::Get().vDecoders.initFuncs(codecId);
-  if (decodes.size() < 0) {
+  // 排候选表并逐条建实例: 候选 = 注册表全量, 上层"软/硬偏好"只决定谁先试,
+  // 另一极与注册表其余一律排在其后 —— 不假定上层已设定软或硬, 所以"设了软解"
+  // 同样有另一极兜底(旧写法把另一极写死成软解名, 软解偏好时根本没有回退)
+  const bool bPrefHard = mediaPlayer->getHardDecode();
+  if (!chain.build(codecId, bPrefHard, mediaPlayer->getVideoDecoderName())) {
     pb.result = ActionResult::fail;
     string_format(pb.msg, "codecId ", getVCodecName(codecId),
                   " not register decoder");
     pushPB<MPPBType::MediaAction>(mpPingback, pb);
     return false;
   }
-  // 根据播放器设置选择解码器; 硬解选型不可用时逐级回退: vulkan 备选 → 软解
-  // (如 VP9 老核显无 D3D11VA profile, a03/a12 的运行期回退框架先行手动兜底)
-  bool bHard = mediaPlayer->getHardDecode();
-  // 解码器名覆盖(测试/排障强制车道): 覆盖首选名, 不再自动插vulkan备选, 失败直接回软解
-  const std::string& sOverrideName = mediaPlayer->getVideoDecoderName();
-  const char* sOverride =
-      (bHard && !sOverrideName.empty()) ? sOverrideName.c_str() : nullptr;
-  const char* sName = sOverride ? sOverride : getDefaultDecoderName(codecId, bHard);
-  const char* sFallback = bHard ? getDefaultDecoderName(codecId, false) : nullptr;
-// AV1 软解归一(1003, 同 AMediaSource): 构建带 dav1d 时软解走 libdav1d;
-// 注册表没有 dav1d(如 Windows 无该库)则原生 "av1" 是 hwaccel-only 空壳, 无
-  if (!sOverride && codecId == VCodecId::av1) {
-    bool bHasDav1d = false;
-    for (size_t i = 0; i < decodes.size(); ++i) {
-      if (decodes[i].desc.name == AVOX_FF_LIBDAV1D_DECODER) {
-        if (bHard) {
-          sFallback = AVOX_FF_LIBDAV1D_DECODER;
-        } else {
-          sName = AVOX_FF_LIBDAV1D_DECODER;
-        }
-        bHasDav1d = true;
-        break;
-      }
-    }
-    if (!bHard && !bHasDav1d) {
-      sName = getDefaultDecoderName(codecId, true);
-      sFallback = nullptr;
-    }
-  }
-  if (sFallback && strcmp(sFallback, sName) == 0) {
-    sFallback = nullptr;
-  }
-  // 硬解备选: 主路失败先试vulkan(未注册自动跳过); 覆盖点名时跳过, 保证机器无关回软解
-  const char* sVulkan = nullptr;
-  if (bHard && !sOverride) {
-    if (codecId == VCodecId::h264) {
-      sVulkan = AVOX_FFVULKAN_H264_DECODER;
-    } else if (codecId == VCodecId::h265) {
-      sVulkan = AVOX_FFVULKAN_H265_DECODER;
-    }
-    if (sVulkan && (strcmp(sVulkan, sName) == 0 ||
-                    (sFallback && strcmp(sVulkan, sFallback) == 0))) {
-      sVulkan = nullptr;
-    }
-  }
-  size_t sIndex = 0;
-  // 按名字选定并初始化: 找不到/建不出/不支持都算未命中, 交给下一候选
-  auto trySelect = [&](const char* wantName) -> bool {
-    size_t idx = 0;
-    bool bHit = false;
-    for (size_t i = 0; i < decodes.size(); ++i) {
-      if (decodes[i].desc.name == wantName) {
-        idx = i;
-        bHit = true;
-        break;
-      }
-    }
-    if (!bHit) {
-      return false;
-    }
-    auto cand = std::unique_ptr<VideoDecoder>(decodes[idx].initFunc());
-    if (!cand) {
-      return false;
-    }
-    cand->linkOption(trackContext->getMediaPlayer());
-    cand->setObserver(trackContext);
-    cand->setDvProfile(trackContext->getDvProfile());
-    if (!cand->setContext(decodes[idx].desc, srcDesc)) {
-      LOGFLF(LogLevel::warn, "decoder ", decodes[idx].desc.name,
-             " not support, try fallback");
-      return false;
-    }
-    sIndex = idx;
-    decode = std::move(cand);
-    return true;
-  };
-  bool bHitName = false;
-  for (size_t i = 0; i < decodes.size(); ++i) {
-    if (decodes[i].desc.name == sName) {
-      bHitName = true;
-      break;
-    }
-  }
-  // 候选次序: 首选名 → 另一极(硬解失败回退软解) → 原行为兜底(找不到名字用首项)
-  // → vulkan 备选**放最后**(Apple 无 vulkan 解码器注册; 其他平台 setContext→
-  //  onVaild 探运行时, 不可用即 false 跳下一候选, 放最后免白等一次探测)
-  if (!trySelect(sName)) {
-    if (!(sFallback && trySelect(sFallback))) {
-      const bool bTail = (bHitName || decodes.empty())
-                             ? false
-                             : trySelect(decodes[0].desc.name.c_str());
-      if (!bTail && !(sVulkan && trySelect(sVulkan))) {
-        pb.result = ActionResult::fail;
-        string_format(pb.msg, "codecId ", getVCodecName(codecId),
-                      " select ", sName, " not init");
-        pushPB<MPPBType::MediaAction>(mpPingback, pb);
-        return false;
-      }
-    }
-  }
-  auto& vDecode = decodes[sIndex];
-  // 缓存懒open失败的降级候选: 同样 vulkan 放最后; 名字被覆盖时仅软解(sVulkan已置空)
-  openFallbacks.clear();
-  for (const char* sWant : {sFallback, sVulkan}) {
-    if (!sWant) {
-      continue;
-    }
-    for (auto& d : decodes) {
-      if (d.desc.name == sWant) {
-        openFallbacks.push_back({d.desc, d.initFunc});
-        break;
-      }
-    }
+  if (!chain.selectFirst(*this)) {
+    pb.result = ActionResult::fail;
+    string_format(pb.msg, "codecId ", getVCodecName(codecId), " select ",
+                  getDefaultDecoderName(codecId, bPrefHard), " not init");
+    pushPB<MPPBType::MediaAction>(mpPingback, pb);
+    return false;
   }
   // 开始解码线程
   startTask();
-  // 记录最终是否启用硬解
-  bHardDecode = false;
-  codecTh = decode->getCodecTh();
-  if (codecTh == VCodecTh::dx11 || codecTh == VCodecTh::androidMC ||
-      codecTh == VCodecTh::iosVT) {
-    bHardDecode = true;
-  }
-  // 记录track创建成功
+  // 记录track创建成功(codecTh/bHardDecode 已随选型在 laneChanged 里记好)
   pb.result = ActionResult::success;
   string_format(pb.msg, "codecId ", getVCodecName(codecId), " select ",
-                vDecode.desc.name, " init");
+                chain.implName(), " init");
   pushPB<MPPBType::MediaAction>(mpPingback, pb);
   // 记录视频信息
   pbInfo.codecId = codecId;
-  pbInfo.slectCodec = vDecode.desc.name;
+  pbInfo.slectCodec = chain.implName();
   return true;
+}
+
+// 车道链回调: 接线(播放器选项/观察者/DOVI profile)与 setContext 一起算
+// "这条车道能不能用"; 建不出或 setContext 拒绝都返回 false 换下一条
+bool VDecoderTask::laneInit(VideoDecoder &impl, const VCodecDesc &desc) {
+  impl.linkOption(mediaPlayer);
+  impl.setObserver(trackContext);
+  impl.setDvProfile(trackContext->getDvProfile());
+  if (!impl.setContext(desc, srcDesc)) {
+    LOGFLF(LogLevel::warn, "decoder ", desc.name,
+           " not support, try next lane");
+    return false;
+  }
+  return true;
+}
+
+void VDecoderTask::laneClose(VideoDecoder &impl) {
+  impl.removeObserver(trackContext);
+}
+
+void VDecoderTask::laneSaveConfigs(VideoDecoder &oldImpl) {
+  configPackets.clear();
+  oldImpl.copyConfigs(configPackets);
+}
+
+// 换道后的处置: 重喂配置帧(首次选型没有旧车道的配置可继承), 记车道类型,
+// 看门狗重新计时; 首帧前换道还要吸到下一个关键帧起解
+void VDecoderTask::laneChanged(VideoDecoder &newImpl, bool bFirst) {
+  const bool bHadFrame = bGotFrame;
+  if (!bFirst) {
+    for (auto &cp : configPackets) {
+      newImpl.pushConfig(cp);
+    }
+    configPackets.clear();
+    LOGFLF(LogLevel::warn, "video decoder fallback to:", chain.implName());
+    // 埋点透出换道事实(判定/分诊面): 首选名没交付, 实际交付的是候选名
+    PBMediaAction fb = {};
+    fb.mediaObject = MediaObject::decode;
+    fb.trackType = TrackType::video;
+    fb.action = MediaAction::config;
+    string_format(fb.msg, "video decoder fallback from ", pbInfo.slectCodec,
+                  " to ", chain.implName());
+    pushPB<MPPBType::MediaAction>(mpPingback, fb);
+    pbInfo.slectCodec = chain.implName();
+  }
+  codecTh = newImpl.getCodecTh();
+  bHardDecode = (codecTh == VCodecTh::dx11 || codecTh == VCodecTh::androidMC ||
+                 codecTh == VCodecTh::iosVT);
+  // 新解码器需要重新证明自己交付帧, 看门狗重新计时
+  bGotFrame = false;
+  bOpenDecode = false;
+  supplyMarkMs = 0;
+  // 起播阶段换道: 视频队列吸到下一个关键帧起解。换道时IO已灌了数秒包,
+  // 新车道若从GOP中段起解只会产出缺参考坏帧(实测POC 0/6/12连环报错);
+  // 播放中换道画面已在出, 动落点会造成跳帧, 故只在首帧前吸
+  if (bFirst || bHadFrame) {
+    return;
+  }
+  int32_t dropped = trackContext->getPacketQueue().dropUntil(
+      [](const PacketBufPtr &pkt) {
+        return !pkt->configType() && pkt->frameType == 1;
+      });
+  if (dropped >= 0) {
+    flattener.reset();
+    LOGFLF(LogLevel::info, "fallback landing snap to idr, dropped:", dropped);
+  } else {
+    LOGFLF(LogLevel::info, "fallback landing keep position, no idr");
+  }
 }
 
 void VDecoderTask::addConfigRecord(ConfigAddType type) {
@@ -192,14 +148,14 @@ void VDecoderTask::addConfigRecord(ConfigAddType type) {
 }
 
 void VDecoderTask::flush() {
-  // 不直接decode->flush(): 本函数在命令线程跑, 同步flush会打进解码线程
+  // 不直接decoder()->flush(): 本函数在命令线程跑, 同步flush会打进解码线程
   // onPreDecoder的alloc→open2窗口(internal空, FFmpeg8 flush无守卫必崩,
   // 9/25 16:15真机crash), 也可能与在解的包并发操作codecCtx
   // seek 会连同包队列一起清掉, 扣着的簇属于旧位置, 一起作废
   flattener.reset();
 // 解码器状态必须整体重建: hw车道(实测d3d11va) avcodec_flush_buffers 清不掉
 // h264 POC/frame_num, open-GOP 恢复点落点(non-IDR I帧带KEY标志)解码会
-  if (decode && decode->getCodecTh() == VCodecTh::androidMC) {
+  if (decoder() && decoder()->getCodecTh() == VCodecTh::androidMC) {
     bFlushCtx = true;
     return;
   }
@@ -218,82 +174,17 @@ void VDecoderTask::onRunTask() {
   // 如果有配置数据，可能是切换解码器保留的
   if (!configPackets.empty()) {
     for (int32_t i = 0; i < configPackets.size(); ++i) {
-      decode->pushConfig(configPackets[i]);
+      decoder()->pushConfig(configPackets[i]);
     }
     configPackets.clear();
   }
   // 预先申请合适大小，减少重新申请的机率
   std::vector<uint8_t> temp(10000);
   PacketBufPtr tempPtr = std::make_shared<PacketBuf>(temp);
-  bool bOpenDecode = false;
-  // 视频轨是否真收到过帧: success会被重复参数集包空转返回污染, 看门狗只认实际产出
-  bool bGotFrame = false;
-  // 首帧看门狗基准: 只累计"解码器持续吃得到输入"的时长(连续供给满delayMs仍
-  // 无帧才降级)。网络源打开阶段IO线程被参数探测占住不吐包(极空间直链实测
-  // TrueHD探测~5s)属饿等, 清零重记——不然硬解车道总在数据洪流到达前一刻被误杀
-  int64_t supplyMarkMs = 0;
-  // 降级下一候选: 重建解码器并重放配置帧, 建不出/不支持跳下一个; open失败与首帧超时共用
-  auto tryNextFallback = [&]() -> bool {
-    // 换道前记录旧车道是否交付过帧: 首帧前换道(起播阶段)才吸IDR换落点,
-    // 播放中换道画面已在出, 动落点会造成跳帧
-    bool bHadFrame = bGotFrame;
-    while (!openFallbacks.empty()) {
-      auto next = std::move(openFallbacks.front());
-      openFallbacks.erase(openFallbacks.begin());
-      configPackets.clear();
-      decode->copyConfigs(configPackets);
-      auto cand = std::unique_ptr<VideoDecoder>(next.second());
-      bool bOk = false;
-      if (cand) {
-        cand->linkOption(trackContext->getMediaPlayer());
-        cand->setObserver(trackContext);
-        cand->setDvProfile(trackContext->getDvProfile());
-        bOk = cand->setContext(next.first, srcDesc);
-      }
-      if (!bOk) {
-        continue;
-      }
-      decode = std::move(cand);
-      for (auto& cp : configPackets) {
-        decode->pushConfig(cp);
-      }
-      configPackets.clear();
-      codecTh = decode->getCodecTh();
-      bHardDecode = (codecTh == VCodecTh::dx11 || codecTh == VCodecTh::androidMC ||
-                     codecTh == VCodecTh::iosVT);
-      // 新解码器需要重新证明自己交付帧, 看门狗重新计时
-      bGotFrame = false;
-      bOpenDecode = false;
-      supplyMarkMs = 0;
-// 起播阶段换道: 视频队列吸到下一个关键帧起解。换道时IO已灌了数秒包,
-// 新车道若从GOP中段起解只会产出缺参考坏帧(实测POC 0/6/12连环报错);
-      if (!bHadFrame) {
-        int32_t dropped = trackContext->getPacketQueue().dropUntil(
-            [](const PacketBufPtr& pkt) {
-              return !pkt->configType() && pkt->frameType == 1;
-            });
-        if (dropped >= 0) {
-          flattener.reset();
-          LOGFLF(LogLevel::info, "fallback landing snap to idr, dropped:",
-                 dropped);
-        } else {
-          LOGFLF(LogLevel::info, "fallback landing keep position, no idr");
-        }
-      }
-      LOGFLF(LogLevel::warn, "video decoder fallback to:", next.first.name);
-      // 埋点透出换道事实(判定/分诊面): 首选名没交付, 实际交付的是候选名
-      PBMediaAction fb = {};
-      fb.mediaObject = MediaObject::decode;
-      fb.trackType = TrackType::video;
-      fb.action = MediaAction::config;
-      string_format(fb.msg, "video decoder fallback from ", pbInfo.slectCodec,
-                    " to ", next.first.name);
-      pushPB<MPPBType::MediaAction>(mpPingback, fb);
-      pbInfo.slectCodec = next.first.name;
-      return true;
-    }
-    return false;
-  };
+  // 打开态与首帧看门狗基准归零(成员, laneChanged 换道时要重置)
+  bOpenDecode = false;
+  bGotFrame = false;
+  supplyMarkMs = 0;
   while (running()) {
     // 检查暂停
     if (pauseing()) {
@@ -308,7 +199,7 @@ void VDecoderTask::onRunTask() {
       if (bHardDecode) {
         trackContext->flushFrames();
       }
-      decode->flush();
+      decoder()->flush();
       LOGFLF(LogLevel::info, "seek flush decoder ok");
     }
     // seek重置(见flush注释): 不等包、不等参数集, 立即在解码线程重建codecCtx,
@@ -320,7 +211,7 @@ void VDecoderTask::onRunTask() {
       if (bHardDecode) {
         trackContext->flushFrames();
       }
-      DecodeResult result = decode->onPreDecoder();
+      DecodeResult result = decoder()->onPreDecoder();
       if (result == DecodeResult::success) {
         LOGFLF(LogLevel::info, "seek reset decoder ok");
       } else {
@@ -333,7 +224,7 @@ void VDecoderTask::onRunTask() {
       if (trackContext->getPacketQueue().peek(topItem)) {
         // 切换解码器，需要保存当前配置帧，退出当前线程
         if (bResetFlag && topItem->frameType == 1) {
-          decode->copyConfigs(configPackets);
+          decoder()->copyConfigs(configPackets);
           break;
         }
         // 配置帧变了,不需要退出当前线程
@@ -343,7 +234,7 @@ void VDecoderTask::onRunTask() {
           if (bHardDecode) {
             trackContext->flushFrames();
           }
-          DecodeResult result = decode->onPreDecoder();
+          DecodeResult result = decoder()->onPreDecoder();
           if (result == DecodeResult::success) {
             LOGFLF(LogLevel::info, "reset decoder success");
           } else {
@@ -385,7 +276,7 @@ void VDecoderTask::onRunTask() {
         mediaPlayer->ioExhausted()) {
       if (++endRounds > kEndIdleRounds) {
         endRounds = 0;
-        decode->onInputEnd();
+        decoder()->onInputEnd();
       }
     } else {
       endRounds = 0;
@@ -393,10 +284,10 @@ void VDecoderTask::onRunTask() {
     DecodeResult result = DecodeResult::dataNoReady;
     if (bGet) {
       // 给track记录当前解码包的PTS
-      decode->dispatch(&IVideoDecoderOb::onPacket, tempPtr);
+      decoder()->dispatch(&IVideoDecoderOb::onPacket, tempPtr);
       if (tempPtr->configType()) {
         // log(LogLevel::info, "xxxx ", tempPtr->size);
-        ConfigAddType type = decode->pushConfig(*tempPtr);
+        ConfigAddType type = decoder()->pushConfig(*tempPtr);
 // 配置帧变了，重置不?
 // 直播有时频繁更新，但是老的也能继续解码
         if (type == ConfigAddType::updateSize) {
@@ -412,13 +303,13 @@ void VDecoderTask::onRunTask() {
       //   continue;
       // }
       // 子类实际解码操作实现,视频解码本身就是一个耗时操作
-      result = decode->decoder(tempPtr);
+      result = decoder()->decoder(tempPtr);
     }
     // 第一次返回成功表示解码器打开
     if (result == DecodeResult::success && !bOpenDecode) {
-      decode->dispatch(&IVideoDecoderOb::onVideoDesc);
+      decoder()->dispatch(&IVideoDecoderOb::onVideoDesc);
       RenderType renderType = selectRenderType();
-      const DecoderParams& dparams = decode->getDecoderParams();
+      const DecoderParams& dparams = decoder()->getDecoderParams();
       // 记录视频信息
       pbInfo.yuvType = dparams.yuvType;
       pbInfo.width = dparams.width;
@@ -429,7 +320,7 @@ void VDecoderTask::onRunTask() {
       bOpenDecode = true;
     }
     // 懒open失败(如vulkan会话协商失败): 换下一候选重放配置帧继续, 而不是杀视频轨
-    if (result == DecodeResult::openFailed && tryNextFallback()) {
+    if (result == DecodeResult::openFailed && chain.selectNext(*this)) {
       continue;
     }
     if ((int32_t)result < 0) {
@@ -443,7 +334,7 @@ void VDecoderTask::onRunTask() {
     }
     // 解码器遇到完成标志
     if (result == DecodeResult::complete) {
-      decode->dispatch(&IVideoDecoderOb::onVideoComplete);
+      decoder()->dispatch(&IVideoDecoderOb::onVideoComplete);
       return;
     }
     if (!bGotFrame && trackContext->getFrameQueue().size() > 0) {
@@ -458,7 +349,7 @@ void VDecoderTask::onRunTask() {
           (bGet || !packetQueue.empty() || flattener.pending())) {
         if (supplyMarkMs == 0) {
           supplyMarkMs = nowMs;
-        } else if (nowMs - supplyMarkMs > delayMs && tryNextFallback()) {
+        } else if (nowMs - supplyMarkMs > delayMs && chain.selectNext(*this)) {
           // 死车道已把本地流吞到EOF: 回0重读让新车道从关键帧起解, 否则永远等不到数据
           if (mediaPlayer->ioExhausted() && mediaPlayer->seekable()) {
             mediaPlayer->seek(0);
@@ -487,7 +378,7 @@ void VDecoderTask::onRunTask() {
   }
   // 如果是因为重置Flag关闭的，需要让Track再重置打开编码器
   if (bResetFlag) {
-    decode->flush();
+    decoder()->flush();
     if (trackContext) {
       trackContext->onResetDecoder();
     }
@@ -500,11 +391,9 @@ void VDecoderTask::close() {
   // 摊平器随任务销毁复位: lastOut是上一轮输出的单调下界, 残留会把下一轮
   // 的组合多包簇(配置帧+I帧)整簇钳到上一轮停片位
   flattener.reset();
-  if (decode) {
-    // 队列里数据清空
-    decode->removeObserver(trackContext);
-    decode.reset();
-  }
+  // 车道链持有解码器实例, reset 内回调 laneClose 解绑。配置帧不在此清:
+  // 软硬解切换(见 flush/onResetDecoder)靠它跨过一次 start() 传承, 与旧行为一致
+  chain.reset(*this);
 }
 
 RenderType VDecoderTask::selectRenderType() {

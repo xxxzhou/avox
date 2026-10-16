@@ -70,8 +70,7 @@ bool AMediaSource::open() {
   bOpenVDecoder = false;
   bVDropUntilIdr = false;
   vConfigPackets.clear();
-  vLaneCands.clear();
-  vLaneTried.clear();
+  aConfigPackets.clear();
   bIoEnd = false;
   ioSource->setObserver(this);
   // 是否禁用音频与视频(直接复用 BaseSource 的 bDisableVideo/bDisableAudio)
@@ -90,14 +89,8 @@ void AMediaSource::close() {
     ioSource->close();
     ioSource.reset();
   }
-  if (videoDecoder) {
-    videoDecoder->removeObserver(this);
-    videoDecoder.reset();
-  }
-  if (audioDecoder) {
-    audioDecoder->removeObserver(this);
-    audioDecoder.reset();
-  }
+  videoChain.reset(*this);
+  audioChain.reset(*this);
   RawSource::close();
 }
 
@@ -193,11 +186,11 @@ void AMediaSource::onPacket(const AvoxPacket& packet) {
   // seek 前置:IO 线程执行 flush,保证与 decode 同线程不并发
   if (bFlushPending.load()) {
     bFlushPending.store(false);
-    if (videoDecoder) {
-      videoDecoder->flush();
+    if (videoDecoder()) {
+      videoDecoder()->flush();
     }
-    if (audioDecoder) {
-      audioDecoder->flush();
+    if (audioDecoder()) {
+      audioDecoder()->flush();
     }
   }
   // seek 期间丢弃包,避免旧帧污染输出
@@ -242,7 +235,7 @@ void AMediaSource::onPacket(const AvoxPacket& packet) {
         dispatch(&IRawSourceOb::onRawPacket, packet);
         break;
       }
-      if (videoDecoder) {
+      if (videoDecoder()) {
         // 换道落点: config 照喂, 其余非关键帧一律丢, 到 IDR 才恢复喂(见兜底函数)
         if (bVDropUntilIdr && packet.packtype != (int32_t)PackType::vconfig &&
             packet.frameType != 1) {
@@ -253,7 +246,7 @@ void AMediaSource::onPacket(const AvoxPacket& packet) {
         // uint8_t nalu = getNalUnit(VCodecId::h264, packet);
         // log(LogLevel::info, "nalu:", (int32_t)nalu, " size:", packet.data.size);
         if (packet.packtype == (int32_t)PackType::vconfig) {
-          videoDecoder->pushConfig(*pkt);
+          videoDecoder()->pushConfig(*pkt);
           if (vConfigPackets.size() < 8) {
             vConfigPackets.push_back(pkt);  // 首帧前换道要重喂给新车道
           }
@@ -261,24 +254,21 @@ void AMediaSource::onPacket(const AvoxPacket& packet) {
           bVDropUntilIdr = false;
           LOGFLF(LogLevel::info, "fallback landing snap to idr, pts:", packet.pts);
         }
-        DecodeResult result = videoDecoder->decoder(pkt);
+        DecodeResult result = videoDecoder()->decoder(pkt);
         if (result == DecodeResult::success && !bOpenVDecoder) {
           LOGFLF(LogLevel::info, "open video decoder success");
-          videoDecoder->dispatch(&IVideoDecoderOb::onVideoDesc);
+          videoDecoder()->dispatch(&IVideoDecoderOb::onVideoDesc);
           bOpenVDecoder = true;
         } else if (result == DecodeResult::openFailed) {
           // 首帧前车道被拒(如 Apple VT 无 h264 10bit 输出): 按候选表降级重试
           // (与播放腿 VDecoderTask 同构), 候选走完才判车道死
-          if (!bOpenVDecoder && downgradeVideoLane()) {
+          if (!bOpenVDecoder && videoChain.selectNext(*this)) {
             break;
           }
 // 车道从没出过帧且连续喂包失败(FFDecoder 判据)= 解码车道死(如无软解
 // 构建下的 AV1: 每包 ENOSYS)。停喂并按源错误上报 —— 否则整片喂完,
           LOGFLF(LogLevel::error, "video decode lane dead, stop feeding:", uri);
-          if (videoDecoder) {  // 兜底换道失败时已被置空
-            videoDecoder->removeObserver(this);
-            videoDecoder.reset();
-          }
+          videoChain.reset(*this);  // 候选走完, 解绑并销毁
           onError(AVError::decodeLaneDead, "video decode lane dead");
         }
       }
@@ -290,294 +280,128 @@ void AMediaSource::onPacket(const AvoxPacket& packet) {
         dispatch(&IRawSourceOb::onRawPacket, packet);
         break;
       }
-      if (audioDecoder) {
+      if (audioDecoder()) {
         // PacketBuf buf(packet);
         // LOGFLF(LogLevel::info, "audio packet:", packet.pts);
         PacketBufPtr pkt = std::make_shared<PacketBuf>(packet);
         if (packet.packtype == (int32_t)PackType::aconfig) {
-          audioDecoder->pushConfig(*pkt);
+          audioDecoder()->pushConfig(*pkt);
+          if (aConfigPackets.size() < 8) {
+            aConfigPackets.push_back(pkt);  // 首帧前换道要重喂给新车道
+          }
         }
-        DecodeResult result = audioDecoder->decoder(pkt);
+        DecodeResult result = audioDecoder()->decoder(pkt);
         if (result == DecodeResult::success && !bOpenADecoder) {
           LOGFLF(LogLevel::info, "open audio decoder success");
           bOpenADecoder = true;
+        } else if (result == DecodeResult::openFailed) {
+          // 首帧前车道被拒(如 fdk-aac 不支持该 AAC profile): 按候选表降级重试,
+          // 候选走完才判这条轨没得解 —— 旧实现只认 success, openFailed 被静默
+          // 丢弃, 首选解码器打不开就是整片无声且零日志
+          if (!bOpenADecoder && audioChain.selectNext(*this)) {
+            break;
+          }
+          LOGFLF(LogLevel::error, "audio decode lane dead:", uri);
         }
       }
       break;
   }
 }
 
-bool AMediaSource::initVideoDecoder(VCodecId codecId, const VideoDesc& srcDesc,
+bool AMediaSource::initVideoDecoder(VCodecId codecId, const VideoDesc& srcDesc_,
                                     bool bHard) {
-  vLaneTried.clear();
-  buildVideoLaneCands(codecId, bHard);
-  return initVideoDecoderTried(codecId, srcDesc, bHard, /*bTriedHard=*/false,
-                               /*bTriedSoft=*/false);
-}
-
-bool AMediaSource::laneTried(const std::string& name) const {
-  for (const auto& n : vLaneTried) {
-    if (n == name) {
-      return true;
-    }
-  }
-  return false;
-}
-
-// 候选次序与播放腿 VDecoderTask 同构: 另一极默认名 → 注册表首项兜底 →
-// vulkan 备选**放最后**(Apple 无 vulkan 解码器注册; 其他平台由 setContext→
-// onVaild 探运行时, 不可用即 false 跳下一候选)。另一极不分硬软都补进来 ——
-// 设置软解而软解车道首帧前就死时也能上浮硬解(旧实现只单向硬→软)
-void AMediaSource::buildVideoLaneCands(VCodecId codecId, bool bHard) {
-  vLaneCands.clear();
-  const auto& decodes = AvoxManager::Get().vDecoders.initFuncs(codecId);
-  const auto add = [&](const char* n) {
-    if (!n || !*n) {
-      return;
-    }
-    for (const auto& d : decodes) {
-      if (d.desc.name == n) {
-        vLaneCands.push_back(n);
-        return;
-      }
-    }
-  };
-  add(getDefaultDecoderName(codecId, !bHard));
-  if (!decodes.empty()) {
-    add(decodes[0].desc.name.c_str());
-  }
-  if (codecId == VCodecId::h264) {
-    add(AVOX_FFVULKAN_H264_DECODER);
-  } else if (codecId == VCodecId::h265) {
-    add(AVOX_FFVULKAN_H265_DECODER);
-  }
-}
-
-bool AMediaSource::trySelectVideoLane(const std::string& name) {
-  if (!ioSource) {
+  srcDesc = srcDesc_;
+  // 排候选表并逐条建实例: 候选 = 注册表全量, 上层"软/硬偏好"只决定谁先试,
+  // 另一极与注册表其余一律排在其后 —— 不假定上层已设定软或硬(旧实现把另一极
+  // 写死成软解名, 且软解车道首帧前就死时不补硬解)
+  if (!videoChain.build(codecId, bHard, videoDecoderName)) {
+    LOGFLF(LogLevel::warn, "no video codec register:", codecId);
     return false;
   }
-  const auto& vTracks = ioSource->getVideoTracks();
-  if (vTracks.empty()) {
+  if (!videoChain.selectFirst(*this)) {
+    LOGFLF(LogLevel::warn, "no video decode lane available:", codecId);
     return false;
   }
-  const auto& vTrack = vTracks[0];
-  const auto& decodes = AvoxManager::Get().vDecoders.initFuncs(vTrack.codecId);
-  for (const auto& d : decodes) {
-    if (d.desc.name != name) {
-      continue;
-    }
-    vLaneTried.push_back(name);
-    auto cand = std::unique_ptr<VideoDecoder>(d.initFunc());
-    if (!cand) {
-      return false;
-    }
-    cand->setObserver(this);
-    if (!cand->setContext(d.desc, vTrack.desc)) {
-      LOGFLF(LogLevel::warn, "lane set desc failed:", name);
-      return false;
-    }
-    videoDecoder = std::move(cand);
-    LOGFLF(LogLevel::info, "lane selected:", name);
-    return true;
-  }
-  return false;
-}
-
-// 首帧前车道降级(与播放腿 VDecoderTask 的换道同构): 候选表逐个试, 建不出/
-// 不支持跳下一个; 换成的车道重喂配置包并吸到下一个关键帧; 表走完才判车道死
-bool AMediaSource::downgradeVideoLane() {
-  while (!vLaneCands.empty()) {
-    const std::string name = vLaneCands.front();
-    vLaneCands.erase(vLaneCands.begin());
-    if (laneTried(name)) {
-      continue;  // 同一条车道不重试(含正在用的那条)
-    }
-    if (videoDecoder) {
-      videoDecoder->removeObserver(this);
-      videoDecoder.reset();
-    }
-    if (!trySelectVideoLane(name)) {
-      continue;
-    }
-    for (auto& cp : vConfigPackets) {
-      videoDecoder->pushConfig(*cp);
-    }
-    vConfigPackets.clear();
-    bOpenVDecoder = false;
-    bVDropUntilIdr = true;
-    LOGFLF(LogLevel::warn, "video lane downgrade to:", name);
-    return true;
-  }
-  return false;
-}
-
-// 解码器选型的候选链(与播放器腿 VDecoderTask 同构): 先主路, 失败逐级下沉/上浮。
-// 硬软互备 + 已试过的不重试(防硬→软→硬 无限递归)。抽帧腿(IRecorder)默认软解,
-bool AMediaSource::initVideoDecoderTried(VCodecId codecId,
-                                         const VideoDesc& srcDesc, bool bHard,
-                                         bool bTriedHard, bool bTriedSoft) {
-  if (bHard) {
-    bTriedHard = true;
-  } else {
-    bTriedSoft = true;
-  }
-  if (!AvoxManager::Get().vDecoders.hasObjectId(codecId)) {
-    LOGFLF(LogLevel::warn, "no find video codec:", codecId);
-    return false;
-  }
-  const auto& decodes = AvoxManager::Get().vDecoders.initFuncs(codecId);
-  if (decodes.empty()) {
-    LOGFLF(LogLevel::warn, "no video codec:", codecId, " init");
-    return false;
-  }
-  // 解码器名覆盖(测试/排障强制车道): 覆盖首选名, 不再自动插vulkan备选, 失败直接回软解
-  const char* sOverride =
-      (bHard && !videoDecoderName.empty()) ? videoDecoderName.c_str() : nullptr;
-  const char* sName = sOverride ? sOverride : getDefaultDecoderName(codecId, bHard);
-  // AV1 软解车道可用性判定(1003): FFmpeg 原生 "av1" 是 hwaccel-only 包装, 无
-  // hwaccel 上下文即每包 AVERROR(ENOSYS)。构建带 dav1d 时注册表才有真正能解帧的
-  // 软解器 "libdav1d"(FFHelper 归一注册名), 此时软解名改指它; 注册表没有 dav1d
-  // (如 Windows 无该库)则 AV1 软解车道不存在, 直接上浮硬解 —— 旧行为会落回原生
-  // "av1" 空壳, 每包 ENOSYS 解不出帧(缩略图/转码链实证)。
-  bool bSoftAv1Unusable = false;
-  if (!sOverride && !bHard && codecId == VCodecId::av1) {
-    bool bHasDav1d = false;
-    for (size_t i = 0; i < decodes.size(); ++i) {
-      if (decodes[i].desc.name == AVOX_FF_LIBDAV1D_DECODER) {
-        sName = AVOX_FF_LIBDAV1D_DECODER;
-        bHasDav1d = true;
-        break;
-      }
-    }
-    bSoftAv1Unusable = !bHasDav1d;
-  }
-  // 硬解备选: 主路失败先试vulkan(未注册自动跳过); 覆盖点名时跳过, 保证机器无关回软解
-  const char* sVulkan = nullptr;
-  if (bHard && !sOverride) {
-    if (codecId == VCodecId::h264) {
-      sVulkan = AVOX_FFVULKAN_H264_DECODER;
-    } else if (codecId == VCodecId::h265) {
-      sVulkan = AVOX_FFVULKAN_H265_DECODER;
-    }
-    if (sVulkan && strcmp(sVulkan, sName) == 0) {
-      sVulkan = nullptr;
-    }
-  }
-  size_t sIndex = 0;
-  bool bHitName = false;
-  for (size_t i = 0; i < decodes.size(); ++i) {
-    if (decodes[i].desc.name == sName) {
-      sIndex = i;
-      bHitName = true;
-      break;
-    }
-  }
-  if (!bHitName && sOverride) {
-    // 覆盖名未注册: 不落首项兜底, 直接回软解重选
-    LOGFLF(LogLevel::warn, "override decoder ", sName, " not register, try soft");
-    return initVideoDecoderTried(codecId, srcDesc, false, bTriedHard, bTriedSoft);
-  }
-// 软解车道不可用: 名查不到, 或该编码的软解器实际解不出帧(AV1 空壳)。上浮硬解重选
-// —— 该编码本端只有硬解可用时(Windows AV1 即此), 软解设置也能出图。硬解已试过
-  if ((!bHitName || bSoftAv1Unusable) && !bHard) {
-    if (bTriedHard) {
-      LOGFLF(LogLevel::warn, "soft decoder ", sName,
-             " unusable and hard already tried, give up");
-      return false;
-    }
-    LOGFLF(LogLevel::warn, "soft decoder ", sName,
-           " not register or unusable, try hard decode");
-    return initVideoDecoderTried(codecId, srcDesc, true, bTriedHard, bTriedSoft);
-  }
-  auto& vDecode = decodes[sIndex];
-  videoDecoder = std::unique_ptr<VideoDecoder>(vDecode.initFunc());
-  if (!videoDecoder) {
-    LOGFLF(LogLevel::warn, "no create video codec:", codecId);
-    return false;
-  }
-  videoDecoder->setObserver(this);
-  vLaneTried.push_back(vDecode.desc.name);  // 运行期降级据此跳过已试车道
-  if (!videoDecoder->setContext(vDecode.desc, srcDesc)) {
-    LOGFLF(LogLevel::warn, "video codec:", codecId, " set desc:", srcDesc,
-           " failed");
-    videoDecoder.reset();
-    if (bHard) {
-      // 主路失败先试 vulkan 备选(未注册/环境不支持自动跳过), 再落软解
-      if (sVulkan) {
-        for (size_t i = 0; i < decodes.size(); ++i) {
-          if (decodes[i].desc.name != sVulkan) {
-            continue;
-          }
-          videoDecoder = std::unique_ptr<VideoDecoder>(decodes[i].initFunc());
-          if (videoDecoder) {
-            videoDecoder->setObserver(this);
-            vLaneTried.push_back(decodes[i].desc.name);
-            if (videoDecoder->setContext(decodes[i].desc, srcDesc)) {
-              LOGFLF(LogLevel::info, "create video decode success (vulkan)");
-              return true;
-            }
-            LOGFLF(LogLevel::warn, "vulkan backup failed, fallback to soft");
-            videoDecoder.reset();
-          }
-          break;
-        }
-      }
-      if (bTriedSoft) return false;
-      return initVideoDecoderTried(codecId, srcDesc, false, bTriedHard,
-                                   bTriedSoft);
-    }
-    // 软解建不出/不支持(setContext 失败): 上浮硬解兜底(硬解已试过则放弃)
-    if (bTriedHard) return false;
-    return initVideoDecoderTried(codecId, srcDesc, true, bTriedHard, bTriedSoft);
-  }
-  LOGFLF(LogLevel::info, "create video decode success");
+  LOGFLF(LogLevel::info, "video lane selected:", videoChain.implName());
   return true;
 }
 
+// 车道链回调: 抽帧/录制腿不解码到渲染面, 接线只有观察者 + setContext
+bool AMediaSource::laneInit(VideoDecoder& impl, const VCodecDesc& desc) {
+  impl.setObserver(this);
+  return impl.setContext(desc, srcDesc);
+}
+
+void AMediaSource::laneClose(VideoDecoder& impl) { impl.removeObserver(this); }
+
+// 本腿的配置包另有 vConfigPackets 自有缓存(onPacket 里按到达顺序收), 不沿用
+// 播放腿从旧解码器 copyConfigs 的路子
+void AMediaSource::laneSaveConfigs(VideoDecoder& oldImpl) {}
+
+// 换道后: 重喂本腿缓存的配置包, 并在喂包口吸到下一个关键帧(半 GOP 起解会产
+// 缺参考坏帧); 首帧前才吸, 解码已出图时(videoChain 换道只发生在首帧前)不动落点
+void AMediaSource::laneChanged(VideoDecoder& newImpl, bool bFirst) {
+  if (bFirst) {
+    return;
+  }
+  for (auto& cp : vConfigPackets) {
+    newImpl.pushConfig(*cp);
+  }
+  vConfigPackets.clear();
+  bOpenVDecoder = false;
+  bVDropUntilIdr = true;
+  LOGFLF(LogLevel::warn, "video lane downgrade to:", videoChain.implName());
+}
+
 bool AMediaSource::initAudioDecoder(ACodecId codecId,
-                                    const AudioDesc& srcDesc) {
+                                    const AudioDesc& srcDesc_) {
   if (!AvoxManager::Get().aDecoders.hasObjectId(codecId)) {
     LOGFLF(LogLevel::warn, "no find audio codec:", codecId);
     return false;
   }
-  const auto& decodes = AvoxManager::Get().aDecoders.initFuncs(codecId);
-  if (decodes.empty()) {
-    LOGFLF(LogLevel::warn, "no audio codec:", codecId, " init");
+  // 排候选表并逐条建实例: 候选 = 注册表全量(优先名只决定谁先试)
+  audioSrcDesc = srcDesc_;
+  if (!audioChain.build(codecId)) {
+    LOGFLF(LogLevel::warn, "no audio codec register:", codecId);
     return false;
   }
-  size_t sIndex = 0;
-  if (codecId == ACodecId::aac) {
-    const char* sName = "fdk-aac decoder";
-    for (size_t i = 0; i < decodes.size(); ++i) {
-      if (decodes[i].desc.name == sName) {
-        sIndex = i;
-        break;
-      }
-    }
-  }
-  auto& aDecode = decodes[sIndex];
-  audioDecoder = std::unique_ptr<AudioDecoder>(aDecode.initFunc());
-  if (!audioDecoder) {
-    LOGFLF(LogLevel::warn, "no create audio codec:", codecId);
+  if (!audioChain.selectFirst(*this)) {
+    LOGFLF(LogLevel::warn, "no audio decode lane available:", codecId);
     return false;
   }
-  audioDecoder->setObserver(this);
-  if (!audioDecoder->setContext(aDecode.desc, srcDesc)) {
-    LOGFLF(LogLevel::warn, "audio codec:", codecId, " set desc:", srcDesc,
-           " failed");
-    audioDecoder.reset();
-    return false;
-  }
-  LOGFLF(LogLevel::info, "create audio decode success");
+  LOGFLF(LogLevel::info, "audio lane selected:", audioChain.implName());
   return true;
+}
+
+// 车道链回调(音频): 抽帧/录制腿不解码到渲染面, 接线只有观察者 + setContext
+bool AMediaSource::laneInit(AudioDecoder& impl, const ACodecDesc& desc) {
+  impl.setObserver(this);
+  return impl.setContext(desc, audioSrcDesc);
+}
+
+void AMediaSource::laneClose(AudioDecoder& impl) { impl.removeObserver(this); }
+
+// 音频配置包走 aConfigPackets 自有缓存(AudioDecoder 没有 copyConfigs)
+void AMediaSource::laneSaveConfigs(AudioDecoder& oldImpl) {}
+
+// 换道后重喂配置包; 音频没有关键帧落点语义
+void AMediaSource::laneChanged(AudioDecoder& newImpl, bool bFirst) {
+  if (bFirst) {
+    return;
+  }
+  for (auto& cp : aConfigPackets) {
+    newImpl.pushConfig(*cp);
+  }
+  aConfigPackets.clear();
+  bOpenADecoder = false;
+  LOGFLF(LogLevel::warn, "audio lane downgrade to:", audioChain.implName());
 }
 
 void AMediaSource::onVideoDesc() {
   const auto& vTracks = ioSource->getVideoTracks();
   if (!vTracks.empty()) {
     auto vTrack = vTracks[0];
-    const DecoderParams& dparams = videoDecoder->getDecoderParams();
+    const DecoderParams& dparams = videoDecoder()->getDecoderParams();
     vTrack.desc.fps = dparams.fps;
     setVideoDesc(vTrack.desc);
     LOGFLF(LogLevel::info, vTrack);
@@ -594,7 +418,7 @@ void AMediaSource::onVideoComplete() {}
 
 void AMediaSource::onAudioDesc() {
   // 在这才知道解码后的输出格式
-  AudioDesc decodeDesc = audioDecoder->getOutDesc();
+  AudioDesc decodeDesc = audioDecoder()->getOutDesc();
   setAudioDesc(decodeDesc);
   LOGFLF(LogLevel::info, decodeDesc);
 }
@@ -612,10 +436,7 @@ void AMediaSource::resolveTrackWaitTimeout() {
   if (videoFirstPts != AVOX_NOVALID_PTS && audioFirstPts == AVOX_NOVALID_PTS) {
     LOGFLF(LogLevel::warn,
            "audio track declared but no packet arrived, drop audio track");
-    if (audioDecoder) {
-      audioDecoder->removeObserver(this);
-      audioDecoder.reset();
-    }
+    audioChain.reset(*this);
     bDisableAudio = true;
   }
   // 音频已到、视频没到 -> 关闭视频解码器,标记无视频
@@ -623,10 +444,7 @@ void AMediaSource::resolveTrackWaitTimeout() {
            videoFirstPts == AVOX_NOVALID_PTS) {
     LOGFLF(LogLevel::warn,
            "video track declared but no packet arrived, drop video track");
-    if (videoDecoder) {
-      videoDecoder->removeObserver(this);
-      videoDecoder.reset();
-    }
+    videoChain.reset(*this);
     bDisableVideo = true;
   }
   // 降级后重新检查轨道就绪,触发 onReady(否则录制器仍卡在等待)

@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include "../codec/CodecChain.hpp"
 #include "../module/AvBuffer.hpp"
 #include "../module/Ringbuffer.hpp"
 #include "../module/TickCounter.hpp"
@@ -12,51 +13,6 @@
 
 namespace avox {
 
-// FFmpeg 原生软解器 (LGPL, 两渠道通用); 历史误写 libx264/libx265 —— 那是编码器名, 不存在同名解码器
-#ifndef AVOX_FF_H264_DECODER
-#define AVOX_FF_H264_DECODER "h264"
-#endif
-#ifndef AVOX_FF_H265_DECODER
-#define AVOX_FF_H265_DECODER "hevc"
-#endif
-#ifndef AVOX_FF_VP9_DECODER
-#define AVOX_FF_VP9_DECODER "vp9"
-#endif
-#ifndef AVOX_FF_AV1_DECODER
-#define AVOX_FF_AV1_DECODER "av1"
-#endif
-// 真软解 AV1(FFmpeg libdav1d 包装): 构建带 dav1d 时软解名指它 —— 原生 "av1"
-// 是 hwaccel-only 包装(无 hwaccel 即 ENOSYS), 名与 FFmpeg 注册名一致故
-// FFVDecoder 按名可查(1003 缩略图风暴定修)
-#ifndef AVOX_FF_LIBDAV1D_DECODER
-#define AVOX_FF_LIBDAV1D_DECODER "libdav1d"
-#endif
-#ifndef AVOX_FF_PRORES_DECODER
-// = FFmpeg 侧注册名(regFFCodec 用 codec->name), 与 AVOX_FF_VP9_DECODER 同款约定
-#define AVOX_FF_PRORES_DECODER "prores"
-#endif
-#ifndef AVOX_FF_VVC_DECODER
-#define AVOX_FF_VVC_DECODER "vvc"
-#endif
-#define AVOX_ANDROID_H264_DECODER "android h264 decoder"
-#define AVOX_ANDROID_H265_DECODER "android h265 decoder"
-#define AVOX_ANDROID_VP9_DECODER "android vp9 decoder"
-#define AVOX_ANDROID_AV1_DECODER "android av1 decoder"
-#define AVOX_IOS_H264_DECODER "ios h264 decoder"
-#define AVOX_IOS_H265_DECODER "ios h265 decoder"
-#define AVOX_IOS_VP9_DECODER "ios vp9 decoder"
-#define AVOX_IOS_AV1_DECODER "ios av1 decoder"
-#define AVOX_IOS_PRORES_DECODER "ios prores decoder"
-#define AVOX_FFVULKAN_H264_DECODER "ff_h264_vulkan"
-#define AVOX_FFVULKAN_H265_DECODER "ff_hevc_vulkan"
-#define AVOX_FFVULKAN_VP9_DECODER "ff_vp9_vulkan"
-#define AVOX_FFVULKAN_AV1_DECODER "ff_av1_vulkan"
-#define AVOX_FFDX11_H264_DECODER "ff_h264_dx11"
-#define AVOX_FFDX11_H265_DECODER "ff_hevc_dx11"
-#define AVOX_FFDX11_VP9_DECODER "ff_vp9_dx11"
-#define AVOX_FFDX11_AV1_DECODER "ff_av1_dx11"
-#define AVOX_FFVAAPI_H264_DECODER "ff_h264_vaapi"
-#define AVOX_FFVAAPI_H265_DECODER "ff_hevc_vaapi"
 // io->packetQueue->decode->frameQueue->render
 // 音频/视频Track的共同基类,在处理网络包的逻辑上，这二者差不多是相同的
 // 基本配置信息在track里带的AudioDesc/VideoDesc
@@ -182,8 +138,5 @@ class TAVTrack : public AVTrack {
  protected:
   virtual void onPrePushPacket() override;
 };
-
-// 返回视频默认的解码器名称
-AVOX_EXPORT const char* getDefaultDecoderName(VCodecId codecId, bool bHard);
 
 }
