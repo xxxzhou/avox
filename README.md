@@ -15,7 +15,7 @@ avox 源自作者多年的音视频/GPU 技术积累，经大模型辅助整理�
 
 **泛音 Panvox** 是基于 avox 构建的跨平台视频播放器:产品层用 Flutter,引擎层即本库——通过 C ABI 复用播放、硬解与 GPU 处理管线、字幕渲染与 AI 能力,覆盖 Windows / macOS / iOS / Android。
 
-- **Windows 已上架** [Microsoft Store](https://apps.microsoft.com/detail/9PG77H33P7K8);iOS 版已上架 [App Store](https://apps.apple.com/cn/app/panvox-player/id6819539073);macOS 还在审核,想试的留邮箱发 TestFlight;android [内部分享包](https://play.google.com/apps/test/RQo-NZmDUok/ahAO29uNRS3gG4ZDC35BtgMLCLvoQyam1Kvd6wGKPphYU5aCzPQ-UiYxxlxAB4ZtodrH0fTBAETk3--ARIvcjm3KQT) （连点「Play 商店版本」7 次->开发者选项->内部应用分享）。
+- **Windows 已上架** [Microsoft Store](https://apps.microsoft.com/detail/9PG77H33P7K8);**Apple 双端已上架** [App Store](https://apps.apple.com/cn/app/panvox-player/id6819539073)(iOS/iPadOS 与 macOS 同一页, macOS 需 12.0+ 且 Apple M 系芯片);android [内部分享包](https://play.google.com/apps/test/RQo-NZmDUok/ahAO29uNRS3gG4ZDC35BtgMLCLvoQyam1Kvd6wGKPphYU5aCzPQ-UiYxxlxAB4ZtodrH0fTBAETk3--ARIvcjm3KQT) （连点「Play 商店版本」7 次->开发者选项->内部应用分享）。
 - 落地形态:海报墙媒体库(直连 NAS / SMB / WebDAV / Jellyfin)、直连不转码、ASS/PGS/SRT 完整渲染、逐帧 HDR 色调映射、AI 字幕与识别打标、IPTV(m3u + EPG)
 
 <table align="center">
@@ -205,7 +205,7 @@ avox 的能力来自多年的持续积累：
 | 2019-2020 | oeip（Windows） | CUDA/DX11 图像管线、FFmpeg 推拉流、UE4/Unity3D 纹理直通、CUDA Grabcut/导向滤波、YOLO 整合游戏引擎 |
 | 2020-2021 | [aoce](https://github.com/xxxzhou/aoce)（跨平台） | Vulkan Compute 图像管线、GPUImage 100+ 滤镜移植、Android/iOS 相机采集、蓝绿幕扣像、NCNN 端侧推理、SWIG 多语言 |
 | 2024-至今 | avox | 播放器 SDK：多平台硬解硬编、零拷贝 GPU 通路、WebRTC 全家桶、AI 字幕/修复/超分、多语言 SDK；XR/VR·MR 相机标定与虚实融合模块已集成 |
-| 2026 | **泛音 Panvox**（[Microsoft Store](https://apps.microsoft.com/detail/9PG77H33P7K8)） | 基于 avox 的跨平台播放器产品：Flutter 产品层 + avox C ABI；Windows 已上架，Apple 两端审核中；播放/片库/字幕/AI/IPTV 全链路落地 |
+| 2026 | **泛音 Panvox**（[Microsoft Store](https://apps.microsoft.com/detail/9PG77H33P7K8)） | 基于 avox 的跨平台播放器产品：Flutter 产品层 + avox C ABI；Windows、Apple 双端均已上架（[Store](https://apps.microsoft.com/detail/9PG77H33P7K8) / [App Store](https://apps.apple.com/cn/app/panvox-player/id6819539073)）；播放/片库/字幕/AI/IPTV 全链路落地 |
 
 **XR / 虚拟制片模块**（VR/MR 相机跟踪、虚拟制片标定、MR 虚实融合等，前期在 aoce 上完整验证，已集成进 avox）：
 
