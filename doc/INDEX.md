@@ -29,7 +29,7 @@ avox 是跨平台音视频播放器 SDK，支持直播流、本地媒体、硬�
 | [tools](tools/) | 开发工具: VSCode/Wireshark/ffmpeg/git/trae/冻结排查 |
 | [plan](plan/) | 设计与规划方案 · 功能计划集 [backlog/README.md](plan/backlog/README.md) (panvox 双仓对齐 A-1~A-19) |
 | [reports](reports/README.md) | 排查案例集: 已定谳案例(根因 / 修复提交号 / 可复用判据) —— 解码与呈现 · seek 与音画同步 · 网络直链与 NAS · 帧节奏与上屏停顿，另有 DV-HDR、panvox 直通两篇专题 |
-| [test](test/环境与插件总览.md) | 测试: 环境与插件关系地图 / 测试与修复工作流 / 发布检查清单 / 功能测试矩阵 —— **测试整体移交同级 `../avox-test` 仓**，功能完成后到那边跑测试（见其 README.md）；本目录为过渡期副本 |
+| test | 测试: 环境与插件关系地图 / 测试与修复工作流 / 发布检查清单 / 功能测试矩阵 —— **已整体移交同级 `../avox-test` 仓**（文档在 `../avox-test/docs/`，入口见其 README.md），本仓不再保留副本 |
 
 ---
 

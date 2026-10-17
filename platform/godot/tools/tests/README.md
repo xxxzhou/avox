@@ -51,5 +51,5 @@ godot --headless --path platform/godot/tools --script res://tests/test_retarget_
 
 - 新用例放本目录，命名 `test_<主题>.gd`，首行注释写清运行命令与退出码。
 - 输出统一判定行 `[AVOX][TEST] case=<id> result=PASS|FAIL [k=v ...]`，case id 稳定可复现。
-- 只写一次的排障脚本不入库；要留证据请把结论记到 [doc/test/功能测试矩阵.md](../../../../doc/test/功能测试矩阵.md)。
+- 只写一次的排障脚本不入库；要留证据请把结论记到 `../avox-test/docs/功能测试矩阵.md`（该矩阵已移交 avox-test 仓，本仓不再保留副本）。
 - 本目录已在 `export_presets.cfg` 的 `exclude_filter` 中排除，不会打进 APK / exe。

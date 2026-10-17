@@ -41,7 +41,7 @@ ctest --test-dir build/windows/avox --output-on-failure -C Release
 **功能开发/修复完成后的测试验证，一律去同级 `../avox-test` 仓跑**（统一测试仓，收拢 avox/panvox/三引擎的全部测试，入口见 [avox-test/README.md](../avox-test/README.md)）。
 
 - **测试仓是私有仓**（`xxxzhou/avox-test`，外部拉不到）：本仓的**构建与提交都不依赖它** —— 缺它时 `playtest` 目标自动跳过、Android 矩阵入口（`PlayMatrixJni.cpp`）走 `__has_include` 降级空实现、pre-push 只跑 doc_check。外部开发者照常 `ctest` 即可
-- **已迁入 avox-test，本仓副本已删（2026-09-16）**：`script/testenv/`（推流/回归/素材生成脚本）、`assets/video/test/` 标准测试源、播放矩阵用例表与宿主 `l1_avox/playmatrix/`、`doc/test/` 测试文档。**别再往本仓加测试资产或脚本**
+- **已迁入 avox-test，本仓副本已删（2026-09-16 迁移，副本 2026-10-17 删净）**：`script/testenv/`（推流/回归/素材生成脚本）、`assets/video/test/` 标准测试源、播放矩阵用例表与宿主 `l1_avox/playmatrix/`、`doc/test/` 测试文档。**别再往本仓加测试资产或脚本**
 - **矩阵宿主的引用方式**：本仓 `platform/*/playtest` 与 `platform/ios/avoxtest` 只是**宿主壳**，用例表与 `HostMain.cpp` 都取自 `../avox-test/l1_avox/playmatrix`（CMake 变量 `AVOX_TEST_ROOT`，可 `-DAVOX_TEST_ROOT=<路径>` 指定）；`samples/` 的默认素材路径同样指向 `../avox-test/assets/video/`。改用例表只改 avox-test 一处
 - **留在本仓**：`tests/test_*.cpp`（doctest 白盒单测，直接编本仓源码，随主构建编译）；`samples/` 属第二批迁移
 

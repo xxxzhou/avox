@@ -22,7 +22,7 @@ DEFAULT_SRC = os.path.join(
 # 随 SDK 一起部署的 CLI 工具
 CLI_EXES = ("avox_cli.exe", "avox_agent.exe")
 # 顶层剔除的 dll: fdk-aac 源许可 (Fraunhofer SIC-004) 仅限非商业, FFmpeg 归 nonfree,
-# 公开分发的 SDK 不带 (播放解码走 FFmpeg 原生 AAC; 编码需求见 doc/test/发布检查清单.md)
+# 公开分发的 SDK 不带 (播放解码走 FFmpeg 原生 AAC; 编码需求见 avox-test/docs/发布检查清单.md)
 DENY_TOP_DLLS = ("fdk-aac.dll",)
 
 
