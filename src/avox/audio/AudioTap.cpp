@@ -77,8 +77,8 @@ void AudioTap::onRunTask() {
     bool bGet = queue.dequeueAction(
         [&frame](const AudioFramePtr& cframe) { frame.form(*cframe); });
     if (!bGet) {
-      // 空队列,sleep
-      sleepTask(true, frameMs / 2);
+      // 空队列: 真睡(旧写法传 true = yield, 第二个参数被丢弃 —— 空转烧核)
+      sleepTask(false, frameMs / 2);
       continue;
     }
     // 送入 reshaper 累积,满则触发 onProcess → dispatch

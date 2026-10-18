@@ -109,6 +109,9 @@ class MediaPlayer : public IMediaPlayer,
   bool bMuxerCpu = false;
   // 检查Buffing状态时间，超过10s可能需要关闭(torrent源默认放宽, 可经选项覆盖)
   TickChecker bufferChecker = {10000};
+  // opening 看门狗: 开流卡死(源不可达/对端黑洞)时给个出口。没有它, 开不成的
+  // 播放器会永远留在 opening —— 界面早已报失败, 引擎却一直挂着。
+  TickChecker openChecker = {30000};
   // 业务是否显式设置过缓冲超时(未设置时 torrent 源自动放宽到 30s)
   bool bufferingTimeoutUserSet = false;
   // 记录seekPts

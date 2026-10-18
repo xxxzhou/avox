@@ -475,18 +475,22 @@ void TranscodeRecorder::onError(AVError error, const char* msg) {
 // RunTask - 编码线程
 void TranscodeRecorder::onRunTask() {
   while (running() || !vFrameQueue.empty() || !aFrameQueue.empty()) {
+    bool bDidWork = false;
     // seek 必须在编码线程处理(与队列/muxer 同属一线程,避免与 IO 线程竞争)
     if (bSeekPending.load()) {
       bSeekPending.store(false);
       doSeek();
+      bDidWork = true;
     }
     VideoFramePtr vframe;
     if (vFrameQueue.dequeue(vframe)) {
       processVideo(vframe);
+      bDidWork = true;
     }
     AudioFramePtr aframe;
     if (aFrameQueue.dequeue(aframe)) {
       processAudio(aframe);
+      bDidWork = true;
     }
     // 如果io源结束了,并且队列全空了，则关闭编码器
     if (source && source->ioComplete() && vFrameQueue.empty() &&
@@ -528,7 +532,9 @@ void TranscodeRecorder::onRunTask() {
         bDrainPhase.store(false);
       }
     }
-    sleepTask(true);
+    // 有帧/seek 处理过 → 让出时间片接着消化; 空转(等源、等队列) → 阻塞睡。
+    // 墙缩略抽帧整段跑在这条循环里, 单张预算 5s: yield 时这 5s 就是满核。
+    sleepTask(bDidWork);
   }
   if (!bSourceOpening.load()) {
     teardownSource();

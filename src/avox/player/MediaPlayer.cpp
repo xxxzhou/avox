@@ -1253,8 +1253,10 @@ void MediaPlayer::onRunTask() {
       }
     }
     tick();
-    // 有命令以及在opening的情况下，进入就绪态，随时准备执行下一步
-    sleepTask(mpCommands.size() > 0 || state == PlayerState::opening);
+    // 命令队列非空 = 手上有活, 让出时间片立刻接着处理; opening 是纯等待
+    // (等 IO 回调 ready), 必须阻塞睡 —— 这里 yield 等于自旋: 一个开不动的源
+    // 就能把整核烧到 100% 直到开流结束(真机报告 97%/92s, 热栈即本行)。
+    sleepTask(mpCommands.size() > 0);
   }
   cmdClose();
   mpPingback->stopTask();
@@ -1262,6 +1264,14 @@ void MediaPlayer::onRunTask() {
 }
 
 void MediaPlayer::tick() {
+  // opening 看门狗先于 ioSource 判空: 开流卡死(源不可达/对端黑洞)时正是
+  // 这条出口把播放器关掉 —— 否则它会永远留在 opening, 界面早已报失败,
+  // 引擎这边却一直挂着线程与解码器。
+  if (state == PlayerState::opening && openChecker.timeout()) {
+    LOGFLF(LogLevel::warn, "opening timeout, close player");
+    cmdClose();
+    return;
+  }
   if (!ioSource) {
     return;
   }
@@ -1588,6 +1598,11 @@ void MediaPlayer::cmdOpen(OpenCommandPtr cmd) {
       useIO == IoPlan::ffmpeg && !bufferingTimeoutUserSet) {
     bufferChecker.setDelay(20000);
   }
+  // opening 看门狗同源放宽: torrent 是渐进下载, 落不到 ready 属常态; 其余
+  // 源(含经隧道取的 WebDAV/SMB)探容器头只需几秒, 30s 已留足余量。
+  if (useIO == IoPlan::torrent) {
+    openChecker.setDelay(60000);
+  }
   bool bFind = AvoxManager::Get().ioSources.hasObjectId(useIO);
   if (!bFind) {
     pb.action = MediaAction::create;
@@ -1638,6 +1653,8 @@ void MediaPlayer::cmdOpen(OpenCommandPtr cmd) {
   // 更新状态
   PlayerState temp = bOpen ? PlayerState::opening : PlayerState::stopped;
   setState(temp);
+  // opening 计时起点(stopped 时该值不被读, 一起重置无副作用)
+  openChecker.reset();
   // 埋点记录
   pb.action = MediaAction::open;
   pb.msg = url.c_str();
@@ -1648,6 +1665,7 @@ void MediaPlayer::cmdOpen(OpenCommandPtr cmd) {
 void MediaPlayer::cmdReady() {
   // 更新状态,可以接受IO数据了
   setState(PlayerState::ready);
+  openChecker.reset();
   // 通知外部
   MPOB::dispatch(&IMediaPlayerOb::onReady);
   // 记录

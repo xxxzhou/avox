@@ -324,9 +324,9 @@ void IOMuxer::onRunTask() {
         }
       }
     }
-    // 如果是视频包PTS相同需要合并的情况,快速处理
-    // sleepTask(packetQueue.size() > 10, 5);
-    sleepTask(true);
+    // 本轮到包 → 让出时间片立即继续; 队列空(等上游) → 阻塞睡, 不空转。
+    // (旧写法无条件 yield, 参数被丢弃 —— 队列空时就是纯自旋)
+    sleepTask(bGet);
   }
   // worker线程退出, 冲掉最后一个挂起的视频AU
   flushPendingAu();
