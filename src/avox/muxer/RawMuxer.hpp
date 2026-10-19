@@ -35,6 +35,8 @@ class RawMuxer : public MediaMuxer {
  public:
   bool getHardEncode();
   virtual void setHardEncode(bool bHard) override;
+  // 视频编码参数(码控模式/质量/码率/预设/profile/关键帧间隔), open 前设置生效
+  void setEncodeParam(const VideoEncodeParam& param);
   virtual void setVideoCodec(VCodecId codecId) override;
   virtual void setAudioCodec(ACodecId codecId) override;
   virtual void setAudioDesc(const AudioDesc& desc) override;

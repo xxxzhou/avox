@@ -78,6 +78,14 @@ namespace avox {
 #define AVOX_REC_HARD_DECODE_BOOL "rec.hard.decode"
 // 转码录制器是否硬编(默认true; 设 false 走 FFmpeg 软编, windows软编文件更小, 仅TranscodeRecorder消费)
 #define AVOX_REC_HARD_ENCODE_BOOL "rec.hard.encode"
+// 视频编码旋钮: 常用项(码控模式/质量/码率/预设)走
+// IRecorder::setVideoEncodeParam(结构体, 上层 UI 直接填), 不在此列;
+// 下面两个不常用的留 option 入口(异步/远程配置路径), open 前设置生效。
+// 各旋钮的平台支持差异见 src/avox_cmd/doc/doc_record.md
+// 关键帧间隔秒数(缺省 3): seek 粒度与体积的折中
+#define AVOX_REC_ENCODE_GOP_INT "rec.encode.gop"
+// profile(兼容性↔效率): 0=compat(Baseline) 1=main 2=high(缺省)
+#define AVOX_REC_ENCODE_PROFILE_INT "rec.encode.profile"
 
 // 日志打印
 // IO线程包的信息

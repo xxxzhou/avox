@@ -10,6 +10,7 @@
 #include "avox/module/LogHelper.hpp"
 #include "avox/muxer/Muxer.hpp"
 #include "avox/source/PacketBuf.hpp"
+#include "avox/video/VideoEncodeParams.hpp"
 
 namespace avox {
 
@@ -66,8 +67,12 @@ bool IOMuxerZM::onInit() {
     if (fps <= 0) {
       fps = 25;
     }
-    // 计算默认码率，单位kbps
-    int32_t bitrate = vDesc.desc.width * vDesc.desc.height * fps * 8 / 1000;
+    // 默认码率(kbps): ZLM 只把它填进 catalog 的 track bit_rate, 不参与编码。
+    // 旧值 w*h*fps*8/1000 是 8 bit/像素(1080p30 ≈ 497 Mbps), 量级明显不对;
+    // 改用与编码侧同源的估算(单一实现见 avox/video/VideoEncodeParams.hpp)
+    VideoDesc bitrateDesc = vDesc.desc;
+    bitrateDesc.fps = fps;
+    int32_t bitrate = getAutoVideoBitrate(bitrateDesc, vDesc.codecId) / 1000;
     bool bInit = mk_media_init_video(zmMedia, vCodecId, vDesc.desc.width,
                                      vDesc.desc.height, fps, bitrate);
     if (!bInit) {

@@ -34,6 +34,81 @@ IOSVEncoder::IOSVEncoder() { bMetalRender = true; }
 
 IOSVEncoder::~IOSVEncoder() { onClose(); }
 
+namespace {
+
+// VTSessionSetProperty 会 retain, 传进去的那个引用由调用方自己放 —— 旧代码把
+// CFNumberCreate 的结果直接当参数传, 每次开会话漏两个 CFNumber
+void setSessionProperty(VTCompressionSessionRef session, CFStringRef key,
+                        CFTypeRef value) {
+  if (session && key && value) {
+    VTSessionSetProperty(session, key, value);
+  }
+}
+
+void setIntProperty(VTCompressionSessionRef session, CFStringRef key,
+                    int32_t value) {
+  CFNumberRef number =
+      CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &value);
+  if (!number) {
+    return;
+  }
+  setSessionProperty(session, key, number);
+  CFRelease(number);
+}
+
+void setFloatProperty(VTCompressionSessionRef session, CFStringRef key,
+                      double value) {
+  CFNumberRef number =
+      CFNumberCreate(kCFAllocatorDefault, kCFNumberFloat64Type, &value);
+  if (!number) {
+    return;
+  }
+  setSessionProperty(session, key, number);
+  CFRelease(number);
+}
+
+void setBoolProperty(VTCompressionSessionRef session, CFStringRef key,
+                     bool value) {
+  setSessionProperty(session, key, value ? kCFBooleanTrue : kCFBooleanFalse);
+}
+
+// 码率上硬限(每 1 秒一个采样): cbr 模式下 VT 的压峰手段。
+// 注意该属性在部分系统上不受支持 —— VTSessionSetProperty 会返回错误, 我们
+// 忽略返回值, 退化成"只有平均码率", 与 vbr 同效(见 doc_record.md 平台支持注)
+void setDataRateLimit(VTCompressionSessionRef session, int32_t bitsPerSecond) {
+  int32_t seconds = 1;
+  CFNumberRef bits =
+      CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &bitsPerSecond);
+  CFNumberRef secs =
+      CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &seconds);
+  if (!bits || !secs) {
+    if (bits) {
+      CFRelease(bits);
+    }
+    if (secs) {
+      CFRelease(secs);
+    }
+    return;
+  }
+  const void* values[] = {bits, secs};
+  CFArrayRef limits =
+      CFArrayCreate(kCFAllocatorDefault, values, 2, &kCFTypeArrayCallBacks);
+  if (limits) {
+    setSessionProperty(session, kVTCompressionPropertyKey_DataRateLimits,
+                       limits);
+    CFRelease(limits);
+  }
+  CFRelease(bits);
+  CFRelease(secs);
+}
+
+// 属性键用字面量: PrioritizeEncodingSpeedOverQuality 这个常量在不同 SDK 版本
+// 的可见性不一致(未声明会编译失败), 而 VT 的属性键字符串是稳定的; 不受支持的
+// 系统上该设置会被忽略(不报错), 只在"速度档"时下发
+CFStringRef kPrioSpeedKey = CFSTR("PrioritizeEncodingSpeedOverQuality");
+
+}  // namespace
+
 DecodeResult IOSVEncoder::onPreEncoder() {
   float version = getIosDeviceSystemVersion();
   // 检查iOS版本支持
@@ -70,29 +145,75 @@ DecodeResult IOSVEncoder::onPreEncoder() {
     LOGFLF(LogLevel::warn, "failed to create compression session:", status);
     return DecodeResult::openFailed;
   }
-  // 设置编码参数
-  VTSessionSetProperty(compressionSession, kVTCompressionPropertyKey_RealTime,
-                       kCFBooleanTrue);
-  VTSessionSetProperty(
-      compressionSession, kVTCompressionPropertyKey_ProfileLevel,
-      desc.codecId == VCodecId::h264 ? kVTProfileLevel_H264_Baseline_AutoLevel
-                                     : kVTProfileLevel_HEVC_Main_AutoLevel);
-  VTSessionSetProperty(compressionSession,
-                       kVTCompressionPropertyKey_AllowFrameReordering,
-                       kCFBooleanFalse);
-  VTSessionSetProperty(
-      compressionSession, kVTCompressionPropertyKey_AverageBitRate,
-      CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &bitrate));
+  // 设置编码参数。RealTime = 延迟优先, 由用途档定(不是预设):
+  //   record = 离线落盘: 关 RealTime 让 VT 走画质优化的多遍/前瞻路径, 开 B 帧
+  //   stream = 实时推流: RealTime 开、关重排、码率当硬目标
+  const bool bRec = usage == EncodeUsage::record;
+  setBoolProperty(compressionSession, kVTCompressionPropertyKey_RealTime,
+                  !bRec);
+  // profile: 可移植三档 → VT 的 profile level; HEVC 三档都 Main(输入 8bit)。
+  // 推流侧缺省取 compat(Baseline): 与 WebRTC SDP 的 profile-level-id 契约一致,
+  // 编码器偷偷发 High 的 NAL 会让对端解不了
+  if (desc.codecId == VCodecId::h264) {
+    switch (getProfileLevel()) {
+      case EncodeProfile::compat:
+        setSessionProperty(compressionSession,
+                           kVTCompressionPropertyKey_ProfileLevel,
+                           kVTProfileLevel_H264_Baseline_AutoLevel);
+        break;
+      case EncodeProfile::main:
+        setSessionProperty(compressionSession,
+                           kVTCompressionPropertyKey_ProfileLevel,
+                           kVTProfileLevel_H264_Main_AutoLevel);
+        break;
+      default:
+        setSessionProperty(compressionSession,
+                           kVTCompressionPropertyKey_ProfileLevel,
+                           kVTProfileLevel_H264_High_AutoLevel);
+        break;
+    }
+  } else {
+    setSessionProperty(compressionSession, kVTCompressionPropertyKey_ProfileLevel,
+                       kVTProfileLevel_HEVC_Main_AutoLevel);
+  }
+  // B 帧重排: 录制允许(出帧回调按 VT 的解码时间填 dts, 下游 muxer 都按 dts 落盘)
+  setBoolProperty(compressionSession,
+                  kVTCompressionPropertyKey_AllowFrameReordering, bRec);
+  // 预设: VT 只有"是否把速度排在质量前面"这一个开关, 均衡档即不下发(取系统缺省)
+  const EncodePreset preset = getPreset();
+  if (preset != EncodePreset::inherit &&
+      preset != EncodePreset::balanced) {
+    setBoolProperty(compressionSession, kPrioSpeedKey,
+                    preset == EncodePreset::speed);
+  }
+  // 码控模式: 质量优先只给 Quality(与 AverageBitRate 同给时 VT 以码率为准,
+  // 质量档就废了; Quality 量纲 0.0~1.0 越大越清晰, 与统一档同向除以 100);
+  // VBR/CBR 给平均码率, CBR 再叠一层每秒硬限尽力压峰
+  const EncodeRateMode rcMode = getRateMode();
+  if (rcMode == EncodeRateMode::quality) {
+    setFloatProperty(compressionSession, kVTCompressionPropertyKey_Quality,
+                     getQualityLevel() / 100.0);
+  } else {
+    setIntProperty(compressionSession, kVTCompressionPropertyKey_AverageBitRate,
+                   getTargetBitrate());
+    if (rcMode == EncodeRateMode::cbr) {
+      setDataRateLimit(compressionSession, getTargetBitrate());
+    }
+  }
   // 设置帧率
-  int32_t fps = desc.desc.fps;
-  VTSessionSetProperty(
-      compressionSession, kVTCompressionPropertyKey_ExpectedFrameRate,
-      CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &fps));
+  const int32_t fps = (int32_t)desc.desc.fps;
+  setIntProperty(compressionSession, kVTCompressionPropertyKey_ExpectedFrameRate,
+                 fps);
   // 设置关键帧间隔
-  int32_t keyFrameInterval = gop * desc.desc.fps;
-  VTSessionSetProperty(
-      compressionSession, kVTCompressionPropertyKey_MaxKeyFrameInterval,
-      CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &keyFrameInterval));
+  const int32_t keyFrameInterval = (int32_t)(gop * desc.desc.fps);
+  setIntProperty(compressionSession,
+                 kVTCompressionPropertyKey_MaxKeyFrameInterval,
+                 keyFrameInterval);
+  LOGFLF(LogLevel::info, "ios encoder open, usage:",
+         bRec ? "record" : "stream", " rateMode:", (int32_t)rcMode,
+         " bitrate:", getTargetBitrate(), " quality:", getQualityLevel(),
+         " preset:", (int32_t)preset, " profile:", (int32_t)getProfileLevel(),
+         " gop:", gop);
   // 准备编码会话
   status = VTCompressionSessionPrepareToEncodeFrames(compressionSession);
   if (status != noErr) {
@@ -107,6 +228,10 @@ void IOSVEncoder::flush() {
     VTCompressionSessionCompleteFrames(compressionSession, kCMTimeInvalid);
   }
 }
+
+// 排空: 与 flush 同实现 —— CompleteFrames 本就是"吐完待出帧再返回"的 drain
+// 语义。开 B 帧后会话内部会缓冲若干帧, 停流不排空就会丢尾帧
+void IOSVEncoder::drain() { flush(); }
 
 void IOSVEncoder::onClose() {
   if (compressionSession) {
@@ -383,7 +508,14 @@ void IOSVEncoder::compressionOutputCallback(void *outputCallbackRefCon,
     CMTime presentationTime =
         CMSampleBufferGetPresentationTimeStamp(sampleBuffer);
     packet.pts = (int64_t)llround(CMTimeGetSeconds(presentationTime) * 1000.0);
-    packet.dts = packet.pts;
+    // 开 B 帧重排后 pts 与 dts 不再相等: dts 必须取 VT 给解码时间, 否则容器里
+    // 两者全等, 重排流会被下游当无重排处理(时间戳错乱)
+    CMTime decodeTime = CMSampleBufferGetDecodeTimeStamp(sampleBuffer);
+    if (CMTIME_IS_VALID(decodeTime)) {
+      packet.dts = (int64_t)llround(CMTimeGetSeconds(decodeTime) * 1000.0);
+    } else {
+      packet.dts = packet.pts;
+    }
     // 判断帧类型
     if (infoFlags & kVTEncodeInfo_FrameDropped) {
       // 丢弃的帧

@@ -28,10 +28,34 @@ void TranscodeRecorder::onOptionChange(const char* key, ArgType option) {
   if (equalsIgnoreCase(key, AVOX_REC_HARD_DECODE_BOOL)) {
     bHardDecode = getBool(key);
     LOGFLF(LogLevel::info, "option:", key, " change:", bHardDecode);
-  } else if (equalsIgnoreCase(key, AVOX_REC_HARD_ENCODE_BOOL)) {
+    return;
+  }
+  if (equalsIgnoreCase(key, AVOX_REC_HARD_ENCODE_BOOL)) {
     bHardEncode = getBool(key);
     LOGFLF(LogLevel::info, "option:", key, " change:", bHardEncode);
+    return;
   }
+  // 编码旋钮: 常用项走 setVideoEncodeParam(上层 UI 直接填结构体), 这里只留
+  // 两个不常用的(异步/远程配置路径用)
+  if (equalsIgnoreCase(key, AVOX_REC_ENCODE_GOP_INT)) {
+    encodeParam.gopSeconds = (int32_t)getInt(key);
+  } else if (equalsIgnoreCase(key, AVOX_REC_ENCODE_PROFILE_INT)) {
+    encodeParam.profile = (EncodeProfile)getInt(key);
+  } else {
+    return;
+  }
+  // 旋钮打点: 出问题时先看这行有没有落上(与编码器开工时的下发日志对账)
+  LOGFLF(LogLevel::info, "option:", key, " change:", getInt(key));
+}
+
+// 视频编码参数(整包替换; open 前设置)。未设置的项保持缺省, 由编码器按录制
+// 用途档推导 —— 各编码器量纲换算与实测依据见 FFVEncoder::applyEncoderParams
+void TranscodeRecorder::setVideoEncodeParam(const VideoEncodeParam& param) {
+  encodeParam = param;
+  LOGFLF(LogLevel::info, "set encode param, rateMode:",
+         (int32_t)param.rateMode, " quality:", param.quality,
+         " bitrateKbps:", param.bitrateKbps, " preset:", (int32_t)param.preset,
+         " gop:", param.gopSeconds, " profile:", (int32_t)param.profile);
 }
 
 TranscodeRecorder::~TranscodeRecorder() { close(); }
@@ -132,6 +156,8 @@ bool TranscodeRecorder::open(const char* url, const char* file) {
     muxer = std::make_unique<RawMuxer>();
     muxer->setMuxerType(muxerType);
     muxer->setHardEncode(bHardEncode);
+    // 编码参数在 open 前落到编码流(未设置的项由编码器按用途档推导)
+    muxer->setEncodeParam(encodeParam);
     muxer->setVideoCodec(vCodecId);
     muxer->setAudioCodec(aCodecid);
   }

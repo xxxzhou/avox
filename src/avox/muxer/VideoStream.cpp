@@ -19,8 +19,9 @@ VideoStream::~VideoStream() { stopEncoder(); }
 
 void VideoStream::stopEncoder() {
   if (encoder()) {
-    // 排空: 硬编 CompleteFrames 返回前把待出帧全回调完(sink 尚活时写出尾帧)
-    encoder()->flush();
+    // 排空: 待出帧在 sink 尚活、观测者尚在时吐完(质量档前瞻缓冲可达几十帧,
+    // 用 flush 的"丢弃并复位"会静默吃掉尾部)
+    encoder()->drain();
   }
   encoderChain.reset(*this);
   // 断链: 之后任何迟到包判空返回, 不再碰已释放的 muxer
@@ -45,11 +46,17 @@ void VideoStream::setVideoDesc(const VTrackDesc& desc_) {
     return;
   }
   LOGFLF(LogLevel::info, "init encoder:", encoderChain.implName(),
-         " codecId:", getVCodecName(desc.codecId));
+         " codecId:", getVCodecName(desc.codecId),
+         " usage:", usage == EncodeUsage::stream ? "stream" : "record");
 }
 
-// 车道接线: 编码器只有 desc 与观察者要接, 开不开得起来要到首帧才知道
-bool VideoStream::laneInit(VideoEncoder& impl, const VCodecDesc&) {
+// 车道接线: desc/编码参数/编码器名与观察者都在这接上; 开不开得起来要到首帧才知道。
+// 编码器名交给实现 = 尊重候选链选中的那条(上层选软/硬的意图只在这一处生效)
+bool VideoStream::laneInit(VideoEncoder& impl, const VCodecDesc& vdesc) {
+  impl.setEncoderName(vdesc.name);
+  // 先下参数再 setDesc: 显式码率要先置位, 免得 setDesc 用自动码率覆盖它
+  impl.setUsage(usage);
+  impl.setEncodeParam(encodeParam);
   impl.setDesc(desc);
   impl.setObserver(this);
   return true;

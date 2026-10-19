@@ -127,6 +127,68 @@ enum class TransMode : int32_t {
   VideoCopy    = 2   // 视频直拷 + 音频转码(转封装+改音频等场景)
 };
 
+// 码率控制模式
+#define AVOX_MAP_ENCODE_RATE_MODE(XX) \
+  XX(inherit, -1, "inherit")          \
+  XX(quality, 0, "quality")           \
+  XX(vbr, 1, "vbr")                   \
+  XX(cbr, 2, "cbr")
+
+enum class EncodeRateMode : int32_t {
+#define XX(name, value, str) name = value,
+  AVOX_MAP_ENCODE_RATE_MODE(XX)
+#undef XX
+};
+
+// 编码预设(速度↔质量)
+#define AVOX_MAP_ENCODE_PRESET(XX) \
+  XX(inherit, -1, "inherit")       \
+  XX(speed, 0, "speed")            \
+  XX(balanced, 1, "balanced")      \
+  XX(quality, 2, "quality")
+
+enum class EncodePreset : int32_t {
+#define XX(name, value, str) name = value,
+  AVOX_MAP_ENCODE_PRESET(XX)
+#undef XX
+};
+
+// 编码 profile(兼容性↔编码效率)
+#define AVOX_MAP_ENCODE_PROFILE(XX) \
+  XX(inherit, -1, "inherit")        \
+  XX(compat, 0, "compat")           \
+  XX(main, 1, "main")               \
+  XX(high, 2, "high")
+
+enum class EncodeProfile : int32_t {
+#define XX(name, value, str) name = value,
+  AVOX_MAP_ENCODE_PROFILE(XX)
+#undef XX
+};
+
+// 视频编码参数(录制器常用的一组旋钮, open 前设置生效)。
+// 逐项独立: 只改想改的那项, 其余留缺省; 缺省 = 按录制用途档推导
+// (质量优先 + 质量档60 + 均衡预设 + high profile + 3秒关键帧)。
+// 各编码器量纲不同(crf/cq/qp/Quality), SDK 按平台换算并实测校准
+struct VideoEncodeParam {
+  // 码率控制: quality=质量定档(体积随内容起伏) vbr=可变码率 cbr=恒定码率;
+  // inherit = 缺省(质量优先)
+  EncodeRateMode rateMode = EncodeRateMode::inherit;
+  // 质量档 0..100(越大越清晰、体积越大); -1 = 缺省(60)
+  int32_t quality = -1;
+  // 目标码率 kbps; 0 = 按分辨率/帧率自动。给了值就按码率收口(VBR),
+  // 除非另行指定 rateMode
+  int32_t bitrateKbps = 0;
+  // 编码预设; inherit = 缺省(均衡)
+  EncodePreset preset = EncodePreset::inherit;
+  // 关键帧间隔秒(seek 粒度与体积的折中); 0 = 缺省(3)。
+  // 不常用, 也可经 option "rec.encode.gop" 设置
+  int32_t gopSeconds = 0;
+  // profile; inherit = 缺省(录制取 high, 推流取 compat)。
+  // 不常用, 也可经 option "rec.encode.profile" 设置
+  EncodeProfile profile = EncodeProfile::inherit;
+};
+
 // 流录制器,三个作用
 // 1 bTranscode为false,直接保存/转发原始流
 // 2 bTranscode为true,转录原始流,ISurfaceRender处理图像
@@ -176,6 +238,12 @@ class IRecorder {
   virtual ISourceInfo* getSourceInfo() { return nullptr; }
   // 返回内置的参数设置器(io.*/rec.*系列key,open前设置生效)
   virtual IOption* getOption() = 0;
+  // 视频编码参数(转码录制器专用, open 前设置; 转封装录制器不编码, 忽略)。
+  // 常用旋钮(码控模式/质量/码率/预设)只走本接口 —— 上层 UI 直接填结构体,
+  // 不必拼 key 字符串; 只有不常用的关键帧间隔/profile 另有 option 入口
+  // (rec.encode.gop / rec.encode.profile, 异步/远程配置用)。
+  // ⚠️ 新虚函数只追加在接口末尾(往中间插会移动既有槽位, 旧二进制静默调错)
+  virtual void setVideoEncodeParam(const VideoEncodeParam& param) {};
 };
 
 extern "C" {

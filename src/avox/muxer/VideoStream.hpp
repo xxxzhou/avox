@@ -17,8 +17,11 @@ protected:
   VTrackDesc desc = {};
   // 是否硬编
   bool bHardEncoder = true;
-  // 几秒一个GOP
-  int32_t gop = 3;
+  // 编码参数(逐项独立旋钮: 码控模式/质量/码率/预设/profile/关键帧间隔);
+  // 未设置项由编码器按用途档推导。车道接线时下发给选中的那个编码器
+  VideoEncodeParam encodeParam = {};
+  // 用途档: 转码录制器恒为 record(落盘); 推流侧(WebRTC)在它那条路自己设 stream
+  EncodeUsage usage = EncodeUsage::record;
   VideoEncoderChain encoderChain;
   // 本车道是否已出过包: 出包前换道安全(封装头/编码描述还没落), 出包后不再换
   bool bEmittedPacket = false;
@@ -27,7 +30,7 @@ protected:
 
   // 候选链宿主: 编码器的"打不开"在首帧(onPreEncoder)不在建实例, 故这里只接线,
   // laneInit 恒成功; 真正的换道由 encoderFrame 见 openFailed 时发起
-  virtual bool laneInit(VideoEncoder &impl, const VCodecDesc &) override;
+  virtual bool laneInit(VideoEncoder &impl, const VCodecDesc &vdesc) override;
   virtual void laneClose(VideoEncoder &impl) override;
   virtual void laneSaveConfigs(VideoEncoder &oldImpl) override;
   virtual void laneChanged(VideoEncoder &newImpl, bool bFirst) override;
@@ -39,6 +42,7 @@ protected:
 public:
   void setHardEncode(bool bHard);
   bool getHardEncode();
+  void setEncodeParam(const VideoEncodeParam &param) { encodeParam = param; }
   void setVideoDesc(const VTrackDesc &desc);
   void encoderFrame(const YUVFrame &frame);
   void encoderFrame(const GpuFrame &frame);

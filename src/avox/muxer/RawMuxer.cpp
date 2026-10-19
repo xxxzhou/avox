@@ -32,6 +32,10 @@ bool RawMuxer::getHardEncode() { return videoStream->getHardEncode(); }
 
 void RawMuxer::setHardEncode(bool bHard) { videoStream->setHardEncode(bHard); }
 
+void RawMuxer::setEncodeParam(const VideoEncodeParam& param) {
+  videoStream->setEncodeParam(param);
+}
+
 void RawMuxer::setVideoCodec(VCodecId codecId) {
   vCodecId = codecId;
   if (codecId == VCodecId::none) {

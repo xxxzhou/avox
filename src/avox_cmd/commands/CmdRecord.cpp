@@ -46,6 +46,50 @@ class RecordOb : public IRecorderOb {
   bool hasError = false;
 };
 
+// CLI 字符串 → 编码旋钮枚举。未知值返回 -1(等于不设置), 并给出可选值提示
+static int32_t parseRateModeArg(const std::string& s) {
+  if (s == "quality") {
+    return (int32_t)EncodeRateMode::quality;
+  }
+  if (s == "vbr") {
+    return (int32_t)EncodeRateMode::vbr;
+  }
+  if (s == "cbr") {
+    return (int32_t)EncodeRateMode::cbr;
+  }
+  fprintf(stderr, "未知 -rc 值: %s (可选 quality/vbr/cbr)\n", s.c_str());
+  return -1;
+}
+
+static int32_t parsePresetArg(const std::string& s) {
+  if (s == "speed") {
+    return (int32_t)EncodePreset::speed;
+  }
+  if (s == "balanced") {
+    return (int32_t)EncodePreset::balanced;
+  }
+  if (s == "quality") {
+    return (int32_t)EncodePreset::quality;
+  }
+  fprintf(stderr, "未知 -preset 值: %s (可选 speed/balanced/quality)\n",
+          s.c_str());
+  return -1;
+}
+
+static int32_t parseProfileArg(const std::string& s) {
+  if (s == "compat") {
+    return (int32_t)EncodeProfile::compat;
+  }
+  if (s == "main") {
+    return (int32_t)EncodeProfile::main;
+  }
+  if (s == "high") {
+    return (int32_t)EncodeProfile::high;
+  }
+  fprintf(stderr, "未知 -profile 值: %s (可选 compat/main/high)\n", s.c_str());
+  return -1;
+}
+
 Command cmdRecord() {
   Command cmd;
   cmd.name = "record";
@@ -82,6 +126,19 @@ Command cmdRecord() {
   // 日志文件
   cmd.parser.addArg(
       {"-log-file", "", ArgType::String, false, "日志记录到文件路径", ""});
+  // 视频编码参数(仅 -tc 转码路生效): 逐项独立, 都不给则按录制缺省档
+  cmd.parser.addArg({"-q", "--quality", ArgType::Int, false,
+                     "编码质量档 0..100 (缺省60, 越大越清晰/文件越大)", ""});
+  cmd.parser.addArg({"-b:v", "--bitrate", ArgType::Int, false,
+                     "视频目标码率 kbps (0=按分辨率自动)", ""});
+  cmd.parser.addArg({"-rc", "", ArgType::String, false,
+                     "码率控制: quality(缺省)|vbr|cbr", ""});
+  cmd.parser.addArg({"-preset", "", ArgType::String, false,
+                     "编码预设: speed|balanced(缺省)|quality", ""});
+  cmd.parser.addArg(
+      {"-gop", "", ArgType::Int, false, "关键帧间隔秒 (缺省3)", ""});
+  cmd.parser.addArg({"-profile", "", ArgType::String, false,
+                     "profile: compat|main|high(缺省high)", ""});
 
   cmd.run = [](const ParsedArgs& args) -> int {
     std::string input = args.getString("input");
@@ -100,6 +157,16 @@ Command cmdRecord() {
     float speed = args.getFloat("speed", 1.0f);
     bool logPacket = args.getBool("log-packet");
     std::string logFilePath = args.getString("log-file", "");
+    // 视频编码参数(仅转码路消费; 未给值的项保持缺省, 由编码器按用途档推导)
+    int quality = args.getInt("quality", -1);
+    int bitrateKbps = args.getInt("bitrate", 0);
+    int gopSeconds = args.getInt("gop", 0);
+    int32_t rateModeArg =
+        args.has("rc") ? parseRateModeArg(args.getString("rc")) : -1;
+    int32_t presetArg =
+        args.has("preset") ? parsePresetArg(args.getString("preset")) : -1;
+    int32_t profileArg =
+        args.has("profile") ? parseProfileArg(args.getString("profile")) : -1;
     // 解析 IoPlan
     IoPlan ioPlan;
     if (ioPlanStr == "ffmpeg") {
@@ -160,6 +227,36 @@ Command cmdRecord() {
     // IO包日志(open前经option链到ioSource, 检查进来的包/PTS是否就绪)
     if (logPacket) {
       recorder->getOption()->setBool(AVOX_LOG_SOURCE_INPACKET_BOOL, true);
+    }
+    // 视频编码参数(open前设置): 常用项走结构体 API(不拼 key 字符串),
+    // 不常用的 gop/profile 走 option 入口 —— 两条路最终都落在编码器同一份参数上
+    if (quality >= 0 || bitrateKbps > 0 || gopSeconds > 0 || rateModeArg >= 0 ||
+        presetArg >= 0 || profileArg >= 0) {
+      if (!bTranscode) {
+        fprintf(stderr, "提示: 编码参数仅在 -tc 转码录制生效(当前是转封装)\n");
+      }
+      VideoEncodeParam param = {};
+      if (rateModeArg >= 0) {
+        param.rateMode = (EncodeRateMode)rateModeArg;
+      }
+      if (quality >= 0) {
+        param.quality = quality;
+      }
+      if (bitrateKbps > 0) {
+        param.bitrateKbps = bitrateKbps;
+      }
+      if (presetArg >= 0) {
+        param.preset = (EncodePreset)presetArg;
+      }
+      recorder->setVideoEncodeParam(param);
+      // option 入口要在结构体之后设置: 结构体是整包替换(未填项回缺省)
+      IOption* opt = recorder->getOption();
+      if (gopSeconds > 0) {
+        opt->setInt(AVOX_REC_ENCODE_GOP_INT, gopSeconds);
+      }
+      if (profileArg >= 0) {
+        opt->setInt(AVOX_REC_ENCODE_PROFILE_INT, profileArg);
+      }
     }
     // 转码模式: 设置离屏渲染 + 字体叠加 PTS
     ISurfaceRender* render = nullptr;

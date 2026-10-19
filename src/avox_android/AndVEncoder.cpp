@@ -35,6 +35,27 @@ AndVEncoder::AndVEncoder() {}
 
 AndVEncoder::~AndVEncoder() { onClose(); }
 
+namespace {
+
+// 键名用字面量, 不引 NDK 的 AMEDIAFORMAT_KEY_*: 那几个是 __INTRODUCED_IN(28) 的
+// extern 符号, 老设备 libmediandk 里没有, 引用会在加载期找不到符号; 键名本身稳定
+const char* kKeyProfile = "profile";
+const char* kKeyBitrateMode = "bitrate-mode";
+const char* kKeyQuality = "quality";
+const char* kKeyMaxBFrames = "max-bframes";
+// MediaCodecInfo.EncoderCapabilities 的码控模式
+constexpr int32_t kBitrateModeCQ = 0;
+constexpr int32_t kBitrateModeVBR = 1;
+constexpr int32_t kBitrateModeCBR = 2;
+// MediaCodecInfo.CodecProfileLevel(Java 侧常量, NDK 头里没有)。AVC 的 1 是
+// Baseline, 与推流侧 WebRTC SDP 的 profile-level-id 契约一致
+constexpr int32_t kAvcProfileBaseline = 1;
+constexpr int32_t kAvcProfileMain = 2;
+constexpr int32_t kAvcProfileHigh = 8;
+constexpr int32_t kHevcProfileMain = 1;
+
+}  // namespace
+
 DecodeResult AndVEncoder::onPreEncoder() {
   const char* mimeType = nullptr;
   // 根据codecId选择MIME类型
@@ -49,55 +70,109 @@ DecodeResult AndVEncoder::onPreEncoder() {
       LOGFLF(LogLevel::warn, "unsupported codec:", getVCodecName(desc.codecId));
       return DecodeResult::noSupport;
   }
+  // 分级下发: 设备对 profile/码控模式的支持差异极大(不支持的组合会直接 configure
+  // 失败, 而不是忽略), 猜错就降级 —— 0=画质档+High, 1=码率档+Main, 2=只给基本项
+  for (int32_t tier = 0; tier < 3; ++tier) {
+    DecodeResult result = openCodec(mimeType, tier);
+    if (result == DecodeResult::success) {
+      return result;
+    }
+    releaseCodec();
+  }
+  LOGFLF(LogLevel::warn, "failed to create encoder for MIME:", mimeType);
+  return DecodeResult::openFailed;
+}
+
+void AndVEncoder::applyFormatTier(int32_t tier) {
+  const bool bH265 = desc.codecId == VCodecId::h265;
+  // profile: 可移植三档 → MediaCodecInfo.CodecProfileLevel(HEVC 三档都落 Main)
+  int32_t profile = kAvcProfileBaseline;
+  if (bH265) {
+    profile = kHevcProfileMain;
+  } else {
+    switch (getProfileLevel()) {
+      case EncodeProfile::compat:
+        profile = kAvcProfileBaseline;
+        break;
+      case EncodeProfile::main:
+        profile = kAvcProfileMain;
+        break;
+      default:
+        profile = kAvcProfileHigh;
+        break;
+    }
+    // 降级一级时 High 退 Main(部分设备对 High 的 8x8 变换能力位直接报错)
+    if (tier > 0 && profile == kAvcProfileHigh) {
+      profile = kAvcProfileMain;
+    }
+  }
+  // 码控模式: CQ(质量定档)/VBR/CBR; 降级一级时 CQ 退 VBR
+  int32_t bitrateMode = kBitrateModeCBR;
+  switch (getRateMode()) {
+    case EncodeRateMode::quality:
+      bitrateMode = kBitrateModeCQ;
+      break;
+    case EncodeRateMode::vbr:
+      bitrateMode = kBitrateModeVBR;
+      break;
+    default:
+      bitrateMode = kBitrateModeCBR;
+      break;
+  }
+  if (tier > 0 && bitrateMode == kBitrateModeCQ) {
+    bitrateMode = kBitrateModeVBR;
+  }
+  AMediaFormat_setInt32(mediaFormat, kKeyProfile, profile);
+  AMediaFormat_setInt32(mediaFormat, kKeyBitrateMode, bitrateMode);
+  // CQ 模式下 quality(0~100 越大越好)才是画质档, bit_rate 退成上限。
+  // MediaCodec 没有预设(速度↔质量)档, 预设旋钮在这条车道不生效
+  if (bitrateMode == kBitrateModeCQ) {
+    AMediaFormat_setInt32(mediaFormat, kKeyQuality, getQualityLevel());
+  }
+}
+
+DecodeResult AndVEncoder::openCodec(const char* mimeType, int32_t tier) {
   // 创建编码器
   mediaCodec = AMediaCodec_createEncoderByType(mimeType);
   if (!mediaCodec) {
-    LOGFLF(LogLevel::warn, "failed to create encoder for MIME:", mimeType);
     return DecodeResult::openFailed;
   }
-  // 创建媒体格式
   mediaFormat = AMediaFormat_new();
   if (!mediaFormat) {
-    LOGFLF(LogLevel::warn, "failed to create media format");
     return DecodeResult::openFailed;
   }
-  // 使用基类的desc成员变量配置编码参数
-  AMediaFormat_setString(
-      mediaFormat, AMEDIAFORMAT_KEY_MIME,
-      desc.codecId == VCodecId::h264 ? "video/avc" : "video/hevc");
+  const int32_t bitrate = getTargetBitrate();
+  AMediaFormat_setString(mediaFormat, AMEDIAFORMAT_KEY_MIME, mimeType);
   AMediaFormat_setInt32(mediaFormat, AMEDIAFORMAT_KEY_WIDTH, desc.desc.width);
   AMediaFormat_setInt32(mediaFormat, AMEDIAFORMAT_KEY_HEIGHT, desc.desc.height);
   AMediaFormat_setInt32(mediaFormat, AMEDIAFORMAT_KEY_BIT_RATE, bitrate);
-  AMediaFormat_setFloat(mediaFormat, AMEDIAFORMAT_KEY_FRAME_RATE,
-                        desc.desc.fps);
+  AMediaFormat_setFloat(mediaFormat, AMEDIAFORMAT_KEY_FRAME_RATE, desc.desc.fps);
   AMediaFormat_setInt32(mediaFormat, AMEDIAFORMAT_KEY_I_FRAME_INTERVAL, gop);
-  if (desc.codecId == VCodecId::h264) {
-    // AVOXProfileBaseline
-    AMediaFormat_setInt32(mediaFormat, "profile", 1);
-  } else if (desc.codecId == VCodecId::h265) {
-    // HEVCProfileMain
-    AMediaFormat_setInt32(mediaFormat, "profile", 1);
-  }
-  // 禁用B帧
-  AMediaFormat_setInt32(mediaFormat, "max-bframes", 0);
-  LOGFLF(LogLevel::info, "bitrate:", bitrate, " gop:", gop);
+  // B 帧恒关: MediaCodec 对 max-bframes 的支持与出帧顺序在设备间差异过大,
+  // surface 输入下部分实现会乱序出帧(录制产物时间戳错乱远重于体积收益)
+  AMediaFormat_setInt32(mediaFormat, kKeyMaxBFrames, 0);
   if (!bGpu) {
     // 设置颜色格式为NV12(YUV420SemiPlanar 0x15)
     AMediaFormat_setInt32(mediaFormat, AMEDIAFORMAT_KEY_COLOR_FORMAT, 0x15);
   } else {
-    // 使用 Surface 输入格式 COLOR_FormatSurface
-    // AMediaFormat_setInt32(mediaFormat, AMEDIAFORMAT_KEY_COLOR_FORMAT,
-    //                       0x7F000789);
+    // 使用 Surface 输入格式 COLOR_FormatSurface(由 createInputSurface 设定)
+  }
+  if (tier < 2) {
+    applyFormatTier(tier);
   }
   media_status_t status =
       AMediaCodec_configure(mediaCodec, mediaFormat, nullptr, nullptr,
                             AMEDIACODEC_CONFIGURE_FLAG_ENCODE);
+  if (status != AMEDIA_OK) {
+    LOGFLF(LogLevel::warn, "failed to configure encoder:", status,
+           " tier:", tier);
+    return DecodeResult::openFailed;
+  }
   if (bGpu) {
 // AMediaCodec_createInputSurface需要NDK26及以上版本支持
 #if __ANDROID_API__ >= 26
     ANativeWindow* surface = nullptr;
-    media_status_t status =
-        AMediaCodec_createInputSurface(mediaCodec, &surface);
+    status = AMediaCodec_createInputSurface(mediaCodec, &surface);
     if (status == AMEDIA_OK) {
       // eglVideoYuv用来把原始GPU数据渲染到surface上
       eglVideoYuv->setSurface(surface);
@@ -107,12 +182,8 @@ DecodeResult AndVEncoder::onPreEncoder() {
     }
 #else
     LOGFLF(LogLevel::warn, "AMediaCodec_createInputSurface not supported");
-    return DecodeResult::openFailed;  
-#endif
-  }
-  if (status != AMEDIA_OK) {
-    LOGFLF(LogLevel::warn, "failed to configure encoder:", status);
     return DecodeResult::openFailed;
+#endif
   }
   // 启动编码器
   status = AMediaCodec_start(mediaCodec);
@@ -120,6 +191,9 @@ DecodeResult AndVEncoder::onPreEncoder() {
     LOGFLF(LogLevel::warn, "failed to start encoder:", status);
     return DecodeResult::startFailed;
   }
+  LOGFLF(LogLevel::info, "android encoder open:", mimeType, " tier:", tier,
+         " usage:", usage == EncodeUsage::stream ? "stream" : "record",
+         " bitrate:", bitrate, " gop:", gop);
   return DecodeResult::success;
 }
 
@@ -130,7 +204,28 @@ void AndVEncoder::flush() {
   AMediaCodec_flush(mediaCodec);
 }
 
-void AndVEncoder::onClose() {
+// 排空: 送 EOS 让编码器把尾部缓冲吐完(AMediaCodec_flush 是丢弃语义, 会吃尾帧)。
+// surface 输入用 signalEndOfInputStream, 缓冲输入用一个 EOS 旗帜的空输入缓冲
+void AndVEncoder::drain() {
+  if (!mediaCodec) {
+    return;
+  }
+  if (bGpu) {
+    AMediaCodec_signalEndOfInputStream(mediaCodec);
+  } else {
+    ssize_t index = AMediaCodec_dequeueInputBuffer(mediaCodec, 5000);
+    if (index >= 0) {
+      AMediaCodec_queueInputBuffer(mediaCodec, index, 0, 0, 0,
+                                   AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM);
+    } else {
+      LOGFLF(LogLevel::warn, "drain: no input buffer for EOS:", index);
+    }
+  }
+  // encode() 内部循环取到 EOS 旗帜才收工
+  encode();
+}
+
+void AndVEncoder::releaseCodec() {
   if (mediaCodec) {
     AMediaCodec_stop(mediaCodec);
     AMediaCodec_delete(mediaCodec);
@@ -141,6 +236,8 @@ void AndVEncoder::onClose() {
     mediaFormat = nullptr;
   }
 }
+
+void AndVEncoder::onClose() { releaseCodec(); }
 
 DecodeResult AndVEncoder::encode(const GpuFrame& frame) {
   bool reset = needReset(frame,tempFrame);
@@ -234,6 +331,8 @@ DecodeResult AndVEncoder::encode() {
   while (outputBufferIndex >= 0) {
     if (info.flags & AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM) {
       LOGFLF(LogLevel::info, "end of stream reached");
+      // 排空路径会走到这里: 不释放会让这个 output buffer 一直挂在编解码器上
+      AMediaCodec_releaseOutputBuffer(mediaCodec, outputBufferIndex, false);
       break;
     }
     if (info.size > 0) {

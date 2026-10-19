@@ -24,6 +24,7 @@ class IOSVEncoder : public VideoEncoder {
  public:
   virtual DecodeResult onPreEncoder() override;
   virtual void flush() override;
+  virtual void drain() override;
   virtual void onClose() override;
   virtual DecodeResult encode(const GpuFrame& frame) override;
   virtual DecodeResult encode(const YUVFrame& frame) override;

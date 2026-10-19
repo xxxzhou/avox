@@ -11,73 +11,70 @@ void VideoEncoder::setDesc(const VTrackDesc& desc_) {
   if (desc.desc.fps == 0) {
     desc.desc.fps = 30;
   }
-  if (bitrate == 0) {
+  // 外部显式设过码率就不覆盖: 那是硬约束(WebRTC 上行), 不是缺省值
+  if (bitrate == 0 && !bExplicitBitrate) {
     bitrate = getAutoBitrate();
   }
 }
 
-void VideoEncoder::setBitrate(int32_t bitrate_) { bitrate = bitrate_; }
+void VideoEncoder::setBitrate(int32_t bitrate_) {
+  bitrate = bitrate_;
+  bExplicitBitrate = true;
+}
 
-int32_t VideoEncoder::getAutoBitrate() {
-  // 如果desc未设置，返回默认比特率
-  if (desc.desc.width == 0 || desc.desc.height == 0 || desc.desc.fps == 0) {
-    return 2000000;  // 默认2Mbps
+void VideoEncoder::setEncodeParam(const VideoEncodeParam& param) {
+  encodeParam = param;
+  if (encodeParam.gopSeconds > 0) {
+    gop = encodeParam.gopSeconds;
   }
-  // 计算视频像素总数
-  int32_t pixelCount = desc.desc.width * desc.desc.height;
-  // 根据分辨率和帧率计算基础比特率
-  // 基础公式：比特率 = 像素数 × 帧率 × 复杂度因子
-  // 复杂度因子根据分辨率调整
-  double complexityFactor = 0.0;
-  if (pixelCount <= 640 * 480) {  // 标清
-    complexityFactor = 0.05;
-  } else if (pixelCount <= 1280 * 720) {  // 720p
-    complexityFactor = 0.08;
-  } else if (pixelCount <= 1920 * 1080) {  // 1080p
-    complexityFactor = 0.12;
-  } else if (pixelCount <= 3840 * 2160) {  // 4K
-    complexityFactor = 0.25;
-  } else {  // 8K及以上
-    complexityFactor = 0.4;
+  // 码率选项是 kbps, 内部统一按 bps 走(与 setBitrate 同量纲)
+  if (encodeParam.bitrateKbps > 0) {
+    setBitrate(encodeParam.bitrateKbps * 1000);
   }
-  // 根据编码器类型调整复杂度
-  double codecFactor = 1.0;
-  switch (desc.codecId) {
-    case VCodecId::h264:
-      codecFactor = 1.0;  // H.264标准复杂度
-      break;
-    case VCodecId::h265:
-      codecFactor = 0.7;  // H.265更高效，需要更低的比特率
-      break;
-    default:
-      codecFactor = 1.0;
-      break;
+}
+
+// 码率控制模式: 用户指定的优先; 未指定时录制取质量定档(体积/画质优先),
+// 推流取 CBR(上行是硬约束); 录制下若显式给了码率, 说明用户要按码率收口
+EncodeRateMode VideoEncoder::getRateMode() const {
+  if (encodeParam.rateMode != EncodeRateMode::inherit) {
+    return encodeParam.rateMode;
   }
-  // 计算基础比特率（单位：bps）
-  double baseBitrate =
-      pixelCount * desc.desc.fps * complexityFactor * codecFactor;
-  // 根据帧率进一步调整
-  double fpsFactor = 1.0;
-  if (desc.desc.fps <= 15) {
-    fpsFactor = 0.8;
-  } else if (desc.desc.fps <= 30) {
-    fpsFactor = 1.0;
-  } else if (desc.desc.fps <= 60) {
-    fpsFactor = 1.2;
-  } else {
-    fpsFactor = 1.5;  // 高帧率需要更高比特率
+  if (usage == EncodeUsage::stream) {
+    return EncodeRateMode::cbr;
   }
-  // 最终比特率计算
-  int32_t finalBitrate = static_cast<int32_t>(baseBitrate * fpsFactor * 0.5);
-  // 设置比特率范围限制
-  const int32_t MIN_BITRATE = 200000;     // 最小500kbps
-  const int32_t MAX_BITRATE = 100000000;  // 最大100Mbps
-  if (finalBitrate < MIN_BITRATE) {
-    finalBitrate = MIN_BITRATE;
-  } else if (finalBitrate > MAX_BITRATE) {
-    finalBitrate = MAX_BITRATE;
+  return bExplicitBitrate ? EncodeRateMode::vbr : EncodeRateMode::quality;
+}
+
+int32_t VideoEncoder::getQualityLevel() const {
+  if (encodeParam.quality >= 0) {
+    return encodeParam.quality;
   }
-  return finalBitrate;
+  return usage == EncodeUsage::stream ? kStreamQuality : kRecordQuality;
+}
+
+// 预设: 录制缺省取均衡档, 推流缺省取速度档(延迟优先)
+EncodePreset VideoEncoder::getPreset() const {
+  if (encodeParam.preset != EncodePreset::inherit) {
+    return encodeParam.preset;
+  }
+  return usage == EncodeUsage::stream ? EncodePreset::speed
+                                      : EncodePreset::balanced;
+}
+
+// profile: 录制缺省取 high(本机/自家播放器可解), 推流缺省取 compat —— 推流对端
+// 按 SDP 的 profile-level-id 解, 编码器擅自发 High 的 NAL 会让对端解不了
+EncodeProfile VideoEncoder::getProfileLevel() const {
+  if (encodeParam.profile != EncodeProfile::inherit) {
+    return encodeParam.profile;
+  }
+  return usage == EncodeUsage::stream ? EncodeProfile::compat
+                                      : EncodeProfile::high;
+}
+
+// 自动码率: 实现单源在 VideoEncodeParams.cpp —— 原先编码侧(FFVEncoder 的
+// w*h*fps*3)与封装侧(IOMuxerZM 的 w*h*fps*8/1000)各写一版, 同分辨率差 50 倍
+int32_t VideoEncoder::getAutoBitrate() const {
+  return getAutoVideoBitrate(desc.desc, desc.codecId);
 }
 
 }
