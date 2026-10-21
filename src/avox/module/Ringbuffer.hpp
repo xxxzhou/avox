@@ -154,6 +154,8 @@ public:
     wcount++;
   }
 
+// 取出后在锁外处理. 槽内帧对象会被后续 enqueueWait(如 copyBufHost)原地复用,
+// 并发时读到被重填的像素(花屏), 这类队列应改用 dequeueAction
   bool dequeue(T &item) {
     std::unique_lock<std::mutex> lock(buMtx);
     if (wcount == 0 || bClose) {
@@ -166,6 +168,8 @@ public:
     return true;
   }
 
+// 持锁回调是数据保护: 消费者处理期间生产者阻塞在 enqueue, 槽内帧对象不会被并发重填.
+// 槽内对象由 enqueueWait(如 copyBufHost)原地复用, 改成锁外回调会让帧被覆写(花屏) -- 勿动
   bool dequeueAction(std::function<void(const T &right)> action) {
     std::unique_lock<std::mutex> lock(buMtx);
     if (wcount == 0 || bClose) {
