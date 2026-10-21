@@ -30,9 +30,9 @@ public:
   void close();
 
   void setImageSize(int32_t width, int32_t height);
-  void updateTexImage();
-  void attachToGLContext(int32_t texId);
-  void detachFromGLContext();
+  bool updateTexImage();
+  bool attachToGLContext(int32_t texId);
+  bool detachFromGLContext();
   void getTransformMatrix(float mat[]);
 
   // 设置帧可用回调

@@ -295,19 +295,28 @@ void WindowRender::pause(bool bPause) {
 
 void WindowRender::onRunTask() {
 #ifdef WIN32
-// Windows 默认定时器粒度 15.6ms 把下面 sleep_for(帧间隔-2ms) 量化成 3格/2格
-// 交替: 拍长双峰 47/32ms(23.976fps 实测), 每帧停留时长抖动呈持续微抖;
+// Windows 默认定时器粒度 15.6ms, 1ms 粒度下 sleep 才不发散
   timeBeginPeriod(1);
 #endif
-  // 窗口渲染线程，把videoRender的结果渲染到窗口
-  // 无窗口也是要渲染的
-  // 下帧应该渲染的绝对时间(tick)
-  int64_t nextFrameTime = timeTick();
+  // 唤醒节拍由视频帧自己的到期时刻决定: onWinUpdate 返回距下一帧还有多少毫秒。
+  // 不再维护 fps 网格, 也不做 *1.5 升频 —— 早醒只补睡余量, 不会整拍跳过
   while (running()) {
+    // TEMP 取证探针(定案后删): 5 秒一行, 看渲染线程自己是「被睡过头」还是「没被唤醒」
+    static int64_t wStatMs = 0, wMaxWork = 0, wMaxSleep = 0, wMaxLate = 0;
+    static int32_t wIter = 0, wLate100 = 0, wTick = 0, wNoTick = 0;
+    const int64_t wT0 = timeStampMS();
+    if (!wStatMs) wStatMs = wT0;
+    if (wT0 - wStatMs >= 5000) {
+      LOGFLF(LogLevel::info, "[wstat] iter:", wIter, " tick:", wTick,
+          " notick:", wNoTick, " workmax:", (int32_t)wMaxWork,
+          " sleepmax:", (int32_t)wMaxSleep, " latemax:", (int32_t)wMaxLate,
+          " late>100:", wLate100);
+      wStatMs = wT0;
+      wIter = wTick = wNoTick = wLate100 = 0;
+      wMaxWork = wMaxSleep = wMaxLate = 0;
+    }
     if (pauseing()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
-      // 恢复时重置基准
-      nextFrameTime = timeTick();
       // 暂停也能截图
       if (bVulkan && vkVideoRender) {
         vkVideoRender->checkShot();
@@ -316,14 +325,7 @@ void WindowRender::onRunTask() {
       }
       continue;
     }
-    // 绝对时间控制，使用高精度tick（1tick=100ns, 1ms=10000tick）
-    int64_t frameIntervalTick = getFrameTick(fps);
-    int64_t now = timeTick();
-    int64_t adjustedInterval = (int64_t)(frameIntervalTick / speed);
-    // 如果播放速度大于4,一般来说是只有I帧,相对2倍来说,刷新几率肯定还降低了
-    if (speed > 4) {
-      adjustedInterval = frameIntervalTick;
-    }
+    int64_t dueMs = 0;
     {
       // 窗口如果有surface,则由窗口推动拿画面到窗口
       std::unique_lock<std::mutex> lck(mtx);
@@ -337,79 +339,61 @@ void WindowRender::onRunTask() {
           dispatch(&ISurfaceRenderOb::onWinSizeChange, winWidth, winHeight);
         }
         // 去VideoTrack取帧数据渲染并调用WindowRender::render渲染
-        // 根据同步结果通知观察者修改类似syncResult等参数
         if (frameSource) {
-          frameSource->onWinUpdate();
+          dueMs = frameSource->onWinUpdate();
         }
         if (syncResult == SyncResult::none || syncResult == SyncResult::slow) {
           // 窗口是否还有效
           bool bTick = window->preTick();
           if (bTick) {
-            // 窗口刷新,调用下面的onRenderWindow
             window->tick();
+            wTick++;
+          } else {
+            wNoTick++;
           }
         }
       } else {
         // 保持消费数据，但不渲染到窗口
         if (frameSource) {
-          frameSource->onWinUpdate();
+          dueMs = frameSource->onWinUpdate();
         }
       }
     }
-    // 正常速度下,队列频率丢帧需提高窗口刷新率
-    if (syncResult == SyncResult::slow && speed == 1.0) {
-      // LOGFLF(LogLevel::info, "video render slow");
-      dropCounter.record();
-      // 统计时间内大于5次
-      if (dropCounter.bTrigger() && dropCounter.value() > 3) {
-        if (fps < srcFps * 2.0) {
-          // 上限钳在乘法后: 判据在前会越界(45*1.5=67.5 > srcFps*2)
-          double upFps = std::min(srcFps * 2.0, fps * 1.5);
-          LOGFLF(LogLevel::info, "video render slow,up fps:", fps, "-",
-                 upFps);
-          fps = upFps;
-        }
-      }
+    wIter++;
+    {
+      const int64_t wWork = timeStampMS() - wT0;
+      if (wWork > wMaxWork) wMaxWork = wWork;
     }
-    // 更新下帧预期时间
-    nextFrameTime += adjustedInterval;
-    // 计算需要等待的时间（tick -> ms）
-    int64_t sleepTick = nextFrameTime - now;
-    int64_t sleepMs = sleepTick / 10000;
-    // 如果偏差太大（> 2帧），重置基准
-    if (sleepTick > adjustedInterval * 2 || sleepTick < 0) {
-      nextFrameTime = now;
-      sleepTick = 0;
+    // 到期时刻是绝对值: 每拍从它重算余量, 毫秒取整与渲染耗时不会累积成漂移
+    int64_t sleepMs = dueMs > 0 ? dueMs - timeStampMS() : 10;
+    if (sleepMs < 0) {
+      sleepMs = 0;
     }
-    if (sleepTick > 50000 && syncResult != SyncResult::slow) {
-// tick -> ms, 提前 2ms 唤醒: 睡眠目标来自帧率标签, 标签可能偏大于真实
-// PTS 步进(23.98 标签实为 24000/1001, 43.5ms vs 41.7ms), 唤醒节拍一旦
-      std::this_thread::sleep_for(std::chrono::milliseconds(
-          sleepMs > 3 ? sleepMs - 2 : 1));
+    if (sleepMs > wMaxSleep) wMaxSleep = sleepMs;
+    const int64_t wSlp0 = timeStampMS();
 #ifdef WIN32
-      // 尾段自旋到下帧预期时刻: 1ms 定时器粒度残余 ±0.7ms 噪声会让提交相位
-      // 在 vsync 重排临界点乱闪(60.00Hz 屏播 23.976, 实测 std 706us→目标<200);
-      // 自旋段 ≤2ms, PC 空闲核代价可忽略
-      {
-        int64_t targetUs = nextFrameTime / 10;
-        for (;;) {
-          int64_t nowUs =
-              std::chrono::duration_cast<std::chrono::microseconds>(
-                  std::chrono::steady_clock::now().time_since_epoch())
-                  .count();
-          if (nowUs >= targetUs) {
-            break;
-          }
-          std::this_thread::yield();
-        }
-      }
-#endif
-#if defined(__ANDROID__) || (defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
+    // 尾段自旋保留: 1ms 粒度残余会让提交相位在 vsync 临界点乱闪
+    const auto wakeAt =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(sleepMs);
+    if (sleepMs > 2) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs - 2));
+    }
+    while (std::chrono::steady_clock::now() < wakeAt) {
+      std::this_thread::yield();
+    }
+#else
+    // 移动端不自旋(钉核发热): 晚到 1ms 无感, 早到由下一拍余量补齐
+    if (sleepMs > 0) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
     } else {
-      // 兜底短睡仅移动端(Android/iOS): 追帧/余量<5ms 全速自旋会在手机钉满
-      // 一个大核发热(9/25 真机定案); PC 保原全速行为(快速转码吃吞吐)。
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      std::this_thread::yield();
+    }
 #endif
+    // 睡过头 = 线程没被及时调度(CPU 抢占/温度保护), 与"自己算错到期时刻"区分开
+    {
+      const int64_t late = timeStampMS() - wSlp0 - sleepMs;
+      if (late > wMaxLate) wMaxLate = late;
+      if (late > 100) wLate100++;
     }
   }
   if (pVideoRender) {

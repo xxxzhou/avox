@@ -1,5 +1,9 @@
 #include "VkWindow.hpp"
 
+#ifdef __ANDROID__
+#include <dlfcn.h>
+#endif
+
 #include <array>
 #include <cstring>
 
@@ -180,10 +184,32 @@ bool VkWindow::onPreTick() {
 }
 
 void VkWindow::onTickWin() {
+  // TEMP 取证探针(定位安卓「每隔几秒停 300ms」, 定案后删): 5 秒一行窗口侧统计,
+  // 用来区分「tick 没被调用(上层 sleep)」「tick 空转(面/链/fence 早退)」「present 了但没上屏」
+  static int64_t vStatMs = 0, vMaxGap = 0;
+  static int32_t vPres = 0, vSkipSurf = 0, vSkipChain = 0, vSkipFence = 0,
+                 vAcqMax = 0, vCostMax = 0;
+  {
+    const int64_t vNow = timeStampMS();
+    if (!vStatMs) vStatMs = vNow;
+    if (vNow - vStatMs >= 5000) {
+      log(LogLevel::info, "[vkstat] pres:", vPres, " maxgap:", (int32_t)vMaxGap,
+          " skip_surf:", vSkipSurf, " skip_chain:", vSkipChain,
+          " skip_fence:", vSkipFence, " acqmax:", vAcqMax,
+          " costmax:", vCostMax);
+      vStatMs = vNow;
+      vPres = 0;
+      vMaxGap = 0;
+      vSkipSurf = vSkipChain = vSkipFence = 0;
+      vAcqMax = vCostMax = 0;
+    }
+  }
   if (!vkSurface) {
+    vSkipSurf++;
     return;
   }
   if (!swapChain) {
+    vSkipChain++;
     // 面晚到自愈: iOS 挂面常早于平台视图首帧布局(extent 0 建不了链), 布局
     // 到位后在此按节流补建; 建成当帧先返回, 下帧起正常出图
     if ((++swapchainRetryCount & 15) != 1) {
@@ -198,6 +224,7 @@ void VkWindow::onTickWin() {
   // 非阻塞检查 fence 状态，如果 GPU 还没完成，跳过这一帧
   VkResult result = vkGetFenceStatus(vkDevice, addCmdFences[currentFrame]);
   if (result == VK_NOT_READY) {
+    vSkipFence++;
     // GPU 还在执行，跳过这一帧（不阻塞）
     return;
   }
@@ -210,9 +237,11 @@ void VkWindow::onTickWin() {
   // 方案②(§3.4.1): 呈现面翻转落在此处 —— 与下面的 acquire/submit/present 同一
   // 临界区(且 GPU fence 已确保上一帧完成), 双端同帧切, 过渡帧不出值域错配
   applyPendingHdr();
+  const int64_t tAcq0 = timeStampMS();
   VkResult acquireRet = vkAcquireNextImageKHR(
       vkDevice, swapChain, UINT64_MAX, presentCompletes[currentFrame],
       VK_NULL_HANDLE, &currentImage);
+  const int64_t tAcq1 = timeStampMS();
   // log(LogLevel::info, "vk windows cost 1:", clock.recordLast());
   vkResetCommandBuffer(cmdBuffers[currentFrame], 0);
   vkBeginCommandBuffer(cmdBuffers[currentFrame], &cmdBufferBeginInfo);
@@ -276,6 +305,7 @@ void VkWindow::onTickWin() {
 // 等presentComplete收到信号后执行,执行完成后发送信号renderComplete
 // 集显或是手机GPU，其vkComputeQueue/presentQueue可能是同一个
   lockCommand();
+  const int64_t tSub0 = timeStampMS();
   result =
       vkQueueSubmit(presentQueue, 1, &submitInfo, addCmdFences[currentFrame]);
   AVOX_VULKAN_LOG(result, "submit compute queue failed");
@@ -295,6 +325,24 @@ void VkWindow::onTickWin() {
   unLockCommand();
   // log(LogLevel::info, "vk windows cost 4:", clock.recordLast());
   AVOX_VULKAN_LOG(result, "vkQueuePresentKHR");
+  // Android 呈现探针: 画面冻结时区分「渲染线程没来(拍点/时钟)」「acquire 卡」
+  // 「submit/present 卡」; 只在异常帧打点, 常态零日志
+  {
+    static int64_t lastPresentMs = 0;
+    const int64_t tPres1 = timeStampMS();
+    const int64_t gap = lastPresentMs ? tAcq0 - lastPresentMs : 0;
+    const int64_t acqCost = tAcq1 - tAcq0;
+    const int64_t presCost = tPres1 - tSub0;
+    lastPresentMs = tPres1;
+    vPres++;
+    if (gap > vMaxGap) vMaxGap = gap;
+    if (acqCost > vAcqMax) vAcqMax = (int32_t)acqCost;
+    if (presCost > vCostMax) vCostMax = (int32_t)presCost;
+    if (acqCost > 50 || presCost > 50 || gap > 120) {
+      LOGFLF(LogLevel::info, "[vkprobe] gap:", gap, " acq:", acqCost,
+             " sub+pres:", presCost, " img:", (int32_t)currentImage);
+    }
+  }
   // 黑屏定位探针(节流, 仅 iOS): present 结果 + 画进交换链图的观察者数, 区分
   // 「present 败/无观察者画窗/Metal 输入腿断流」三类; 其他平台日志面保持原样
 #if defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
@@ -397,6 +445,38 @@ void VkWindow::initVkSurface(ILinuxSurface* x11Surface)
                                          nullptr, &vkSurface),
                  "create win32 surface failed");
 #elif defined(__ANDROID__)
+  // 帧率提示(实验): 这块视频层此前没有给系统任何 frame rate 信息
+  // (dumpsys SurfaceFlinger 里 Frame Rate (Explicit) 为空, Comp Type=DEVICE),
+  // 系统/HWC 只能自己猜呈现节奏。按 Android 视频 App 的标准做法声明
+  // FIXED_SOURCE, 让 SF/HWC 按源帧率决定 latch 与换模式。
+  // 用 dlsym 而不是直接调: 本工程编译 API 可能低于 30, 直接引用会链接失败。
+  {
+    typedef int (*SetFr2)(ANativeWindow*, float);
+    typedef int (*SetFr4)(ANativeWindow*, float, int8_t, int8_t);
+    static SetFr2 fn2 = nullptr;
+    static SetFr4 fn4 = nullptr;
+    static bool probed = false;
+    if (!probed) {
+      probed = true;
+      void* h = dlopen("libandroid.so", RTLD_NOW);
+      if (h) {
+        fn4 = (SetFr4)dlsym(h, "ANativeWindow_setFrameRateWithChangeStrategy");
+        if (!fn4) fn2 = (SetFr2)dlsym(h, "ANativeWindow_setFrameRate");
+      }
+      LOGFLF(LogLevel::info, "[frhint] symbols: 4arg=", fn4 ? 1 : 0,
+             " 2arg=", fn2 ? 1 : 0);
+    }
+    // 1 = FIXED_SOURCE (源就是 24fps, 不要插帧/补偿), 0 = 只在无缝时切
+    const float frFps = 24.0f;
+    int frRet = -100;
+    if (window && fn4) {
+      frRet = fn4(window, frFps, 1, 0);
+    } else if (window && fn2) {
+      frRet = fn2(window, frFps);
+    }
+    LOGFLF(LogLevel::info, "[frhint] set ", (int32_t)frFps,
+           " FIXED_SOURCE ret:", frRet);
+  }
   VkAndroidSurfaceCreateInfoKHR surfaceCreateInfo = {};
   surfaceCreateInfo.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
   surfaceCreateInfo.window = window;

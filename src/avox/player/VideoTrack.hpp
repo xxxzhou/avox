@@ -59,6 +59,11 @@ class VideoTrack : public TAVTrack<VideoFramePtr>,
   int64_t nominalFrameMs = 40;
   // 帧入口单调网格钳位, 倒跳/过密时按标称帧距续格
   void restampFramePts(int64_t& pts);
+  // 下一帧的绝对到期时刻(timeStampMS 同源, 0=无帧), 不再用 fps 网格
+  int64_t nextDueMs = 0;
+  // 音频主钟的估算抖动(±百ms): 高差先低通再纠正
+  int64_t syncDiffFiltMs = 0;
+  bool syncDiffInit = false;
 
  public:
   RingBuffer<VideoFramePtr>& getFrameQueue() { return frameQueue; }
@@ -83,7 +88,7 @@ class VideoTrack : public TAVTrack<VideoFramePtr>,
 
   // FrameSourceOb
  public:
-  virtual void onWinUpdate() override;
+  virtual int64_t onWinUpdate() override;
 
  public:
   WindowRender* getSurfaceRender();

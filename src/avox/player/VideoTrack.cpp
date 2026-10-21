@@ -200,7 +200,7 @@ void VideoTrack::onVideoComplete() {
 
 double VideoTrack::getFps() { return fpsCounter.value(); }
 
-void VideoTrack::onWinUpdate() {
+int64_t VideoTrack::onWinUpdate() {
   // 处理帧数据，这个Frame不好提取出来
   // 因为frame如果不在队列锁里，可能异步访问时有问题
   // 比如外面在清除队列，这时引发解码器释放队列里GPU数据
@@ -227,10 +227,12 @@ void VideoTrack::onWinUpdate() {
     onFrameResult(bGet);
   }
   windowRender->setSyncResult(syncResult);
+
   // 同步二者的速度
   if (windowRender->getSpeed() != clock->getSpeed()) {
     windowRender->setSpeed(clock->getSpeed());
   }
+  return nextDueMs;
 }
 
 WindowRender* VideoTrack::getSurfaceRender() { return windowRender.get(); }
@@ -268,18 +270,28 @@ int64_t VideoTrack::computeDelay(int64_t delay) {
       return delay;
     }
     // 视频与主时钟的差值，正表明视频快，负表明视频慢
-    int64_t diff = sClock - mClock;
-    int64_t threshold = std::max(AVOX_SYNC_THRESHOLD_MIN,
-                                 std::min(AVOX_SYNC_THRESHOLD_MAX, delay));
-    if (diff <= -threshold) {
-      // 视频慢了
-      delay = std::max((int64_t)0, delay + diff);
-    } else if (diff >= threshold && delay > AVOX_SYNC_THRESHOLD_MAX) {
-      // 视频快了，且与上帧间隔大
-      delay = delay + diff;
-    } else if (diff >= threshold) {
-      // ​视频过快，但是与上帧间隔小，丢弃
-      delay = 2 * delay;
+    const int64_t inst = sClock - mClock;
+    // 主钟是“写入 PTS - 队列时长”的估算, 自身有 ±百 ms 抖动: 直接按瞬时差
+    // 纠正会让画面在 0/双倍帧距间来回跳(实测 41→83→166), 先低通再每帧微调
+    if (!syncDiffInit) {
+      syncDiffFiltMs = inst;
+      syncDiffInit = true;
+    } else {
+      syncDiffFiltMs += (inst - syncDiffFiltMs) / 8;
+    }
+    if (delay > 0) {
+      const int64_t base = delay;
+      const int64_t dead = std::max<int64_t>(30, base / 2);
+      const int64_t step = std::max<int64_t>(1, base / 3);
+      if (syncDiffFiltMs > dead) {
+        // 视频超前: 本帧多停一点, 不整帧丢弃
+        delay += std::min(syncDiffFiltMs, step);
+      } else if (syncDiffFiltMs < -dead) {
+        // 视频落后: 本帧少停一点, 但不连发两帧
+        delay -= std::min(-syncDiffFiltMs, step);
+      }
+      delay = std::min(base + base / 2,
+                       std::max(std::max<int64_t>(5, base / 2), delay));
     }
   }
   return delay;
@@ -288,12 +300,39 @@ int64_t VideoTrack::computeDelay(int64_t delay) {
 // ffplay video_refresh
 // -1 视频帧慢了,丢弃,无效帧 0 同步帧 1 视频帧快了 2 队列没帧了
 SyncResult VideoTrack::syncVideo() {
+  // TEMP 取证探针(定位安卓起播卡顿, 定案后删): 5 秒心跳 + 长等/断粮现场
+  int64_t pNow = timeStampMS();
+  static int64_t pLastFrameMs = 0, pLastStatMs = 0, pMaxWait = 0, pMaxNoData = 0;
+  static int64_t pLastRenMs = 0;
+  static int32_t pRen = 0, pQuick = 0, pSlow = 0, pNo = 0;
+  if (!pLastStatMs) pLastStatMs = pNow;
+  if (pNow - pLastStatMs >= 5000) {
+    log(LogLevel::info, "[pace stat] ren:", pRen, " quick:", pQuick, " slow:", pSlow,
+        " nodata:", pNo, " maxwait:", (int32_t)pMaxWait,
+        " maxnodata:", (int32_t)pMaxNoData, " q:", (int32_t)frameQueue.size(),
+        " mclk:", mClock);
+    pLastStatMs = pNow;
+    pRen = pQuick = pSlow = pNo = 0;
+    pMaxWait = pMaxNoData = 0;
+  }
   // 取队列的最前面frame的数据，但是不弹出
   VideoFramePtr frame = nullptr;
   bool bGet = frameQueue.peek(frame);
   if (!bGet) {
+    int64_t idle = pLastFrameMs ? pNow - pLastFrameMs : 0;
+    // 限速: 断粮时本函数每 5ms 被调一次, 不限速会打出 100+ 行/秒
+    static int64_t pLastNoLogMs = 0;
+    if (idle > 100 && pNow - pLastNoLogMs >= 500) {
+      pLastNoLogMs = pNow;
+      log(LogLevel::info, "[pace] nodata gap:", (int32_t)idle, " q:",
+          (int32_t)frameQueue.size(), " mclk:", mClock);
+    }
+    pNo++;
+    if (idle > pMaxNoData) pMaxNoData = idle;
+    nextDueMs = timeStampMS() + 5;  // 没帧: 短轮回, 解码器补上就立即接
     return SyncResult::nodata;
   }
+  pLastFrameMs = pNow;
   double speed = clock->getSpeed();
   bool bIFrameMode = false;
   if (mediaPlayer) {
@@ -329,9 +368,17 @@ SyncResult VideoTrack::syncVideo() {
   }
   // 还不到渲染时间，让窗口等待
   if (renderTime + delay > now) {
-    // LOGFLF(LogLevel::warn, "wait render:", renderTime + delay, " now:", now,
-    //        " delay:", delay, " duration:", duration, " pts:", pts,
-    //        " pre pts:", tPts);
+    // 只睡到该帧到期为止的余量: 唤醒粒度造成的早醒在下一拍补齐, 不会丢一整帧
+    int64_t wait = renderTime + delay - now;
+    if (wait > 100) {
+      log(LogLevel::info, "[pace] wait:", (int32_t)wait, " pts:", pts,
+          " dur:", (int32_t)duration, " delay:", (int32_t)delay,
+          " dif:", (int32_t)syncDiffFiltMs, " sclk:", clock->clock(),
+          " mclk:", mClock, " ahead:", (int32_t)(renderTime - now));
+    }
+    pQuick++;
+    if (wait > pMaxWait) pMaxWait = wait;
+    nextDueMs = renderTime + delay;
     return SyncResult::quick;
   }
   // 下次更新时间,renderTime应该一直now的时间差不多
@@ -368,13 +415,26 @@ SyncResult VideoTrack::syncVideo() {
     // 越走越远, 该 if 永久成立 —— 每一帧都被丢弃, 画面彻底静止
     // (seek 重置时钟后才短暂恢复)。
     renderTime = now;
+    nextDueMs = now + 1;
+    pSlow++;
     return SyncResult::slow;
   }
 // 视频慢了(delay==0, computeDelay 已把落后钳成 0), 通知窗口快速刷新跳过
 // sleep: 若不通知, 唤醒节拍被窗口线程的帧率标签钳住, 落后永远追不回
   if (delay == 0) {
+    nextDueMs = timeStampMS() + 1;
+    pSlow++;
     return SyncResult::slow;
   }
+  // 下一帧的绝对到期时刻(本次含同步微调后的帧距); 1s 上限防坏戳
+  nextDueMs = renderTime + std::min<int64_t>(1000, std::max<int64_t>(1, delay));
+  pRen++;
+  // 交付间隔: 线程/上游被外部卡住时 nodata 与 wait 都不打点, 只有这里留痕
+  if (pLastRenMs && pNow - pLastRenMs > 100) {
+    log(LogLevel::info, "[pace] deliver gap:", (int32_t)(pNow - pLastRenMs),
+        " q:", (int32_t)frameQueue.size(), " mclk:", mClock);
+  }
+  pLastRenMs = pNow;
   return SyncResult::none;
 }
 
@@ -414,6 +474,8 @@ void VideoTrack::flush() {
   lastInPts = AVOX_NOVALID_PTS;
   // 精确seek丢弃标记随队列复位, 防跨流/失败seek残留
   seekDiscardPts = AVOX_NOVALID_PTS;
+  // 高差滤波器随 seek 重锚, 不把旧位姿的偏差带进新位置
+  syncDiffInit = false;
   // 记录flush
   PBMediaAction pb = {};
   pb.mediaObject = MediaObject::track;

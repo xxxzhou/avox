@@ -13,8 +13,8 @@ class FrameSourceOb {
   virtual ~FrameSourceOb() {}
 
  public:
-  // 窗口如何刷新
-  virtual void onWinUpdate() {};
+  // 窗口如何刷新; 返回值=下一帧的绝对到期时刻(timeStampMS 同源), 0=无帧
+  virtual int64_t onWinUpdate() { return 0; };
 };
 
 // 同步结果,0 正常,1 慢了,2 快了,3 没有数据

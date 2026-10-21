@@ -670,9 +670,22 @@ void AndVDecoder::onFrameRelease(bool bRender, const GpuFrame& frame) {
   }
   // && bFrameAvailable
   if (bRender) {
-    // 这个只能在initContext自身线程上以及相应的共享context的线程上
-    // surfaceTexture队列输出到纹理上
-    surfaceTexture->updateTexImage();
+    // 取图必须在持有该 OES 纹理的 EGL 上下文线程上; seek 重置会重建渲染图并换上下文,
+    // 纹理仍挂旧上下文 → 每帧抛 invalid EGLContext(画面冻住/黑屏)。重挂后重试
+    if (!surfaceTexture->updateTexImage()) {
+      static int64_t sLastTryMs = 0;
+      static int32_t sFailCount = 0;
+      int64_t nowMs = timeStampMS();
+      if (nowMs - sLastTryMs > 1000) {
+        sLastTryMs = nowMs;
+        bool bOk = surfaceTexture->detachFromGLContext() &&
+                   surfaceTexture->attachToGLContext((int32_t)textureId) &&
+                   surfaceTexture->updateTexImage();
+        LOGFLF(LogLevel::warn, "updateTexImage failed, reattach:",
+               bOk ? "ok" : "failed", " tex:", (int32_t)textureId,
+               " n:", ++sFailCount);
+      }
+    }
     bFrameAvailable = false;
   }
 }

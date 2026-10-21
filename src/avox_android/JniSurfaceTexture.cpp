@@ -67,17 +67,18 @@ void JniSurfaceTexture::setImageSize(int32_t width, int32_t height) {
                       width, height);
 }
 
-void JniSurfaceTexture::updateTexImage() {
-  AVOX_GET_ENV
+bool JniSurfaceTexture::updateTexImage() {
+  AVOX_GET_ENV_RETURN(false)
   if (!surfaceTexture) {
-    return;
+    return false;
   }
   env->CallVoidMethod(surfaceTexture, jmSurfaceTexture.updateTexImage);
   if (env->ExceptionCheck()) {
-    env->ExceptionDescribe();
+    // 上下文不匹配时每帧都抛: 不打栈不刷屏(每帧 5 行会拖慢渲染), 交调用方计数
     env->ExceptionClear();
-    LOGFLF(LogLevel::warn, "env error");
+    return false;
   }
+  return true;
 }
 
 void JniSurfaceTexture::getTransformMatrix(float* mat) {
@@ -89,15 +90,31 @@ void JniSurfaceTexture::getTransformMatrix(float* mat) {
   env->DeleteLocalRef(jmat);
 }
 
-void JniSurfaceTexture::attachToGLContext(int32_t texId) {
-  AVOX_GET_ENV
+bool JniSurfaceTexture::attachToGLContext(int32_t texId) {
+  AVOX_GET_ENV_RETURN(false)
+  if (!surfaceTexture) {
+    return false;
+  }
   env->CallVoidMethod(surfaceTexture, jmSurfaceTexture.attachToGLContext,
                       texId);
+  if (env->ExceptionCheck()) {
+    env->ExceptionClear();
+    return false;
+  }
+  return true;
 }
 
-void JniSurfaceTexture::detachFromGLContext() {
-  AVOX_GET_ENV
+bool JniSurfaceTexture::detachFromGLContext() {
+  AVOX_GET_ENV_RETURN(false)
+  if (!surfaceTexture) {
+    return false;
+  }
   env->CallVoidMethod(surfaceTexture, jmSurfaceTexture.detachFromGLContext);
+  if (env->ExceptionCheck()) {
+    env->ExceptionClear();
+    return false;
+  }
+  return true;
 }
 
 void JniSurfaceTexture::onFrameAvailable() {
