@@ -1,6 +1,8 @@
 # avox
 
-avox 是一套跨平台音视频能力库（C++17），提供从设备采集、硬解硬编、GPU 图像处理到渲染、推流录制的统一管线。播放器是当前最完整的模块；WebRTC 实时通话与 AI 能力（语音识别、机器翻译、图像修复、超分辨率）以插件形式按需整合；XR/VR·MR 相机标定与虚实融合（虚拟制片）模块已在生产环境验证并集成，虚拟人（数字人）模块正在集成；UE5、Unity3D、Godot 游戏引擎纹理级直通已打通。
+**English | [简体中文](README.zh-CN.md)**
+
+avox is a cross-platform audio/video capability library (C++17) that provides one pipeline from device capture, hardware decoding/encoding and GPU image processing to rendering, streaming and recording. The player is the most complete module today; WebRTC real-time calls and AI capabilities (speech recognition, machine translation, image restoration, super-resolution) are integrated as optional plugins; the XR / VR·MR camera tracking and virtual-production compositing modules are production-validated and integrated, and the digital-human module is being integrated; texture-level passthrough for UE5, Unity3D and Godot is in place.
 
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Android%20%7C%20iOS%20%7C%20Linux-blue)]()
 [![Language](https://img.shields.io/badge/Language-C%2B%2B%20%7C%20C%23%20%7C%20Java%20%7C%20JS%20%7C%20Python-orange)]()
@@ -9,301 +11,302 @@ avox 是一套跨平台音视频能力库（C++17），提供从设备采集、�
 [![Version](https://img.shields.io/badge/Version-1.0.0969-green)]()
 [![GitHub stars](https://img.shields.io/github/stars/xxxzhou/avox?style=social)](https://github.com/xxxzhou/avox)
 
-avox 源自作者多年的音视频/GPU 技术积累，经大模型辅助整理而成。技术脉络从早期 [OEIP](https://zhuanlan.zhihu.com/p/104027165)（UE4/Unity3D 多媒体管线）到 [aoce](https://github.com/xxxzhou/aoce)（Vulkan 跨平台 GPU 图像处理），关键实现过程均整理成系列技术文章（[天天不在](https://www.zhihu.com/people/zhou-xin-12-70-21/posts)），见下文[技术实现解析](#技术实现解析)。
+avox grows out of the author's years of audio/video and GPU work, organized with LLM assistance. The lineage runs from [OEIP](https://zhuanlan.zhihu.com/p/104027165) (UE4/Unity3D multimedia pipeline) to [aoce](https://github.com/xxxzhou/aoce) (cross-platform Vulkan GPU image processing), and the key implementation work has been written up as a technical series (see [Technical deep dives](#technical-deep-dives)).
 
-## 用 avox 构建的产品
+## Products built with avox
 
-**泛音 Panvox** 是基于 avox 构建的跨平台视频播放器:产品层用 Flutter,引擎层即本库——通过 C ABI 复用播放、硬解与 GPU 处理管线、字幕渲染与 AI 能力,覆盖 Windows / macOS / iOS / Android。
+**Panvox** is a cross-platform video player built on avox: the product layer is Flutter, the engine layer is this library — playback, hardware decoding, the GPU processing pipeline, subtitle rendering and AI capabilities are reused through the C ABI. It covers Windows, macOS, iOS and Android.
 
-- **Windows 已上架** [Microsoft Store](https://apps.microsoft.com/detail/9PG77H33P7K8);**Apple 双端已上架** [App Store](https://apps.apple.com/cn/app/panvox-player/id6819539073)(iOS/iPadOS 与 macOS 同一页, macOS 需 12.0+ 且 Apple M 系芯片);android [内部分享包](https://play.google.com/apps/test/RQo-NZmDUok/ahAO29uNRS3gG4ZDC35BtgMLCLvoQyam1Kvd6wGKPphYU5aCzPQ-UiYxxlxAB4ZtodrH0fTBAETk3--ARIvcjm3KQT) （连点「Play 商店版本」7 次->开发者选项->内部应用分享）。
-- 落地形态:海报墙媒体库(直连 NAS / SMB / WebDAV / Jellyfin)、直连不转码、ASS/PGS/SRT 完整渲染、逐帧 HDR 色调映射、AI 字幕与识别打标、IPTV(m3u + EPG)
+- **Windows** is live on the [Microsoft Store](https://apps.microsoft.com/detail/9PG77H33P7K8); **both Apple platforms** are live on the [App Store](https://apps.apple.com/cn/app/panvox-player/id6819539073) (iOS/iPadOS and macOS share one page; macOS requires 12.0+ and Apple silicon); Android is available as a [closed testing build](https://play.google.com/apps/test/RQo-NZmDUok/ahAO29uNRS3gG4ZDC35BtgMLCLvoQyam1Kvd6wGKPphYU5aCzPQ-UiYxxlxAB4ZtodrH0fTBAETk3--ARIvcjm3KQT) (tap "Play Store version" 7 times → Developer options → Internal app sharing).
+- What it ships: a poster-wall media library (NAS / SMB / WebDAV / Jellyfin direct play), direct play without transcoding, full ASS/PGS/SRT rendering, per-frame HDR tone mapping, AI subtitles and auto-tagging, IPTV (m3u + EPG).
 
 <table align="center">
   <tr>
-    <td valign="middle"><img src="assets/images/panvox/win_wall.png" width="590" alt="Windows - 海报墙媒体库"></td>
-    <td valign="middle"><img src="assets/images/panvox/android_iptv.png" width="160" alt="Android - IPTV 频道"></td>
+    <td valign="middle"><img src="assets/images/panvox/win_wall.png" width="590" alt="Windows - poster-wall media library"></td>
+    <td valign="middle"><img src="assets/images/panvox/android_iptv.png" width="160" alt="Android - IPTV channels"></td>
   </tr>
   <tr>
-    <td valign="middle"><img src="assets/images/panvox/mac_wall.png" width="590" alt="macOS - 海报墙媒体库"></td>
-    <td valign="middle"><img src="assets/images/panvox/ios_library.png" width="160" alt="iOS - 海报墙"></td>
+    <td valign="middle"><img src="assets/images/panvox/mac_wall.png" width="590" alt="macOS - poster-wall media library"></td>
+    <td valign="middle"><img src="assets/images/panvox/ios_library.png" width="160" alt="iOS - media library"></td>
   </tr>
 </table>
 
-产品介绍与实现解析见 [《从开源引擎 avox 到成品:全平台播放器「泛音」》](https://zhuanlan.zhihu.com/p/2091902400839921766)。
+Product overview and implementation notes: [panvox.net](https://panvox.net/en/panvox/); article version: [From the open-source engine avox to a product: Panvox, a cross-platform player](https://panvox.net/en/panvox/articles/engine-to-product/).
 
-## 项目优势
+## Highlights
 
-- **一套代码，多端运行** - Windows / Android / iOS / Linux 单一 C++17 代码库，CMake 统一构建；硬解硬编、GPU 互操作、窗口系统等平台差异在框架层抹平，扩展新平台只需实现平台层接口
-- **接口一次定义，四语言绑定零手工成本** - 导出层为纯虚抽象接口 + `create*` 工厂 + `addXxxOb/removeXxxOb` 回调注册，禁用 STL 类型（`const char*`、裸指针+计数、回调类），SWIG 从同一套头文件自动生成 C# / Java / Node.js / Python 绑定；回调类经 director 机制在各语言中直接继承覆写，新增接口无需逐语言维护胶水层
-- **全链路 GPU 零拷贝** - 硬解（DX11VA/MediaCodec/VideoToolbox）→ Vulkan 图像处理 → 硬编/渲染，数据全程留在 GPU 不经 CPU 中转。
-  - **Windows** - D3D11VA 硬解帧以 DX11 纹理经 shared handle 与 Vulkan 互操作直入处理管线，结果回 DX11/DX12/Vulkan 渲染到窗口；MF 相机、屏幕捕获经统一数据源接口接入
-  - **Android** - NdkCamera2 相机 OES 纹理直出、跨 EGLContext 与 Vulkan 互通，MediaCodec 硬解输出 AHardwareBuffer 直入管线，结果回 OpenGL ES/Vulkan 渲染到 Surface 或经 MediaCodec GPU 硬编推流
-  - **iOS** - AVFoundation 相机帧与 VideoToolbox 硬解帧经 CVPixelBuffer/IOSurface 与 Vulkan/Metal 纹理互通直入管线，结果回 Metal/Vulkan 渲染或经 VideoToolbox 硬编推流
-  - **游戏引擎** - UE5、Unity3D、Godot 纹理级零拷贝双向直通（相机/GPU 管线 → 引擎纹理，引擎 RenderTarget → 管线 → 推流）已打通
-- **跟随上游的 WebRTC 整合** - 不 fork、不改 WebRTC 源码，以封装模块扩展解码工厂、AAC 解码、3A 音频、数据源/编码器映射，版本升级无源码包袱
-- **插件化 AI 能力模块** - 语音识别、翻译、图像修复、目标检测等以动态插件运行期加载，与播放主链路解耦，按产品形态裁剪交付体积
-- **游戏引擎深度接入** - UE5、Unity3D、Godot 纹理级零拷贝双向直通；播放、通话、AI 能力在引擎内原生可用，而非仅嵌一个播放窗口
-- **真实场景验证，全程有据可查** - 直播播放、多平台双向通话、XR/VR·MR 相机标定与虚实融合（虚拟制片）等场景实战落地，关键实现均有系列技术文章与仓库文档对应，可读、可查、可复现
+- **One codebase, many platforms** - a single C++17 codebase for Windows / Android / iOS / Linux with one CMake build; platform differences in hardware decoding/encoding, GPU interop and window systems are absorbed by the framework — adding a platform means implementing the platform layer only.
+- **Interfaces defined once, four language bindings at zero manual cost** - the export layer is pure-virtual interfaces + `create*` factories + `addXxxOb/removeXxxOb` callback registration, with STL types banned (`const char*`, raw pointer + count, callback classes). SWIG generates the C# / Java / Node.js / Python bindings from the same headers; callback classes are inherited and overridden directly in each language through SWIG directors, so new interfaces need no per-language glue.
+- **Zero-copy GPU end to end** - hardware decode (DX11VA / MediaCodec / VideoToolbox) → Vulkan image processing → hardware encode or render; data stays on the GPU and never round-trips through CPU memory.
+  - **Windows** - D3D11VA decode frames enter the processing pipeline as DX11 textures imported into Vulkan through shared handles; results render to the window via DX11/DX12/Vulkan. Media Foundation cameras and screen capture come in through the unified data-source interface.
+  - **Android** - the NdkCamera2 camera delivers OES textures straight out and shares them across EGLContexts with Vulkan; MediaCodec decode output goes in as AHardwareBuffer, and results render to a Surface through OpenGL ES/Vulkan or stream out through MediaCodec GPU encoding.
+  - **iOS** - AVFoundation camera frames and VideoToolbox decode frames enter the pipeline through CVPixelBuffer/IOSurface interop with Vulkan/Metal textures; results render via Metal/Vulkan or stream out through VideoToolbox hardware encoding.
+  - **Game engines** - texture-level zero-copy passthrough both ways (camera/GPU pipeline → engine texture, engine RenderTarget → pipeline → stream) for UE5, Unity3D and Godot.
+- **WebRTC that follows upstream** - no fork, no patched WebRTC sources: a wrapper module extends the decode factory, AAC decoding, 3A audio and data-source/encoder mapping, so version upgrades carry no source debt.
+- **AI capabilities as plugins** - speech recognition, translation, image restoration, object detection and more load as dynamic plugins at runtime, decoupled from the playback path so the shipped size can be trimmed per product.
+- **Deep game-engine integration** - texture-level zero-copy passthrough for UE5, Unity3D and Godot; playback, calls and AI work natively inside the engine instead of an embedded player window.
+- **Validated in real scenarios, documented end to end** - live playback, multi-platform two-way calls, XR/VR·MR camera tracking and virtual-production compositing are all in production use; every key implementation maps to a technical article or repository document — readable, checkable, reproducible.
 
 <p align="center">
-  <img src="assets/images/godot/avox_android_menu.png" width="360" alt="Android + Godot - GPU 直通播放磁力链接">
-  <br><em>Android + Godot:纹理级直通播放磁力链接</em>
+  <img src="assets/images/godot/avox_android_menu.png" width="360" alt="Android + Godot - texture-level passthrough playback of a magnet link">
+  <br><em>Android + Godot: texture-level passthrough playing a magnet link</em>
 </p>
 
-## 核心特性
+## Core features
 
-### 多源播放
+### Multi-source playback
 
-- **直播流** - RTSP/RTMP/HTTP-FLV/HLS 等协议，磁力链接，WebRTC，ZLMediaKit 流媒体解析与 FFmpeg 双通道支持
-- **本地媒体** - 支持常见音视频格式
-- **设备采集** - 相机、麦克风、屏幕捕获统一数据源模型（Windows Media Foundation / Android NdkCamera2 OES 纹理直出 / iOS 相机）
+- **Live streams** - RTSP/RTMP/HTTP-FLV/HLS and other protocols, magnet links, WebRTC, with both ZLMediaKit and FFmpeg parsing paths.
+- **Local media** - common audio/video formats.
+- **Device capture** - a unified data-source model for cameras, microphones and screen capture (Windows Media Foundation / Android NdkCamera2 OES textures delivered directly / iOS camera).
 
-### 跨平台硬解 · 零拷贝 GPU 通路
+### Cross-platform hardware decoding · zero-copy GPU path
 
-| 平台 | 硬件解码 | 硬解帧 → Vulkan 零拷贝通路 | 渲染后端 |
-|------|----------|---------------------------|----------|
-| Windows | DX11 (D3D11VA) | DX11 纹理 ↔ Vulkan 互操作 | DX11/DX12/Vulkan |
+| Platform | Hardware decode | Decoded frame → Vulkan zero-copy path | Render backend |
+|----------|-----------------|----------------------------------------|----------------|
+| Windows | DX11 (D3D11VA) | DX11 texture ↔ Vulkan interop | DX11/DX12/Vulkan |
 | Android | MediaCodec | AHardwareBuffer ↔ Vulkan | OpenGL ES/Vulkan |
 | iOS | VideoToolbox | IOSurface ↔ Vulkan | Metal/Vulkan |
-| Linux | VAAPI (计划中) | - | Vulkan |
+| Linux | VAAPI (planned) | - | Vulkan |
 
-- 硬解输出的原生 GPU 纹理直接进入 Vulkan 处理管线或映射到渲染窗口，不经 CPU 内存中转
-- Vulkan ↔ OpenGL ES（Android）、Vulkan ↔ DX11（Windows）纹理互通
-- Android 硬解与渲染跨 EGLContext 的处理、iOS 硬解经 Metal/IOSurface 的衔接均有实践方案
+- Native GPU textures from hardware decoding enter the Vulkan processing pipeline or map to the render window directly, never through CPU memory.
+- Vulkan ↔ OpenGL ES (Android) and Vulkan ↔ DX11 (Windows) texture interop.
+- Handling Android decode/render across EGLContexts and bridging iOS decode through Metal/IOSurface both have worked-out approaches.
 
-### 硬编与推流录制
+### Hardware encoding, streaming and recording
 
-- **Android** - MediaCodec GPU 编码：相机 OES 纹理经 Vulkan 处理后直接送编码器，全程不落地 CPU
-- **iOS** - VideoToolbox 硬编：相机直出帧 / Vulkan 处理结果直接硬编
-- **FFmpeg 软编** - 全平台兜底；封装器支持写本地文件与 RTMP/RTSP 推流
-- **多平台双向视频通话** - 拉流→解码→渲染→编码→推流全链路（Windows/Android/iOS/Linux），各环节软硬方案可切换，支持同步录制到本地
+- **Android** - MediaCodec GPU encoding: camera OES textures go through Vulkan processing straight into the encoder, never touching CPU memory.
+- **iOS** - VideoToolbox hardware encoding: camera frames or Vulkan processing results encode directly.
+- **FFmpeg software encoding** - the cross-platform fallback; the muxer writes local files and streams over RTMP/RTSP.
+- **Multi-platform two-way video calls** - pull → decode → render → encode → push, end to end (Windows/Android/iOS/Linux), each stage switchable between software and hardware, with synchronized local recording.
 
-### Vulkan GPU 图像处理
+### Vulkan GPU image processing
 
-- 100+ 滤镜/特效：GPUImage 全系滤镜移植为 Vulkan Compute Shader
-- Layer + PipeGraph 可组合计算管线图，跨平台 GPU 数据映射（OpenGL ES/Metal/DX11 ↔ Vulkan）
-- FreeType + Compute Shader 文本渲染，支持时间戳/字幕叠加
-- Anime4K 超分辨率整合（GLSL 转 Vulkan Compute Shader，适配内置管线组合）
-- 性能参考：1080p 单处理层 0.1~0.3ms（RTX 2070，见[滤镜耗时实测](https://zhuanlan.zhihu.com/p/1931653908276704034)）
+- 100+ filters/effects: the entire GPUImage family ported to Vulkan Compute Shaders.
+- Layer + PipeGraph composable compute graphs, with cross-platform GPU data mapping (OpenGL ES/Metal/DX11 ↔ Vulkan).
+- FreeType + Compute Shader text rendering for timestamps and subtitle overlays.
+- Anime4K super-resolution integrated (GLSL converted to Vulkan Compute Shaders, fitting the built-in pipeline composition).
+- Performance reference: 1080p per processing layer 0.1–0.3 ms (RTX 2070; see [filter timing measurements](https://zhuanlan.zhihu.com/p/1931653908276704034)).
 
-### WebRTC 深度整合
+### WebRTC integration
 
-- 不改动 WebRTC 源码，以封装模块方式扩展：
-  - 播放器 H264/H265 软硬解接入 WebRTC 解码工厂（含 WebRTC M138 原生 H265 支持）
-  - 集成 AAC 音频解码器（WebRTC 自身仅支持 opus/g711）
-- 播放器数据源（IVideoSource/IAudioSource）与跨平台硬编编码器映射进 WebRTC 推流链路
-- WebRTC 3A 音频处理（AEC 回声消除/ANS 降噪/AGC 增益）整合进采集推流
-- WebRTC 数据直接渲染到播放器各平台原生窗口
+- WebRTC sources are not modified; a wrapper module extends:
+  - the player's H264/H265 software and hardware decoders into the WebRTC decode factory (including native H265 support in WebRTC M138)
+  - an AAC audio decoder (WebRTC itself only supports opus/g711)
+- Player data sources (IVideoSource/IAudioSource) and the cross-platform hardware encoders map into the WebRTC push path.
+- WebRTC 3A audio processing (AEC echo cancellation / ANS noise suppression / AGC gain) integrated into capture and streaming.
+- WebRTC frames render directly to the player's native windows on each platform.
 
-### AI 能力
+### AI capabilities
 
-AI 模块以动态插件（`plugins/`）形式加载，运行期探测能力：
+AI modules load as dynamic plugins (`plugins/`) and are probed at runtime:
 
-- **实时语音字幕** - SourcePlayer 采集麦克风/屏幕音频流式识别（约 200ms 延迟）；MediaPlayer 播放视频先识别后翻译生成中文字幕（基于 Sherpa-ONNX + 神经机器翻译）
-- **AI 图像修复** - YOLO26-Seg 水印/物体实例分割 + 图像修复，全自动检测并去除（从帧差分+边缘分析的传统方案演进而来）
-- **AI 推理** - ONNX Runtime / NCNN 通用推理（YOLO 检测、人脸关键点等），支持 Vulkan 显存直连输入输出
-- **多模态 Agent** - LLM 集成，支持图文对话、工具链调用
+- **Real-time speech subtitles** - SourcePlayer recognizes microphone/screen audio streams (about 200 ms latency); MediaPlayer recognizes video audio first and then translates it into subtitles (Sherpa-ONNX + neural machine translation).
+- **AI image restoration** - YOLO26-Seg watermark/object instance segmentation plus inpainting, fully automatic (evolved from an earlier frame-difference + edge-analysis approach).
+- **AI inference** - general ONNX Runtime / NCNN inference (YOLO detection, facial landmarks, etc.) with direct Vulkan memory input/output.
+- **Multimodal agent** - LLM integration for image-text dialogue and tool-chain calls.
 
 <p align="center">
-  <img src="assets/images/panvox/win_ai_subtitle.png" width="720" alt="Windows - AI 字幕生成(泛音 Panvox)">
-  <br><em>泛音 Panvox 中的 AI 字幕:本机识别 + 翻译后嵌入播放</em>
+  <img src="assets/images/panvox/win_ai_subtitle.png" width="720" alt="Windows - AI subtitle generation in Panvox">
+  <br><em>AI subtitles in Panvox: on-device recognition, translation, then embedded playback</em>
 </p>
 
-### XR / VR·MR 相机标定与虚实融合（虚拟制片）
+### XR / VR·MR camera tracking and virtual production
 
-VR/MR 相机跟踪、虚拟制片相机标定、MR 虚实融合等相关模块已在生产环境验证并集成进 avox：
+The VR/MR camera tracking, virtual-production camera calibration and MR compositing modules are production-validated and integrated into avox:
 
-- **VR/MR 相机跟踪** - LED 虚拟拍摄相机跟踪，对标 Redspy/MoSys：单目+IMU、红外反光点方案
-- **相机标定（虚拟制片标定）** - g2o 图优化内参标定、手眼标定、变焦镜头单图内参拟合
-- **MR 虚实融合** - XR 拍摄虚实相机混合：相机标定 + 畸变校正，虚实融合重投影误差约 3 像素
-- **虚拟人（数字人）** - 虚拟人驱动与渲染管线对接（模块正在集成）
-- **超低延迟传输** - Rivermax（GPU Direct RDMA）/ NDI 局域网图像传输
-- **游戏引擎直通** - UE5、Unity3D、Godot 纹理级零拷贝对接（platform/godot、platform/unity、platform/ue）
+- **VR/MR camera tracking** - LED virtual-production camera tracking benchmarked against Redspy/MoSys: monocular + IMU, infrared reflective markers.
+- **Camera calibration (virtual production)** - g2o graph-optimization intrinsic calibration, hand-eye calibration, single-image intrinsic fitting for zoom lenses.
+- **MR compositing** - virtual and real cameras mixed for XR shoots: calibration + distortion correction, with about 3 pixels reprojection error.
+- **Digital human** - driving and render-pipeline integration (module being integrated).
+- **Ultra-low-latency transport** - Rivermax (GPU Direct RDMA) / NDI for LAN video transport.
+- **Game-engine passthrough** - zero-copy texture-level integration for UE5, Unity3D and Godot (platform/godot, platform/unity, platform/ue).
 
-### 高级播放功能
+### Advanced playback
 
-- 音视频同步（仿 ffplay 同步逻辑，支持音频/视频/外部时钟）、倍速播放
-- 低延迟自适应播放模式（直播场景动态调整缓冲）
-- 动态软硬解切换、动态窗口切换
-- 单播放器多路流支持
-- **多框架可插拔集成** - 取流、解码、编码分层解耦，各层独立成源、可单独替换（IAVSource/IRawSource 抽象），不绑定 FFmpeg：
-  - 内置方案开箱即用：FFmpeg（通用格式）、ZLMediaKit（RTSP/RTMP 直播）、WebRTC（实时通话），按源切换（IoPlan）
-  - 私有协议以插件源形式接入：实现 IAVSource 即注册为新 IO 方案
-  - 各方案共享同一套内置 H264/H265/AAC 软硬解码器与渲染管线，解码/编码实现也可单独替换
-- **跨平台渲染** - ISurfaceRender 统一 Vulkan / DX11 / DX12 / Metal / OpenGL ES 窗口渲染，各平台硬解零拷贝直入对应渲染后端（外部内存共享/纹理直通）
+- Audio/video sync (ffplay-style logic, with audio/video/external clock), playback speed control.
+- Low-latency adaptive playback (buffering adjusted dynamically for live streams).
+- Dynamic software/hardware decoder switching, dynamic window switching.
+- Multiple streams in a single player.
+- **Pluggable multi-framework integration** - pulling, decoding and encoding are layered and decoupled; each layer is a standalone source and replaceable on its own (IAVSource/IRawSource abstractions), not tied to FFmpeg:
+  - built-in options work out of the box: FFmpeg (general formats), ZLMediaKit (RTSP/RTMP live), WebRTC (real-time calls), switched per source (IoPlan)
+  - private protocols plug in as source plugins: implement IAVSource and it registers as a new IO option
+  - all options share the same built-in H264/H265/AAC software and hardware decoders and render pipeline; decoder/encoder implementations are replaceable too
+- **Cross-platform rendering** - ISurfaceRender unifies Vulkan / DX11 / DX12 / Metal / OpenGL ES window rendering, with each platform's hardware-decode frames zero-copy into the matching render backend (external memory sharing / texture passthrough).
 
-### 多语言 SDK
+### Multi-language SDK
 
-- **C++** - 原生接口；**SWIG** 统一生成 C# / Java / Node.js / Python 绑定（含跨线程回调方案）
-- 多平台 UI Demo：Win32、Android (Java)、iOS (ObjC)、[Electron (JS)](https://zhuanlan.zhihu.com/p/1943737922852460208)、[Avalonia (C#)](https://zhuanlan.zhihu.com/p/1991912977230733329)
+- **C++** native interface; **SWIG** generates C# / Java / Node.js / Python bindings (including cross-thread callback support).
+- UI demos on each platform: Win32, Android (Java), iOS (ObjC), [Electron (JS)](https://zhuanlan.zhihu.com/p/1943737922852460208), [Avalonia (C#)](https://zhuanlan.zhihu.com/p/1991912977230733329).
 
-## 技术实现解析
+## Technical deep dives
 
-关键实现过程整理成系列技术文章（[天天不在 - 文章列表](https://www.zhihu.com/people/zhou-xin-12-70-21/posts)）：
+The key implementation work is written up as a technical series. **The current, rewritten edition is serialized at [panvox.net — Building a Cross-Platform Player](https://panvox.net/en/tech/build/) in English** (Chinese edition: [panvox.net/tech/build/](https://panvox.net/tech/build/)); earlier thematic articles are in Chinese, under [the author's article feed](https://www.zhihu.com/people/zhou-xin-12-70-21/posts):
 
-**泛音 Panvox 产品与实现（2026）**
+**Panvox product and implementation (2026)**
 
-- [从开源引擎 avox 到成品:全平台播放器「泛音」](https://zhuanlan.zhihu.com/p/2091902400839921766) - 产品全貌:播放、片库、字幕、AI、IPTV
-- [HDR 不同平台的播放实现:直通、整形与逐帧色调映射](https://zhuanlan.zhihu.com/p/2091913868247356371)
-- [Flutter 与 avox 的视频帧交互:从 Texture 到原生窗口](https://zhuanlan.zhihu.com/p/2091915145169715723)
-- [ASS/PGS/SRT 的不同平台显示:三条渲染路与四块画布](https://zhuanlan.zhihu.com/p/2091918340063343994)
-- [avox 本体与插件的不同平台编译:动态还是静态,平台说了算](https://zhuanlan.zhihu.com/p/2091919551512449262)
-- [4 倍速播放的实现:解码上限与 I 帧模式](https://zhuanlan.zhihu.com/p/2091923024178164860)
+- [From the open-source engine avox to a product: the cross-platform player Panvox](https://panvox.net/en/panvox/articles/engine-to-product/) - the whole product: playback, library, subtitles, AI, IPTV
+- [HDR playback across platforms: passthrough, shaping and per-frame tone mapping](https://panvox.net/en/panvox/articles/hdr/)
+- [Flutter ↔ avox video-frame interop: from Texture to native window](https://panvox.net/en/panvox/articles/flutter-frames/)
+- [ASS/PGS/SRT across platforms: three render paths and four canvases](https://panvox.net/en/panvox/articles/subtitles/)
+- [Building avox core and plugins across platforms: dynamic or static, the platform decides](https://panvox.net/en/panvox/articles/build-plugins/)
+- [4× playback speed: decoder ceilings and I-frame mode](https://panvox.net/en/panvox/articles/speed-4x/)
+- [Remote access: direct, relayed, authorized once](https://panvox.net/en/panvox/articles/remote-access/) - your home library away from home
 
-**播放器框架与多平台移植**
+**Player framework and multi-platform porting**
 
-- [播放器框架](https://zhuanlan.zhihu.com/p/1924535781558555955) - 多平台播放器框架总体设计
-- [播放器FFmpeg](https://zhuanlan.zhihu.com/p/1924537408311001536) / [播放器Android](https://zhuanlan.zhihu.com/p/1924537652897625121) / [播放器IOS](https://zhuanlan.zhihu.com/p/1924537772141679194) / [播放器多平台Vulkan集成](https://zhuanlan.zhihu.com/p/1925515227908268800) / [播放器多平台Demo](https://zhuanlan.zhihu.com/p/1925515494309492633)
-- [ZLMediaKit 播放流程中流媒体解析](https://zhuanlan.zhihu.com/p/1925912219486521028) - 直播协议解析
-- [播放器时间相关功能](https://zhuanlan.zhihu.com/p/1948834769115780459) - 音视频同步、倍速、低延迟自适应
+- [Player framework](https://zhuanlan.zhihu.com/p/1924535781558555955) - overall design of the multi-platform player framework
+- [Player FFmpeg](https://zhuanlan.zhihu.com/p/1924537408311001536) / [Player Android](https://zhuanlan.zhihu.com/p/1924537652897625121) / [Player iOS](https://zhuanlan.zhihu.com/p/1924537772141679194) / [Multi-platform Vulkan integration](https://zhuanlan.zhihu.com/p/1925515227908268800) / [Multi-platform demo](https://zhuanlan.zhihu.com/p/1925515494309492633)
+- [Streaming protocol parsing in the ZLMediaKit playback path](https://zhuanlan.zhihu.com/p/1925912219486521028) - live protocol parsing
+- [Time-related playback features](https://zhuanlan.zhihu.com/p/1948834769115780459) - A/V sync, speed control, low-latency adaptation
 
-**零拷贝硬解 GPU 通路**
+**Zero-copy hardware decode → GPU path**
 
-- [Vulkan与DX11交互](https://zhuanlan.zhihu.com/p/349534525) - Windows 硬解纹理直通 Vulkan
-- [Android硬解经AHardwareBuffer高效到Vulkan管线](https://zhuanlan.zhihu.com/p/1933240978434679422)
-- [IOS硬解经IOSurface高效到Vulkan管线](https://zhuanlan.zhihu.com/p/1933834616818636429)
-- [android下vulkan与opengles纹理互通](https://zhuanlan.zhihu.com/p/302285687)
-- [NdkCamera2使用OES纹理渲染](https://zhuanlan.zhihu.com/p/1967658409848440079) - 相机零拷贝采集
+- [Vulkan × DX11 interop](https://zhuanlan.zhihu.com/p/349534525) - Windows decode textures straight into Vulkan
+- [Android hardware decode into the Vulkan pipeline via AHardwareBuffer](https://zhuanlan.zhihu.com/p/1933240978434679422)
+- [iOS hardware decode into the Vulkan pipeline via IOSurface](https://zhuanlan.zhihu.com/p/1933834616818636429)
+- [Vulkan × OpenGL ES texture interop on Android](https://zhuanlan.zhihu.com/p/302285687)
+- [Rendering NdkCamera2 OES textures](https://zhuanlan.zhihu.com/p/1967658409848440079) - zero-copy camera capture
 
-**硬编与实时通话**
+**Hardware encoding and real-time calls**
 
-- [Android MediaCodec GPU编码实践](https://zhuanlan.zhihu.com/p/1977347530166666089) / [IOS硬编实践](https://zhuanlan.zhihu.com/p/1987119873403417887)
-- [多平台双向视频通话](https://zhuanlan.zhihu.com/p/1987128340973368623) - 全链路软硬方案切换
-- [播放器整合WebRTC音频3A处理](https://zhuanlan.zhihu.com/p/1963601511633389459)
+- [Android MediaCodec GPU encoding](https://zhuanlan.zhihu.com/p/1977347530166666089) / [iOS hardware encoding](https://zhuanlan.zhihu.com/p/1987119873403417887)
+- [Multi-platform two-way video calls](https://zhuanlan.zhihu.com/p/1987128340973368623) - switching between software and hardware at each stage
+- [Integrating WebRTC 3A audio processing into the player](https://zhuanlan.zhihu.com/p/1963601511633389459)
 
-**WebRTC 整合**
+**WebRTC integration**
 
-- [播放器WebRTC](https://zhuanlan.zhihu.com/p/1929598509927076242) - 集成总览
-- [WebRTC集成本地播放器解码器实践](https://zhuanlan.zhihu.com/p/1938686818565494734) - H264/H265 软硬解接入
-- [WebRTC 集成 AAC 解码器](https://zhuanlan.zhihu.com/p/1941208736648636312)
-- [WebRTC音视频源和编码器映射](https://zhuanlan.zhihu.com/p/2000598286206248428)
+- [Player WebRTC](https://zhuanlan.zhihu.com/p/1929598509927076242) - integration overview
+- [Integrating local player decoders into WebRTC](https://zhuanlan.zhihu.com/p/1938686818565494734) - H264/H265 software and hardware decode
+- [Integrating an AAC decoder into WebRTC](https://zhuanlan.zhihu.com/p/1941208736648636312)
+- [Mapping audio/video sources and encoders into WebRTC](https://zhuanlan.zhihu.com/p/2000598286206248428)
 
-**Vulkan 图像处理**
+**Vulkan image processing**
 
-- GPUImage 移植系列：（一）[高斯模糊与自适应阈值](https://zhuanlan.zhihu.com/p/356355306)、（二）[Harris角点与导向滤波](https://zhuanlan.zhihu.com/p/359787506)、（三）[A到C滤镜](https://zhuanlan.zhihu.com/p/364888786)、（四）[D到O滤镜](https://zhuanlan.zhihu.com/p/369930003)、（五）[P到Z滤镜](https://zhuanlan.zhihu.com/p/372843997)、[总结](https://zhuanlan.zhihu.com/p/373137758)、[安卓Demo](https://zhuanlan.zhihu.com/p/388055520)
-- [Vulkan滤境时间](https://zhuanlan.zhihu.com/p/1931653908276704034) - 管线层级性能实测
-- [播放器Vulkan渲染文本](https://zhuanlan.zhihu.com/p/1963601925418234137) - FreeType 字幕/时间戳
-- [播放器整合Anime4K超分](https://zhuanlan.zhihu.com/p/2043258134546974507)
+- GPUImage porting series: (1) [Gaussian blur and adaptive threshold](https://zhuanlan.zhihu.com/p/356355306), (2) [Harris corners and guided filter](https://zhuanlan.zhihu.com/p/359787506), (3) [Filters A–C](https://zhuanlan.zhihu.com/p/364888786), (4) [Filters D–O](https://zhuanlan.zhihu.com/p/369930003), (5) [Filters P–Z](https://zhuanlan.zhihu.com/p/372843997), [summary](https://zhuanlan.zhihu.com/p/373137758), [Android demo](https://zhuanlan.zhihu.com/p/388055520)
+- [Vulkan filter timing](https://zhuanlan.zhihu.com/p/1931653908276704034) - measured per pipeline layer
+- [Vulkan text rendering in the player](https://zhuanlan.zhihu.com/p/1963601925418234137) - FreeType subtitles/timestamps
+- [Integrating Anime4K super-resolution into the player](https://zhuanlan.zhihu.com/p/2043258134546974507)
 
-**AI 与算法**
+**AI and algorithms**
 
-- [播放器实时语音字幕识别与翻译](https://zhuanlan.zhihu.com/p/2035763455190373290)
-- [AI 图像修复](https://zhuanlan.zhihu.com/p/2037495059705221313) - YOLO-Seg 水印去除
-- [NCNN优化实时面部关键点检测](https://zhuanlan.zhihu.com/p/407299327) / [使用NCNN的Vulkan输入输出](https://zhuanlan.zhihu.com/p/411106967) - 端侧推理显存直连
-- [CUDA版Grabcut的实现](https://zhuanlan.zhihu.com/p/59283449)（早期 GPU 分割实践）
+- [Real-time speech recognition and translation in the player](https://zhuanlan.zhihu.com/p/2035763455190373290)
+- [AI image restoration](https://zhuanlan.zhihu.com/p/2037495059705221313) - YOLO-Seg watermark removal
+- [Optimizing real-time facial landmark detection with NCNN](https://zhuanlan.zhihu.com/p/407299327) / [Vulkan input/output in NCNN](https://zhuanlan.zhihu.com/p/411106967) - on-device inference with direct GPU memory access
+- [A CUDA implementation of GrabCut](https://zhuanlan.zhihu.com/p/59283449) (early GPU segmentation work)
 
-**工程实践**
+**Engineering practice**
 
-- [使用Swig转换C++到别的编程语言](https://zhuanlan.zhihu.com/p/379049985) / [Swig与Node.js原生扩展的跨线程回调](https://zhuanlan.zhihu.com/p/1969758141236372869)
+- [Converting C++ to other languages with SWIG](https://zhuanlan.zhihu.com/p/379049985) / [Cross-thread callbacks in SWIG Node.js native extensions](https://zhuanlan.zhihu.com/p/1969758141236372869)
 
-## 技术演进与 XR / 虚拟制片
+## Evolution and the XR / virtual-production modules
 
-avox 的能力来自多年的持续积累：
+avox's capabilities come from years of accumulation:
 
-| 阶段 | 项目 | 主要产出 |
-|------|------|----------|
-| 2019-2020 | oeip（Windows） | CUDA/DX11 图像管线、FFmpeg 推拉流、UE4/Unity3D 纹理直通、CUDA Grabcut/导向滤波、YOLO 整合游戏引擎 |
-| 2020-2021 | [aoce](https://github.com/xxxzhou/aoce)（跨平台） | Vulkan Compute 图像管线、GPUImage 100+ 滤镜移植、Android/iOS 相机采集、蓝绿幕扣像、NCNN 端侧推理、SWIG 多语言 |
-| 2024-至今 | avox | 播放器 SDK：多平台硬解硬编、零拷贝 GPU 通路、WebRTC 全家桶、AI 字幕/修复/超分、多语言 SDK；XR/VR·MR 相机标定与虚实融合模块已集成 |
-| 2026 | **泛音 Panvox**（[Microsoft Store](https://apps.microsoft.com/detail/9PG77H33P7K8)） | 基于 avox 的跨平台播放器产品：Flutter 产品层 + avox C ABI；Windows、Apple 双端均已上架（[Store](https://apps.microsoft.com/detail/9PG77H33P7K8) / [App Store](https://apps.apple.com/cn/app/panvox-player/id6819539073)）；播放/片库/字幕/AI/IPTV 全链路落地 |
+| Period | Project | Main output |
+|--------|---------|-------------|
+| 2019-2020 | oeip (Windows) | CUDA/DX11 image pipeline, FFmpeg pull/push streaming, UE4/Unity3D texture passthrough, CUDA GrabCut/guided filter, YOLO integrated into game engines |
+| 2020-2021 | [aoce](https://github.com/xxxzhou/aoce) (cross-platform) | Vulkan Compute image pipeline, 100+ GPUImage filter ports, Android/iOS camera capture, chroma-keying, NCNN on-device inference, SWIG multi-language |
+| 2024-now | avox | Player SDK: multi-platform hardware decode/encode, zero-copy GPU path, full WebRTC stack, AI subtitles/restoration/super-resolution, multi-language SDK; XR/VR·MR camera tracking and compositing integrated |
+| 2026 | **Panvox** ([Microsoft Store](https://apps.microsoft.com/detail/9PG77H33P7K8)) | Cross-platform player product on avox: Flutter product layer + avox C ABI; live on Windows and both Apple platforms ([Store](https://apps.microsoft.com/detail/9PG77H33P7K8) / [App Store](https://apps.apple.com/cn/app/panvox-player/id6819539073)); playback/library/subtitles/AI/IPTV all shipped |
 
-**XR / 虚拟制片模块**（VR/MR 相机跟踪、虚拟制片标定、MR 虚实融合等，前期在 aoce 上完整验证，已集成进 avox）：
+**XR / virtual-production modules** (VR/MR camera tracking, virtual-production calibration, MR compositing; fully validated on aoce first, now integrated into avox):
 
-- VR/MR 相机跟踪 — LED 虚拟拍摄相机跟踪（[跟踪算法](https://zhuanlan.zhihu.com/p/705932365)，对标 Redspy/MoSys：单目+IMU、红外反光点方案）
-- MR 虚实融合 — XR 拍摄虚实相机混合（[实现解析](https://zhuanlan.zhihu.com/p/705965901)，标定+畸变校正，重投影误差约 3 像素）
-- 仿 SLAM 流程生成 LED 幕墙点云/Mesh（[实现解析](https://zhuanlan.zhihu.com/p/705975323)，ORB_SLAM3）
-- 虚拟制片相机标定 — g2o 图优化重写相机内参标定（[实现解析](https://zhuanlan.zhihu.com/p/705988110)，重投影误差建模）
-- Rivermax 超低延迟图像传输（[实现解析](https://zhuanlan.zhihu.com/p/706037895)，GPU Direct RDMA，解决 NDI 100ms+ 延迟不可接受的问题）
-- UE5、Unity3D 纹理级直通对接（相机→GPU 管线→引擎纹理，引擎 RenderTarget→管线→推流）
-- 虚拟人（数字人）驱动与渲染管线对接（模块正在集成）
+- VR/MR camera tracking — LED virtual-production tracking ([tracking algorithm](https://zhuanlan.zhihu.com/p/705932365), benchmarked against Redspy/MoSys: monocular + IMU, infrared reflective markers)
+- MR compositing — mixing virtual and real cameras for XR shoots ([implementation notes](https://zhuanlan.zhihu.com/p/705965901), calibration + distortion correction, about 3 px reprojection error)
+- SLAM-style LED wall point-cloud/mesh generation ([implementation notes](https://zhuanlan.zhihu.com/p/705975323), ORB_SLAM3)
+- Virtual-production camera calibration — g2o graph-optimization rewrite of intrinsic calibration ([implementation notes](https://zhuanlan.zhihu.com/p/705988110), reprojection-error modeling)
+- Rivermax ultra-low-latency video transport ([implementation notes](https://zhuanlan.zhihu.com/p/706037895), GPU Direct RDMA, solving the unacceptable 100 ms+ latency of NDI)
+- UE5/Unity3D texture-level passthrough (camera → GPU pipeline → engine texture, engine RenderTarget → pipeline → stream)
+- Digital human driving and render-pipeline integration (module being integrated)
 
-## 快速开始
+## Quick start
 
-### 编译环境
+### Build requirements
 
 - CMake 3.16+
 - Visual Studio 2019+ (Windows)
 - NDK 26.1.10909125 (Android)
 - Xcode 14+ (iOS)
-- GCC/Clang 及 Vulkan SDK (Linux)
+- GCC/Clang and the Vulkan SDK (Linux)
 
-### 外部依赖库
+### External dependencies
 
-大型依赖库（WebRTC、ONNX Runtime、OpenCV 等）存放在与本项目同级的 `../avox_library` 目录，默认自动查找。可通过环境变量或 CMake 参数自定义：
+Large dependency libraries (WebRTC, ONNX Runtime, OpenCV, etc.) live in an `../avox_library` directory next to this project and are found automatically. Override with an environment variable or a CMake option:
 
 ```bash
 export AVOX_EXTERNAL_LIBRARY_DIR=/path/to/avox_library
-# 或
+# or
 cmake -DAVOX_EXTERNAL_LIBRARY_DIR=/path/to/avox_library ...
 ```
 
-### 编译命令
+### Build commands
 
 ```bash
 python build_windows.py   # Windows x64
 python build_android.py   # Android arm64-v8a/armeabi-v7a
 python build_ios.py       # iOS arm64/x86_64
-python build_mac.py       # macOS arm64/x64/universal (需 macOS + Xcode)
+python build_mac.py       # macOS arm64/x64/universal (needs macOS + Xcode)
 python build_linux.py     # Linux x64
 
-# 单元测试 (随构建自动编译, 手动运行:)
+# Unit tests (built with the project; run manually:)
 ctest --test-dir build/windows/avox --output-on-failure -C Release
 ```
 
-编译脚本支持自定义构建类型（Debug/Release）和目标架构，**默认 Release 且产物不带调试符号**（各平台产物体积过大，Debug 请用环境变量 `AVOX_BUILD_TYPE=Debug` 显式开启），详见 [doc/build/构建.md](doc/build/构建.md) 及各脚本内的配置项。
+The build scripts take a custom build type (Debug/Release) and target architecture. **Release is the default and artifacts carry no debug symbols** (outputs are large on every platform; enable Debug explicitly with `AVOX_BUILD_TYPE=Debug`). See [doc/build/构建.md](doc/build/构建.md) for details.
 
-## 目录结构
+## Repository layout
 
 ```
 avox/
-├── src/                       # 核心 SDK 源码
-│   ├── avox/                   # 核心播放器框架 (avox 模块)
-│   │   ├── player/            # MediaPlayer / SourcePlayer 实现
-│   │   ├── source/            # 数据源 (IAVSource / IRawSource)
-│   │   ├── video/ audio/      # 视频/音频解码器基类
-│   │   ├── codec/             # 编解码抽象
-│   │   ├── muxer/             # 媒体复用
-│   │   ├── subtitle/          # 字幕
-│   │   ├── layer/             # 图层合成
-│   │   ├── module/            # 动态模块管理 (IModule / ModuleMgr)
-│   │   └── neural/            # 神经网络/AI 接口
-│   ├── avox_aac/               # AAC 编解码 (faac/fdk-aac)
-│   ├── avox_ffmpeg/            # FFmpeg 解封装/软解/硬解
-│   ├── avox_zlmediakit/        # ZLMediaKit 直播流 (RTSP/RTMP)
-│   ├── avox_vulkan/            # Vulkan GPU 处理管线
-│   ├── avox_freetype/          # FreeType 文字渲染
-│   ├── avox_egl/               # EGL 上下文
-│   ├── avox_agent/             # 多模态 AI Agent
-│   ├── avox_cmd/               # 命令行接口 (CLI)
-│   ├── avox_windows/           # Windows 平台实现
-│   ├── avox_android/           # Android 平台实现
-│   ├── avox_apple/             # Apple 平台实现 (iOS/macOS)
-│   └── avox_linux/             # Linux 平台实现
-├── plugins/                   # 动态插件模块 (运行期加载)
-│   ├── avox_webrtc/            # WebRTC 集成
-│   ├── avox_onnx/              # ONNX 推理
-│   ├── avox_opencv/            # OpenCV 图像处理
-│   ├── avox_sherpa/            # Sherpa-ONNX 语音识别
-│   ├── avox_translation/       # 神经机器翻译
-│   └── avox_cv/                # AI 图像修复 (水印去除) + 通用 YOLO
-├── swig/                      # SWIG 多语言绑定
+├── src/                       # core SDK sources
+│   ├── avox/                   # core player framework (avox module)
+│   │   ├── player/            # MediaPlayer / SourcePlayer
+│   │   ├── source/            # data sources (IAVSource / IRawSource)
+│   │   ├── video/ audio/      # video/audio decoder base classes
+│   │   ├── codec/             # codec abstractions
+│   │   ├── muxer/             # media muxing
+│   │   ├── subtitle/          # subtitles
+│   │   ├── layer/             # layer composition
+│   │   ├── module/            # dynamic module management (IModule / ModuleMgr)
+│   │   └── neural/            # neural network / AI interfaces
+│   ├── avox_aac/               # AAC codec (faac/fdk-aac)
+│   ├── avox_ffmpeg/            # FFmpeg demuxing/software & hardware decode
+│   ├── avox_zlmediakit/        # ZLMediaKit live streaming (RTSP/RTMP)
+│   ├── avox_vulkan/            # Vulkan GPU processing pipeline
+│   ├── avox_freetype/          # FreeType text rendering
+│   ├── avox_egl/               # EGL contexts
+│   ├── avox_agent/             # multimodal AI agent
+│   ├── avox_cmd/               # command-line interface (CLI)
+│   ├── avox_windows/           # Windows platform implementation
+│   ├── avox_android/           # Android platform implementation
+│   ├── avox_apple/             # Apple platform implementation (iOS/macOS)
+│   └── avox_linux/             # Linux platform implementation
+├── plugins/                   # dynamic plugin modules (loaded at runtime)
+│   ├── avox_webrtc/            # WebRTC integration
+│   ├── avox_onnx/              # ONNX inference
+│   ├── avox_opencv/            # OpenCV image processing
+│   ├── avox_sherpa/            # Sherpa-ONNX speech recognition
+│   ├── avox_translation/       # neural machine translation
+│   └── avox_cv/                # AI image restoration (watermark removal) + general YOLO
+├── swig/                      # SWIG language bindings
 │   ├── csharp/                # C# SDK
 │   ├── nodejs/                # Node.js SDK
 │   └── python/                # Python SDK
-├── platform/                  # 各平台 SDK 封装与 UI 演示
+├── platform/                  # per-platform SDK wrappers and UI demos
 │   ├── windows/ android/ ios/
-│   └── avalonia/              # Avalonia 跨平台 C# Demo
-├── samples/                   # 功能测试示例
-├── glsl/                      # Vulkan GLSL 着色器 (.glsl → .spv)
-├── cmake/                     # CMake 构建脚本与工具链
-├── script/                    # 辅助脚本 (下载依赖、打包等)
-├── 3rdparty/                  # 第三方依赖库源码
-├── assets/                    # 资源文件 (字体、图片、模型)
-├── doc/                       # 项目文档
-└── build/                     # 构建输出目录
+│   └── avalonia/              # cross-platform C# demo (Avalonia)
+├── samples/                   # feature test samples
+├── glsl/                      # Vulkan GLSL shaders (.glsl → .spv)
+├── cmake/                     # CMake build scripts and toolchains
+├── script/                    # helper scripts (dependency download, packaging)
+├── 3rdparty/                  # third-party dependency sources
+├── assets/                    # resources (fonts, images, models)
+├── doc/                       # project documentation
+└── build/                     # build output
 ```
 
-## 架构概览
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -331,20 +334,34 @@ avox/
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## API 说明
+## API conventions
 
-- **create** 前缀 API - 返回需要手动释放的对象（调用者持有所有权）
-- **get** 前缀 API - 返回托管对象，无需手动释放
-- 回调注册：`addXxxOb()` / `removeXxxOb()`，回调对象释放前须先注销
+- **`create`-prefixed APIs** return objects the caller owns and must release.
+- **`get`-prefixed APIs** return managed objects that must not be released.
+- Callbacks register with `addXxxOb()` / `removeXxxOb()`; unregister before releasing the callback object.
 
 ```cpp
-IMediaPlayer* player = createMediaPlayer();          // 用户所有，需 delete
-ISurfaceRender* render = player->getSurfaceRender(); // 托管，不释放
+IMediaPlayer* player = createMediaPlayer();          // owned by caller, must delete
+ISurfaceRender* render = player->getSurfaceRender(); // managed, do not release
 ```
 
-## 文档
+## FAQ
 
-- **[doc/INDEX.md](doc/INDEX.md)** - 项目文档总索引（模块说明、API、平台集成、构建配置）
-- **[doc/reports/README.md](doc/reports/README.md)** - 排查案例集：已定谳案例（根因、修复提交号、可复用判据）
-- **[DeveloperGuide.md](DeveloperGuide.md)** - C++ 编码规范与跨 DLL 安全规范
-- **[CLAUDE.md](CLAUDE.md)** - 项目结构概览与 AI 辅助开发指引
+**What is avox?** A cross-platform audio/video capability library in C++17: capture → hardware decode → Vulkan GPU processing → render → hardware encode/streaming, with the player as its most complete module.
+
+**Which platforms are supported?** Windows, Android, iOS, macOS and Linux (VAAPI hardware decoding on Linux is planned).
+
+**What handles input and decoding?** Pulling and decoding are layered and decoupled, with built-in FFmpeg (general formats), ZLMediaKit (RTSP/RTMP live) and WebRTC paths; hardware decoding goes through D3D11VA / MediaCodec / VideoToolbox into one zero-copy Vulkan pipeline.
+
+**What language bindings are there?** C++ natively; SWIG generates C# / Java / Node.js / Python; UI demos cover Win32, Android (Java), iOS (ObjC), Electron (JS) and Avalonia (C#).
+
+**Can it be used commercially?** The license is AGPLv3; a commercial license is available.
+
+**Where is the documentation?** Start at [doc/INDEX.md](doc/INDEX.md); the technical series is at [panvox.net/tech/build/](https://panvox.net/tech/build/) (Chinese).
+
+## Documentation
+
+- **[doc/INDEX.md](doc/INDEX.md)** - documentation index (modules, APIs, platform integration, build configuration)
+- **[doc/reports/README.md](doc/reports/README.md)** - troubleshooting casebook: settled cases with root cause, fix commit and reusable criteria
+- **[DeveloperGuide.md](DeveloperGuide.md)** - C++ coding standards and cross-DLL safety rules
+- **[CLAUDE.md](CLAUDE.md)** - project structure overview and AI-assisted development guide
