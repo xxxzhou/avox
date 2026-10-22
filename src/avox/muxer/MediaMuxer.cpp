@@ -210,7 +210,10 @@ void MediaMuxer::pushPacket(const AvoxPacket& packet) {
     if (!bDisableVideo && (bHaveVideo && !bStartPacket)) {
       return;
     }
-    ioMuxer->getPacketQueue().enqueueWait<AvoxPacket>(packet, copyBuf);
+    ioMuxer->getPacketQueue().enqueueWait<AvoxPacket>(
+        packet, [](PacketBufPtr& pack, const AvoxPacket& pkt) {
+          copyBuf(pack, pkt);
+        });
   }
 }
 
@@ -249,7 +252,10 @@ void MediaMuxer::singleVideo(AvoxPacket& packet) {
     packet.packtype = (int32_t)PackType::video;
   }
   packet.frameType = bKey ? 1 : 0;
-  ioMuxer->getPacketQueue().enqueueWait<AvoxPacket>(packet, copyBuf);
+  ioMuxer->getPacketQueue().enqueueWait<AvoxPacket>(
+      packet, [](PacketBufPtr& pack, const AvoxPacket& pkt) {
+        copyBuf(pack, pkt);
+      });
 }
 
 void MediaMuxer::close() {

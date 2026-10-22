@@ -9,23 +9,25 @@
 
 namespace avox {
 
+class PacketBufPool;
+
 using PacketBufPtr = std::shared_ptr<class PacketBuf>;
 
 // 检查是否avcc的包,注意看起来annexb三字节头可能是avcc的
 AVOX_EXPORT bool checkAvccPacket(const uint8_t* data, int32_t size);
 
-// AvoxPacket放入队列的数据，每个包尽量不重新分配
-// 主要就是分配的空间如果大于现在要用，就只复制
-// 这样会导致包的大小越到后面就越大，分配的次数就变少
+// AvoxPacket放入队列的数据, 每包一个 shared_ptr
+// 走池时按本次尺寸取档(小包永不被大包撑大), 走栈/拷贝时按贴合复用(不超 4 倍)
+// 队列槽对象复用见 copyBuf: 仅当本线程是唯一持有者时原地复用
 class AVOX_EXPORT PacketBuf {
  public:
   PacketBuf() = default;
-  ~PacketBuf() {
-    pts = 0;
-    buff.clear();
-  }
+  ~PacketBuf();
   PacketBuf(const AvoxPacket& packet) { form(packet); };
-  PacketBuf(const PacketBuf& packet) { form(packet); }
+  PacketBuf(const PacketBuf& packet);
+  PacketBuf& operator=(const PacketBuf& packet);
+  PacketBuf(PacketBuf&& packet) noexcept;
+  PacketBuf& operator=(PacketBuf&& packet) noexcept;
   PacketBuf(const std::vector<uint8_t>& data) {
     buff = data;
     size = buff.size();
@@ -33,6 +35,11 @@ class AVOX_EXPORT PacketBuf {
 
   void form(const AvoxPacket& packet);
   void form(const PacketBuf& packet);
+  // 走缓冲池(playback 包队列用): 池须活到本对象析构, 传空等价于不带池
+  void form(const AvoxPacket& packet, const std::shared_ptr<PacketBufPool>& pool);
+  void form(const PacketBuf& packet, const std::shared_ptr<PacketBufPool>& pool);
+  // 池化回收: 交还块+清零字段(等价析构), 对象本体由 PacketBufPool 复用
+  void recycle();
   // packet是视频包
   void append(const AvoxPacket& packet);
   void append(const PacketBuf& packet);
@@ -58,14 +65,26 @@ class AVOX_EXPORT PacketBuf {
   int32_t duration = 0;
   // 这个size是buff有效长度,这个长度一定少于buff.size()
   int32_t size = 0;
-  // 尽量减少分配次数
+  // 实际数据, size 为有效长度, 容量按贴合复用/池档位维护
   std::vector<uint8_t> buff;
+
+ private:
+  // 按 need 备好 buff: 池模式同档只改逻辑长度, 换档/退出池先把老块还回去
+  void fitBuffer(int32_t need, const std::shared_ptr<PacketBufPool>& want);
+  // 摘掉池关系(归还老块), 拷贝/移动语义都不共享块
+  void leavePool();
+
+  // 所属池与档位(-1=普通分配); 池用 shared_ptr, 包比池活得久也不会悬空
+  std::shared_ptr<PacketBufPool> pool;
+  int32_t poolClass = -1;
 };
 
 ConfigAddType addConfigPacket(std::vector<PacketBuf>& configPackets,
                               const PacketBuf& data, VCodecId codecId);
 AvoxPacket getPacket(PacketBufPtr packet); 
 AvoxPacket getPacket(PacketBuf& packet);
-void copyBuf(PacketBufPtr& pack, const AvoxPacket& data);
+// 入队拷贝: 槽对象在本线程独占时原地复用, 否则换新对象
+void copyBuf(PacketBufPtr& pack, const AvoxPacket& data,
+             const std::shared_ptr<PacketBufPool>& pool = nullptr);
 
 }

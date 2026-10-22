@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "PacketBufPool.hpp"
 #include "../module/LogHelper.hpp"
 
 namespace avox {
@@ -34,17 +35,153 @@ bool checkAvccPacket(const uint8_t* data, int32_t size) {
   return true;
 }
 
-void copyBuf(PacketBufPtr& pack, const AvoxPacket& data) {
-  // 环形队列的槽在 dequeue 后残留 shared_ptr, 回绕复用该槽时 pack 指向的
-  // 旧对象可能仍被下游持有(flattener 扣住的簇/解码侧), 就地 form 会改写
-  // 它们的 pts/size/buff —— 本地文件读满队列(1000 槽≈33s)回绕恰踩扣住的
-  // 首簇, WMV3 起播首 I 帧被改写成 GOP 中段 P 帧(开头花屏 3 秒的根因)。
-  // 无条件换新对象, 不复用旧包(下面 form 本就白做, pack 随即被替换)。
-  (void)pack;
-  pack = std::make_shared<PacketBuf>(data);
+namespace {
+// 贴合复用: 上一包装得下且不超本次尺寸 4 倍才复用, 否则按精确尺寸重分配。
+// 只涨不缩会让一次大 I 帧(4K IDR 1MB+)把解码/混流共用槽永久撑大, 小包随之埋单
+constexpr int32_t kTightCap = 64 * 1024;
+void fitCapacity(std::vector<uint8_t>& buff, int32_t size) {
+  // buff.size() 即上一包有效长度(容量高水位), 容得下时 resize 不重分配
+  const int32_t lastSize = (int32_t)buff.size();
+  if (lastSize < size) {
+    buff.resize(size);
+    return;
+  }
+  if (lastSize > kTightCap && lastSize > size * 4) {
+    log(LogLevel::debug, "packet buf shrink last:", lastSize, " size:", size);
+    buff = std::vector<uint8_t>(size);
+  }
+}
 }
 
-void PacketBuf::form(const AvoxPacket& packet) {
+void copyBuf(PacketBufPtr& pack, const AvoxPacket& data,
+             const std::shared_ptr<PacketBufPool>& pool) {
+  // 槽在 dequeue 后仍留着 shared_ptr: 只有本线程独占(use_count==1)才可原地改写,
+  // 否则换新对象 —— 48bc3bd"回绕改写被下游扣住的包致首 GOP 花屏"的守卫
+  if (pack && pack.use_count() == 1) {
+    if (pool) {
+      pool->statSlot(true);
+    }
+    pack->form(data, pool);
+    return;
+  }
+  if (pool) {
+    pool->statSlot(false);
+    // 对象也走池: 回绕目标恒为"刚出队的包"(还在解码管线里被扣着), 原地复用
+    // 轮不到, 对象池把这次 new 也省掉
+    pack.reset();
+    PacketBuf* raw = pool->objAcquire();
+    pack = PacketBufPtr(raw, [pool](PacketBuf* q) { pool->objRelease(q); });
+  } else {
+    pack = std::make_shared<PacketBuf>();
+  }
+  pack->form(data, pool);
+}
+
+PacketBuf::~PacketBuf() { recycle(); }
+
+void PacketBuf::recycle() {
+  pts = 0;
+  dts = 0;
+  duration = 0;
+  size = 0;
+  frameType = 0;
+  packtype = 0;
+  prefixSize = 0;
+  if (pool && poolClass >= 0) {
+    pool->release(poolClass, buff);
+  }
+  // 无条件清池引用: >8M 未入池块(poolClass==-1)也挂着 pool, 不清会让旧池被
+  // objFree 对象强引用而泄漏(审查 P1-1)
+  pool.reset();
+  poolClass = -1;
+  buff.clear();
+}
+
+PacketBuf::PacketBuf(const PacketBuf& packet) { form(packet); }
+
+PacketBuf& PacketBuf::operator=(const PacketBuf& packet) {
+  if (this == &packet) {
+    return *this;
+  }
+  // 拷贝不共享块(池块归还后按普通分配重来)
+  leavePool();
+  form(packet);
+  return *this;
+}
+
+PacketBuf::PacketBuf(PacketBuf&& packet) noexcept {
+  frameType = packet.frameType;
+  packtype = packet.packtype;
+  prefixSize = packet.prefixSize;
+  pts = packet.pts;
+  dts = packet.dts;
+  duration = packet.duration;
+  size = packet.size;
+  buff = std::move(packet.buff);
+  pool = std::move(packet.pool);
+  poolClass = packet.poolClass;
+  packet.pool.reset();
+  packet.poolClass = -1;
+}
+
+PacketBuf& PacketBuf::operator=(PacketBuf&& packet) noexcept {
+  if (this == &packet) {
+    return *this;
+  }
+  leavePool();
+  frameType = packet.frameType;
+  packtype = packet.packtype;
+  prefixSize = packet.prefixSize;
+  pts = packet.pts;
+  dts = packet.dts;
+  duration = packet.duration;
+  size = packet.size;
+  buff = std::move(packet.buff);
+  pool = std::move(packet.pool);
+  poolClass = packet.poolClass;
+  packet.pool.reset();
+  packet.poolClass = -1;
+  return *this;
+}
+
+void PacketBuf::leavePool() {
+  if (pool && poolClass >= 0) {
+    // release 会把 buff 移走; 非池对象不碰 buff(留给贴合复用)
+    pool->release(poolClass, buff);
+  }
+  pool.reset();
+  poolClass = -1;
+}
+
+void PacketBuf::fitBuffer(int32_t need, const std::shared_ptr<PacketBufPool>& want) {
+  if (!want) {
+    leavePool();
+    fitCapacity(buff, need);
+    return;
+  }
+  const int32_t cls = PacketBufPool::classOf(need);
+  if (pool == want && poolClass == cls && (int32_t)buff.capacity() >= need) {
+    buff.resize(need);  // 同档且装得下: 只改逻辑长度, 零分配
+    return;
+  }
+  // 换档/换池/容量不够: 老块还回原池, 再按本次尺寸取
+  leavePool();
+  pool = want;
+  poolClass = cls;
+  if (cls >= 0) {
+    want->acquire(cls, need, buff);
+    buff.resize(need);
+    return;
+  }
+  // 超出最大档(>8M): 不入池
+  buff = std::vector<uint8_t>();
+  buff.resize(need);
+}
+
+void PacketBuf::form(const AvoxPacket& packet) { form(packet, nullptr); }
+
+void PacketBuf::form(const AvoxPacket& packet,
+                     const std::shared_ptr<PacketBufPool>& want) {
   frameType = packet.frameType;
   packtype = packet.packtype;
   pts = packet.pts;
@@ -57,26 +194,31 @@ void PacketBuf::form(const AvoxPacket& packet) {
   PackType packType = (PackType)packtype;
   if (packType == PackType::video || packType == PackType::vconfig) {
     prefixSize = 4;
-    bool bavcc = checkAvccPacket(pdata, packet.data.size);
+    // 病态小包(size<3)不能读前 3 字节(审查 P2-4)
+    const bool bHaveHead = packet.data.size >= 3;
+    bool bavcc = bHaveHead && checkAvccPacket(pdata, packet.data.size);
     // annexb3 与 avcc可能混淆，所以这里要判断一下
-    if (!bavcc) {
+    if (bHaveHead && !bavcc) {
       if (pdata[0] == 0x00 && pdata[1] == 0x00 && pdata[2] == 0x01) {
         bAnnexB3 = 1;
       }
     }
   }
   size = packet.data.size + bAnnexB3;
-  // 只有在本身少于packet.data.size才可能去调整
-  if (buff.size() < size) {
-    buff.resize(size);
-  }
+  fitBuffer(size, want);
   memcpy(buff.data() + bAnnexB3, packet.data.data, packet.data.size);
   if (bAnnexB3) {
     buff[0] = 0x00;
   }
 }
 
-void PacketBuf::form(const PacketBuf& packet) {
+void PacketBuf::form(const PacketBuf& packet) { form(packet, nullptr); }
+
+void PacketBuf::form(const PacketBuf& packet,
+                     const std::shared_ptr<PacketBufPool>& want) {
+  if (&packet == this) {
+    return;
+  }
   frameType = packet.frameType;
   packtype = packet.packtype;
   prefixSize = packet.prefixSize;
@@ -84,10 +226,7 @@ void PacketBuf::form(const PacketBuf& packet) {
   dts = packet.dts;
   duration = packet.duration;
   size = packet.size;
-  // 只有在本身少于packet.data.size才可能去调整
-  if (buff.size() < packet.size) {
-    buff.resize(packet.size);
-  }
+  fitBuffer(size, want);
   memcpy(buff.data(), packet.buff.data(), packet.size);
 }
 // packet是视频包

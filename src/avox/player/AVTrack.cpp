@@ -1,6 +1,7 @@
 #include "AVTrack.hpp"
 
 #include "../module/RunTask.hpp"
+#include "../source/PacketBufPool.hpp"
 #include "MPPingback.hpp"
 #include "MediaPlayer.hpp"
 
@@ -9,6 +10,8 @@ namespace avox {
 AVTrack::AVTrack() {
   clock = std::make_unique<Clock>();
   packetQueue.setMaxSize(100);
+  // 池随轨构造、终生不替换(防切音轨时跨线程替换 shared_ptr 的 UB), 换流只 reset
+  packetPool = std::make_shared<PacketBufPool>();
   bVaild = false;
 }
 
@@ -19,6 +22,8 @@ void AVTrack::onInitDesc() {
   bVaild = true;
   bResetBase = true;
   bDecodeEnd = false;
+  // 池随轨构造、终生不替换; 换流/切音轨只清囤积(在飞块由旧包死亡自然回流)
+  packetPool->reset();
   // 重置状态
   queueStatus = {};
   queueStatus.trackType = trackType;
@@ -48,6 +53,30 @@ void AVTrack::onUninitDesc() {
   }
   bVaild = false;
   bResetBase = true;
+  // 池验收统计: 一轨两行, 只在确实跑过包时打(判"池在不在生效"用)
+  if (packetPool && packetPool->statAcquires() > 0) {
+    log(LogLevel::info, "packet pool stats: acquires:", packetPool->statAcquires(),
+        " hit:", packetPool->statHits(), " new:", packetPool->statBlockNews(),
+        " slotReuse:", packetPool->statSlotReuses(),
+        " slotNew:", packetPool->statSlotNews(),
+        " objReuse:", packetPool->statObjHits(),
+        " objNew:", packetPool->statObjNews(),
+        " peakKB:", packetPool->statPeakBytes() / 1024);
+    // 分档命中/新建(末列是超 8M 未入池), 8K/32K/128K/512K/2M/8M
+    std::string byClass;
+    for (int32_t i = 0; i < PacketBufPool::classCount(); ++i) {
+      char item[48] = {};
+      snprintf(item, sizeof(item), " %lld/%lld",
+               (long long)packetPool->statClassHit(i),
+               (long long)packetPool->statClassNew(i));
+      byClass += item;
+    }
+    log(LogLevel::info, "packet pool by class(hit/new):", byClass);
+  }
+  // 统计打完后清囤积: stop 后每轨空闲块(双轨最坏 64MB)不必压到下次 open
+  if (packetPool) {
+    packetPool->reset();
+  }
   // 重置时钟
   clock->reset();
 }
@@ -79,7 +108,12 @@ double AVTrack::getRate(bool bAvg) {
 void AVTrack::pushPacket(const AvoxPacket& data) {
   onPrePushPacket();
   // 如果满了,阻塞等待,vaildFunc是当前线程如果停了，就不要堵塞了
-  packetQueue.enqueueWait<AvoxPacket>(data, copyBuf);
+  // 走包缓冲池: 稳态下按尺寸档复用, 不再每包 malloc
+  const auto& pool = packetPool;
+  packetQueue.enqueueWait<AvoxPacket>(
+      data, [&pool](PacketBufPtr& pack, const AvoxPacket& pkt) {
+        copyBuf(pack, pkt, pool);
+      });
   // 显示小bit
   rateCounter.record(data.data.size * 8);
   // 记录IO线程输入PTS; 无效pts透传时保持上一个有效值, 供对齐检查

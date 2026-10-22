@@ -178,9 +178,8 @@ void VDecoderTask::onRunTask() {
     }
     configPackets.clear();
   }
-  // 预先申请合适大小，减少重新申请的机率
-  std::vector<uint8_t> temp(10000);
-  PacketBufPtr tempPtr = std::make_shared<PacketBuf>(temp);
+  // 解码侧 scratch 也走同一个包缓冲池: 大 I 帧与小 P 帧各取各的档
+  PacketBufPtr tempPtr = std::make_shared<PacketBuf>();
   // 打开态与首帧看门狗基准归零(成员, laneChanged 换道时要重置)
   bOpenDecode = false;
   bGotFrame = false;
@@ -255,7 +254,9 @@ void VDecoderTask::onRunTask() {
       flattener.take(head);
     } else {
       bGet = packetQueue.dequeueAction(
-          [&](const PacketBufPtr& packetPtr) { tempPtr->form(*packetPtr); });
+          [&](const PacketBufPtr& packetPtr) {
+            tempPtr->form(*packetPtr, trackContext->getPacketPool());
+          });
     }
 // 尾簇: 输入排空(本地文件常已读完全部包)后必须放出来, 否则最后一簇扣死.
 // 用排空轮数而不是队列 close 来判, 直播长静默也会走到这里, 但一次只错一簇。
@@ -267,7 +268,7 @@ void VDecoderTask::onRunTask() {
     }
     if (!bGet) {
       bGet = flattener.pop([&](const PacketBufPtr& pkt) {
-        tempPtr->form(*pkt);
+        tempPtr->form(*pkt, trackContext->getPacketPool());
       });
     }
     // 重排尾部: 尾簇放完且连续若干轮无包可解, 认定输入结束, 让解码器放空内部

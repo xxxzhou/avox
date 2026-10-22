@@ -13,6 +13,8 @@
 
 namespace avox {
 
+class PacketBufPool;
+
 // io->packetQueue->decode->frameQueue->render
 // 音频/视频Track的共同基类,在处理网络包的逻辑上，这二者差不多是相同的
 // 基本配置信息在track里带的AudioDesc/VideoDesc
@@ -26,6 +28,10 @@ class AVTrack : public IPlayerContext, public PtsUpdater {
   bool bVaild = false;
   // 待解码的数据包
   RingBuffer<PacketBufPtr> packetQueue;
+  // 包缓冲池: 按尺寸档复用(小包永不被大包撑大), 稳态下不再 malloc。
+  // 构造时创建、终生不替换 —— 切音轨时命令线程的替换与 IO 线程的拷取会构成
+  // shared_ptr 非原子并发读写(UB); 复用同一池只做 reset 清囤积, 天然无竞争
+  std::shared_ptr<PacketBufPool> packetPool;
   // 自身时钟
   std::unique_ptr<Clock> clock = nullptr;
   // 一路流里可能有多路视频/音频
@@ -58,6 +64,7 @@ class AVTrack : public IPlayerContext, public PtsUpdater {
  public:
   bool vaild() { return bVaild; }
   RingBuffer<PacketBufPtr>& getPacketQueue() { return packetQueue; }
+  const std::shared_ptr<PacketBufPool>& getPacketPool() { return packetPool; }
   Clock* getClock() { return clock.get(); }
 
   const RateCounter& getRateCounter() { return rateCounter; }

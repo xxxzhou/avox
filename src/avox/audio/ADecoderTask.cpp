@@ -91,8 +91,8 @@ void ADecoderTask::laneChanged(AudioDecoder& newImpl, bool bFirst) {
 
 void ADecoderTask::onRunTask() {
   TickChecker check(delayMs);
-  std::vector<uint8_t> temp(1000);
-  PacketBufPtr tempPtr = std::make_shared<PacketBuf>(temp);
+  // 解码侧 scratch 走本 track 的包缓冲池(音频常驻最小档)
+  PacketBufPtr tempPtr = std::make_shared<PacketBuf>();
   bool bOpenDecode = false;
   DecodeResult result = DecodeResult::dataNoReady;
   while (running()) {
@@ -108,7 +108,9 @@ void ADecoderTask::onRunTask() {
       decoder()->flush();
     }
     bool bGet = trackContext->getPacketQueue().dequeueAction(
-        [&](const PacketBufPtr& packetPtr) { tempPtr->form(*packetPtr); });
+        [&](const PacketBufPtr& packetPtr) {
+          tempPtr->form(*packetPtr, trackContext->getPacketPool());
+        });
     if (bGet) {
       decoder()->dispatch(&IAudioDecoderOb::onPacket, tempPtr);
       if (tempPtr->configType()) {
