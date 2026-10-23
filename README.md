@@ -2,7 +2,11 @@
 
 **English | [简体中文](README.zh-CN.md)**
 
-avox is a cross-platform audio/video capability library (C++17) that provides one pipeline from device capture, hardware decoding/encoding and GPU image processing to rendering, streaming and recording. The player is the most complete module today; WebRTC real-time calls and AI capabilities (speech recognition, machine translation, image restoration, super-resolution) are integrated as optional plugins; the XR / VR·MR camera tracking and virtual-production compositing modules are production-validated and integrated, and the digital-human module is being integrated; texture-level passthrough for UE5, Unity3D and Godot is in place.
+avox is a cross-platform audio/video library in C++17. Capture, hardware decoding, Vulkan image processing, rendering, hardware encoding and streaming run through one pipeline.
+
+The player is its most complete module. WebRTC calls, AI (speech recognition, translation, image restoration, super-resolution) and the XR / virtual-production modules attach to the same set of interfaces as plugins, so a product ships only the parts it uses.
+
+> C++17 · Windows / Android / iOS / macOS / Linux · AGPLv3, commercial license available · v1.0.0969
 
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Android%20%7C%20iOS%20%7C%20Linux-blue)]()
 [![Language](https://img.shields.io/badge/Language-C%2B%2B%20%7C%20C%23%20%7C%20Java%20%7C%20JS%20%7C%20Python-orange)]()
@@ -11,14 +15,19 @@ avox is a cross-platform audio/video capability library (C++17) that provides on
 [![Version](https://img.shields.io/badge/Version-1.0.0969-green)]()
 [![GitHub stars](https://img.shields.io/github/stars/xxxzhou/avox?style=social)](https://github.com/xxxzhou/avox)
 
-avox grows out of the author's years of audio/video and GPU work, organized with LLM assistance. The lineage runs from [OEIP](https://zhuanlan.zhihu.com/p/104027165) (UE4/Unity3D multimedia pipeline) to [aoce](https://github.com/xxxzhou/aoce) (cross-platform Vulkan GPU image processing), and the key implementation work has been written up as a technical series (see [Technical deep dives](#technical-deep-dives)).
+avox comes from the author's years of audio/video and GPU work, organized into a library with LLM assistance. The lineage runs from [OEIP](https://zhuanlan.zhihu.com/p/104027165) (UE4/Unity3D multimedia pipeline) to [aoce](https://github.com/xxxzhou/aoce) (cross-platform Vulkan GPU image processing); the key implementation work is written up as articles, listed under [Technical deep dives](#technical-deep-dives).
+
+**Contents** · [Products](#products-built-with-avox) · [At a glance](#at-a-glance) · [Core features](#core-features) · [Technical deep dives](#technical-deep-dives) · [Evolution](#evolution) · [Quick start](#quick-start) · [FAQ](#faq)
 
 ## Products built with avox
 
-**Panvox** is a cross-platform video player built on avox: the product layer is Flutter, the engine layer is this library — playback, hardware decoding, the GPU processing pipeline, subtitle rendering and AI capabilities are reused through the C ABI. It covers Windows, macOS, iOS and Android.
+**Panvox** is a cross-platform video player built on avox: the product layer is Flutter, the engine layer is this library, and playback, hardware decoding, the GPU pipeline, subtitle rendering and AI capabilities are reused through the C ABI. It covers Windows, macOS, iOS and Android.
 
-- **Windows** is live on the [Microsoft Store](https://apps.microsoft.com/detail/9PG77H33P7K8); **both Apple platforms** are live on the [App Store](https://apps.apple.com/cn/app/panvox-player/id6819539073) (iOS/iPadOS and macOS share one page; macOS requires 12.0+ and Apple silicon); Android is available as a [closed testing build](https://play.google.com/apps/test/RQo-NZmDUok/ahAO29uNRS3gG4ZDC35BtgMLCLvoQyam1Kvd6wGKPphYU5aCzPQ-UiYxxlxAB4ZtodrH0fTBAETk3--ARIvcjm3KQT) (tap "Play Store version" 7 times → Developer options → Internal app sharing).
-- What it ships: a poster-wall media library (NAS / SMB / WebDAV / Jellyfin direct play), direct play without transcoding, full ASS/PGS/SRT rendering, per-frame HDR tone mapping, AI subtitles and auto-tagging, IPTV (m3u + EPG).
+- **Windows** - [Microsoft Store](https://apps.microsoft.com/detail/9PG77H33P7K8)
+- **iOS / iPadOS / macOS** - [App Store](https://apps.apple.com/cn/app/panvox-player/id6819539073), one page for all three; macOS requires 12.0+ and Apple silicon
+- **Android** - [internal test build](https://play.google.com/apps/test/RQo-NZmDUok/ahAO29uNRS3gG4ZDC35BtgMLCLvoQyam1Kvd6wGKPphYU5aCzPQ-UiYxxlxAB4ZtodrH0fTBAETk3--ARIvcjm3KQT) (tap "Play Store version" 7 times → Developer options → Internal app sharing)
+
+What has shipped in the product: a poster-wall media library (direct play from NAS / SMB / WebDAV / Jellyfin), no transcoding, full ASS/PGS/SRT rendering, per-frame HDR tone mapping, AI subtitles and auto-tagging, IPTV (m3u + EPG).
 
 <table align="center">
   <tr>
@@ -33,34 +42,26 @@ avox grows out of the author's years of audio/video and GPU work, organized with
 
 Product overview and implementation notes: [panvox.net](https://panvox.net/en/panvox/); article version: [From the open-source engine avox to a product: Panvox, a cross-platform player](https://panvox.net/en/panvox/articles/engine-to-product/).
 
-## Highlights
+## At a glance
 
-- **One codebase, many platforms** - a single C++17 codebase for Windows / Android / iOS / Linux with one CMake build; platform differences in hardware decoding/encoding, GPU interop and window systems are absorbed by the framework — adding a platform means implementing the platform layer only.
-- **Interfaces defined once, four language bindings at zero manual cost** - the export layer is pure-virtual interfaces + `create*` factories + `addXxxOb/removeXxxOb` callback registration, with STL types banned (`const char*`, raw pointer + count, callback classes). SWIG generates the C# / Java / Node.js / Python bindings from the same headers; callback classes are inherited and overridden directly in each language through SWIG directors, so new interfaces need no per-language glue.
-- **Zero-copy GPU end to end** - hardware decode (DX11VA / MediaCodec / VideoToolbox) → Vulkan image processing → hardware encode or render; data stays on the GPU and never round-trips through CPU memory.
-  - **Windows** - D3D11VA decode frames enter the processing pipeline as DX11 textures imported into Vulkan through shared handles; results render to the window via DX11/DX12/Vulkan. Media Foundation cameras and screen capture come in through the unified data-source interface.
-  - **Android** - the NdkCamera2 camera delivers OES textures straight out and shares them across EGLContexts with Vulkan; MediaCodec decode output goes in as AHardwareBuffer, and results render to a Surface through OpenGL ES/Vulkan or stream out through MediaCodec GPU encoding.
-  - **iOS** - AVFoundation camera frames and VideoToolbox decode frames enter the pipeline through CVPixelBuffer/IOSurface interop with Vulkan/Metal textures; results render via Metal/Vulkan or stream out through VideoToolbox hardware encoding.
-  - **Game engines** - texture-level zero-copy passthrough both ways (camera/GPU pipeline → engine texture, engine RenderTarget → pipeline → stream) for UE5, Unity3D and Godot.
-- **WebRTC that follows upstream** - no fork, no patched WebRTC sources: a wrapper module extends the decode factory, AAC decoding, 3A audio and data-source/encoder mapping, so version upgrades carry no source debt.
-- **AI capabilities as plugins** - speech recognition, translation, image restoration, object detection and more load as dynamic plugins at runtime, decoupled from the playback path so the shipped size can be trimmed per product.
-- **Deep game-engine integration** - texture-level zero-copy passthrough for UE5, Unity3D and Godot; playback, calls and AI work natively inside the engine instead of an embedded player window.
-- **Validated in real scenarios, documented end to end** - live playback, multi-platform two-way calls, XR/VR·MR camera tracking and virtual-production compositing are all in production use; every key implementation maps to a technical article or repository document — readable, checkable, reproducible.
-
-<p align="center">
-  <img src="assets/images/godot/avox_android_menu.png" width="360" alt="Android + Godot - texture-level passthrough playback of a magnet link">
-  <br><em>Android + Godot: texture-level passthrough playing a magnet link</em>
-</p>
+- **One codebase, five platforms** - Windows, Android, iOS, macOS and Linux share one C++17 codebase and one CMake build. Hardware decode/encode, GPU interop and window-system differences stay in the platform layer, so adding a platform means implementing that layer only.
+- **Decoded frames stay on the GPU** - native textures from DX11VA, MediaCodec and VideoToolbox enter the Vulkan pipeline directly, then go back to render or hardware encode without passing through CPU memory.
+- **Interfaces defined once, four languages available** - the export layer is pure-virtual interfaces + `create*` factories + `addXxxOb/removeXxxOb` callbacks, with no STL types across the ABI. SWIG generates the C# / Java / Node.js / Python bindings from the same headers, and callback classes are inherited and overridden in each language through directors, so a new interface needs no per-language glue.
+- **WebRTC without forking** - a wrapper module adds the decoders, AAC, 3A audio and the data-source/encoder mapping, so upgrades follow upstream with no source debt.
+- **AI and XR load on demand** - speech recognition, translation, image restoration, object detection and the virtual-production modules exist as dynamic plugins or separate modules; the playback path runs without them.
 
 ## Core features
 
-### Multi-source playback
+### Playback
 
-- **Live streams** - RTSP/RTMP/HTTP-FLV/HLS and other protocols, magnet links, WebRTC, with both ZLMediaKit and FFmpeg parsing paths.
+- **Live streams** - RTSP/RTMP/HTTP-FLV/HLS and other protocols, magnet links, WebRTC; both ZLMediaKit and FFmpeg parsing paths.
 - **Local media** - common audio/video formats.
-- **Device capture** - a unified data-source model for cameras, microphones and screen capture (Windows Media Foundation / Android NdkCamera2 OES textures delivered directly / iOS camera).
+- **Device capture** - cameras, microphones and screen capture share one data-source model (Windows Media Foundation / Android NdkCamera2 OES textures delivered directly / iOS camera).
+- **Playback control** - A/V sync (audio, video and external clocks, following ffplay's logic), speed control, low-latency adaptive buffering for live streams, dynamic software/hardware decoder switching, dynamic window switching, multiple streams in one player.
+- **Cross-platform rendering** - ISurfaceRender unifies Vulkan / DX11 / DX12 / Metal / OpenGL ES window rendering, with each platform's hardware-decode frames going zero-copy into the matching backend (external memory sharing / texture passthrough).
+- **Pluggable sources and decoders** - pulling, decoding and encoding are layered and decoupled; each layer is a standalone source and replaceable on its own (IAVSource / IRawSource), not tied to FFmpeg. FFmpeg (general formats), ZLMediaKit (RTSP/RTMP live) and WebRTC (real-time calls) are built in and switched per source (IoPlan); a private protocol that implements IAVSource registers as a new IO option; all three share the same H264/H265/AAC software and hardware decoders and render pipeline.
 
-### Cross-platform hardware decoding · zero-copy GPU path
+### Hardware decoding and the zero-copy path
 
 | Platform | Hardware decode | Decoded frame → Vulkan zero-copy path | Render backend |
 |----------|-----------------|----------------------------------------|----------------|
@@ -69,9 +70,9 @@ Product overview and implementation notes: [panvox.net](https://panvox.net/en/pa
 | iOS | VideoToolbox | IOSurface ↔ Vulkan | Metal/Vulkan |
 | Linux | VAAPI (planned) | - | Vulkan |
 
-- Native GPU textures from hardware decoding enter the Vulkan processing pipeline or map to the render window directly, never through CPU memory.
+- Native GPU textures from hardware decoding enter the Vulkan processing pipeline or map to the render window, never through CPU memory.
 - Vulkan ↔ OpenGL ES (Android) and Vulkan ↔ DX11 (Windows) texture interop.
-- Handling Android decode/render across EGLContexts and bridging iOS decode through Metal/IOSurface both have worked-out approaches.
+- Android decode and render across EGLContexts, and the iOS path through Metal/IOSurface, both have working implementations.
 
 ### Hardware encoding, streaming and recording
 
@@ -82,26 +83,27 @@ Product overview and implementation notes: [panvox.net](https://panvox.net/en/pa
 
 ### Vulkan GPU image processing
 
-- 100+ filters/effects: the entire GPUImage family ported to Vulkan Compute Shaders.
-- Layer + PipeGraph composable compute graphs, with cross-platform GPU data mapping (OpenGL ES/Metal/DX11 ↔ Vulkan).
+- 100+ filters and effects: the entire GPUImage family ported to Vulkan Compute Shaders.
+- Layer + PipeGraph composable compute graphs, with cross-platform GPU data mapping (OpenGL ES / Metal / DX11 ↔ Vulkan).
 - FreeType + Compute Shader text rendering for timestamps and subtitle overlays.
 - Anime4K super-resolution integrated (GLSL converted to Vulkan Compute Shaders, fitting the built-in pipeline composition).
 - Performance reference: 1080p per processing layer 0.1–0.3 ms (RTX 2070; see [filter timing measurements](https://zhuanlan.zhihu.com/p/1931653908276704034)).
 
 ### WebRTC integration
 
-- WebRTC sources are not modified; a wrapper module extends:
-  - the player's H264/H265 software and hardware decoders into the WebRTC decode factory (including native H265 support in WebRTC M138)
-  - an AAC audio decoder (WebRTC itself only supports opus/g711)
-- Player data sources (IVideoSource/IAudioSource) and the cross-platform hardware encoders map into the WebRTC push path.
-- WebRTC 3A audio processing (AEC echo cancellation / ANS noise suppression / AGC gain) integrated into capture and streaming.
-- WebRTC frames render directly to the player's native windows on each platform.
+WebRTC sources are not modified; a wrapper module extends:
+
+- the player's H264/H265 software and hardware decoders into the WebRTC decode factory (including native H265 support in WebRTC M138)
+- an AAC audio decoder (WebRTC itself only supports opus/g711)
+- player data sources (IVideoSource / IAudioSource) and the cross-platform hardware encoders into the WebRTC push path
+- WebRTC 3A audio processing (AEC echo cancellation / ANS noise suppression / AGC gain) into capture and streaming
+- WebRTC frames render directly to the player's native windows on each platform
 
 ### AI capabilities
 
 AI modules load as dynamic plugins (`plugins/`) and are probed at runtime:
 
-- **Real-time speech subtitles** - SourcePlayer recognizes microphone/screen audio streams (about 200 ms latency); MediaPlayer recognizes video audio first and then translates it into subtitles (Sherpa-ONNX + neural machine translation).
+- **Real-time speech subtitles** - SourcePlayer recognizes microphone or screen audio streams with about 200 ms latency; MediaPlayer recognizes video audio first and then translates it into subtitles (Sherpa-ONNX + neural machine translation).
 - **AI image restoration** - YOLO26-Seg watermark/object instance segmentation plus inpainting, fully automatic (evolved from an earlier frame-difference + edge-analysis approach).
 - **AI inference** - general ONNX Runtime / NCNN inference (YOLO detection, facial landmarks, etc.) with direct Vulkan memory input/output.
 - **Multimodal agent** - LLM integration for image-text dialogue and tool-chain calls.
@@ -111,37 +113,31 @@ AI modules load as dynamic plugins (`plugins/`) and are probed at runtime:
   <br><em>AI subtitles in Panvox: on-device recognition, translation, then embedded playback</em>
 </p>
 
-### XR / VR·MR camera tracking and virtual production
+### XR, virtual production and engine passthrough
 
-The VR/MR camera tracking, virtual-production camera calibration and MR compositing modules are production-validated and integrated into avox:
+VR/MR camera tracking, virtual-production calibration and MR compositing are validated in production and integrated into avox:
 
-- **VR/MR camera tracking** - LED virtual-production camera tracking benchmarked against Redspy/MoSys: monocular + IMU, infrared reflective markers.
-- **Camera calibration (virtual production)** - g2o graph-optimization intrinsic calibration, hand-eye calibration, single-image intrinsic fitting for zoom lenses.
-- **MR compositing** - virtual and real cameras mixed for XR shoots: calibration + distortion correction, with about 3 pixels reprojection error.
+- **VR/MR camera tracking** - LED virtual-production camera tracking benchmarked against Redspy/MoSys: monocular + IMU, infrared reflective markers ([tracking algorithm](https://zhuanlan.zhihu.com/p/705932365)).
+- **Camera calibration** - g2o graph-optimization intrinsic calibration, hand-eye calibration, single-image intrinsic fitting for zoom lenses ([implementation notes](https://zhuanlan.zhihu.com/p/705988110)).
+- **MR compositing** - virtual and real cameras mixed for XR shoots: calibration + distortion correction, with about 3 pixels reprojection error ([implementation notes](https://zhuanlan.zhihu.com/p/705965901)).
+- **LED wall point cloud** - SLAM-style point-cloud and mesh generation with ORB_SLAM3 ([implementation notes](https://zhuanlan.zhihu.com/p/705975323)).
+- **Ultra-low-latency transport** - Rivermax (GPU Direct RDMA) and NDI for LAN video transport ([implementation notes](https://zhuanlan.zhihu.com/p/706037895), built to avoid NDI's 100 ms+ latency).
+- **Game-engine passthrough** - zero-copy texture-level integration both ways for UE5, Unity3D and Godot: camera or GPU pipeline → engine texture, engine RenderTarget → pipeline → stream (`platform/ue`, `platform/unity`, `platform/godot`). Playback, calls and AI run natively inside the engine instead of an embedded player window.
 - **Digital human** - driving and render-pipeline integration (module being integrated).
-- **Ultra-low-latency transport** - Rivermax (GPU Direct RDMA) / NDI for LAN video transport.
-- **Game-engine passthrough** - zero-copy texture-level integration for UE5, Unity3D and Godot (platform/godot, platform/unity, platform/ue).
 
-### Advanced playback
-
-- Audio/video sync (ffplay-style logic, with audio/video/external clock), playback speed control.
-- Low-latency adaptive playback (buffering adjusted dynamically for live streams).
-- Dynamic software/hardware decoder switching, dynamic window switching.
-- Multiple streams in a single player.
-- **Pluggable multi-framework integration** - pulling, decoding and encoding are layered and decoupled; each layer is a standalone source and replaceable on its own (IAVSource/IRawSource abstractions), not tied to FFmpeg:
-  - built-in options work out of the box: FFmpeg (general formats), ZLMediaKit (RTSP/RTMP live), WebRTC (real-time calls), switched per source (IoPlan)
-  - private protocols plug in as source plugins: implement IAVSource and it registers as a new IO option
-  - all options share the same built-in H264/H265/AAC software and hardware decoders and render pipeline; decoder/encoder implementations are replaceable too
-- **Cross-platform rendering** - ISurfaceRender unifies Vulkan / DX11 / DX12 / Metal / OpenGL ES window rendering, with each platform's hardware-decode frames zero-copy into the matching render backend (external memory sharing / texture passthrough).
+<p align="center">
+  <img src="assets/images/godot/avox_android_menu.png" width="360" alt="Android + Godot - texture-level passthrough playback of a magnet link">
+  <br><em>Android + Godot: texture-level passthrough playing a magnet link</em>
+</p>
 
 ### Multi-language SDK
 
-- **C++** native interface; **SWIG** generates C# / Java / Node.js / Python bindings (including cross-thread callback support).
+- **C++** native interface; **SWIG** generates C# / Java / Node.js / Python bindings (including cross-thread callbacks).
 - UI demos on each platform: Win32, Android (Java), iOS (ObjC), [Electron (JS)](https://zhuanlan.zhihu.com/p/1943737922852460208), [Avalonia (C#)](https://zhuanlan.zhihu.com/p/1991912977230733329).
 
 ## Technical deep dives
 
-The key implementation work is written up as a technical series. **The current, rewritten edition is serialized at [panvox.net — Building a Cross-Platform Player](https://panvox.net/en/tech/build/) in English** (Chinese edition: [panvox.net/tech/build/](https://panvox.net/tech/build/)); earlier thematic articles are in Chinese, under [the author's article feed](https://www.zhihu.com/people/zhou-xin-12-70-21/posts):
+The key implementation work is written up as articles. **The current, rewritten edition is serialized at [panvox.net — Building a Cross-Platform Player](https://panvox.net/en/tech/build/) in English** (Chinese edition: [panvox.net/tech/build/](https://panvox.net/tech/build/)); earlier thematic articles are in Chinese, under [the author's article feed](https://www.zhihu.com/people/zhou-xin-12-70-21/posts):
 
 **Panvox product and implementation (2026)**
 
@@ -193,32 +189,22 @@ The key implementation work is written up as a technical series. **The current, 
 - [Real-time speech recognition and translation in the player](https://zhuanlan.zhihu.com/p/2035763455190373290)
 - [AI image restoration](https://zhuanlan.zhihu.com/p/2037495059705221313) - YOLO-Seg watermark removal
 - [Optimizing real-time facial landmark detection with NCNN](https://zhuanlan.zhihu.com/p/407299327) / [Vulkan input/output in NCNN](https://zhuanlan.zhihu.com/p/411106967) - on-device inference with direct GPU memory access
-- [A CUDA implementation of GrabCut](https://zhuanlan.zhihu.com/p/59283449) (early GPU segmentation work)
+- [A CUDA implementation of GrabCut](https://zhuanlan.zhihu.com/p/59283449) - early GPU segmentation work
 
 **Engineering practice**
 
 - [Converting C++ to other languages with SWIG](https://zhuanlan.zhihu.com/p/379049985) / [Cross-thread callbacks in SWIG Node.js native extensions](https://zhuanlan.zhihu.com/p/1969758141236372869)
 
-## Evolution and the XR / virtual-production modules
-
-avox's capabilities come from years of accumulation:
+## Evolution
 
 | Period | Project | Main output |
 |--------|---------|-------------|
 | 2019-2020 | oeip (Windows) | CUDA/DX11 image pipeline, FFmpeg pull/push streaming, UE4/Unity3D texture passthrough, CUDA GrabCut/guided filter, YOLO integrated into game engines |
 | 2020-2021 | [aoce](https://github.com/xxxzhou/aoce) (cross-platform) | Vulkan Compute image pipeline, 100+ GPUImage filter ports, Android/iOS camera capture, chroma-keying, NCNN on-device inference, SWIG multi-language |
-| 2024-now | avox | Player SDK: multi-platform hardware decode/encode, zero-copy GPU path, full WebRTC stack, AI subtitles/restoration/super-resolution, multi-language SDK; XR/VR·MR camera tracking and compositing integrated |
-| 2026 | **Panvox** ([Microsoft Store](https://apps.microsoft.com/detail/9PG77H33P7K8)) | Cross-platform player product on avox: Flutter product layer + avox C ABI; live on Windows and both Apple platforms ([Store](https://apps.microsoft.com/detail/9PG77H33P7K8) / [App Store](https://apps.apple.com/cn/app/panvox-player/id6819539073)); playback/library/subtitles/AI/IPTV all shipped |
+| 2024-now | avox | Player SDK: multi-platform hardware decode/encode, zero-copy GPU path, the full WebRTC stack, AI subtitles/restoration/super-resolution, multi-language SDK; XR and virtual-production modules integrated |
+| 2026 | **Panvox** | Cross-platform player on avox: Flutter product layer + avox C ABI; live on Windows and both Apple platforms; playback, library, subtitles, AI and IPTV all shipped |
 
-**XR / virtual-production modules** (VR/MR camera tracking, virtual-production calibration, MR compositing; fully validated on aoce first, now integrated into avox):
-
-- VR/MR camera tracking — LED virtual-production tracking ([tracking algorithm](https://zhuanlan.zhihu.com/p/705932365), benchmarked against Redspy/MoSys: monocular + IMU, infrared reflective markers)
-- MR compositing — mixing virtual and real cameras for XR shoots ([implementation notes](https://zhuanlan.zhihu.com/p/705965901), calibration + distortion correction, about 3 px reprojection error)
-- SLAM-style LED wall point-cloud/mesh generation ([implementation notes](https://zhuanlan.zhihu.com/p/705975323), ORB_SLAM3)
-- Virtual-production camera calibration — g2o graph-optimization rewrite of intrinsic calibration ([implementation notes](https://zhuanlan.zhihu.com/p/705988110), reprojection-error modeling)
-- Rivermax ultra-low-latency video transport ([implementation notes](https://zhuanlan.zhihu.com/p/706037895), GPU Direct RDMA, solving the unacceptable 100 ms+ latency of NDI)
-- UE5/Unity3D texture-level passthrough (camera → GPU pipeline → engine texture, engine RenderTarget → pipeline → stream)
-- Digital human driving and render-pipeline integration (module being integrated)
+The XR / virtual-production work started during aoce, where it was fully validated on real shoots, and now lives in avox.
 
 ## Quick start
 
@@ -249,11 +235,11 @@ python build_ios.py       # iOS arm64/x86_64
 python build_mac.py       # macOS arm64/x64/universal (needs macOS + Xcode)
 python build_linux.py     # Linux x64
 
-# Unit tests (built with the project; run manually:)
+# Unit tests (built with the project; run manually)
 ctest --test-dir build/windows/avox --output-on-failure -C Release
 ```
 
-The build scripts take a custom build type (Debug/Release) and target architecture. **Release is the default and artifacts carry no debug symbols** (outputs are large on every platform; enable Debug explicitly with `AVOX_BUILD_TYPE=Debug`). See [doc/build/构建.md](doc/build/构建.md) for details.
+The build scripts take a custom build type (Debug/Release) and target architecture. **Release is the default and artifacts carry no debug symbols**; enable Debug explicitly with `AVOX_BUILD_TYPE=Debug`. Details are in [doc/build/构建.md](doc/build/构建.md) and in each script's options.
 
 ## Repository layout
 
@@ -338,7 +324,7 @@ avox/
 
 - **`create`-prefixed APIs** return objects the caller owns and must release.
 - **`get`-prefixed APIs** return managed objects that must not be released.
-- Callbacks register with `addXxxOb()` / `removeXxxOb()`; unregister before releasing the callback object.
+- **Callbacks** register with `addXxxOb()` / `removeXxxOb()`; unregister before releasing the callback object.
 
 ```cpp
 IMediaPlayer* player = createMediaPlayer();          // owned by caller, must delete
