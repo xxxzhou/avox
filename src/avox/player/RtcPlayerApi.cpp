@@ -1,6 +1,8 @@
 #include "avox/AvoxPlayer.h"
 
+#ifdef AVOX_ENABLE_ZLMEDIAKIT
 #include "avox_zlmediakit/TestSdpOb.hpp"
+#endif
 #include "../module/AvoxManager.hpp"
 #include "../module/ModuleMgr.hpp"
 
@@ -13,12 +15,18 @@ IRtcPlayer* createWebRtcPlayer() {
 }
 
 IRtcEventOb* createZlTestSdpAgent(IRtcPlayer* player, const char* serverUrl) {
+#ifdef AVOX_ENABLE_ZLMEDIAKIT
   if (!player || !serverUrl) {
     return nullptr;
   }
   auto ob = new TestSdpOb(serverUrl);
   ob->setPlayer(player);
   return ob;
+#else
+  (void)player;
+  (void)serverUrl;
+  return nullptr;
+#endif
 }
 
 }

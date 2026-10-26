@@ -947,12 +947,14 @@ Command cmdPlay() {
               printf("  offset: %d\n", sharpParam.offset);
               break;
             }
+#ifdef AVOX_ENABLE_FREETYPE
             case 'I': {  // 几何颜色循环 (独立于 OSD 文本颜色)
               geoColorIdx = (geoColorIdx + 1) % kOsdColorCount;
               drawGeoDecor();
               printf("  几何颜色: %s\n", kOsdColors[geoColorIdx].name);
               break;
             }
+#endif
             case 'M': {  // 画质增强 开/关
               qualityOn = !qualityOn;
               if (qualityOn) {
