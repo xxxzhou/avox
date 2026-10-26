@@ -53,6 +53,8 @@ class TranscodeRecorder : public IRecorder,
   // 视频编码参数(常用旋钮走 setVideoEncodeParam 结构体; 关键帧间隔/profile
   // 另有 option 入口)。整包替换, open 前设置生效
   VideoEncodeParam encodeParam = {};
+  // 音频编码参数(码率/VBR/profile; 声道与采样率走 setAudioDesc), open 前设置生效
+  AudioEncodeParam audioEncodeParam = {};
   // 输出描述，未设置或与源相同则不处理
   VideoDesc outVideoDesc = {};
   AudioDesc outAudioDesc = {};
@@ -99,6 +101,7 @@ class TranscodeRecorder : public IRecorder,
   virtual void setVideoDesc(const VideoDesc& desc) override;
   virtual void setAudioDesc(const AudioDesc& desc) override;
   virtual void setVideoEncodeParam(const VideoEncodeParam& param) override;
+  virtual void setAudioEncodeParam(const AudioEncodeParam& param) override;
   virtual void enableQualityEnhance(const QualityEnhanceParamet& paramet) override;
   virtual void disableQualityEnhance() override;
   virtual ISurfaceRender* getSurfaceRender() override ;

@@ -8,6 +8,11 @@ AudioEncoder::AudioEncoder() {}
 
 void AudioEncoder::setOutDesc(const AudioDesc& desc) { outDesc = desc; }
 
+int32_t AudioEncoder::getTargetBitrate() const {
+  // 用编码器实际协商后的输出格式(下混/重采样之后)算自动档
+  return resolveAudioBitrate(encodeParam, enDesc.desc);
+}
+
 ATrackDesc AudioEncoder::setDesc(const ATrackDesc& desc_) {
   desc = desc_;
   enDesc = desc;

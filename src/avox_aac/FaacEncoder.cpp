@@ -55,6 +55,17 @@ DecodeResult FaacEncoder::onPreEncoder() {
   config->outputFormat = 0;
   config->useLfe = 0;
   config->aacObjectType = LOW;
+  // 音频旋钮: 只有显式/自动解析出码率才覆盖(0 = faac 缺省)
+  const int32_t audioBitrate = getTargetBitrate();
+  if (audioBitrate > 0) {
+    config->bitRate = (unsigned long)audioBitrate;
+  }
+  if (getVbrQuality() >= 1) {
+    LOGFLF(LogLevel::warn, "faac ignores vbrQuality, use bitrate instead");
+  }
+  if (getProfileLevel() == AudioEncodeProfile::he) {
+    LOGFLF(LogLevel::warn, "faac cannot encode HE-AAC, fallback LC");
+  }
   // config->mpegVersion = MPEG4;
   faacEncSetConfiguration(handle, config);
   // 16bit

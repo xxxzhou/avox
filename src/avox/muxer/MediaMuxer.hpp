@@ -70,9 +70,10 @@ class MediaMuxer : public IMediaMuxer, public Observer<IRecorderOb> {
   // 在IMuxerOb中的onMuxerOpen回调设置
   virtual void setInVideoDesc(const VTrackDesc& desc);
   virtual void setInAudioDesc(const ATrackDesc& desc);
-  // 直拷 muxer 不编码: 转码腿的两个入口在此明确忽略(宿主接线错误要可见)
+  // 直拷 muxer 不编码: 转码腿的这些入口在此明确忽略(宿主接线错误要可见)
   virtual void setVideoDesc(const VideoDesc& desc) override;
   virtual void setVideoEncodeParam(const VideoEncodeParam& param) override;
+  virtual void setAudioEncodeParam(const AudioEncodeParam& param) override;
   void ready();
   // 目标容器能否容纳该音频编码(音频直拷前置判定): 借注册表新建一个同型 muxer
   // 实例问一次(不 open/不起线程); 判定归实现层(ffmpeg 按容器 codec_tag 表)。

@@ -58,6 +58,13 @@ void TranscodeRecorder::setVideoEncodeParam(const VideoEncodeParam& param) {
          " gop:", param.gopSeconds, " profile:", (int32_t)param.profile);
 }
 
+void TranscodeRecorder::setAudioEncodeParam(const AudioEncodeParam& param) {
+  audioEncodeParam = param;
+  LOGFLF(LogLevel::info, "set audio encode param, bitrateKbps:",
+         param.bitrateKbps, " vbrQuality:", param.vbrQuality, " profile:",
+         (int32_t)param.profile);
+}
+
 TranscodeRecorder::~TranscodeRecorder() { close(); }
 
 void TranscodeRecorder::setRecState(RecorderState newState) {
@@ -158,6 +165,7 @@ bool TranscodeRecorder::open(const char* url, const char* file) {
     muxer->setHardEncode(bHardEncode);
     // 编码参数在 open 前落到编码流(未设置的项由编码器按用途档推导)
     muxer->setEncodeParam(encodeParam);  // 含用途档 usage
+    muxer->setAudioEncodeParam(audioEncodeParam);
     muxer->setVideoCodec(vCodecId);
     muxer->setAudioCodec(aCodecid);
   }

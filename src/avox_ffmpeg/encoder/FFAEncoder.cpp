@@ -50,6 +50,22 @@ DecodeResult FFAEncoder::onPreEncoder() {
   }
   av_channel_layout_default(&codecCtx->ch_layout, enDesc.desc.channels);
   codecCtx->sample_fmt = getFFAudioFormat(enDesc.desc.format);
+  // 音频旋钮: 码率只在显式/自动解析出值时才覆盖(0 = 保持 codec 缺省, 存量不变)
+  const int32_t audioBitrate = getTargetBitrate();
+  if (audioBitrate > 0) {
+    codecCtx->bit_rate = audioBitrate;
+  }
+  // FFmpeg 原生 aac 不支持 VBR 质量档与 HE-AAC 编码: 设了明确告警, 不静默
+  if (enDesc.codecId == ACodecId::aac &&
+      getVbrQuality() >= 1) {
+    LOGFLF(LogLevel::warn,
+           "ffmpeg aac ignores vbrQuality, use bitrate instead; quality:",
+           getVbrQuality());
+  }
+  if (enDesc.codecId == ACodecId::aac &&
+      getProfileLevel() == AudioEncodeProfile::he) {
+    LOGFLF(LogLevel::warn, "ffmpeg aac cannot encode HE-AAC, fallback LC");
+  }
   int32_t ret = avcodec_open2(codecCtx.get(), codec, nullptr);
   if (ret < 0) {
     AVOX_FFMEPG_LOG(ret, "avcodec_open2 failed");

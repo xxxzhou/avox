@@ -52,6 +52,7 @@ class RawMuxer : public MediaMuxer {
   // open 前设置; 开录后调用被忽略(流头与编码器描述已定)
   virtual void setVideoDesc(const VideoDesc& desc) override;
   virtual void setVideoEncodeParam(const VideoEncodeParam& param) override;
+  virtual void setAudioEncodeParam(const AudioEncodeParam& param) override;
   bool hasOutVideoDesc() const { return bSetOutSize; }
   const VideoDesc& getOutVideoDesc() const { return outVideoDesc; }
   virtual void setVideoCodec(VCodecId codecId) override;

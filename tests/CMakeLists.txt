@@ -36,11 +36,14 @@ add_executable(avox_tests
   ${AVOX_TESTS_SRC}/test_audioframe.cpp
   ${AVOX_TESTS_SRC}/test_packetbuf.cpp
   ${AVOX_TESTS_SRC}/test_recordknobs.cpp
+  ${AVOX_TESTS_SRC}/test_audioencodeknobs.cpp
   ${AVOX_TESTS_SRC}/log_sink.cpp
   # 被测源码 (自包含编译)
   ${AVOX_SRC}/module/AvoxMath.cpp
   # 录制旋钮纯函数(自动码率/帧率门, 投屏转码腿 B2)
   ${AVOX_SRC}/video/VideoEncodeParams.cpp
+  # 音频编码旋钮纯函数(自动码率分档/解析)
+  ${AVOX_SRC}/audio/AudioEncodeParams.cpp
   # 外挂字幕编码归一 + SRT 解析(GBK 端到端)
   ${AVOX_SRC}/subtitle/CharsetConvert.cpp
   ${AVOX_SRC}/subtitle/SrtParser.cpp

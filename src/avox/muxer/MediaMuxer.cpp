@@ -89,6 +89,11 @@ void MediaMuxer::setVideoEncodeParam(const VideoEncodeParam& param) {
          "setVideoEncodeParam ignored: this muxer copies packets (no encode)");
 }
 
+void MediaMuxer::setAudioEncodeParam(const AudioEncodeParam& param) {
+  LOGFLF(LogLevel::warn,
+         "setAudioEncodeParam ignored: this muxer copies packets (no encode)");
+}
+
 void MediaMuxer::setInAudioDesc(const ATrackDesc& desc) {
   if (!ioMuxer) {
     LOGFLF(LogLevel::warn, "ioMuxer is null");

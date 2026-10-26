@@ -41,6 +41,7 @@ ATrackDesc AudioStream::setAudioDesc(const ATrackDesc& desc_,
 
 // 车道接线: 设定想要的输出格式, 取回编码器实际接受的输出格式, 再绑观察者
 bool AudioStream::laneInit(AudioEncoder& impl, const ACodecDesc&) {
+  impl.setEncodeParam(encodeParam);
   impl.setOutDesc(wantDesc);
   outDesc = impl.setDesc(desc);
   impl.setObserver(this);

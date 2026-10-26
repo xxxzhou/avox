@@ -167,6 +167,31 @@ struct VideoEncodeParam {
   EncodeUsage usage = EncodeUsage::record;
 };
 
+// 音频编码 profile(兼容性↔效率): inherit = 缺省(AAC-LC)
+#define AVOX_MAP_AUDIO_ENCODE_PROFILE(XX) \
+  XX(inherit, -1, "inherit")              \
+  XX(lc, 0, "lc")                         \
+  XX(he, 1, "he")
+
+enum class AudioEncodeProfile : int32_t {
+#define XX(name, value, str) name = value,
+  AVOX_MAP_AUDIO_ENCODE_PROFILE(XX)
+#undef XX
+};
+
+// 音频编码旋钮(转码腿, open 前设置)。声道/采样率/格式归 AudioDesc(下混与
+// 重采样走 setAudioDesc), 本结构只放编码器侧的取舍
+struct AudioEncodeParam {
+  // 目标码率 kbps: >0 显式(钳 8..1024); -1 = 按声道自动(1/2/3-4/5-6/7-8ch
+  // → 96/160/256/384/512); 0 = 不设, 保持编码器现状缺省(存量行为不变)
+  int32_t bitrateKbps = 0;
+  // VBR 质量 1..5(fdk 原生支持); -1 = 关, 按码率走 CBR。
+  // FFmpeg 原生 aac 不支持 VBR, 设了只告警不生效
+  int32_t vbrQuality = -1;
+  // AAC-LC / HE-AAC; inherit = 缺省 LC。HE 仅 fdk 支持(投屏/录制都应锁 LC)
+  AudioEncodeProfile profile = AudioEncodeProfile::inherit;
+};
+
 class IMediaMuxer {
  public:
   virtual ~IMediaMuxer() = default;
@@ -197,6 +222,9 @@ class IMediaMuxer {
   // 转码腿: 编码旋钮包(与 IRecorder::setVideoEncodeParam 同义; open前设置;
   // 用途档 usage 在结构体内, stream=低延迟推流取向)。仅 RawMuxer(转码)生效
   virtual void setVideoEncodeParam(const VideoEncodeParam& param) {};
+  // 转码腿: 音频编码旋钮包(与 IRecorder::setAudioEncodeParam 同义; open前设置;
+  // 声道/采样率/格式走 setAudioDesc)。仅 RawMuxer(转码)生效, 直拷 muxer 忽略并告警
+  virtual void setAudioEncodeParam(const AudioEncodeParam& param) {};
 };
 
 // 轨道处理方式(转码录制器, open前设置; 非转码录制器本就全直拷, 不适用)
@@ -266,6 +294,9 @@ class IRecorder {
   // (rec.encode.gop / rec.encode.profile, 异步/远程配置用)。
   // ⚠️ 新虚函数只追加在接口末尾(往中间插会移动既有槽位, 旧二进制静默调错)
   virtual void setVideoEncodeParam(const VideoEncodeParam& param) {};
+  // 音频编码参数(转码录制器专用, open 前设置; 直拷轨忽略)。
+  // 声道/采样率/格式走 setAudioDesc, 这里只放码率/VBR/profile
+  virtual void setAudioEncodeParam(const AudioEncodeParam& param) {};
 };
 
 extern "C" {

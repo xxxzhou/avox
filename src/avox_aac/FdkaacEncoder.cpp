@@ -46,11 +46,21 @@ DecodeResult FdkaacEncoder::onPreEncoder() {
     return DecodeResult::openFailed;
   }
   // 配置编码器参数
-  aacEncoder_SetParam(handle, AACENC_AOT, 2);  // AAC LC
+  // AOT: 2=AAC-LC, 5=HE-AAC(SBR); inherit 解析为 LC
+  aacEncoder_SetParam(handle, AACENC_AOT,
+                      getProfileLevel() == AudioEncodeProfile::he ? 5 : 2);
   aacEncoder_SetParam(handle, AACENC_SAMPLERATE, inputSampleRate);
   aacEncoder_SetParam(handle, AACENC_CHANNELMODE,
                       inputChannels == 1 ? MODE_1 : MODE_2);
-  aacEncoder_SetParam(handle, AACENC_BITRATE, 128000);
+  // 码率: 显式/自动解析出值才覆盖, 0 保持 128k 存量缺省
+  const int32_t audioBitrate = getTargetBitrate();
+  aacEncoder_SetParam(handle, AACENC_BITRATE,
+                      audioBitrate > 0 ? audioBitrate : 128000);
+  // VBR 1..5: fdk 内置 VBR 档(BITRATE 作为平均目标)
+  const int32_t vbr = getVbrQuality();
+  if (vbr >= 1 && vbr <= 5) {
+    aacEncoder_SetParam(handle, AACENC_BITRATEMODE, vbr);
+  }
   // 0-raw, 1-ADIF, 2-ADTS
   aacEncoder_SetParam(handle, AACENC_TRANSMUX, 0);
   aacEncoder_SetParam(handle, AACENC_AFTERBURNER, 1);

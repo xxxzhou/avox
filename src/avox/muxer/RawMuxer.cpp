@@ -40,6 +40,10 @@ void RawMuxer::setVideoEncodeParam(const VideoEncodeParam& param) {
   setEncodeParam(param);
 }
 
+void RawMuxer::setAudioEncodeParam(const AudioEncodeParam& param) {
+  audioStream->setEncodeParam(param);
+}
+
 void RawMuxer::setVideoDesc(const VideoDesc& desc) {
   // open 前契约: 开录后改会让流头/编码器描述与门限/守卫不一致, 等于现场切断画面
   if (state == RecorderState::opening || state == RecorderState::recording) {

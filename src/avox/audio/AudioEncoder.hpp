@@ -2,6 +2,7 @@
 
 #include "../module/Observer.hpp"
 #include "../muxer/AVEncoder.hpp"
+#include "AudioEncodeParams.hpp"
 #include "AudioFrame.hpp"
 
 #ifdef AVOX_ENABLE_FFMPEG
@@ -33,10 +34,22 @@ protected:
   // 输出与输入的倍率
   double speed = 1.0;
   int64_t lastPts = 0;
+  // 音频编码旋钮(未设置项保持编码器现状缺省)
+  AudioEncodeParam encodeParam = {};
 
 public:
   // 设置想要的输出格式
   void setOutDesc(const AudioDesc& desc);
+  // 音频编码旋钮下发(非虚: 只搬字段)
+  void setEncodeParam(const AudioEncodeParam& param) { encodeParam = param; }
+  // 已解析码率(bps): 0 = 不设(编码器现状缺省)
+  int32_t getTargetBitrate() const;
+  // VBR 质量 1..5; -1 = 关
+  int32_t getVbrQuality() const { return encodeParam.vbrQuality; }
+  // 已解析 profile(inherit → LC)
+  AudioEncodeProfile getProfileLevel() const {
+    return resolveAudioProfile(encodeParam.profile);
+  }
   virtual ATrackDesc setDesc(const ATrackDesc &desc);
   DecodeResult fillFrame(const AvoxAFrame &frame);
   virtual DecodeResult encode(const AvoxAFrame &frame) {
