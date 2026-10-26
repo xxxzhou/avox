@@ -60,6 +60,31 @@ void WindowRender::setVulkan(bool bVulkan_) {
   SurfaceRenderNative::setVulkan(bVulkan_);
 }
 
+bool WindowRender::canRecordSizeChange() {
+  // resize 层只挂在 VK 图里: 原生腿(bVulkan=false)与 HDR 直通/VR 拓扑都没有
+  return bVulkan && vkVideoRender != nullptr && vkVideoRender->canSizeChange();
+}
+
+void WindowRender::saveSizeState() {
+#ifdef AVOX_ENABLE_VULKAN
+  if (!vkVideoRender || bSavedSize) {
+    return;
+  }
+  vkVideoRender->saveSizeState(savedUseNew, savedScale, savedW, savedH);
+  bSavedSize = true;
+#endif
+}
+
+void WindowRender::restoreSizeState() {
+#ifdef AVOX_ENABLE_VULKAN
+  if (!vkVideoRender || !bSavedSize) {
+    return;
+  }
+  vkVideoRender->restoreSizeState(savedUseNew, savedScale, savedW, savedH);
+  bSavedSize = false;
+#endif
+}
+
 void WindowRender::setHdrMode(HdrMode mode) {
   // vkHDR(链F 意图值)按车道归一化, 不能一律折 forceHDR(§4.3):
   // lane=0(VK 腿) 折 forceHDR —— 与 forceHDR 在 VK 腿既有行为一致, 正是链F 要的;

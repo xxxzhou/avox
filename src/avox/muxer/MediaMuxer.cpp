@@ -78,6 +78,17 @@ void MediaMuxer::setInVideoDesc(const VTrackDesc& desc) {
   bHaveVideo = true;
 }
 
+void MediaMuxer::setVideoDesc(const VideoDesc& desc) {
+  LOGFLF(LogLevel::warn,
+         "setVideoDesc ignored: this muxer copies packets (no encode); "
+         "use getMuxer(true) for transcode recording");
+}
+
+void MediaMuxer::setVideoEncodeParam(const VideoEncodeParam& param) {
+  LOGFLF(LogLevel::warn,
+         "setVideoEncodeParam ignored: this muxer copies packets (no encode)");
+}
+
 void MediaMuxer::setInAudioDesc(const ATrackDesc& desc) {
   if (!ioMuxer) {
     LOGFLF(LogLevel::warn, "ioMuxer is null");

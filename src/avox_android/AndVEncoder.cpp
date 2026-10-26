@@ -192,7 +192,7 @@ DecodeResult AndVEncoder::openCodec(const char* mimeType, int32_t tier) {
     return DecodeResult::startFailed;
   }
   LOGFLF(LogLevel::info, "android encoder open:", mimeType, " tier:", tier,
-         " usage:", usage == EncodeUsage::stream ? "stream" : "record",
+         " usage:", encodeParam.usage == EncodeUsage::stream ? "stream" : "record",
          " bitrate:", bitrate, " gop:", gop);
   return DecodeResult::success;
 }

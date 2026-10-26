@@ -20,8 +20,6 @@ protected:
   // 编码参数(逐项独立旋钮: 码控模式/质量/码率/预设/profile/关键帧间隔);
   // 未设置项由编码器按用途档推导。车道接线时下发给选中的那个编码器
   VideoEncodeParam encodeParam = {};
-  // 用途档: 转码录制器恒为 record(落盘); 推流侧(WebRTC)在它那条路自己设 stream
-  EncodeUsage usage = EncodeUsage::record;
   VideoEncoderChain encoderChain;
   // 本车道是否已出过包: 出包前换道安全(封装头/编码描述还没落), 出包后不再换
   bool bEmittedPacket = false;

@@ -47,7 +47,7 @@ void VideoStream::setVideoDesc(const VTrackDesc& desc_) {
   }
   LOGFLF(LogLevel::info, "init encoder:", encoderChain.implName(),
          " codecId:", getVCodecName(desc.codecId),
-         " usage:", usage == EncodeUsage::stream ? "stream" : "record");
+         " usage:", encodeParam.usage == EncodeUsage::stream ? "stream" : "record");
 }
 
 // 车道接线: desc/编码参数/编码器名与观察者都在这接上; 开不开得起来要到首帧才知道。
@@ -55,7 +55,7 @@ void VideoStream::setVideoDesc(const VTrackDesc& desc_) {
 bool VideoStream::laneInit(VideoEncoder& impl, const VCodecDesc& vdesc) {
   impl.setEncoderName(vdesc.name);
   // 先下参数再 setDesc: 显式码率要先置位, 免得 setDesc 用自动码率覆盖它
-  impl.setUsage(usage);
+  // 用途档(usage)就在旋钮包里, 随 setEncodeParam 一次下发
   impl.setEncodeParam(encodeParam);
   impl.setDesc(desc);
   impl.setObserver(this);

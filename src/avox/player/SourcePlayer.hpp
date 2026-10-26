@@ -42,6 +42,8 @@ class SourcePlayer : public ISourcePlayer,
   bool bAudioRender = false;
   // rawmuxer记录时,windows平台需要输出YUV
   bool bMuxerCpu = false;
+  // 录制按 muxer 声明尺寸改过渲染输出(关闭时要还原播放侧缩放状态)
+  bool bMuxerScaled = false;
 
  private:
   void cmdOpen();

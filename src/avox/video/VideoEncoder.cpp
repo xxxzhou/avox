@@ -39,7 +39,7 @@ EncodeRateMode VideoEncoder::getRateMode() const {
   if (encodeParam.rateMode != EncodeRateMode::inherit) {
     return encodeParam.rateMode;
   }
-  if (usage == EncodeUsage::stream) {
+  if (encodeParam.usage == EncodeUsage::stream) {
     return EncodeRateMode::cbr;
   }
   return bExplicitBitrate ? EncodeRateMode::vbr : EncodeRateMode::quality;
@@ -49,7 +49,7 @@ int32_t VideoEncoder::getQualityLevel() const {
   if (encodeParam.quality >= 0) {
     return encodeParam.quality;
   }
-  return usage == EncodeUsage::stream ? kStreamQuality : kRecordQuality;
+  return encodeParam.usage == EncodeUsage::stream ? kStreamQuality : kRecordQuality;
 }
 
 // 预设: 录制缺省取均衡档, 推流缺省取速度档(延迟优先)
@@ -57,7 +57,7 @@ EncodePreset VideoEncoder::getPreset() const {
   if (encodeParam.preset != EncodePreset::inherit) {
     return encodeParam.preset;
   }
-  return usage == EncodeUsage::stream ? EncodePreset::speed
+  return encodeParam.usage == EncodeUsage::stream ? EncodePreset::speed
                                       : EncodePreset::balanced;
 }
 
@@ -67,7 +67,7 @@ EncodeProfile VideoEncoder::getProfileLevel() const {
   if (encodeParam.profile != EncodeProfile::inherit) {
     return encodeParam.profile;
   }
-  return usage == EncodeUsage::stream ? EncodeProfile::compat
+  return encodeParam.usage == EncodeUsage::stream ? EncodeProfile::compat
                                       : EncodeProfile::high;
 }
 

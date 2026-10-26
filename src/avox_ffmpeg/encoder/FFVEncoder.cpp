@@ -162,7 +162,7 @@ void FFVEncoder::applyEncoderParams(AVCodecContext* ctx, const AVCodec* codec,
   const int32_t crf = qualityToCrf(quality) + (bH265 ? 5 : 0);
   const bool bFull = tier == 0;
   // B 帧只在非推流且最低一级没被砍掉时开(fillContext 按同一规则设 ctx)
-  const bool bAllowB = bFull && usage == EncodeUsage::record;
+  const bool bAllowB = bFull && encodeParam.usage == EncodeUsage::record;
 
   if (nameHas(name, "libx264") || nameHas(name, "libx265")) {
     // 软编(GPL 渠道)。实测同画质下 veryfast 与 medium 体积基本同档(824 与
@@ -187,7 +187,7 @@ void FFVEncoder::applyEncoderParams(AVCodecContext* ctx, const AVCodec* codec,
         ctx->rc_buffer_size = (int32_t)bitrate;
       }
     }
-    if (usage == EncodeUsage::stream) {
+    if (encodeParam.usage == EncodeUsage::stream) {
       av_dict_set(param, "tune", "zerolatency", 0);
     }
     return;
@@ -221,7 +221,7 @@ void FFVEncoder::applyEncoderParams(AVCodecContext* ctx, const AVCodec* codec,
                 bH265 ? "main"
                       : profileAvc(profile, "baseline", "main", "high"),
                 0);
-    av_dict_set(param, "tune", usage == EncodeUsage::stream ? "ll"
+    av_dict_set(param, "tune", encodeParam.usage == EncodeUsage::stream ? "ll"
                                                                           : "hq",
                 0);
     if (bQuality) {
@@ -299,7 +299,7 @@ void FFVEncoder::applyEncoderParams(AVCodecContext* ctx, const AVCodec* codec,
       ctx->bit_rate = 0;
     } else {
       av_dict_set(param, "usage",
-                  usage == EncodeUsage::stream ? "lowlatency"
+                  encodeParam.usage == EncodeUsage::stream ? "lowlatency"
                                                              : "transcoding",
                   0);
       av_dict_set(param, "rc", bCbr ? "cbr" : "vbr_peak", 0);
@@ -341,7 +341,7 @@ void FFVEncoder::applyEncoderParams(AVCodecContext* ctx, const AVCodec* codec,
                       : profileAvc(profile, "baseline", "main", "high"),
                 0);
     av_dict_set_int(param, "realtime",
-                    usage == EncodeUsage::record ? 0 : 1, 0);
+                    encodeParam.usage == EncodeUsage::record ? 0 : 1, 0);
     if (bFull && preset != EncodePreset::balanced) {
       av_dict_set_int(
           param, "prio_speed",
@@ -439,7 +439,7 @@ void FFVEncoder::fillContext(const AVCodec* codec, const FrameRate& framerate,
   // 播放侧引擎本就吃 B 帧流), 推流必须关(WebRTC 不接受重排)。只在最低一级
   // 重试里保留 —— 驱动不支持 B 帧时先掉它, 保住码控
   codecCtx->max_b_frames =
-      (tier == 0 && usage == EncodeUsage::record) ? 3 : 0;
+      (tier == 0 && encodeParam.usage == EncodeUsage::record) ? 3 : 0;
   codecCtx->has_b_frames = codecCtx->max_b_frames;
   codecCtx->bit_rate = bitrate;
   codecCtx->thread_count = 0;
@@ -478,7 +478,7 @@ DecodeResult FFVEncoder::onPreEncoder() {
       frameCount = 0;
       LOGFLF(LogLevel::info, "video encoder open:", codec->name, " tier:", tier,
              " usage:",
-             usage == EncodeUsage::stream ? "stream" : "record",
+             encodeParam.usage == EncodeUsage::stream ? "stream" : "record",
              " rateMode:", (int32_t)getRateMode(), " bitrate:", bitrate,
              " quality:", quality, " preset:", (int32_t)getPreset(),
              " profile:", (int32_t)getProfileLevel(), " gop:", gop);

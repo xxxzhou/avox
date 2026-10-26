@@ -36,6 +36,24 @@ void RawMuxer::setEncodeParam(const VideoEncodeParam& param) {
   videoStream->setEncodeParam(param);
 }
 
+void RawMuxer::setVideoEncodeParam(const VideoEncodeParam& param) {
+  setEncodeParam(param);
+}
+
+void RawMuxer::setVideoDesc(const VideoDesc& desc) {
+  // open 前契约: 开录后改会让流头/编码器描述与门限/守卫不一致, 等于现场切断画面
+  if (state == RecorderState::opening || state == RecorderState::recording) {
+    LOGFLF(LogLevel::warn, "setVideoDesc ignored while recording");
+    return;
+  }
+  outVideoDesc = desc;
+  bSetOutSize = desc.width > 0 && desc.height > 0;
+  // 新规格 = 新段: 帧率门与尺寸告警从当前 pts 重起
+  fpsGate.reset();
+  sizeMismatchFrames = 0;
+  bWarnedSizeMismatch = false;
+}
+
 void RawMuxer::setVideoCodec(VCodecId codecId) {
   vCodecId = codecId;
   if (codecId == VCodecId::none) {
@@ -81,6 +99,15 @@ void RawMuxer::setInVideoDesc(const VTrackDesc& desc) {
   if (vdesc.desc.fps == 0) {
     vdesc.desc.fps = 25;
   }
+  // 声明的输出规格(投屏转码腿): 尺寸的实际像素由渲染链 enableSizeChange 缩;
+  // fps 必须同步给编码器(自动码率/GOP/VUI 都按它算)
+  if (bSetOutSize) {
+    vdesc.desc.width = outVideoDesc.width;
+    vdesc.desc.height = outVideoDesc.height;
+  }
+  if (outVideoDesc.fps > 0) {
+    vdesc.desc.fps = outVideoDesc.fps;
+  }
   videoStream->setVideoDesc(vdesc);
   ioMuxer->setVideoDesc(vdesc);
   vcodecId = vdesc.codecId;
@@ -117,6 +144,13 @@ void RawMuxer::onClose() {
   // 待出帧趁 sink 尚活排空落盘, 且关流后不再有回调能触到 sink
   stopStreams();
   bReAudio = false;
+  // 会话结束清转码腿状态: RawMuxer 随 MediaPlayer 长期复用, 残留的 pts 基准
+  // 会把下一段(pts 从头开始)的整段视频扣光, 残留尺寸会污染普通录制
+  outVideoDesc = {};
+  bSetOutSize = false;
+  fpsGate.reset();
+  sizeMismatchFrames = 0;
+  bWarnedSizeMismatch = false;
 }
 
 void RawMuxer::pushFrame(const YUVFrame& frame) {
@@ -137,6 +171,15 @@ void RawMuxer::pushFrame(const YUVFrame& frame) {
     LOGFLF(LogLevel::warn, "muxer is not recording");
     return;
   }
+  // 尺寸守卫在帧率门之前: 腿没缩放的帧不该消耗门的保留槽位
+  if (!checkFrameSize((int32_t)frame.format.width,
+                      (int32_t)frame.format.height)) {
+    return;
+  }
+  // 帧率门(声明了输出 fps 才生效): 超频帧按 pts 丢, 音频不动
+  if (!recordFpsGate(frame.pts, fpsGate, outVideoDesc.fps)) {
+    return;
+  }
   // LOGFLF(LogLevel::info, "video pts:", frame.pts);
   videoStream->encoderFrame(frame);
 }
@@ -149,7 +192,36 @@ void RawMuxer::pushFrame(const GpuFrame& frame) {
     LOGFLF(LogLevel::warn, "muxer is not recording");
     return;
   }
+  // 尺寸守卫在帧率门之前: 腿没缩放的帧不该消耗门的保留槽位
+  if (!checkFrameSize((int32_t)frame.format.width,
+                      (int32_t)frame.format.height)) {
+    return;
+  }
+  if (!recordFpsGate(frame.pts, fpsGate, outVideoDesc.fps)) {
+    return;
+  }
   videoStream->encoderFrame(frame);
+}
+
+bool RawMuxer::checkFrameSize(int32_t width, int32_t height) {
+  if (!bSetOutSize) {
+    return true;
+  }
+  if (width == outVideoDesc.width && height == outVideoDesc.height) {
+    sizeMismatchFrames = 0;
+    bWarnedSizeMismatch = false;
+    return true;
+  }
+  // 不符即丢(防流头/编码器描述与实际帧错位); 连续 3 帧不符才升级告警,
+  // 首帧/换图的一两帧瞬态不误报
+  ++sizeMismatchFrames;
+  if (sizeMismatchFrames >= 3 && !bWarnedSizeMismatch) {
+    bWarnedSizeMismatch = true;
+    LOGFLF(LogLevel::error, "frame size:", width, "x", height,
+           "!= declared:", outVideoDesc.width, "x", outVideoDesc.height,
+           "frames dropped; render lane cannot resize (canSizeChange=false)");
+  }
+  return false;
 }
 
 void RawMuxer::pushFrame(const AvoxAFrame& frame) {

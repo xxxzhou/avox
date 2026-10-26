@@ -221,6 +221,10 @@ class AVOX_EXPORT VideoRender : public OptionLink {
   // IOption
  public:
   virtual void onOptionChange(const char* key, ArgType option) override;
+  // 当前拓扑能否按宿主设置改输出尺寸: resize 层只挂在 VK 图里, 默认不支持。
+  // 录制/投屏转码腿开工前由 WindowRender::canRecordSizeChange 查询。
+  // ⚠️ 追加在类末尾(虚函数插中间会移动既有槽位)
+  virtual bool canSizeChange() const { return false; }
 };
 
 /**

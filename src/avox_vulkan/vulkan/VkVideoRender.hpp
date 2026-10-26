@@ -149,6 +149,26 @@ class VkVideoRender : public VideoRender, public IVOutputLayerOb {
   }
   // 当前 HDR 输出模式(SurfaceRenderEvent hdr 位用)
   HdrMode getHdrMode() const { return hdrMode; }
+  // 当前拓扑是否支持 resize 层: HDR 直通(PQ 原样落帧)与 VR(视口自带尺寸)
+  // 不挂 resize, 与 vaildAndInitGraph 的挂载条件同源
+  bool canSizeChange() const override {
+    return hdrMode != HdrMode::forceHDR && !bEnableVr;
+  }
+  // 录制改输出尺寸前保存/结束后恢复播放侧缩放状态(enableSizeScale 与
+  // enableSizeChange 共用 bUseNewSize/sizeScale/userWidth/userHeight)
+  void saveSizeState(bool& bUse, float& scale, int32_t& w, int32_t& h) const {
+    bUse = bUseNewSize;
+    scale = sizeScale;
+    w = userWidth;
+    h = userHeight;
+  }
+  void restoreSizeState(bool bUse, float scale, int32_t w, int32_t h) {
+    bUseNewSize = bUse;
+    sizeScale = scale;
+    userWidth = w;
+    userHeight = h;
+    bResetFlag = true;
+  }
 
   // 初始化图形管线
   virtual bool vaildAndInitGraph() override;

@@ -152,6 +152,21 @@ void SourcePlayer::onMuxerOpen(MediaMuxer* muxer) {
   auto vtracks = source->getVideoTracks();
   auto atracks = source->getAudioTracks();
   if (vtracks.size() > 0) {
+    // 转码腿声明了输出规格: 与 MediaPlayer 同款, 在录制第一帧 render 之前改图;
+    // 车道不支持 resize 时显式报错(声明仍生效, 尺寸守卫会丢帧防流头错乱)
+    if (rawMuxer->hasOutVideoDesc()) {
+      const VideoDesc& od = rawMuxer->getOutVideoDesc();
+      if (!windowRender->canRecordSizeChange()) {
+        LOGFLF(LogLevel::error,
+               "record size change unsupported on current render lane, "
+               "declared:", od.width, "x", od.height,
+               "- recording will have no video");
+      } else {
+        windowRender->saveSizeState();
+        windowRender->enableSizeChange(od.width, od.height);
+        bMuxerScaled = true;
+      }
+    }
     bool bHard = rawMuxer->getHardEncode();
     YuvType outYuv = windowRender->getOutYuv();
     // 如果自身输出YUV420P,关闭硬解
@@ -192,6 +207,11 @@ void SourcePlayer::onMuxerClose() {
   if (bMuxerCpu) {
     windowRender->disableYuvOut();
     bMuxerCpu = false;
+  }
+  // 录制改过的输出尺寸要还原成播放侧原状态
+  if (bMuxerScaled) {
+    bMuxerScaled = false;
+    windowRender->restoreSizeState();
   }
 }
 

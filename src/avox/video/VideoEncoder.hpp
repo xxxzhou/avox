@@ -18,10 +18,8 @@ class AVOX_EXPORT VideoEncoder : public AVEncoder, public Observer<IEncoderOb> {
   VTrackDesc desc = {};
   // 关键帧间隔(秒): 单一来源是 encodeParam.gopSeconds, 由 setEncodeParam 同步
   int32_t gop = 3;
-  // 用户旋钮(逐项独立)。未设置的项由用途档推导 —— 见 getRateMode 等解析函数
+  // 用户旋钮(逐项独立)。未设置的项由用途档(encodeParam.usage)推导
   VideoEncodeParam encodeParam = {};
-  // 用途档(内部; 决定未设置项的缺省取向): 录制 = record, 推流 = stream
-  EncodeUsage usage = EncodeUsage::record;
   // 车道选中的编码器名(注册表名, 如 "h264_mf"): 上层选软/硬的意图在候选链里
   // 已表达, 实现据此取用对应编码器; 空 = 由实现自行挑选
   std::string encoderName = "";
@@ -38,8 +36,6 @@ class AVOX_EXPORT VideoEncoder : public AVEncoder, public Observer<IEncoderOb> {
   void setBitrate(int32_t bitrate);
   // 录制侧编码参数下发(非虚: 只搬字段, 不动虚表)
   void setEncodeParam(const VideoEncodeParam& param);
-  void setUsage(EncodeUsage usage_) { usage = usage_; }
-  EncodeUsage getUsage() const { return usage; }
   void setEncoderName(const std::string& name) { encoderName = name; }
   const std::string& getEncoderName() const { return encoderName; }
   // 目标码率(bps): 显式设置优先, 否则按输入 desc 自动算

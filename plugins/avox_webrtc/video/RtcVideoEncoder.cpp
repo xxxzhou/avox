@@ -90,8 +90,10 @@ int32_t RtcVideoEncoder::InitEncode(
     encode->setBitrate(codec_settings->maxBitrate);
   }
   // 推流档: 上行码率是硬约束, 编码取低延迟参数(关 B 帧/低延迟预设), 与录制档
-  // 分开(见 EncodeUsage)。编码器名交给实现 = 用 findEncoder 真正选中的那条
-  encode->setUsage(EncodeUsage::stream);
+  // 分开(usage 随旋钮包进编码器)。编码器名交给实现 = 用 findEncoder 真正选中的那条
+  VideoEncodeParam param = {};
+  param.usage = EncodeUsage::stream;
+  encode->setEncodeParam(param);
   encode->setEncoderName(codecDesc.name);
   encode->setDesc(trackDesc);
   bCheckAcc = false;

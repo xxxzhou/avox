@@ -44,4 +44,33 @@ int32_t getAutoVideoBitrate(const VideoDesc& desc, VCodecId codecId) {
   return (int32_t)bps;
 }
 
+bool recordFpsGate(int64_t ptsMs, FpsGateState& state, double maxFps) {
+  if (maxFps <= 0) {
+    return true;
+  }
+  // 源无有效时间戳时无法按时间丢帧: 旁路且不动基准(INT64_MIN = AVOX_NOVALID_PTS)
+  if (ptsMs == INT64_MIN) {
+    return true;
+  }
+  const double periodMs = 1000.0 / maxFps;
+  // 首帧 / pts 回退(seek、换段): 以当前帧重设基准, 否则旧基准会把整段扣光
+  if (!state.bKept || ptsMs < state.lastPtsMs) {
+    state.bKept = true;
+    state.lastPtsMs = ptsMs;
+    state.nextPtsMs = (double)ptsMs + periodMs;
+    return true;
+  }
+  state.lastPtsMs = ptsMs;
+  // 半毫秒容差: pts 按整数毫秒进, 33.33 的目标不该把 33 判丢
+  if ((double)ptsMs + 0.5 < state.nextPtsMs) {
+    return false;
+  }
+  state.nextPtsMs += periodMs;
+  // 源慢于目标/长时间无帧: 目标直接追到当前帧之后(避免大间隔时循环累积)
+  if (state.nextPtsMs <= (double)ptsMs) {
+    state.nextPtsMs = (double)ptsMs + periodMs;
+  }
+  return true;
+}
+
 }

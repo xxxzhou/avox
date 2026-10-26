@@ -157,7 +157,7 @@ bool TranscodeRecorder::open(const char* url, const char* file) {
     muxer->setMuxerType(muxerType);
     muxer->setHardEncode(bHardEncode);
     // 编码参数在 open 前落到编码流(未设置的项由编码器按用途档推导)
-    muxer->setEncodeParam(encodeParam);
+    muxer->setEncodeParam(encodeParam);  // 含用途档 usage
     muxer->setVideoCodec(vCodecId);
     muxer->setAudioCodec(aCodecid);
   }

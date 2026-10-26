@@ -148,7 +148,7 @@ DecodeResult IOSVEncoder::onPreEncoder() {
   // 设置编码参数。RealTime = 延迟优先, 由用途档定(不是预设):
   //   record = 离线落盘: 关 RealTime 让 VT 走画质优化的多遍/前瞻路径, 开 B 帧
   //   stream = 实时推流: RealTime 开、关重排、码率当硬目标
-  const bool bRec = usage == EncodeUsage::record;
+  const bool bRec = encodeParam.usage == EncodeUsage::record;
   setBoolProperty(compressionSession, kVTCompressionPropertyKey_RealTime,
                   !bRec);
   // profile: 可移植三档 → VT 的 profile level; HEVC 三档都 Main(输入 8bit)。

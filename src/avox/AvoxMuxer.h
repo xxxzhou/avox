@@ -94,37 +94,11 @@ class IRecorderOb {
   virtual void onComplete() {}
 };
 
-class IMediaMuxer {
- public:
-  virtual ~IMediaMuxer() = default;
-
- public:
-  // windows默认软编,注意硬编给NV12,软编给YUV420P
-  virtual void setHardEncode(bool hard) {};
-  // 设置视频编码 H264/H265,默认H265,设置none会关闭录制视频
-  virtual void setVideoCodec(VCodecId codecId) {};
-  // 设置音频编码 AAC/PCM,默认AAC,设置none会关闭录制音频
-  virtual void setAudioCodec(ACodecId codecId) {};
-  // 设置输出音频格式(如果不设置,不改变输入格式)
-  virtual void setAudioDesc(const AudioDesc& adesc) {};
-  // 用那种sdk推流,现有ffmpeg/zlmediakit
-  virtual void setMuxerType(MuxerType type) = 0;
-  virtual RecorderState getState() = 0;
-  // 打开
-  virtual bool open(const char* url) = 0;
-  virtual void close() = 0;
-};
-
-// 轨道处理方式(转码录制器, open前设置; 非转码录制器本就全直拷, 不适用)
-// 与 setVideoCodec/setAudioCodec 的 none=丢轨正交: none 决定轨道是否存在,
-// 本枚举决定存在的轨道"转码"还是"直拷"; 直拷轨上的编码/格式设置被忽略
-enum class TransMode : int32_t {
-  TranscodeAll = 0,  // 视频转码 + 音频转码(默认, 存量行为不变)
-  AudioCopy    = 1,  // 视频转码 + 音频直拷: 源音频包不解码不重编直接进封装
-                     // (pts 同轴; 目标容器不可容该编码时自动回退转码 —— 判定在
-                     //  AMediaSource::onReady 经注入的 audioCopySupported 问
-                     //  muxer 实现层 IOMuxer::canStoreAudio, 该轨改走转码)
-  VideoCopy    = 2   // 视频直拷 + 音频转码(转封装+改音频等场景)
+// 编码用途档(内部概念, 不是用户旋钮): 只决定"用户没显式指定时"各旋钮的缺省取向。
+// record = 转码/录制落盘(体积与画质优先); stream = 实时推流(码率硬约束, 低延迟优先)
+enum class EncodeUsage : int32_t {
+  record = 0,
+  stream = 1,
 };
 
 // 码率控制模式
@@ -187,6 +161,54 @@ struct VideoEncodeParam {
   // profile; inherit = 缺省(录制取 high, 推流取 compat)。
   // 不常用, 也可经 option "rec.encode.profile" 设置
   EncodeProfile profile = EncodeProfile::inherit;
+  // 用途档: 上面各项取 inherit 时按此档推导(record=质量优先 / stream=低延迟)。
+  // ⚠️ 末尾追加字段: 旧宿主编的旧结构体(少 4 字节)配新库会越界读, 必须与
+  // avox 同批部署(含 SWIG 绑定重新生成); 缺省 record = 存量行为
+  EncodeUsage usage = EncodeUsage::record;
+};
+
+class IMediaMuxer {
+ public:
+  virtual ~IMediaMuxer() = default;
+
+ public:
+  // windows默认软编,注意硬编给NV12,软编给YUV420P
+  virtual void setHardEncode(bool hard) {};
+  // 设置视频编码 H264/H265,默认H265,设置none会关闭录制视频
+  virtual void setVideoCodec(VCodecId codecId) {};
+  // 设置音频编码 AAC/PCM,默认AAC,设置none会关闭录制音频
+  virtual void setAudioCodec(ACodecId codecId) {};
+  // 设置输出音频格式(如果不设置,不改变输入格式)
+  virtual void setAudioDesc(const AudioDesc& adesc) {};
+  // 用那种sdk推流,现有ffmpeg/zlmediakit
+  virtual void setMuxerType(MuxerType type) = 0;
+  virtual RecorderState getState() = 0;
+  // 打开
+  virtual bool open(const char* url) = 0;
+  virtual void close() = 0;
+  // 转码腿: 声明输出视频描述(与 IRecorder::setVideoDesc 同名; open前设置)。
+  // 尺寸是**精确目标**不是上限(width/height 任一为 0 = 不缩尺寸): 实际像素由
+  // 渲染链 ISurfaceRender::enableSizeChange 缩, 当前只有图像处理链在用的 VK
+  // 车道支持(原生 DX11/EGL/Metal 腿不支持); 缩放接线在 MediaPlayer/SourcePlayer
+  // 录制腿(IRecorder/TranscodeRecorder 路径只应用尺寸)。fps>0 时按 pts 丢帧并
+  // 同步给编码器(fps 门仅本接口生效); fps=0 不限制。
+  // 仅 RawMuxer(转码)生效, 直拷 muxer 忽略并告警
+  virtual void setVideoDesc(const VideoDesc& desc) {};
+  // 转码腿: 编码旋钮包(与 IRecorder::setVideoEncodeParam 同义; open前设置;
+  // 用途档 usage 在结构体内, stream=低延迟推流取向)。仅 RawMuxer(转码)生效
+  virtual void setVideoEncodeParam(const VideoEncodeParam& param) {};
+};
+
+// 轨道处理方式(转码录制器, open前设置; 非转码录制器本就全直拷, 不适用)
+// 与 setVideoCodec/setAudioCodec 的 none=丢轨正交: none 决定轨道是否存在,
+// 本枚举决定存在的轨道"转码"还是"直拷"; 直拷轨上的编码/格式设置被忽略
+enum class TransMode : int32_t {
+  TranscodeAll = 0,  // 视频转码 + 音频转码(默认, 存量行为不变)
+  AudioCopy    = 1,  // 视频转码 + 音频直拷: 源音频包不解码不重编直接进封装
+                     // (pts 同轴; 目标容器不可容该编码时自动回退转码 —— 判定在
+                     //  AMediaSource::onReady 经注入的 audioCopySupported 问
+                     //  muxer 实现层 IOMuxer::canStoreAudio, 该轨改走转码)
+  VideoCopy    = 2   // 视频直拷 + 音频转码(转封装+改音频等场景)
 };
 
 // 流录制器,三个作用

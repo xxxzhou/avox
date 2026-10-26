@@ -43,8 +43,22 @@ class AVOX_EXPORT WindowRender : public SurfaceRenderNative,
   virtual ~WindowRender();
   // 转发渲染链 + 窗口(直通交换链据 ST2086 向系统/屏声明内容亮度)
   void setHdrMeta(const HdrMeta &meta);
+  // 当前车道能否按 enableSizeChange 改输出尺寸(录制/投屏转码腿开工前查询):
+  // 只有图像处理链在用的 VK 车道为 true; 原生(DX11/EGL/Metal)车道、HDR
+  // 直通态与 VR 模式为 false(这些拓扑不挂 resize 层)
+  bool canRecordSizeChange();
+  // 录制改输出尺寸前保存播放侧缩放状态(N 键 enableSizeScale 共用同一组字段),
+  // 录制结束后 restoreSizeState 原样还回, 不把用户缩放清掉
+  void saveSizeState();
+  void restoreSizeState();
 
  protected:
+  // 录制前的播放侧缩放状态
+  bool bSavedSize = false;
+  bool savedUseNew = false;
+  float savedScale = 1.0f;
+  int32_t savedW = 0;
+  int32_t savedH = 0;
   std::unique_ptr<Window> window = nullptr;
   // 窗口多线程同步操作
   std::mutex mtx;

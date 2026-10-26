@@ -235,6 +235,21 @@ void MediaPlayer::onMuxerOpen(MediaMuxer* muxer) {
   if (vtracks.size() > 0) {
     if (bRaw) {
       WindowRender* winRender = videoTracks[0]->getSurfaceRender();
+      // 转码腿声明了输出规格: 必须在录制第一帧 render 之前改图, 否则首帧仍是
+      // 源尺寸被尺寸守卫丢掉; 当前车道不支持 resize 时显式报错(否则整段无视频)
+      if (rawMuxer->hasOutVideoDesc()) {
+        const VideoDesc& od = rawMuxer->getOutVideoDesc();
+        if (!winRender->canRecordSizeChange()) {
+          LOGFLF(LogLevel::error,
+                 "record size change unsupported on current render lane, "
+                 "declared:", od.width, "x", od.height,
+                 "- recording will have no video");
+        } else {
+          winRender->saveSizeState();
+          winRender->enableSizeChange(od.width, od.height);
+          bMuxerScaled = true;
+        }
+      }
       YuvType outYuv = winRender->getOutYuv();
       // windows平台需要输出YUV数据
 #ifdef WIN32
@@ -245,6 +260,8 @@ void MediaPlayer::onMuxerOpen(MediaMuxer* muxer) {
         bMuxerCpu = true;
       }
 #endif
+      // 改图尚未重建, 此刻拿到的是旧输出尺寸; 声明了规格时 RawMuxer::setInVideoDesc
+      // 会用声明值覆盖, 这里只是未声明规格时的兜底
       vec2i outSize = winRender->getOutSize();
       if (outYuv != YuvType::other) {
         if (outYuv == YuvType::nv12) {
@@ -287,6 +304,12 @@ void MediaPlayer::onMuxerClose() {
     WindowRender* winRender = videoTracks[0]->getSurfaceRender();
     winRender->disableYuvOut();
     bMuxerCpu = false;
+  }
+  // 录制改过的输出尺寸要还原成播放侧原状态(用户缩放不能被录制清掉)
+  if (bMuxerScaled) {
+    bMuxerScaled = false;
+    WindowRender* winRender = videoTracks[0]->getSurfaceRender();
+    winRender->restoreSizeState();
   }
 }
 
@@ -342,6 +365,13 @@ void MediaPlayer::onClose() { close(); }
 void MediaPlayer::onComplete() {
   LOGFLF(LogLevel::info, "av source complete");
   bIOComplete = true;
+  // B7(EOS 自动收尾)两轮实测均不可在本回调域做: demux 线程同步 close 与直拷
+  // 包投递交叠崩(0xC0000005); 转投命令线程则 close 占住命令线程致后续命令饿死
+  // (全量回归 20min 超时)。正解=MediaMuxer 自有收尾线程或宿主停播后收尾协议,
+  // 挂账 dlna-cast-v2 §12-B7。宿主照旧 EOS 后 recordStop(close 幂等)
+  if (rawMuxer && rawMuxer->getState() == RecorderState::recording) {
+    LOGFLF(LogLevel::warn, "eos with muxer still recording; host must recordStop");
+  }
   // 记录IO完成
   PBMediaAction pb = {};
   pb.mediaObject = MediaObject::io;
