@@ -1,5 +1,6 @@
 build/
 build-ios/
+build-avoxkit/
 build_*.log
 build_*.txt
 __pycache__
