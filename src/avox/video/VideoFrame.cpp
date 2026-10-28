@@ -14,7 +14,9 @@ void VideoFrame::release() {
 }
 
 void copyBufHost(VideoFramePtr& frame, const YUVFrame& curframe) {
-  if (!frame) {
+  // 槽内帧可能正被编码线程读取(dequeue 后锁外处理), 独占才原地复用;
+  // 边读边写会让画面内容和 pts 串到别的帧上(画面来回跳)
+  if (!frame || frame.use_count() > 1) {
     frame = std::make_shared<VideoFrame>();
   }
   // 硬解切软解
@@ -30,7 +32,8 @@ void copyBufHost(VideoFramePtr& frame, const YUVFrame& curframe) {
 }
 
 void copyBufGpu(VideoFramePtr& frame, const GpuFrame& gpuFrame) {
-  if (!frame) {
+  // 同上: 消费线程持有期间不能原地换帧
+  if (!frame || frame.use_count() > 1) {
     frame = std::make_shared<VideoFrame>();
   }
   // 软解切硬解
