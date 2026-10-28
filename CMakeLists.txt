@@ -360,6 +360,8 @@ copy_head("avox/AvoxImage.h")
 copy_head("avox/AvoxLayer.h")
 copy_head("avox/AvoxLog.h")
 copy_head("avox/AvoxPlayer.h")
+copy_head("avox/AvoxSubtitle.h")
+copy_head("avox/Avox.hpp")
 # avox/AvoxAgent.h 已随旧 IAgentTool/IToolResult 一并删除:
 # 工具现在是 avox_agent/core/ToolTypes.hpp 的 ToolDefinition (值 + 函数对象, 无类层次),
 # 而跨语言边界走 avox_agent/export/AgentHostExport.h 的 C 接口。
