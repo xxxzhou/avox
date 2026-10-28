@@ -121,58 +121,70 @@ void WindowRender::setHdrMeta(const HdrMeta &meta) {
 }
 
 void WindowRender::onSurfaceChange() {
-  std::lock_guard<std::mutex> lck(mtx);
-  if (bOffSurface) {
-    if (window) {
-      // 析构前先清渲染器的 targetWindow 裸指针: 渲染线程每帧检查点解引用旧窗口即UAF
-      if (pVideoRender) {
-        pVideoRender->renderWindow(nullptr);
+  // 有窗口就保证呈现线程在跑: 循环只负责把帧送到窗口, 没有窗口时继续消费
+  // (处理/编码不依赖窗口)。接/摘视口只切 surface, 不另设开停开关。
+  bool bStartWindow = false;
+  {
+    std::lock_guard<std::mutex> lck(mtx);
+    if (bOffSurface) {
+      if (window) {
+        // 析构前先清渲染器的 targetWindow 裸指针: 渲染线程每帧检查点解引用旧窗口即UAF
+        if (pVideoRender) {
+          pVideoRender->renderWindow(nullptr);
+        }
+        if (vkVideoRender) {
+          vkVideoRender->renderWindow(nullptr);
+        }
+        window.reset();
       }
-      if (vkVideoRender) {
-        vkVideoRender->renderWindow(nullptr);
+      LOGFLF(LogLevel::info, "use empty surface, cpu out:", outCpuYuv);
+    } else {
+      // 如果已有窗口,检查是否匹配的窗口类型
+      if (window && surface) {
+        bool bMatch =
+            ((window->getRenderType() == RenderType::Vulkan) == bVulkan);
+        // 窗口使用新的surface渲染
+        if (bMatch) {
+          window->initSurface(surface);
+          LOGFLF(LogLevel::info, "window use new suface:", surface);
+        }
       }
-      window.reset();
-    }
-    LOGFLF(LogLevel::info, "use empty surface, cpu out:", outCpuYuv);
-  } else {
-    // 如果已有窗口,检查是否匹配的窗口类型
-    if (window && surface) {
-      bool bMatch =
-          ((window->getRenderType() == RenderType::Vulkan) == bVulkan);
-      // 窗口使用新的surface渲染
-      if (bMatch) {
-        window->initSurface(surface);
-        LOGFLF(LogLevel::info, "window use new suface:", surface);
-      }
-    }
-    if (!window) {
-      if (bVulkan) {
-        window = std::make_unique<VkWindow>();
-        LOGFLF(LogLevel::info, "use vulkan window:", this,
-               " surface:", surface);
-      } else {
+      if (!window) {
+        if (bVulkan) {
+          window = std::make_unique<VkWindow>();
+          LOGFLF(LogLevel::info, "use vulkan window:", this,
+                 " surface:", surface);
+        } else {
 #ifdef WIN32
-        window = std::make_unique<Dx11Window>();
+          window = std::make_unique<Dx11Window>();
 #elif __ANDROID__
-        window = std::make_unique<EglWindow>();
+          window = std::make_unique<EglWindow>();
 #elif __APPLE__
-        window = std::make_unique<MetalWindow>();
+          window = std::make_unique<MetalWindow>();
 #else
-        window = std::make_unique<Window>();
+          window = std::make_unique<Window>();
 #endif
-        LOGFLF(LogLevel::info, "use native window:", this,
-               " surface:", surface);
+          LOGFLF(LogLevel::info, "use native window:", this,
+                 " surface:", surface);
+        }
+        if (window) {
+          window->initSurface(surface);
+        }
       }
       if (window) {
-        window->initSurface(surface);
+        window->setObserver(this);
+        bStartWindow = true;
       }
     }
-    window->setObserver(this);
+    if (window && window->getSurface()) {
+      setVideoSurface(window->getSurface());
+    } else {
+      setVideoSurface(nullptr);
+    }
   }
-  if (window && window->getSurface()) {
-    setVideoSurface(window->getSurface());
-  } else {
-    setVideoSurface(nullptr);
+  // start() 自己持 mtx, 必须在锁外调用; startTask 幂等
+  if (bStartWindow) {
+    start();
   }
 }
 
