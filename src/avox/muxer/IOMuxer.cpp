@@ -70,6 +70,7 @@ void IOMuxer::open(const char* url_) {
   audioSynthStepMs = 0;
   audioAnchorPts = AVOX_NOVALID_PTS;
   audioAnchorPackets = 0;
+  pendingAudio.clear();
   packetQueue.setMaxSize(100);
   //
   LOGFLF(LogLevel::info, "url:", url);
@@ -142,16 +143,42 @@ void IOMuxer::pushPacket(PacketBufPtr packet) {
       ++audioAnchorPackets;
     }
   }
-  // 第一个包的时间做为基准时间
-  if (basePts == AVOX_NOVALID_PTS) {
+  // 配置包可能带 NOPTS; 源层给配置帧减 cindex 时还可能溢出成正的巨大值。
+  // 这类时间戳既不能定基准也不能参与减法, 统一归为 NOPTS。
+  constexpr int64_t kInvalidPtsThreshold = -1000000000LL;
+  constexpr int64_t kInvalidPtsCeiling = 1000000000000LL;
+  const auto validTs = [](int64_t value) {
+    return value >= kInvalidPtsThreshold && value <= kInvalidPtsCeiling;
+  };
+  if (!validTs(packet->dts)) {
+    packet->dts = validTs(packet->pts) ? packet->pts : AVOX_NOVALID_PTS;
+  }
+  if (!validTs(packet->pts)) {
+    packet->pts = packet->dts;
+  }
+  const bool bTimedData =
+      packType == PackType::video || packType == PackType::audio;
+  // 第一个数据包的时间做为基准时间; 配置文件不参与定基准
+  if (basePts == AVOX_NOVALID_PTS && bTimedData && validTs(packet->dts)) {
     // 用首帧 dts 做基准(非 pts): B帧流首帧 dts 可能为负(dts<=pts),
     // 用 dts 才能让所有包 dts-=basePts >= 0; 否则首帧(IDR)会被下方 dts<0 丢弃
     // -> 文件开头无关键帧 -> 播放器前几秒绿屏花屏(到下一个 IDR 才恢复)
     basePts = packet->dts;
     LOGFLF(LogLevel::info, "base pts:", basePts);
   }
-  packet->pts -= basePts;
-  packet->dts -= basePts;
+  if (basePts == AVOX_NOVALID_PTS) {
+    if (bTimedData) {
+      // 时间轴还没建立且本包时间无效: 丢了比写出 INT64_MIN 安全
+      return;
+    }
+  } else {
+    if (validTs(packet->pts)) {
+      packet->pts -= basePts;
+    }
+    if (validTs(packet->dts)) {
+      packet->dts -= basePts;
+    }
+  }
   // 派发当前pts给MediaMuxer,用于onProgress
   // 有视频轨只用视频PTS,无视频才用音频(避免音视频交叉跳变,音频易出2x/9x变速)
   bool bVideoPkt = (packType == PackType::video);
@@ -169,7 +196,7 @@ void IOMuxer::pushPacket(PacketBufPtr packet) {
     }
     // G14: 无任何 VCL 的纯 SEI 访问单元直接丢, 不落成开头孤立 sample
     if (pureNonVclAu(vcodecId, videoData)) {
-      LOGFLF(LogLevel::info, "drop pure sei access unit, dts:", packet->dts);
+      LOGFLF(LogLevel::debug, "drop pure sei access unit, dts:", packet->dts);
       return;
     }
     // config包(vconfig): 不参与合并, 直通
@@ -183,7 +210,10 @@ void IOMuxer::pushPacket(PacketBufPtr packet) {
       return;
     }
     // 同dts=同一帧的多个slice, 用append合并; dts变=新帧, 先flush再开新的
-    if (preBuffer && packet->dts == preBuffer->dts) {
+    // 首包 dts 常缺失(被补成 pts), 与下一帧的 dts 撞车; 同帧必同 pts,
+    // 只按 dts 合并会把下一帧的 slice 并进 IDR, 开头整段解不出来
+    if (preBuffer && packet->dts == preBuffer->dts &&
+        packet->pts == preBuffer->pts) {
       preBuffer->append(*packet);
       // LOGFLF(LogLevel::info, "au merge dts:", packet->dts,
       //        " nalu:", getNalName(vcodecId, nalu),
@@ -303,13 +333,17 @@ void IOMuxer::onRunTask() {
         if (packtype == PackType::video) {
           // 如果是I帧,并且配置帧发生变化
           if (bIFrmae && bConfigChange) {
-            int32_t configSize = videoConfigs.size();
-            for (auto& config : videoConfigs) {
-              PacketBufPtr configPtr = std::make_shared<PacketBuf>(config);
-              configPtr->pts = tempPtr->pts - configSize;
-              configPtr->dts = tempPtr->dts - configSize;
-              pushPacket(configPtr);
-              configSize--;
+            // 首帧配置已在 extradata 里; 此刻 basePts 未定, 补写的配置包会带
+            // 源时间戳抢跑, 把封装器 cur_dts 顶到 I 帧之前, IDR 反被当成回退丢弃
+            if (basePts != AVOX_NOVALID_PTS) {
+              int32_t configSize = videoConfigs.size();
+              for (auto& config : videoConfigs) {
+                PacketBufPtr configPtr = std::make_shared<PacketBuf>(config);
+                configPtr->pts = tempPtr->pts - configSize;
+                configPtr->dts = tempPtr->dts - configSize;
+                pushPacket(configPtr);
+                configSize--;
+              }
             }
             bConfigChange = false;
           }
@@ -317,10 +351,24 @@ void IOMuxer::onRunTask() {
         } else if (packtype == PackType::audio) {
           pushPacket(tempPtr);
         }
+        // 流头已写: 补写初始化前先到的音频(此时 basePts 已由首个视频包定下)
+        while (!pendingAudio.empty()) {
+          pushPacket(pendingAudio.front());
+          pendingAudio.pop_front();
+        }
       } else {
         // 初始化失败,直接退出
         if (bInitFailed) {
           break;
+        }
+        // 首个视频I帧到达前音频常已解出: 直丢会让产物开头少几秒声音,
+        // 有界缓存, 未等到I帧时丢最旧的保时间上连续
+        if (packtype == PackType::audio) {
+          constexpr size_t kMaxPendingAudio = 2048;
+          if (pendingAudio.size() >= kMaxPendingAudio) {
+            pendingAudio.pop_front();
+          }
+          pendingAudio.push_back(std::make_shared<PacketBuf>(*tempPtr));
         }
       }
     }

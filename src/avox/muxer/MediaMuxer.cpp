@@ -51,6 +51,8 @@ bool MediaMuxer::open(const char* url_) {
   bvcc = false;
   bStartPacket = false;
   bFirstKey = false;
+  // 不清 pendingPackets: open 本就会晚于源 IO 的首批包, 清掉等于又丢首个 GOP;
+  // 上一次录制残留由 close 清
   if (muxerType == MuxerType::none) {
     muxerType = MuxerType::zlmediakit;
   }
@@ -105,7 +107,16 @@ void MediaMuxer::setInAudioDesc(const ATrackDesc& desc) {
 
 void MediaMuxer::ready() {
   // 在设置videodesc/audiodesc后调用,表示可以放入包了
+  std::lock_guard<std::mutex> lock(pendingMtx);
+  bReady = true;
   setRecState(RecorderState::recording);
+  // 补写开录前缓存的包; 持锁保证并发 push 排在其后, 维持源包顺序
+  for (auto& buf : pendingPackets) {
+    AvoxPacket pkt = getPacket(*buf);
+    pushPacketLocked(pkt);
+  }
+  pendingPackets.clear();
+  pendingBytes = 0;
 }
 
 bool MediaMuxer::canStoreAudio(MuxerType type, const char* outUrl,
@@ -136,7 +147,29 @@ void MediaMuxer::onProgress(int64_t ptsMs) {
 }
 
 void MediaMuxer::pushPacket(const AvoxPacket& packet) {
-  // std::lock_guard<std::mutex> lock(ocMtx);
+  std::lock_guard<std::mutex> lock(pendingMtx);
+  if (!bReady) {
+    // 开录前先到的包: 保留最早的(首个 GOP 的配置/IDR 最关键), 溢出丢最新
+    constexpr size_t kMaxPendingPackets = 4096;
+    constexpr int64_t kMaxPendingBytes = 128LL << 20;
+    if (pendingPackets.size() >= kMaxPendingPackets ||
+        pendingBytes + (int64_t)packet.data.size > kMaxPendingBytes) {
+      if (!bPendingOverflow) {
+        bPendingOverflow = true;
+        LOGFLF(LogLevel::warn, "pre-open packet buffer overflow, drop tail");
+      }
+      return;
+    }
+    PacketBufPtr buf = std::make_shared<PacketBuf>();
+    buf->form(packet);
+    pendingBytes += buf->size;
+    pendingPackets.push_back(std::move(buf));
+    return;
+  }
+  pushPacketLocked(packet);
+}
+
+void MediaMuxer::pushPacketLocked(const AvoxPacket& packet) {
   // opening可能放入配置帧,也需要添加
   if (state != RecorderState::recording && state != RecorderState::opening) {
     LOGFLF(LogLevel::warn, "muxer is not recording");
@@ -222,10 +255,8 @@ void MediaMuxer::pushPacket(const AvoxPacket& packet) {
       singleVideo(tempData);
     }
   } else {
-    // 如果有视频,需要等待视频配置来了
-    if (!bDisableVideo && (bHaveVideo && !bStartPacket)) {
-      return;
-    }
+    // 视频配置/首帧到达前先到的音频不能丢: 编码器比视频先跑出几秒是常态,
+    // 丢掉会让产物开头少声音; 流头初始化前的包由 IOMuxer 有界缓存后补写
     ioMuxer->getPacketQueue().enqueueWait<AvoxPacket>(
         packet, [](PacketBufPtr& pack, const AvoxPacket& pkt) {
           copyBuf(pack, pkt);
@@ -276,6 +307,12 @@ void MediaMuxer::singleVideo(AvoxPacket& packet) {
 
 void MediaMuxer::close() {
   std::lock_guard<std::mutex> lock(ocMtx);
+  {
+    std::lock_guard<std::mutex> pendingLock(pendingMtx);
+    bReady = false;
+    pendingPackets.clear();
+    pendingBytes = 0;
+  }
   if (!ioMuxer) {
     return;
   }

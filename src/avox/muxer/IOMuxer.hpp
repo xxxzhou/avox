@@ -1,4 +1,5 @@
 #pragma once
+#include <deque>
 #include <memory>
 
 #include "../module/Ringbuffer.hpp"
@@ -60,6 +61,9 @@ class IOMuxer : public IMuxerContext, public RunTask {
   PacketBufPtr preBuffer;
   // 分拆包
   std::vector<AvoxPacket> spiltBufs;
+  // 流头初始化(等首个视频I帧)前先到的音频包: 直丢会让转码产物开头少一截
+  // 声音; 有界缓存, 初始化完成后按序补写
+  std::deque<PacketBufPtr> pendingAudio;
 
  public:
   RingBuffer<PacketBufPtr>& getPacketQueue() { return packetQueue; }

@@ -1,5 +1,8 @@
 #pragma once
 
+#include <deque>
+#include <mutex>
+
 #include "../source/AVSource.hpp"
 #include "IOMuxer.hpp"
 
@@ -38,6 +41,13 @@ class MediaMuxer : public IMediaMuxer, public Observer<IRecorderOb> {
   bool bDisableAudio = false;
   // 开/关同步
   std::mutex ocMtx;
+  // 源 IO 常比 muxer 先就绪(本地文件毫秒级出包), ready 前的包先缓存后补写;
+  // 直接丢会连同首个 GOP 的配置与 I 帧一起吃掉, 产物从第二个 GOP 才开始
+  std::mutex pendingMtx;
+  std::deque<PacketBufPtr> pendingPackets;
+  int64_t pendingBytes = 0;
+  bool bReady = false;
+  bool bPendingOverflow = false;
   // 检查是否annexb/avcc
   bool bCheckAcc = false;
   // 是否是avcc/hvcc包
@@ -80,6 +90,8 @@ class MediaMuxer : public IMediaMuxer, public Observer<IRecorderOb> {
   // 未注册该型或实现层未覆盖 = true(不设限)
   static bool canStoreAudio(MuxerType type, const char* outUrl, ACodecId codecId);
   void pushPacket(const AvoxPacket& packet);
+  // 已持 pendingMtx 的写入路径(ready 补写时用, 保证补写包排在后续包之前)
+  void pushPacketLocked(const AvoxPacket& packet);
   // 设置总时长(ms),用于onProgress的totalTimeMs
   void setDuration(int64_t durationMs) { progress.totalTimeMs = durationMs; }
   // IOMuxer处理包时回调当前pts(ms),用于派发onProgress

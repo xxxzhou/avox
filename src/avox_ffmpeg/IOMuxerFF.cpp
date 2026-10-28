@@ -85,6 +85,12 @@ bool IOMuxerFF::onInit() {
       // 把params信息给stream
       avcodec_parameters_copy(videoStream->codecpar, params);
       avcodec_parameters_free(&params);
+      // 直拷链没有编码器补帧率, 不写会让探测回退到容器 timescale(如 1500)
+      if (vDesc.desc.fps > 0) {
+        const AVRational rate = av_d2q(vDesc.desc.fps, 1000000);
+        videoStream->avg_frame_rate = rate;
+        videoStream->r_frame_rate = rate;
+      }
     }
   }
   // 音频
