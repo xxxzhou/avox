@@ -3,6 +3,27 @@
 #include "avox/player/Player.hpp"
 
 namespace avox {
+namespace {
+
+// libmp3lame 只有固定采样率档位, 其余采样率就近落到 44.1k/48k
+int32_t mp3SampleRate(int32_t rate) {
+  switch (rate) {
+    case 8000:
+    case 11025:
+    case 12000:
+    case 16000:
+    case 22050:
+    case 24000:
+    case 32000:
+    case 44100:
+    case 48000:
+      return rate;
+    default:
+      return rate > 44100 ? 48000 : 44100;
+  }
+}
+
+}  // namespace
 
 FFAEncoder::FFAEncoder() {}
 
@@ -11,11 +32,51 @@ FFAEncoder::~FFAEncoder() {}
 AudioDesc FFAEncoder::getSupportDesc(const AudioDesc& desc) {
   if (enDesc.codecId == ACodecId::aac) {
     outDesc.format = AudioFormat::AVOX_AUDIO_FLTP;
-  } else if (enDesc.codecId == ACodecId::g711a ||
-             enDesc.codecId == ACodecId::g711u) {
+    return outDesc;
+  }
+  if (enDesc.codecId == ACodecId::g711a ||
+      enDesc.codecId == ACodecId::g711u) {
     outDesc.format = AudioFormat::AVOX_AUDIO_S16;
     outDesc.sampleRate = 8000;
     outDesc.channels = 1;
+    return outDesc;
+  }
+  if (enDesc.codecId == ACodecId::mp3) {
+    // libmp3lame 只收平面格式且最多双声道; 源是 6 声道 flt, 不下混就开不起来
+    outDesc.format = AudioFormat::AVOX_AUDIO_FLTP;
+    if (outDesc.channels > 2) {
+      outDesc.channels = 2;
+    }
+    outDesc.sampleRate = mp3SampleRate(outDesc.sampleRate);
+    return outDesc;
+  }
+  // 其余编码器的支持格式各不相同(源通常是 flt), 按编码器支持表落一个
+  const AVCodec* codec = avcodec_find_encoder(getFFCodecId(enDesc.codecId));
+  const enum AVSampleFormat* fmts = nullptr;
+  int numFmts = 0;
+  if (codec) {
+    avcodec_get_supported_config(nullptr, codec, AV_CODEC_CONFIG_SAMPLE_FORMAT,
+                                 0, (const void**)&fmts, &numFmts);
+  }
+  if (fmts && numFmts > 0) {
+    const AVSampleFormat want = getFFAudioFormat(outDesc.format);
+    bool supported = false;
+    for (int i = 0; i < numFmts; ++i) {
+      if (fmts[i] == want) {
+        supported = true;
+        break;
+      }
+    }
+    if (!supported) {
+      AVSampleFormat pick = fmts[0];
+      for (int i = 0; i < numFmts; ++i) {
+        if (fmts[i] == AV_SAMPLE_FMT_FLTP) {
+          pick = fmts[i];
+          break;
+        }
+      }
+      outDesc.format = ffAudioFromat(pick);
+    }
   }
   return outDesc;
 }
@@ -38,7 +99,9 @@ DecodeResult FFAEncoder::onPreEncoder() {
   }
   codecCtx = getUniquePtr(avcodec_alloc_context3(codec));
   codecCtx->codec_type = AVMEDIA_TYPE_AUDIO;
-  codecCtx->profile = AV_PROFILE_AAC_LOW;
+  if (enDesc.codecId == ACodecId::aac) {
+    codecCtx->profile = AV_PROFILE_AAC_LOW;
+  }
   codecCtx->time_base = {1, 1000};
   codecCtx->sample_rate = enDesc.desc.sampleRate;
   if (enDesc.codecId == ACodecId::aac) {
@@ -110,15 +173,20 @@ DecodeResult FFAEncoder::encode() {
   frame->pts = curFrame.getPts();
   // log(LogLevel::info, "encode audio pts:", frame->pts,
   //     " frame size:", codecCtx->frame_size);
-  if (enDesc.desc.channels == 1) {
+  // 帧缓冲布局: 平面格式 [ch][frame_size], 交织格式 [frame_size*ch]
+  const int32_t channels = enDesc.desc.channels;
+  const int32_t bytesPerSample = audioFormatSize(enDesc.desc.format);
+  if (bAPlaneFormat(enDesc.desc.format)) {
+    const int32_t planeBytes = codecCtx->frame_size * bytesPerSample;
+    for (int32_t ch = 0; ch < AV_NUM_DATA_POINTERS; ++ch) {
+      frame->data[ch] = ch < channels
+                            ? curFrame.point() + (size_t)ch * planeBytes
+                            : nullptr;
+      frame->linesize[ch] = ch < channels ? planeBytes : 0;
+    }
+  } else {
     frame->data[0] = curFrame.point();
-    frame->linesize[0] = codecCtx->frame_size;
-  } else if (enDesc.desc.channels == 2) {
-    int32_t size = codecCtx->frame_size / 2;
-    frame->data[0] = curFrame.point();
-    frame->data[1] = curFrame.point() + size;
-    frame->linesize[0] = size;
-    frame->linesize[1] = size;
+    frame->linesize[0] = codecCtx->frame_size * channels * bytesPerSample;
   }
   int ret = ret = avcodec_send_frame(codecCtx.get(), frame.get());
   if (ret < 0) {

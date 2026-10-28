@@ -55,7 +55,9 @@ class AudioFrame {
 };
 
 inline void copyAudioFrame(AudioFramePtr& frame, const AudioFrame& curframe) {
-  if (!frame) {
+  // 槽内帧可能正被消费线程读取(队列 dequeue 是锁外处理), 独占才原地复用,
+  // 否则换新对象; 边读边写会让解码帧被下一帧覆写成断音/爆音
+  if (!frame || frame.use_count() > 1) {
     frame = std::make_shared<AudioFrame>();
   }
   // form resize大部分情况没有变化，因为解码后帧大小一般不会改动
@@ -63,7 +65,8 @@ inline void copyAudioFrame(AudioFramePtr& frame, const AudioFrame& curframe) {
 }
 
 inline void copyAudioBuf(AudioFramePtr& frame, const AvoxAFrame& curframe) {
-  if (!frame) {
+  // 同上: TranscodeRecorder 的帧队列也是锁外消费, 复用前必须确认独占
+  if (!frame || frame.use_count() > 1) {
     frame = std::make_shared<AudioFrame>();
   }
   frame->setSize(curframe.buffer.size);

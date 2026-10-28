@@ -1,8 +1,28 @@
 #include "FFResample.hpp"
 
+#include <cstring>
+
 extern "C" {
 #include <libavutil/opt.h>
 }
+
+namespace {
+
+// swr 按 outSamplesMax 对齐写各平面, 对外 size 却按实际样本数紧凑声明;
+// 原地压紧, 否则调用方按 [ch][outSamples] 连续解读会串道
+void compactPlanes(uint8_t* buf, int32_t channels, int32_t maxSamples,
+                   int32_t samples, int32_t bytesPerSample) {
+  if (samples >= maxSamples || channels <= 1) {
+    return;
+  }
+  for (int32_t ch = 1; ch < channels; ++ch) {
+    std::memmove(buf + (size_t)ch * samples * bytesPerSample,
+                 buf + (size_t)ch * maxSamples * bytesPerSample,
+                 (size_t)samples * bytesPerSample);
+  }
+}
+
+}  // namespace
 
 namespace avox {
 
@@ -107,6 +127,10 @@ int32_t FFResample::resample(AvoxData& src) {
     return outSamples;
   }
   // 更新输出
+  if (av_sample_fmt_is_planar(outFormat)) {
+    compactPlanes(reBuffer.data(), dstDesc.channels, outSamplesMax, outSamples,
+                  audioFormatSize(dstDesc.format));
+  }
   src.data = reBuffer.data();
   src.size = outSamples * dstDesc.channels * audioFormatSize(dstDesc.format);
   return src.size;
@@ -134,6 +158,10 @@ int32_t FFResample::flush(AvoxData& out) {
   int outSamples = swr_convert(swrCtx.get(), outData, delay, nullptr, 0);
   if (outSamples <= 0) {
     return 0;
+  }
+  if (av_sample_fmt_is_planar(outFormat)) {
+    compactPlanes(reBuffer.data(), dstDesc.channels, (int32_t)delay, outSamples,
+                  audioFormatSize(dstDesc.format));
   }
   out.data = reBuffer.data();
   out.size = outSamples * dstDesc.channels * audioFormatSize(dstDesc.format);

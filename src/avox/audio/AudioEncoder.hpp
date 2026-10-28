@@ -27,6 +27,16 @@ protected:
   ATrackDesc enDesc = {};
   // 编码应该需要特定的大小
   AudioFrame curFrame = {};
+  // 平面格式帧缓冲布局是 [ch][frameSamples]; 输入帧长度与帧长无整数关系,
+  // 必须逐声道攒满, 按字节连续切片会让声道互相穿插
+  bool bPlane = false;
+  int32_t planeFilled = 0;
+  // 编码时间轴: 按输出样本累计. 输入帧长(EAC3 1536)与编码帧长(AAC 1024)
+  // 不整除, 逐块沿用输入 pts 会把时间戳抖成 21/32/11ms, 播放器按时间轴
+  // 排帧就会周期性补/丢样本
+  bool bClockAnchored = false;
+  int64_t clockPts = 0;
+  int64_t clockSamples = 0;
   // 重采样,如果编码器需要特定格式,需要重采样
 #ifdef AVOX_ENABLE_FFMPEG
   std::unique_ptr<FFResample> resample = nullptr;
@@ -52,6 +62,10 @@ public:
   }
   virtual ATrackDesc setDesc(const ATrackDesc &desc);
   DecodeResult fillFrame(const AvoxAFrame &frame);
+  // 平面格式逐声道攒满一帧(多声道必需); data/size 已是重采样后的数据
+  DecodeResult fillFramePlanar(uint8_t* data, int32_t size, int64_t pts);
+  // 下一帧时间戳: 首帧锚点 + 已编码样本数换算毫秒(累计计算, 无截断漂移)
+  int64_t framePts() const;
   virtual DecodeResult encode(const AvoxAFrame &frame) {
     return DecodeResult::noSupport;
   };
