@@ -173,6 +173,13 @@ void AMediaSource::onClose() {
 void AMediaSource::onComplete() {
   // 编码可能还没结束
   bIoEnd = true;
+  // 流尾排空解码器: 重排与帧级线程扣住的尾帧不吐出来, 片尾会固定少一截
+  if (bOpenVDecoder && videoDecoder()) {
+    videoDecoder()->onInputEnd();
+  }
+  if (bOpenADecoder && audioDecoder()) {
+    audioDecoder()->onInputEnd();
+  }
   LOGFLF(LogLevel::info, "io complete");
 }
 

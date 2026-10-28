@@ -382,8 +382,8 @@ void TranscodeRecorder::onReady() {
 // 解码回调做GPU处理/取CPU帧后拷贝入队, 避免GPU共享buffer被下一帧覆盖
 void TranscodeRecorder::onVideoFrame(const YUVFrame& frame, int32_t trackId) {
   // seek 期间丢弃帧(含 flushDecoders 同步重入的尾帧),避免旧帧污染输出
-  // close(stopTask)后丢弃: 停掉无谓的GPU处理,编码线程排空后即关源
-  if (bSeeking.load() || !running()) {
+  // 收尾排空阶段(running 已 false)仍要收解码器尾帧, 否则片尾少十几帧
+  if (bSeeking.load() || (!running() && !bDrainPhase.load())) {
     return;
   }
   // 交给vulkan处理,render末尾自动dispatch onFrame给外部(离屏bCpuOut)
@@ -414,7 +414,7 @@ void TranscodeRecorder::onVideoFrame(const YUVFrame& frame, int32_t trackId) {
 }
 
 void TranscodeRecorder::onGpuFrame(const GpuFrame& frame, int32_t trackId) {
-  if (bSeeking.load() || !running()) {
+  if (bSeeking.load() || (!running() && !bDrainPhase.load())) {
     return;
   }
   // 与 onVideoFrame 同构: 先过渲染双腿(原生 NV12→RGBA, 交 VK 图), 回读时
@@ -443,7 +443,7 @@ void TranscodeRecorder::onGpuFrame(const GpuFrame& frame, int32_t trackId) {
 }
 
 void TranscodeRecorder::onAudioFrame(const AvoxAFrame& frame, int32_t trackId) {
-  if (bSeeking.load() || !running()) {
+  if (bSeeking.load() || (!running() && !bDrainPhase.load())) {
     return;
   }
   // 推给 AudioRender(供 tap 读取,onRender 默认空体不发声)
@@ -571,7 +571,20 @@ void TranscodeRecorder::onRunTask() {
     sleepTask(bDidWork);
   }
   if (!bSourceOpening.load()) {
+    // 关源过程中解码器还会吐重排/排空尾帧: 完成态先按排空放行并放大队列,
+    // 关源后再编一遍, 否则片尾固定少十几帧
+    const bool bTailDrain = state == RecorderState::completed;
+    if (bTailDrain) {
+      bDrainPhase.store(true);
+      vFrameQueue.setMaxSize(256);
+      aFrameQueue.setMaxSize(256);
+    }
     teardownSource();
+    if (bTailDrain) {
+      vFrameQueue.drain([this](const VideoFramePtr& f) { processVideo(f); });
+      aFrameQueue.drain([this](const AudioFramePtr& f) { processAudio(f); });
+      bDrainPhase.store(false);
+    }
   }
   if (muxer) {
     muxer->close();

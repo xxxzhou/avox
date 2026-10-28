@@ -22,6 +22,8 @@ public:
     std::lock_guard<std::mutex> lock(buMtx);
     maxSize = maxCount;
     buffer.resize(maxSize);
+    // 扩容可能发生在写线程已阻塞在 enqueueWait 时, 不唤醒会一直等到 close
+    cvNotFull.notify_all();
   }
 
 protected:

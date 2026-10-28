@@ -307,22 +307,29 @@ void MediaMuxer::singleVideo(AvoxPacket& packet) {
 
 void MediaMuxer::close() {
   std::lock_guard<std::mutex> lock(ocMtx);
-  {
+  if (!ioMuxer) {
     std::lock_guard<std::mutex> pendingLock(pendingMtx);
     bReady = false;
     pendingPackets.clear();
     pendingBytes = 0;
-  }
-  if (!ioMuxer) {
     return;
   }
   if (state == RecorderState::completed) {
     return;
   }
+  // onClose 里编码器排空的尾帧经 pushPacket 进 sink, 此刻不能关 ready:
+  // 关了会被塞进 pending 随 close 清掉, 片尾少一截(质量档前瞻可达几十帧)
   onClose();
   if (ioMuxer) {
     ioMuxer->close();
     ioMuxer.reset();
+  }
+  {
+    // sink 已关: 未补写的开录前缓存(未 ready 就关闭时才有)作废
+    std::lock_guard<std::mutex> pendingLock(pendingMtx);
+    bReady = false;
+    pendingPackets.clear();
+    pendingBytes = 0;
   }
   if (muxerOb) {
     muxerOb->onMuxerClose();
