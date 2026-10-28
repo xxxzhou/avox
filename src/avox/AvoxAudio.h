@@ -127,6 +127,9 @@ class IAudioRender {
   // 下混系数/对白增强: 设备道数少于源道数时生效, 默认 none=不干预; 可热切。
   // 新增虚函数一律追加在末尾: 插在中间会移动既有槽位, 旧二进制静默调错
   virtual void setDownmix(const DownmixParamet& downmix) {}
+  // tap 满队列策略: true 阻塞反压(转码离线不丢帧), false 丢最旧(默认)。
+  // 离线转码只能阻塞, 否则 tap 跟不上解码速度会丢掉大部分音频。
+  virtual void setTapBlock(bool b) {}
 };
 
 // ============== 语音识别 ==============
