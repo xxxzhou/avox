@@ -1,5 +1,8 @@
 #pragma once
 
+#include <condition_variable>
+#include <mutex>
+
 #include "../AvoxAudio.h"
 #include "../module/Observer.hpp"
 #include "../module/Ringbuffer.hpp"
@@ -44,6 +47,10 @@ class AudioTap : public RunTask,
   RingBuffer<AudioFramePtr> queue{32};
   // 满则阻塞(true)或丢最旧(false)
   bool bBlock = false;
+  // 空队列时等生产者: 固定 sleep 轮询会把吞吐钉在
+  // 队列深度×帧长/睡眠时长, 音频重编实测只有十几倍实时
+  std::mutex waitMtx;
+  std::condition_variable waitCv;
   // 开启标志
   std::atomic<bool> bRunning{false};
   // 源格式(用于跟随)

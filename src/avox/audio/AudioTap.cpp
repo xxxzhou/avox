@@ -38,6 +38,7 @@ void AudioTap::close() {
   }
   bRunning = false;
   queue.setClose(true);
+  waitCv.notify_all();
   stopTask();
   queue.clear();
   queue.setClose(false);
@@ -62,6 +63,8 @@ void AudioTap::push(const AvoxData& raw, int64_t pts) {
   } else {
     queue.enqueue(frame, true);
   }
+  // 唤醒空转等待的 tap 线程
+  waitCv.notify_one();
 }
 
 void AudioTap::onProcess() {
@@ -77,8 +80,12 @@ void AudioTap::onRunTask() {
     bool bGet = queue.dequeueAction(
         [&frame](const AudioFramePtr& cframe) { frame.form(*cframe); });
     if (!bGet) {
-      // 空队列: 真睡(旧写法传 true = yield, 第二个参数被丢弃 —— 空转烧核)
-      sleepTask(false, frameMs / 2);
+      // 空队列等生产者唤醒, 不做固定 sleep: bBlock 反压下生产/消费互相等,
+      // 每次空转睡 frameMs/2 会把吞吐钉死(音频重编慢一个量级)
+      std::unique_lock<std::mutex> lk(waitMtx);
+      waitCv.wait_for(lk, std::chrono::milliseconds(20), [this] {
+        return !queue.empty() || !running();
+      });
       continue;
     }
     // 送入 reshaper 累积,满则触发 onProcess → dispatch
