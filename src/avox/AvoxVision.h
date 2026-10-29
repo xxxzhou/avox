@@ -492,6 +492,8 @@ AVOX_EXPORT IMapMatcher* createMapMatcher();
 AVOX_EXPORT IMaskBuilder* createMaskBuilder();
 // 创建通用 YOLO 检测/分类实例 (经 yoloDetectorHub.create("yolo"); avox_cv 未启用返回 nullptr 降级)
 AVOX_EXPORT IYoloDetector* createYoloDetector();
+// 创建水印检测/修复实例 (经 watermarkRemovalHub.create("inpaint"); avox_cv 未启用返回 nullptr 降级)
+AVOX_EXPORT IWatermarkRemoval* createWatermarkRemoval();
 }
 
 }

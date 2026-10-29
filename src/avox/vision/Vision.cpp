@@ -50,6 +50,11 @@ IYoloDetector* createYoloDetector() {
   return AvoxManager::Get().yoloDetectorHub.create("yolo");
 }
 
+// 经工厂表拿实例 (由 avox_cv plugin 注册 "inpaint"); avox_cv 未启用时返回 nullptr 降级
+IWatermarkRemoval* createWatermarkRemoval() {
+  return AvoxManager::Get().watermarkRemovalHub.create("inpaint");
+}
+
 vec2i getFeatureMatchCenter(const FeatureMatchResult& r) {
   return vec2i(r.x + r.w / 2, r.y + r.h / 2);
 }
