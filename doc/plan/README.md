@@ -62,6 +62,7 @@ avox 各模块的计划、设计与调研文档索引。已完成的方案随功
 | [ASS字幕渲染计划](player/ASS字幕渲染计划.md) | ASS/SSA(含 PGS 位图)字幕 avox_ass 磁力模块方案 |
 | [字幕样式设计](player/字幕样式设计.md) | 字幕文本样式(字体/颜色/对齐/位置)与三层通用变换(scale/offset/opacity)公开 API |
 | [open出图时延与渲染输出事件化](player/open出图时延与渲染输出事件化.md) | onRender 携带 SurfaceRenderEvent(世代/尺寸/互操作句柄), open→出图全链路去轮询 |
+| [媒体读取接口IMediaReader实施方案](player/媒体读取接口IMediaReader实施方案.md) | avoxkit 探测/索引/抓帧收口到 avox 的只读接口 (审查稿, 待拍板) |
 
 ## virtualproduction/ — 虚拟制片
 
@@ -75,3 +76,4 @@ avox 各模块的计划、设计与调研文档索引。已完成的方案随功
 |------|------|
 | [画质深化方案](画质深化方案.md) | v2 头牌「画质深化」引擎侧增量五项施工方案 (tone map 参数化/dither·deband/音频补链/色度·scaler/LUT·ICC) |
 | [鸿蒙](鸿蒙.md) | 鸿蒙平台支持调研 |
+| [录屏与自动缩放方案](录屏与自动缩放方案.md) | 多输入采集会话 (CFR/关光标/区域裁剪) + 后期场景合成与自动缩放, avoxkit 录屏产品形态 |
