@@ -127,12 +127,19 @@ ISurfaceRender* TranscodeRecorder::getSurfaceRender() {
   return surfaceRender.get();
 }
 
+// 断进度读侧(10/29 iOS 抽帧崩栈: 关源后解码回调仍在派帧, updateProgress
+// 读到已析构的 AVSource); 清指针进进度锁, 与持锁读互斥
+void TranscodeRecorder::clearIoSource() {
+  std::lock_guard<std::mutex> lock(progressMtx);
+  ioSource = nullptr;
+}
+
 // 源收尾唯一入口: 编码线程与开源失败路径都可能调, 幂等(第二次是 no-op)
 void TranscodeRecorder::teardownSource() {
   if (source) {
+    clearIoSource();  // 必须在 close/reset 之前: 否则中间窗口读侧拿到悬空指针
     source->close();
     source.reset();
-    ioSource = nullptr;  // 随源失效(此前只在 close() 里置空, 读侧会拿到悬空指针)
   }
 }
 
@@ -256,7 +263,7 @@ void TranscodeRecorder::close() {
   // join后复位标志与队列开关(close自含); ioSource已随source析构, 置空恢复判空语义
   bStopPending.store(false);
   bDrainPhase.store(false);
-  ioSource = nullptr;
+  clearIoSource();
   vFrameQueue.setClose(false);
   aFrameQueue.setClose(false);
   LOGFLF(LogLevel::info, "encode thread stopped, recorder close done");

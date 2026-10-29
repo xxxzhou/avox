@@ -138,6 +138,8 @@ class TranscodeRecorder : public IRecorder,
   void setRecState(RecorderState newState);
   // 源收尾唯一入口(编码线程与开源失败路径都可能调, 幂等)
   void teardownSource();
+  // 断进度读侧: 进进度锁清 ioSource, 与 updateProgress 的持锁读互斥
+  void clearIoSource();
   void processVideo(VideoFramePtr frame);
   void processAudio(AudioFramePtr frame);
   // 更新并节流派发进度(音视频都在时避免回调翻倍)
