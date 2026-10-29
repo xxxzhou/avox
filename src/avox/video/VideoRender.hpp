@@ -82,6 +82,13 @@ class AVOX_EXPORT VideoRender : public OptionLink {
   // 长宽比保持,如果是0,全屏填满
   bool bFullScreen = false;
   float aspect = 0.0f;
+  // display matrix 旋转角(0/90/180/270, 顺时针): 宿主线程经 setVideoRotation
+  // 下发, 渲染入口据此校正方向; 输出尺寸不以它为预算, 以帧回调实际图像为准
+  int32_t videoRotation = 0;
+  // 90/270 输入按显示方向需要交换宽高(比例/尺寸预算用)
+  bool bSwapInputSize() const {
+    return videoRotation == 90 || videoRotation == 270;
+  }
 
   // 呈现窗口弱引用(生命周期归 WindowRender), renderWindow() 存入
   Window* targetWindow = nullptr;
@@ -128,6 +135,9 @@ class AVOX_EXPORT VideoRender : public OptionLink {
   virtual void setHdrMode(HdrMode mode) {};
   // tone map 曲线参数(默认软膝=历史行为), 各平台腿覆写消费; 见 ToneMapParamet
   virtual void setToneMap(const ToneMapParamet& paramet) {};
+  // display matrix 旋转角(0/90/180/270, 顺时针): 图入口转一次, 下游全部在
+  // 显示方向; 平台腿未实现时保持横躺(不降级到CPU旋转)
+  virtual void setVideoRotation(int32_t rotation) { videoRotation = rotation; }
 
   // CPU输入帧的解码格式(cpuIn时有效)
   YuvType cpuFrameYuvType() { return yuvFrame.format.type; }

@@ -9,11 +9,13 @@
 #include "../layer/VkBlendLayer.hpp"
 #include "../layer/VkCanvasLayer.hpp"
 #include "../layer/VkInputLayer.hpp"
+#include "../layer/VkOperateLayer.hpp"
 #include "../layer/VkOutputLayer.hpp"
 #include "../layer/VkPipeGraph.hpp"
 #include "../layer/VkPqUpsampleLayer.hpp"
 #include "../layer/VkRGBA2YUVLayer.hpp"
 #include "../layer/VkResizeLayer.hpp"
+#include "../layer/VkTransposeLayer.hpp"
 #include "../layer/VkVrLayer.hpp"
 #include "../layer/VkYUV2RGBALayer.hpp"
 #include "avox/module/RunTask.hpp"
@@ -117,6 +119,10 @@ class VkVideoRender : public VideoRender, public IVOutputLayerOb {
   // 拓扑建成条件见 vaildAndInitGraph: forceHDR 行为态 + 非 CPU YUV 输入(即
   // GPU 导入的 RGBA 载荷), 二者同时满足才接; 一旦接入即替换 yuv2RGBA 的位置。
   VKTNodePtr<VkPqUpsampleLayer> pqUpsampleLayer = nullptr;
+  // display matrix 入口校正层: 90/270 走转置, 180 走翻转; 在 yuv2RGBA/输入
+  // 导入之后、PQ 升样与所有画质/字幕层之前, 下游全部在显示方向
+  VKTNodePtr<VkTransposeLayer> transposeLayer = nullptr;
+  VKTNodePtr<VkFlipLayer> flipLayer = nullptr;
   // DV RPU 整形数据, 重建尾重放到新 yuv2RGBA 节点
   DoviMeta doviMeta = {};
 
@@ -204,6 +210,8 @@ class VkVideoRender : public VideoRender, public IVOutputLayerOb {
   void setHdrMode(HdrMode mode) override;
   // tone map 曲线参数(曲线+SDR 白点), 运行时重传 UBO, 不重建 graph
   void setToneMap(const ToneMapParamet& paramet) override;
+  // display matrix 旋转角: 变化才重建图(拓扑多一层转置/翻转)
+  void setVideoRotation(int32_t rotation) override;
 #ifdef AVOX_ENABLE_FREETYPE
   // 获取字体层
   FontRender* enableRenderFont();

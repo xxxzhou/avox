@@ -63,6 +63,7 @@ avox 各模块的计划、设计与调研文档索引。已完成的方案随功
 | [字幕样式设计](player/字幕样式设计.md) | 字幕文本样式(字体/颜色/对齐/位置)与三层通用变换(scale/offset/opacity)公开 API |
 | [open出图时延与渲染输出事件化](player/open出图时延与渲染输出事件化.md) | onRender 携带 SurfaceRenderEvent(世代/尺寸/互操作句柄), open→出图全链路去轮询 |
 | [媒体读取接口IMediaReader实施方案](player/媒体读取接口IMediaReader实施方案.md) | avoxkit 探测/索引/抓帧收口到 avox 的只读接口 (审查稿, 待拍板) |
+| [显示矩阵旋转实施方案](player/显示矩阵旋转实施方案.md) | 竖拍 display matrix 在渲染层入口转一次: VK/DX11/EGL/Metal 逐腿、字幕/录制/reader 归属 |
 
 ## virtualproduction/ — 虚拟制片
 

@@ -18,12 +18,20 @@ bool RawSource::open() {
 void RawSource::setVideoDesc(const VideoDesc& desc) {
   VTrackDesc vdesc = {};
   vdesc.desc = desc;
+  vdesc.rotation = pendingRotation;
   if (videoTracks.size() == 0) {
     addVideoDesc(vdesc);
   } else {
     videoTracks[0] = vdesc;
   }
   checkTrackReady();
+}
+
+void RawSource::setVideoRotation(int32_t rotation) {
+  pendingRotation = rotation;
+  if (!videoTracks.empty()) {
+    videoTracks[0].rotation = rotation;
+  }
 }
 
 void RawSource::setAudioDesc(const AudioDesc& desc) {

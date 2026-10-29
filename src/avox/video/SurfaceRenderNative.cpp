@@ -112,6 +112,18 @@ void SurfaceRenderNative::setToneMap(const ToneMapParamet& paramet) {
   }
 }
 
+void SurfaceRenderNative::setVideoRotation(int32_t rotation) {
+  SurfaceRenderVk::setVideoRotation(rotation);
+  // 平台腿 shader 转置未接线(P2/P3), 先存基类角度供比例计算, 画面仍横躺
+  if (pVideoRender) {
+    pVideoRender->setVideoRotation(rotation);
+  }
+  if (rotation != 0 && !bVulkan) {
+    LOGFLF(LogLevel::warn, "[rot] native lane not implemented, angle:",
+           rotation);
+  }
+}
+
 ICanvasLayer* SurfaceRenderNative::enableRenderCanvas() {
   // lane 路由: lane=0 VK 图内合成(lane=0 的平台腿输出是 VK 对接面, 禁挂);
   // lane=1 平台腿(P0 平台渲染器未实现, 基类返回 nullptr = 字幕缺失现状)

@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <cstdlib>
 #include <string>
@@ -61,6 +62,32 @@ static LogLevel ffToAvoxLevel(int ffLevel) {
     default:
       return LogLevel::debug;
   }
+}
+
+// display matrix -> 顺时针显示角(0/90/180/270), 与 ffmpeg get_rotation 同口径:
+// theta=atan2(m1,m0)(矩阵 16.16 定点, 等比缩放不影响幅角), 90=顺时针。
+// 非 90 度整数倍(自由角/镜像矩阵)v1 不支持, 记 0 不旋转
+static int32_t ffDisplayRotation(const int32_t* matrix) {
+  constexpr double kRad2Deg = 57.295779513082320876;
+  // 镜像矩阵(det<0)v1 不做: 纯翻转常配 180 角, 按角度转会转错方向
+  const double det =
+      (double)matrix[0] * matrix[4] - (double)matrix[1] * matrix[3];
+  if (det < 0) {
+    LOGFLF(LogLevel::warn, "[rot] mirrored display matrix unsupported");
+    return 0;
+  }
+  double theta = std::atan2((double)matrix[1], (double)matrix[0]) * kRad2Deg;
+  theta = std::fmod(theta, 360.0);
+  if (theta < 0) {
+    theta += 360.0;
+  }
+  double angle = std::round(theta / 90.0) * 90.0;
+  if (std::fabs(theta - angle) > 2.0) {
+    LOGFLF(LogLevel::warn, "[rot] unsupported display matrix angle:", theta);
+    return 0;
+  }
+  int32_t ret = (int32_t)angle;
+  return ret >= 360 ? 0 : ret;
 }
 
 // 同文消息折叠状态: 解码器逐包刷同一警告时(如 mlp "Stream parameters not
@@ -1174,16 +1201,24 @@ void IOParseFF::onRunTask() {
       vdesc.desc.fps = ffFps(st);
       vdesc.desc.type = ffYuvType((AVPixelFormat)st->codecpar->format);
       vdesc.desc.colorSpace = ffColorSpace(st->codecpar);
-      // 容器级 DOVI conf(dvcc/dvcC): DV profile 入档(P-41 延伸)。
-      // 9.x 流侧数据收进 codecpar->coded_side_data(av_stream_get_side_data 已除名)
+      // 容器级 DOVI conf(dvcc/dvcC) 与 display matrix: 9.x 流侧数据收进
+      // codecpar->coded_side_data(av_stream_get_side_data 已除名)
       for (int32_t k = 0; k < st->codecpar->nb_coded_side_data; k++) {
         const AVPacketSideData& sd = st->codecpar->coded_side_data[k];
         if (sd.type == AV_PKT_DATA_DOVI_CONF &&
-            sd.size >= (int)sizeof(AVDOVIDecoderConfigurationRecord)) {
+            sd.size >= (int)sizeof(AVDOVIDecoderConfigurationRecord) &&
+            vdesc.dvProfile == 0) {
           vdesc.dvProfile =
               ((const AVDOVIDecoderConfigurationRecord*)sd.data)->dv_profile;
-          break;
+        } else if (sd.type == AV_PKT_DATA_DISPLAYMATRIX &&
+                   sd.size >= 9 * (int)sizeof(int32_t)) {
+          vdesc.rotation = ffDisplayRotation((const int32_t*)sd.data);
         }
+      }
+      if (vdesc.rotation != 0) {
+        LOGFLF(LogLevel::info, "[rot] track:", vdesc.trackId,
+               " angle:", vdesc.rotation, " coded:", vdesc.desc.width, "x",
+               vdesc.desc.height);
       }
       // 容器立体/球面声明 → VrHint(宿主显隐「立体/VR」入口): STEREO3D
       // (MKV StereoMode/MP4 st3d) + SPHERICAL(sv3d; RECTILINEAR=声明平面不算),

@@ -363,6 +363,16 @@ void SurfaceRenderVk::setToneMap(const ToneMapParamet& paramet) {
 #endif
 }
 
+void SurfaceRenderVk::setVideoRotation(int32_t rotation) {
+#ifdef AVOX_ENABLE_VULKAN
+  if (vkVideoRender) {
+    vkVideoRender->setVideoRotation(rotation);
+  }
+#else
+  (void)rotation;
+#endif
+}
+
 void SurfaceRenderVk::setAutoAspect(bool bEnable) {
   if (!vkVideoRender) {
     return;

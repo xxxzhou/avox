@@ -31,6 +31,8 @@ class AVOX_EXPORT SurfaceRenderNative : public SurfaceRenderVk {
   void setHdrMode(HdrMode mode) override;
   // tone map 曲线参数: 双路转发(vk lane 进 UBO, 原生 lane 进平台转换器)
   void setToneMap(const ToneMapParamet& paramet) override;
+  // display matrix 旋转角: vk lane 图入口转置, 原生 lane 待各腿 shader 接线
+  void setVideoRotation(int32_t rotation) override;
   // screenShot: Vulkan时走vkVideoRender，非Vulkan时走pVideoRender
   virtual bool screenShot(IImageBuffer* imageBuffer) override;
   // EOF 后兜底抓帧: 按腿分流, 直接回读最后渲染帧(不依赖渲染活动)

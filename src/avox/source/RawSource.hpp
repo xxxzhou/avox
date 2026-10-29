@@ -25,10 +25,16 @@ class AVOX_EXPORT RawSource : public BaseSource,
   std::mutex avMtx;
   // 确认音频与视频都准备好了
   bool bReady = false;
+  // setVideoDesc 建轨时并入的容器级字段(display matrix 旋转)
+  int32_t pendingRotation = 0;
 
  public:
   // 在open之后调用
   void setVideoDesc(const VideoDesc& desc);
+  // 容器级字段(display matrix 旋转)只补这一项: 整条 VTrackDesc 下传会把源编码
+  // 带进 muxer(RawMuxer 拿 desc.codecId 当输出编码)。须在 setVideoDesc 之前调,
+  // 建轨时一并落值(ready 回调在 setVideoDesc 内同步派发)。
+  void setVideoRotation(int32_t rotation);
   void setAudioDesc(const AudioDesc& desc);
   void checkTrackReady();
   // 在音频与视频都设置完成后，为true

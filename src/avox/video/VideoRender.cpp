@@ -267,7 +267,8 @@ void VideoRender::renderFrame(IImageBuffer* buffer) {
     setAspect(0.0f);
   } else {
     if (fmt.width > 0 && fmt.height > 0) {
-      setAspect((float)fmt.width / (float)fmt.height);
+      setAspect(bSwapInputSize() ? (float)fmt.height / (float)fmt.width
+                                 : (float)fmt.width / (float)fmt.height);
     }
   }
   // 验证是否需要重新初始化(bResetFlag 由各后端 vaildAndInitGraph 内部消费)
@@ -289,7 +290,9 @@ void VideoRender::renderFrame() {
     setAspect(0.0f);
   } else {
     if (yuvFormat.width > 0 && yuvFormat.height > 0) {
-      setAspect((float)yuvFormat.width / (float)yuvFormat.height);
+      setAspect(bSwapInputSize()
+                    ? (float)yuvFormat.height / (float)yuvFormat.width
+                    : (float)yuvFormat.width / (float)yuvFormat.height);
     }
   }
   // 检查imageFormat是否改变

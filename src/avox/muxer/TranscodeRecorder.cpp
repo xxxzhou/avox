@@ -298,6 +298,12 @@ void TranscodeRecorder::onReady() {
     const ColorSpaceDesc cs = vdesc.desc.colorSpace;
     // 同源驱动 shader 矩阵(rgba2YUV)
     surfaceRender->setColorSpace(cs);
+    // 录制器自带 WindowRender, 不复用 VideoTrack 的下发: 更正/续播/转码导出
+    // 同口径在渲染入口转一次, 否则竖拍产物仍横躺。
+    surfaceRender->setVideoRotation(vdesc.rotation);
+    if (vdesc.rotation != 0) {
+      LOGFLF(LogLevel::info, "[rot] recorder rotation:", vdesc.rotation);
+    }
     if (muxer) {
       muxer->setVideoCodec(vCodecId);
     }

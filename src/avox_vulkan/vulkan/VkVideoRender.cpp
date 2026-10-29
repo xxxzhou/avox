@@ -168,6 +168,17 @@ void VkVideoRender::setHdrMode(HdrMode mode) {
   hdrMode = mode;
 }
 
+// display matrix 旋转角: 拓扑多一层转置/翻转, 变化即重建; 角度本身由
+// 重建尾部按成员消费, 不需要逐帧下发
+void VkVideoRender::setVideoRotation(int32_t rotation) {
+  if (rotation == videoRotation) {
+    return;
+  }
+  LOGFLF(LogLevel::info, "[rot] render rotation:", rotation);
+  videoRotation = rotation;
+  bResetFlag = true;
+}
+
 // tone map 曲线参数: 只落成员, 节点下发由渲染线程消费(onParametUpdate 收敛
 // + 重建尾重放); 曲线是 yuv2rgba 的 UBO 分支, 不触发拓扑重建
 void VkVideoRender::setToneMap(const ToneMapParamet& paramet) {
@@ -482,7 +493,12 @@ void VkVideoRender::setVrStereoStrength(float strengthDeg) {
 }
 
 vec2i VkVideoRender::getOutSize() {
+  // 默认输出=显示方向下的输入尺寸(90/270 交换宽高); 仍是预算值, 真相以
+  // 帧回调实际图像为准
   vec2i size = {imageFormat.width, imageFormat.height};
+  if (bSwapInputSize()) {
+    size = {imageFormat.height, imageFormat.width};
+  }
   if (bEnableVr) {
     size = {vrGeom.outWidth, vrGeom.outHeight};
   } else if (bUseNewSize) {
@@ -573,6 +589,12 @@ bool VkVideoRender::vaildAndInitGraph() {
   // ——16f 线性域与 rgba8 gamma 域层互斥(格式+语义双错); 成员态保留,
   // 关直通重建即回。字幕/OSD 线性域合成归 V2。
   const bool bPt = hdrMode == HdrMode::forceHDR;
+  // 显示方向下的视频尺寸(90/270 交换编码宽高): 转置层在入口已把帧转成这个
+  // 方向, VR/缩放/输出尺寸的预算都据此
+  const int32_t videoDisW =
+      bSwapInputSize() ? imageFormat.height : imageFormat.width;
+  const int32_t videoDisH =
+      bSwapInputSize() ? imageFormat.width : imageFormat.height;
   if (!bPt) {
     resizeLayer = graph->addNode<VkResizeLayer>();
     if (bEnableBlend && blendImage) {
@@ -622,9 +644,8 @@ bool VkVideoRender::vaildAndInitGraph() {
       {
         std::lock_guard<std::mutex> lock(vrViewMutex);
         resolveVrOutSize(bUseNewSize, sizeScale, userWidth, userHeight,
-                         imageFormat.width, imageFormat.height, vrOutW, vrOutH);
-        vrGeom = buildVrGeom(vrParamet, imageFormat.width, imageFormat.height,
-                             vrOutW, vrOutH);
+                         videoDisW, videoDisH, vrOutW, vrOutH);
+        vrGeom = buildVrGeom(vrParamet, videoDisW, videoDisH, vrOutW, vrOutH);
         if (bVrViewDirty) {
           vrView = vrViewPending;
           bVrViewDirty = false;
@@ -676,6 +697,34 @@ bool VkVideoRender::vaildAndInitGraph() {
   } else {
     outNode = inputLayer;
   }
+  // display matrix 入口校正: 在 YUV->RGBA/输入导入之后、PQ 升样与所有画质/
+  // 字幕/OSD 层之前转一次, 之后每个支路(窗口/截图/录制/enableImage)都在显示
+  // 方向。转置层是 rgba8 层: CPU 软解+forceHDR 的 16f 载荷接不上, 跳过留痕
+  const bool bRot16f = hdrMode == HdrMode::forceHDR && cpuIn && !bRgbaInput;
+  if (videoRotation == 90 || videoRotation == 270) {
+    if (bRot16f) {
+      LOGFLF(LogLevel::warn, "[rot] rgba16f ingress, skip angle:",
+             videoRotation);
+    } else {
+      // 转置语义 out(x,y)=in(y,x), 再补一次镜像: 90 顺时针=bFlipX,
+      // 270(逆时针)=bFlipY
+      TransposeParamet tp = {};
+      tp.bFlipX = videoRotation == 90 ? 1 : 0;
+      tp.bFlipY = videoRotation == 270 ? 1 : 0;
+      transposeLayer = graph->addNode<VkTransposeLayer>();
+      transposeLayer->get()->updateParamet(tp);
+      outNode = outNode->addLine(transposeLayer);
+    }
+  } else if (videoRotation == 180) {
+    if (bRot16f) {
+      LOGFLF(LogLevel::warn, "[rot] rgba16f ingress, skip angle:",
+             videoRotation);
+    } else {
+      flipLayer = graph->addNode<VkFlipLayer>();
+      flipLayer->get()->updateParamet(FlipParamet{1, 1});
+      outNode = outNode->addLine(flipLayer);
+    }
+  }
   // 链F: 导入的 rgba8 PQ 码先升样到 16F 线性, 之后所有层(含输出端)即在线性域
   if (bChainF) {
     outNode = outNode->addLine(pqUpsampleLayer);
@@ -688,15 +737,14 @@ bool VkVideoRender::vaildAndInitGraph() {
     resizeParamet.bLinear = 1;
     // 优化使用scale
     if (sizeScale != 1.0f) {
-      resizeParamet.newHeight = imageFormat.height * sizeScale;
-      resizeParamet.newWidth = imageFormat.width * sizeScale;
+      resizeParamet.newHeight = videoDisH * sizeScale;
+      resizeParamet.newWidth = videoDisW * sizeScale;
     } else {
       resizeParamet.newWidth = userWidth;
       resizeParamet.newHeight = userHeight;
     }
-    LOGFLF(LogLevel::info, "resize video:", imageFormat.width, "x",
-           imageFormat.height, " -> ", resizeParamet.newWidth, "x",
-           resizeParamet.newHeight);
+    LOGFLF(LogLevel::info, "resize video:", videoDisW, "x", videoDisH, " -> ",
+           resizeParamet.newWidth, "x", resizeParamet.newHeight);
     resizeLayer->get()->updateParamet(resizeParamet);
     outNode = outNode->addLine(resizeLayer);
   }

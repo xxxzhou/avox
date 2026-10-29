@@ -37,14 +37,14 @@ avoxkit 会话 `session_dd65acec0458d06eac9020adba5239aa` 提出了把 avoxkit �
 | enableImage 只支持 rgba8 | 成立，且 `VideoRender::enableImage` 有显式校验；输出宽度/高度由 buffer 的 ImageFormat 决定，GPU 侧 `VkResizeLayer` 缩放 | `src/avox/video/VideoRender.cpp:38-58` |
 | 首次 enableImage 后先渲染 dummy 帧 | 成立，`QEnhanceFilter` 已经踩过这个坑并留了注释：图重建会销毁旧 staging，用户 buffer 在重建后到下一帧输出前悬存 | `src/avox/muxer/QEnhanceFilter.cpp:51-73` |
 | 无 Vulkan 不兜底 | 成立。`SurfaceRenderVk` 构造后 `vkVideoRender == nullptr`，`getVkVideoRender()` 返回空；probe/index 不需要 VK，可正常工作 | `src/avox/video/SurfaceRenderVk.cpp:11-32` |
-| 旋转在缩图后 CPU 做 | 成立。当前 `ak_frames` 读 `AV_PKT_DATA_DISPLAYMATRIX` 并按 90/180/270 旋转采样；播放端目前确实不消费 display matrix，缩略图必须保留这段否则竖拍视频横躺 | `avoxkit/native/avtool/src/ak_frames.cpp:96-118/188-267` |
+| 旋转在缩图后 CPU 做 | **已改口径（1029）**：旋转归属渲染层入口，角度存在 `VTrackDesc.rotation`、由 `VideoTrack`/reader 内部消费，宿主不调用任何旋转接口；VK 在 `VkVideoRender` 图入口插转置层，reader 只消费显示方向输出、**不再 CPU 旋转**；`ak_frames` 切到 reader 后删除 rotation/YUV 采样。详见 [显示矩阵旋转实施方案](显示矩阵旋转实施方案.md) | `avoxkit/native/avtool/src/ak_frames.cpp:96-118/188-267` |
 | 事件驱动 observer 模型 | 成立，和 `IRecorderOb` 的 `onStateChange/onProgress/onComplete` 是同一套生命周期风格 | `src/avox/AvoxMuxer.h:79-95` |
 | 峰值返回线性 float[0,1] | 成立。`sqrt` 单调，先逐帧 sqrt 再取桶最大 与 先取桶最大再 sqrt 结果一致；shim 转 `sqrt(peak)*100` 可保持现有 UI | `avoxkit/native/avtool/src/ak_index.cpp:208-213` |
 | v1 在 avox_ffmpeg 内直接用 libav | 成立，且不算“产品侧第二套”：avoxkit 最终只 include/link `avox.lib`。但 v1 网络范围要收窄，见 §2.12 | - |
 
 ---
 
-## 2. 必须先收口的 10 个问题
+## 2. 必须先收口的问题
 
 ### 2.1 HDR 说法自相矛盾（硬问题）
 
@@ -248,6 +248,26 @@ probe/index 不受影响。
 - reader 析构函数只做资源释放，不派发回调；observer 生命周期必须覆盖到
   `close()` 返回。
 
+### 2.14 输出尺寸不能在 open/probe 时确定（契约问题）
+
+`open`/`probe` 只能拿到源的编码尺寸、display matrix 与轨道信息；图像处理链
+（缩放、转置、超分/滤镜/画质/VR/录制等）是否改变输出尺寸，只有真正渲染出帧时
+才知道。因此：
+
+- 不要把 `source.width/height + rotation` 推算出的尺寸写进
+  `MediaFrameInfo.width/height`，也不要在 `onFrame` 之前承诺输出尺寸；
+- `MediaFrameInfo.width/height` 必须在 `onFrame` 回调内从实际交付的
+  `IImageBuffer::getImageFormat()` 填入；
+- `MediaFrameRequest.width` 只是请求/分配提示，实际输出可以不同；
+- `ak_probe` 只输出 `rotation`，**不输出 `display_width/display_height`**；
+  UI 首帧到达前可用编码宽高 + rotation 占位，首帧到达后一律按
+  `MediaFrames.width/height` 重排；
+- `ak_media_frames` 的 JSON `width/height` 与 JPEG 尺寸同样取回调实际图像。
+
+当前 VK 链（`VkResizeLayer` 按 `imageOutFormat` 收口）在 9:16 fixture 上
+预期输出 320×569，但这是**当前实现的观测值**，不是接口保证。以后加会改尺寸的
+处理层时，reader 不改接口，`MediaFrameInfo` 跟着回调图像走。
+
 ---
 
 ## 3. 修正后的公共接口
@@ -291,7 +311,8 @@ struct MediaIndexResult {
 struct MediaFrameRequest {
   // 目标时间(ms); <0 按 0, 超出片长按片尾
   int64_t timeMs = 0;
-  // 输出宽度 [48, 1280]; 这是旋转后的显示宽度, 高度按显示比例算, 不是固定16:9
+  // 期望输出宽度 [48, 1280]; 只是请求/分配提示, 实际输出尺寸以 onFrame 的
+  // image->getImageFormat() 为准(图像处理链可能改变尺寸)
   int32_t width = 320;
   // 容器 stream index; -1 = 第一条非封面视频轨
   int32_t videoTrack = -1;
@@ -302,7 +323,8 @@ struct MediaFrameInfo {
   int64_t requestedMs = 0;
   // 实际解码帧时间, 可能晚于请求(从关键帧向后解)
   int64_t actualMs = 0;
-  // 显示尺寸(已按 display matrix 旋正); 竖拍 9:16 时 height > width
+  // 实际输出尺寸: onFrame 回调时从 image->getImageFormat() 填入; 不是
+  // open/probe 预算值, 也不保证等于 request.width 按源比例算出的高度
   int32_t width = 0;
   int32_t height = 0;
 };
@@ -456,9 +478,12 @@ virtual const char* formatName() { return ""; }
 // 原始 avcodec 名(如 "h264"/"hevc"/"vp8"); 无效索引/未知为空串
 virtual const char* getVideoCodecName(int32_t index) { return ""; }
 virtual const char* getAudioCodecName(int32_t index) { return ""; }
-// 容器 display matrix 声明的旋转角(0/90/180/270); 无效索引为 0
-virtual int32_t getVideoRotation(int32_t index) { return 0; }
 ```
+
+**旋转不进 `ISourceInfo` 方法**（用户 1029 口径“全在内部做”）：`VTrackDesc`
+（`AvoxCodec.h:131`）末尾加 `int32_t rotation = 0;`（顺时针 0/90/180/270，
+来自 display matrix）。`IOParseFF` 填，`VideoTrack`/reader 内部消费；宿主读不读
+都不影响播放。该结构体变大，旧宿主/插件需重建（见 §5.6）。
 
 `ISTrackDesc`（`AvoxCodec.h`）末尾追加：
 
@@ -513,6 +538,9 @@ observer 不得在回调里重入 reader 的操作方法；`cancel()` 是唯一�
 - `ISourceInfo`：`onReady` 后到 `close` 前有效，reader 托管。
 - `MediaIndexResult.peaks/keyframesMs`、`onFrame` 的 `image`、`onError` 的
   `message`：只在回调内有效，需要留存请立即拷贝/编码。
+- `onFrame` 的 `image` 是输出尺寸的唯一真相源：`MediaFrameInfo.width/height`
+  必须在回调时从 `image->getImageFormat()` 填入。不要在 open/probe 时用源
+  宽高/旋转角预算输出尺寸。
 - `lastErrorMessage()`：到下一次操作或 `close` 前有效。
 
 ### 4.4 取消
@@ -532,21 +560,26 @@ observer 不得在回调里重入 reader 的操作方法；`cancel()` 是唯一�
 
 ### 4.6 显示方向、宽高与 UI 放置（9:16 不是 16:9）
 
-`MediaFrameRequest.width` 是**旋转后的显示宽度**，不是编码宽度；高度由显示宽高
-比算出，不是固定 16:9。
+`MediaFrameRequest.width` 是**请求的显示宽度**，不是编码宽度，也不是输出尺寸
+承诺；高度不按固定 16:9 算。实际输出尺寸只有 `onFrame` 知道（见 §2.14）。
 
-例：手机竖拍，编码 1920×1080，display matrix=90°：
+例：手机竖拍，编码 1920×1080，display matrix 显示角 90°（顺时针）：
 
-- 显示尺寸 = 1080×1920（9:16）
-- 请求 `width=320` → `height = round(320 * 1920 / 1080) = 569`
-- 中间 VK 缓冲 = 569×320（宽高对调），CPU 旋转后交付 320×569
-- `MediaFrameInfo{width:320, height:569}`；`ak_media_frames` 顶层同样输出
-  320×569，JPEG 也是 320×569
+- 源显示尺寸 = 1080×1920（9:16），这是 probe 能给的元数据；
+- 请求 `width=320` 只是请求，**不能据此在 open/probe 时断言输出就是
+  320×569**；
+- 渲染层在 VK 图入口做转置，**输出尺寸以 `onFrame` 回调里
+  `image->getImageFormat()` 为准**；当前 VK 链在 9:16 fixture 上实测得到
+  320×569，但接口契约是“回调里的实际尺寸”，不是“请求时算出来的尺寸”；
+- `ak_media_frames` 顶层 `width/height` 与 JPEG 尺寸都取回调图像的实际
+  尺寸；`ak_probe` 只输出 `rotation`，不输出 `display_width/display_height`。
 
-实测（2026-10-29，当前 shim）：用 `1920×1080 + rotation 90` 的 fixture 跑
-`ak_smoke frames ... 320`，当前 `ak_frames` 已经输出 **320×569** 的 JPEG；
-`ak_probe` 仍只报编码宽高 1920×1080。也就是说抓帧侧本来是对的，缺口在
-probe 的显示尺寸和 UI 的 16:9 假设。
+实测（2026-10-29，旧 shim）：用 `1920×1080 + rotation 90` 的 fixture 跑
+`ak_smoke frames ... 320`，旧 `ak_frames` 自己 CPU 旋转后输出 **320×569** 的
+JPEG；`ak_probe` 仍只报编码宽高 1920×1080。迁移后这段 CPU 旋转删除，方向由
+渲染层保证（见 [显示矩阵旋转实施方案](显示矩阵旋转实施方案.md)）；缺口仍在
+UI 的 16:9 假设（首帧到达前只能按编码宽高 + rotation 占位，到达后按实际帧
+尺寸重排）。
 
 **当前 avoxkit 的 UI 确实把它当 16:9 用了**，这是迁移时要一起改的：
 
@@ -557,27 +590,66 @@ probe 的显示尺寸和 UI 的 16:9 假设。
 - `AkLivePreview` 默认 16/9，竖拍视频的原生预览窗也被放进 16:9 矩形；
 - `clip_page` 的参考图槽位是固定 220×124，竖屏图无法按 9:16 放。
 
-reader 返回的 `width/height` 已经是显示尺寸（当前 `ak_media_frames` 也是），
-UI 必须消费它，而不是自己假设 16:9：
+reader 返回的 `width/height` 是 `onFrame` 的实际输出尺寸（当前
+`ak_media_frames` 也是从解码帧算出来的），UI 必须消费它，而不是自己假设
+16:9；首帧到达前只能用编码宽高 + rotation 占位：
 
-1. `MediaFrameSource` 暴露 `aspectRatio`（取 `strip.width/height`；精确帧与
-   缩略图共用同一源比例）。
-2. `AkFramePreview` 的 `aspectRatio` 由源比例传入，不再默认 16/9；图片
+1. `MediaFrameSource` 暴露 `aspectRatio`（取实际帧的 `strip.width/height`；
+   精确帧与缩略图共用同一实际比例）。
+2. `AkFramePreview` 的 `aspectRatio` 由实际帧比例传入，不再默认 16/9；图片
    `BoxFit.contain`，不要拉伸。
 3. `AkFilmstrip` 增加 `frameAspect`（或 `frameWidth/frameHeight`），
    `naturalPx = height * frameAspect`；格宽小于自然宽度时留白/contain，
    不要 `cover` 裁切。竖屏帧在固定高度条里自然更窄，这是正确行为。
-4. `AkLivePreview`（转码/截取的任务预览）由任务入参或源信息带出显示比例，
-   原生窗口矩形按 9:16 放；外层布局用高度反算宽度，避免竖屏撑破页面。
-5. `clip_page` 的 220×124 槽位改成按比例算（例如固定高 124，宽 =
+4. `AkLivePreview`（转码/截取的任务预览）原生窗口矩形按实际帧比例放；
+   首帧回调前可用编码宽高 + rotation 占位，回调后按实际 `width/height`
+   校正；外层布局用高度反算宽度，避免竖屏撑破页面。
+5. `clip_page` 的 220×124 槽位改成按实际帧比例算（例如固定高 124，宽 =
    `124 * aspect`；竖屏 9:16 时约 70 宽），或给参考图独立的自适应区域。
-6. `ak_probe` 增加 `rotation`（0/90/180/270）与 `display_width/display_height`，
-   让 UI 在缩略图到达前就知道该用 9:16。实现上 `ISourceInfo` 追加
-   `getVideoRotation(int32_t index)`（默认 0），reader 与 `IOParseFF` 覆盖。
-7. 验收：竖拍 9:16 fixture（带角标）断言 `ak_media_frames` 输出 320×569、
-   JPEG 方向正确、预览/缩略图条按 9:16 放置且无裁切。
+6. `ak_probe` 只增加 `rotation`（0/90/180/270），**不输出 display_width/
+   display_height**：输出尺寸会被 resize/画质/VR/录制改尺寸改变，track desc
+   阶段拿不到，只有帧回调里的实际帧知道（`onFrame`/`MediaFrameInfo`）。UI 在
+   缩略图到达前可不摆或按编码宽高+rotation 预估源比例，帧到达后一律用
+   `MediaFrames.width/height` 覆盖。
+7. 验收：竖拍 9:16 fixture（带角标）断言 `ak_media_frames` 的 `width/height`
+   与 JPEG 尺寸等于 `onFrame` 实际图像（当前 VK 链预期 320×569；这是观测值，
+   不是接口保证），方向正确、预览/缩略图条按实际比例放置且无裁切。
 
 不要为了“统一 16:9”去裁切或加黑边：横屏源才用 16:9，竖屏源就应该 9:16。
+
+### 4.7 display matrix 现状与归属（1029 更新）
+
+2026-10-29 全仓核对（`AV_PKT_DATA_DISPLAYMATRIX` / `av_display_rotation_get` /
+`display_rotation` / `rotation` / `transpose`）：avox 的解封装、解码、播放器、
+`WindowRender`/`SurfaceRenderVk`、DX11/EGL/Metal 各腿**都没有读 display matrix**；
+`VkTransposeLayer` 只有定义（`AvoxLayer.h:527`、`VkTransposeLayer.*`），没有任何
+`addNode`/接线。唯一处理它的是 avoxkit 的 `ak_frames.cpp:96-118`。
+
+抽样实测（2026-10-29，本机 536 个视频）：530 个无旋转，5 个带 `rotation=-90`
+（显示角 90°，均为手机/相机 `.mov/.mp4`），1 个探测失败。电影/剧集库基本为 0；
+手机竖拍内容常见。VLC/mpv/PotPlayer/Windows 自带播放器都会自动应用 display
+matrix，所以用户日常“感觉不到”它的存在；avox 不应用，竖拍文件在预览里横躺
+（1029 用户截图：左侧 avox 系播放器横躺，右侧系统播放器正常）。
+
+**归属已改（1029）**：旋转在 avox **渲染层入口做一次**，reader 不再 CPU 旋转。
+完整方案（为什么不能在窗口 blit/UI/`ak_frames` 转、VK/DX11/EGL/Metal 逐腿改法、
+字幕坐标系、录制尺寸、验收）见
+[显示矩阵旋转实施方案](显示矩阵旋转实施方案.md)。
+
+对 reader 的约束：
+
+- reader 从 `VTrackDesc.rotation` 取角度，在内部调用 `SurfaceRenderVk` 的
+  setter；`grabFrame` 拿到的 `enableImage` 输出已经是显示方向，不再申请
+  “中间 569×320 + CPU 转”。`MediaFrameInfo.width/height` 取实际输出 buffer
+  的 `ImageFormat`（处理链可能改尺寸），不从 track desc 预计算。
+- reader 自己不执行旋转、不保存旋转映射；`VTrackDesc.rotation` 只作为内部
+  传递与 probe 展示值（`ak_probe` 只输出 `rotation`）。
+- `ak_frames` 切到 reader 时删除 rotation/YUV 采样；播放端修好后同一文件在
+  缩略图、窗口预览、系统截图里方向一致。
+- 单一真相源 = 渲染层；禁止 reader/UI/shim 各自读矩阵再各转一次。
+
+渲染层方案的 P1（VK 车道）先落地，直接修好用户截图里的 panvox/avoxkit 预览；
+DX11 CS/EGL/Metal 分 P2/P3，未落地的车道不能声称已旋正。
 
 ---
 
@@ -596,7 +668,7 @@ UI 必须消费它，而不是自己假设 16:9：
 | `src/avox/AvoxSource.h` / `AvoxCodec.h` | 追加虚函数 |
 | `src/avox/source/AVSource.cpp`、`src/avox_ffmpeg/IOParseFF.hpp` | 覆盖新 `ISourceInfo` 方法 |
 | `CMakeLists.txt` | `copy_head("avox/AvoxMedia.h")`、`copy_head("avox/AvoxRuntime.h")` |
-| `tests/test_media_reader.cpp` | 纯逻辑单测（错误串/状态机/桶映射/旋转映射） |
+| `tests/test_media_reader.cpp` | 纯逻辑单测（错误串/状态机/桶映射/角度归一化） |
 
 `createMediaReader` 放在 `avox_ffmpeg`，`#ifdef AVOX_ENABLE_FFMPEG` 内定义；
 未启用 FFmpeg 时核心侧给 stub 返回 `nullptr`。`MediaReaderFF` 不导出，只导出
@@ -610,9 +682,9 @@ UI 必须消费它，而不是自己假设 16:9：
    但跳过 `AV_DISPOSITION_ATTACHED_PIC`（与 `IOParseFF.cpp:1158`、
    `ak_frames.cpp:311` 一致）：
    - 视频：`VTrackDesc`（trackId=st->index、codecId、width/height、fps、
-     pixFmt→YuvType、colorSpace）；fps 照抄 `ak_probe` 的
-     `avg_frame_rate → r_frame_rate`；display matrix 角度存 reader 内部，
-     供 `getVideoRotation(index)` 返回。
+     pixFmt→YuvType、colorSpace、rotation）；fps 照抄 `ak_probe` 的
+     `avg_frame_rate → r_frame_rate`；display matrix 角度填进
+     `VTrackDesc.rotation`（0/90/180/270），reader 与 `ak_probe` 都从该字段读。
    - 音频：`ATrackDesc`（trackId、codecId、channels、sampleRate、AudioFormat）。
    - 字幕：`STrackDescImpl`（trackId、SCodecId、lang、title、forced、default、
      codecName）。
@@ -657,24 +729,31 @@ UI 必须消费它，而不是自己假设 16:9：
      会处理 padding/重排）。
 6. 懒创建 `SurfaceRenderVk`（首次调用）：
    - `setOffSurface(YuvType::other)`
+   - `setVideoRotation(rotation)`（内部 setter；rotation 取自
+     `VTrackDesc.rotation`，0/90/180/270，见 §4.7）
    - `setHdrMode(HdrMode::follow)`
    - `setColorSpace(cs)`
    - `setHdrMeta(latestHdr)` / `setDoviMeta(latestDovi)`
    - `enableImage(intermediateBuffer)`
-7. **dummy 帧**：目标尺寸/`YuvType` 用真实首帧的（不要照 QEnhanceFilter 固定
-   nv12，避免真实帧类型不同再触发一次重建）。渲染一张同尺寸黑帧让图重建落位。
-8. `render(realYuv)`；`onRun()` 内部已 `vkWaitForFences`，返回后：
-   - 旋转 0：直接交付 intermediate buffer；
-   - 旋转 180/90/270：CPU 旋转到 rotateBuffer 后交付。
-9. 填 `MediaFrameInfo{requestedMs, actualMs, 显示宽高}`，`onFrame(info, buf)`。
+7. **dummy 帧**：用真实首帧的**源分辨率**和 `YuvType`（不要照 QEnhanceFilter
+   固定 nv12，也不要用目标输出尺寸；否则真实帧到达时会再触发一次重建）。
+   渲染一张同源尺寸黑帧让图重建落位。
+8. `render(realYuv)`；`onRun()` 内部已 `vkWaitForFences`，返回后直接交付
+   intermediate buffer——旋转已在 `VkVideoRender` 图入口完成，reader **不做
+   CPU 旋转**。
+9. 从实际交付的 `intermediateBuffer->getImageFormat()` 读 `width/height`，
+   填 `MediaFrameInfo{requestedMs, actualMs, 实际宽高}`，再
+   `onFrame(info, buf)`。不要在 open/probe 时按源比例预算输出尺寸。
 10. 源尺寸变化时（极少）先用该帧 render 一次重建，再 render 一次取输出；
     换目标宽度时新建 intermediate buffer，旧 buffer 等 dummy 重建完成后再释放。
+    如果图像处理链实际输出与请求尺寸不同，以回调读回的尺寸为准；下一帧可把
+    实际尺寸作为新的请求提示，不要反过来改源信息/rotation 去“凑”尺寸。
 
-旋转映射必须与 `ak_frames::frame_to_rgba` 同向：90/270 时中间图尺寸为
-`(finalH, finalW)`，最终 `(finalW, finalH)`。例如编码 1920×1080 + 90°、
-请求 `width=320`：显示高 = `round(320*1920/1080) = 569`，中间图 569×320，
-旋转后交付 320×569（9:16）。用带角标（如左上角红点）的竖拍 fixture 做视觉
-用例钉死方向，并断言最终宽高是 320×569 而不是 320×180。
+`intermediateBuffer` 的 `ImageFormat` 用“请求宽度 + 源显示比例”做初始分配
+（编码 1920×1080 + 显示角 90°、请求 `width=320` 时当前预期 320×569），但
+**实际输出尺寸以 `onFrame` 读回的图像为准**；不要先申请 569×320 再转，也不要
+把初始分配值当成接口承诺。方向由渲染层统一保证；reader 不再保存旋转映射，
+也不再调 `av_display_rotation_get`。
 
 ### 5.5 AvoxRuntime
 
@@ -691,8 +770,9 @@ UI 必须消费它，而不是自己假设 16:9：
 
 - 新头文件加入 `copy_head`（`CMakeLists.txt:352` 一带）。
 - `ISourceInfo`/`ISTrackDesc` 只追加到末尾；`MediaReader` 是全新接口。
-- 不改 `VTrackDesc`/`ATrackDesc` 结构体大小（原始 codec 名走 `ISourceInfo`
-  方法，不加结构体字段）。
+- `VTrackDesc` 末尾加 `rotation`（1029 用户口径，旋转信息放结构体、引擎内部
+  消费），这是**唯一的结构体变大**：旧宿主/插件（panvox/avoxkit/playtest）
+  必须重建；`ATrackDesc`/`VideoDesc` 不动，原始 codec 名仍走 `ISourceInfo` 方法。
 - `swig/common.i` 若不打算暴露 reader，可不动；若要暴露，加
   `%include "avox/AvoxMedia.h"` 与 `%feature("director") IMediaReaderOb;`。
 - 无 FFmpeg / 无 Vulkan 两种构建都要能编：前者工厂返回 nullptr，后者抓帧
@@ -725,9 +805,9 @@ struct SyncOb : avox::IMediaReaderOb {
 
 | shim | 迁移后 |
 |---|---|
-| `ak_probe.cpp` | `createMediaReader` → `open` → 等 `onReady` → 读 `ISourceInfo`；`format/duration_ms/bit_rate/can_seek/video/audio/subtitles` 字段名不变；视频/音频 `codec` 用 `getVideoCodecName/getAudioCodecName`，字幕 `codec` 用 `codecName()`、`text` 用 `isTextSubtitleCodec(codecName())`；视频轨增加 `rotation` 与 `display_width/display_height`（由 `getVideoRotation()` 和编码宽高算），供 UI 在缩略图到达前按 9:16 布局；带封面的音频文件不再报视频轨（attached_pic 被排除，见 §2.11）；`pix_fmt/sample_fmt/每轨 bit_rate` 可删（Dart 无消费者） |
+| `ak_probe.cpp` | `createMediaReader` → `open` → 等 `onReady` → 读 `ISourceInfo`；`format/duration_ms/bit_rate/can_seek/video/audio/subtitles` 字段名不变；视频/音频 `codec` 用 `getVideoCodecName/getAudioCodecName`，字幕 `codec` 用 `codecName()`、`text` 用 `isTextSubtitleCodec(codecName())`；视频轨只增加 `rotation`（从 `VTrackDesc.rotation`），不输出 display_width/height（输出尺寸只有帧回调知道）；带封面的音频文件不再报视频轨（attached_pic 被排除，见 §2.11）；`pix_fmt/sample_fmt/每轨 bit_rate` 可删（Dart 无消费者） |
 | `ak_index.cpp` | `open` → `buildIndex`；`onIndexDone` 里拷 peaks/keyframes；`has_audio=result.hasAudio`；peaks 按 `(int)(sqrt(p)*100)` 转 0-100；`duration_ms/bucket_ms` 取 result |
-| `ak_frames.cpp` | `open` → 每个时间点 `grabFrame`；`onFrame` 内 JPEG 编码；`reason` 映射 `MediaError`（`unsupportedPixFmt→unsupported_pix_fmt`、`renderUnavailable→render_unavailable`、`decoderMissing→decode_failed`）；目标时间生成（count/等距）留在 shim |
+| `ak_frames.cpp` | `open` → 每个时间点 `grabFrame`；`onFrame` 内 JPEG 编码；JSON 的 `width/height` 与 JPEG 尺寸取回调图像的实际 `ImageFormat`（不是 `request.width` 或 probe 预算；多帧时顶层取最后一个成功帧，保持现有覆盖语义）；`reason` 映射 `MediaError`（`unsupportedPixFmt→unsupported_pix_fmt`、`renderUnavailable→render_unavailable`、`decoderMissing→decode_failed`）；目标时间生成（count/等距）留在 shim；**删除 libav、YUV 采样和 display matrix/旋转代码**，方向由渲染层统一保证（reader 不再 CPU 旋转） |
 | `ak_engine.cpp` | `getFFmpegRuntimeInfo/isEncoderRegistered/hasMuxer/协议列表/isVulkanAvailable`；删 libav include；`encoder_probe_impl` 语义不变 |
 
 `ak_media_index` 对直播/未知时长返回
@@ -752,7 +832,8 @@ struct SyncOb : avox::IMediaReaderOb {
 1. **P0 接口骨架**：公共头 + stub + `AvoxRuntime` + 字符串函数；avox 构建通过。
 2. **P1 probe/index**：纯 CPU demux/decode，先替换 `ak_probe/ak_index`，
    跑 golden 对比。此时 `ak_frames` 仍用旧 libav。
-3. **P2 抓帧**：VK 渲染器 + 旋转 + HDR/DV 元数据；替换 `ak_frames`。
+3. **P2 抓帧**：VK 渲染器 + `setVideoRotation`（方向由渲染层保证）+ HDR/DV
+   元数据；替换 `ak_frames`。
 4. **P3 清账**：`ak_engine` 换 runtime API；删链接/头路径；能力位与 Dart 提示；
    文档；全量回归。
 5. **P4（可选）handle API**：clip 页复用长生命周期 reader，省掉每次拖动重建
@@ -760,23 +841,26 @@ struct SyncOb : avox::IMediaReaderOb {
 
 ### 6.5 UI 显示比例（9:16）
 
-reader 返回的 `width/height` 已经是显示尺寸，但当前 avoxkit UI 仍按 16:9
-摆放（§4.6）。迁移时一起改：
+reader 返回的 `width/height` 是 `onFrame` 实际输出尺寸，但当前 avoxkit UI
+仍按 16:9 摆放（§4.6）。迁移时一起改：
 
 | 位置 | 改动 |
 |---|---|
-| `lib/core/media_frames.dart` | `MediaFrames` 的 `width/height` 已是显示尺寸，保留；可直接算 `aspectRatio = width/height` |
-| `lib/core/media_frame_source.dart` | 暴露 `aspectRatio`（取 `strip.width/height`） |
+| `lib/core/media_frames.dart` | `MediaFrames` 的 `width/height` 取 `onFrame` 实际图像尺寸（不是 probe 预算）；可直接算 `aspectRatio = width/height` |
+| `lib/core/media_frame_source.dart` | 暴露 `aspectRatio`（取实际帧的 `width/height`；首帧前可用编码宽高 + rotation 占位，首帧到达后以实际为准） |
 | `lib/ui/widgets/frame_preview.dart` | 去掉默认 `16/9`，由 source/调用方传比例；`BoxFit.contain` |
 | `lib/ui/widgets/filmstrip.dart` | 增加 `frameAspect`，`naturalPx = height * frameAspect`；不要 `BoxFit.cover` 裁切 |
 | `lib/ui/widgets/trim_timeline.dart` | 把 `MediaFrames.width/height` 传给 `AkFilmstrip` |
 | `lib/ui/pages/clip_page.dart` | 220×124 固定槽位改为按比例算宽度（固定高 124，宽 = 124*aspect） |
-| `lib/ui/widgets/live_preview.dart` / 任务页 | 转码/截取预览按源显示比例放原生窗口矩形；外层用高度反算宽度 |
-| `lib/core/convert_plan.dart` 等 | 需要显示尺寸时优先用 probe 的 `display_width/display_height`，不要用编码宽高 |
+| `lib/ui/widgets/live_preview.dart` / 任务页 | 转码/截取预览按实际帧比例放原生窗口矩形（首帧前用编码宽高 + rotation 占位，回调后校正）；外层用高度反算宽度 |
+| `lib/core/convert_plan.dart` 等 | 需要显示尺寸时用实际帧的 `MediaFrames.width/height`；probe 只给 `rotation`，不提供输出尺寸 |
 
 竖屏在固定高度区域里自然更窄（9:16），不要为了填满横向空间去裁切或拉伸。
 如果 UI 确实需要统一卡片高度，用“高度固定、宽度按比例、左右留白”的方式，
 而不是把图 `cover` 到 16:9。
+
+输出尺寸以帧回调为准；首帧到达后如果实际比例与 probe/编码尺寸的占位不同，
+按实际帧重新布局。
 
 ---
 
@@ -810,12 +894,24 @@ fixture 输出 JSON/JPEG，存到临时目录（不入库，或存 avox-test 私
   一致。
 - `ak_index`：`duration_ms/bucket_ms/keyframes_ms` 完全一致；`peaks` 逐桶
   ±1；`has_audio` 一致；无音轨/解码器缺失两种空 peaks 场景一致。
-- `ak_frames`：`actual_ms/duration/width/height/旋转方向` 一致；SDR JPEG
-  视觉无明显差异；HDR/DV 允许差异（新路径做 tone map/DV，旧路径近似）。
-- 9:16 竖拍：`ak_media_frames` 输出 `width=320, height≈569`，JPEG 为
-  320×569 且方向正确；`ak_probe` 的 `rotation=90`、
-  `display_width/display_height=1080×1920`；UI 预览/缩略图条按 9:16 放置，
+- `ak_frames`：`actual_ms/duration/width/height/旋转方向` 一致；`width/height`
+  必须等于 `onFrame` 图像的实际尺寸（不是请求/源比例预算）；SDR JPEG 视觉
+  无明显差异；HDR/DV 允许差异（新路径做 tone map/DV，旧路径近似）。
+- 9:16 竖拍：`ak_media_frames` 的 `width/height` 与 JPEG 尺寸取 `onFrame`
+  实际图像；当前 VK 链预期 `width=320, height≈569`（作为观测值断言，不是
+  接口保证）；`ak_probe` 只断言 `rotation=90`，不输出
+  `display_width/display_height`；UI 预览/缩略图条按实际帧的 9:16 放置，
   无裁切、无拉伸、无 16:9 黑边。
+- 输出尺寸真相源：构造一个 fake renderer/图像处理层，返回与请求不同的尺寸，
+  断言 `MediaFrameInfo.width/height` 与 JSON 都跟随实际图像，而不是
+  `request.width` 或 probe 预算。
+- display matrix 单一旋转源：渲染层入口转一次，reader 输出的 JPEG 与窗口
+  预览/`screenShot` 方向一致；reader/UI/shim 都不再读矩阵。VK 车道（P1）覆盖
+  reader 的 follow 拓扑；DX11/EGL/Metal 未落地时原生车道窗口仍横躺，属已列
+  缺口，不能声称与 reader 已一致。
+- 播放侧竖拍：本机 5 个带 display matrix 的文件在 panvox（VK 车道）预览正立、
+  字幕水平、9:16 留边；横拍回归零变化（详见
+  [显示矩阵旋转实施方案](显示矩阵旋转实施方案.md) §7）。
 - 封面图：带 attached_pic 的 MP3/M4A，`ak_probe` 不再输出 `video` 项，
   `ak_media_frames` 返回 `has_video=false`；普通音频播放/提取不受影响。
 - 无 Vulkan：probe/index 正常；frames 返回 `render_unavailable`；UI 有提示。
@@ -830,14 +926,20 @@ fixture 输出 JSON/JPEG，存到临时目录（不入库，或存 avox-test 私
 - 构建：`grep -r "libav" avoxkit/native/avtool/src` 无结果；去掉
   `KIT_DIR/include` 后能编；`dumpbin /dependents avoxkit_native.dll` 只有
   `avox.dll`（及系统库），FFmpeg 由 `avox.dll` 传递依赖。
+- 旋转归属：`avoxkit/native/avtool/src/ak_frames.cpp` 里不再出现
+  `DISPLAYMATRIX`/`rotation`/YUV 采样；抓帧返回的 JPEG 已是 avox 旋正后的
+  显示方向，shim 只做 JSON 和 JPEG 编码。
 - ABI：avox 重建；avoxkit/playtest runner/panvox 重建后跑一遍冒烟（追加虚函数
   对旧二进制安全，但发布仍统一重建）。
 
 ### 7.4 单测
 
 - `tests/test_media_reader.cpp`：错误/状态字符串；桶映射与峰值归一化；
-  旋转映射；状态机（fake reader）；`getFFmpegRuntimeInfo` 版本 > 0；
+  display matrix 角度归一化（0/90/180/270；reader 不再做图像旋转）；
+  状态机（fake reader）；`getFFmpegRuntimeInfo` 版本 > 0；
   `isEncoderRegistered("libx264")/("aac")`。
+- 输出尺寸契约：fake renderer 返回与请求不同的宽高，断言
+  `MediaFrameInfo.width/height` 取自实际图像，而不是请求/源比例预算。
 - avox-test：新增 media reader 集成用例（probe/index/frames + HDR/DV/竖拍），
   走离线子集。
 
@@ -855,9 +957,10 @@ fixture 输出 JSON/JPEG，存到临时目录（不入库，或存 avox-test 私
 | 6 | observer 挂载方式 | 保留 `setObserver`（单观察者）；若要统一仓内风格可改 `addMediaReaderOb/remove` |
 | 7 | 原始 codec 名位置 | `ISourceInfo` 追加 `getVideoCodecName/getAudioCodecName`；字幕走 `ISTrackDesc::codecName()` |
 | 8 | `MediaIndexResult` 增加 hasAudio/waveAvailable | 必加，否则 shim 无法保持现有 JSON 语义 |
-| 9 | 旋转 | 缩图后 CPU 旋转（本方案）；给 `VkVideoRender` 补 transpose 是另一个改动 |
+| 9 | 旋转归属 | **已改（1029 晚）**：`VTrackDesc` 末尾加 `rotation`，`VideoTrack`/reader 内部消费并调用渲染器 setter，宿主不参与；VK 图入口转置，窗口预览/截图/录制/reader 共用；reader 不再 CPU 旋转，`ak_frames` 切 reader 时删除 rotation。方案见 [显示矩阵旋转实施方案](显示矩阵旋转实施方案.md) |
 | 10 | 重复 seek 的 VK 图复用 | v1 每次 grabFrame 复用同一 reader 的图；shim 每次调用新建 reader（可接受）；P4 再考虑 handle API |
-| 11 | 9:16 竖拍 UI | **已定（1029）**：缩图与 UI 槽位按显示比例 9:16，不转成 16:9、不裁切；`ak_probe` 补 `rotation/display_width/display_height`，UI 消费 `MediaFrames.width/height` |
+| 11 | 9:16 竖拍 UI | **已定（1029）**：缩图与 UI 槽位按实际帧比例（竖拍 9:16）放置，不转成 16:9、不裁切；`ak_probe` 只补 `rotation`，不输出显示宽高；UI 消费 `MediaFrames.width/height`（帧回调实际尺寸） |
+| 12 | 输出尺寸的真相源 | **已定（1029）**：只在 `onFrame` 回调里以实际交付的 `IImageBuffer::getImageFormat()` 为准；`open/probe` 不预算输出尺寸，`MediaFrameRequest.width` 只是请求，`probe` 不输出 `display_width/display_height` |
 
 ---
 
@@ -878,22 +981,28 @@ fixture 输出 JSON/JPEG，存到临时目录（不入库，或存 avox-test 私
 10. §5.6 v1 网络范围收窄为本地；HTTP 明确 v2。
 11. §7 验收补封面图、无 Vulkan、并发 reader、`canVulkan` 线程安全。
 12. 全文“MediaInfo”已合并进 `ISourceInfo` 的表述保留；补
-    `getVideoCodecName/getAudioCodecName`、`getVideoRotation` 与
-    `ISTrackDesc::codecName/isDefault`。
-13. §3/§4 明确 `width` 是旋转后的显示宽度：竖拍 9:16 请求 320 应输出
-    320×569，不是 320×180；`MediaFrameInfo`/`ak_media_frames` 的
-    `width/height` 都是显示尺寸。
+    `getVideoCodecName/getAudioCodecName`、`VTrackDesc.rotation` 与
+    `ISTrackDesc::codecName/isDefault`；不要写 `ISourceInfo::getVideoRotation`。
+13. §3/§4 明确 `MediaFrameRequest.width` 只是请求：竖拍 9:16 请求 320 时当前
+    VK 链预期输出 320×569，但实际尺寸以 `onFrame` 的
+    `image->getImageFormat()` 为准；`MediaFrameInfo`/`ak_media_frames` 的
+    `width/height` 都是回调实际尺寸，不是 open/probe 预算。
 14. §6 avoxkit 迁移补 UI 比例：`AkFramePreview`/`AkFilmstrip`/
     `AkLivePreview` 不再硬编码 16:9，消费 `MediaFrames.width/height`。
 15. §4 封面图口径按 §2.11 改为**排除** attached_pic（probe 行为变化视为修正），
     不再写“ISourceInfo 保留、选择跳过”。
+16. 若设计稿写“保留 ak_frames 的旋转”，改为“rotation 放
+    `VTrackDesc`、由 avox 渲染层内部消费（宿主不调用接口），reader 只消费显示
+    方向；ak_frames 切 reader 时删除旋转/YUV 采样，shim 只做 JSON+JPEG”。
 
 ---
 
 ## 10. 非目标
 
-- 播放端 display matrix 自动旋正（本次只修缩略图/预览的显示方向；播放器窗口
-  里的竖拍横躺是独立问题）。
+播放端旋转的逐腿实施细节见
+[显示矩阵旋转实施方案](显示矩阵旋转实施方案.md)；本文只在 §4.7 约束 reader
+的消费方式，不重复渲染层设计。
+
 - URL/HLS/RTSP/SMB/WebDAV/代理 IO（v2）。
 - 图形字幕 OCR、字幕烧录、翻译。
 - 在 avox 内做 JPEG/PNG 编码（仍由调用方用 `getImageBase64/getImageBytes`）。

@@ -99,6 +99,8 @@ class AVOX_EXPORT SurfaceRenderVk : public ISurfaceRender,
   virtual void setHdrMode(HdrMode mode) override;
   // tone map 曲线参数, 转发 VkVideoRender, 不重建 graph
   virtual void setToneMap(const ToneMapParamet& paramet) override;
+  // display matrix 旋转角, 转发 VkVideoRender(图入口转置)
+  virtual void setVideoRotation(int32_t rotation);
   virtual void setAutoAspect(bool bEnable) override;
 
   // 获取底层 VideoRender

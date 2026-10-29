@@ -138,6 +138,9 @@ struct VTrackDesc {
   int32_t dvProfile = 0;
   // 容器立体/球面声明(VrHint): 宿主「立体/VR」入口显隐用
   VrHint vrHint = VrHint::none;
+  // display matrix 旋转角(0/90/180/270, 顺时针): 渲染入口据此校正方向;
+  // 输出尺寸不在此声明, 以帧回调实际图像为准
+  int32_t rotation = 0;
 };
 
 struct ATrackDesc {

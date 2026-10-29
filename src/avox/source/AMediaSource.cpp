@@ -410,6 +410,7 @@ void AMediaSource::onVideoDesc() {
     auto vTrack = vTracks[0];
     const DecoderParams& dparams = videoDecoder()->getDecoderParams();
     vTrack.desc.fps = dparams.fps;
+    setVideoRotation(vTrack.rotation);
     setVideoDesc(vTrack.desc);
     LOGFLF(LogLevel::info, vTrack);
   }

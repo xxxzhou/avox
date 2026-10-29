@@ -29,6 +29,7 @@ void VideoTrack::setTrackDesc(const VTrackDesc& trackDesc) {
   srcDesc = trackDesc.desc;
   // 容器 DOVI conf: 透传给解码器侧的元数据提取器(硬解腿自扫 RPU 时用)
   dvProfile = trackDesc.dvProfile;
+  videoRotation = trackDesc.rotation;
   // 如果没有fps，默认25
   if (srcDesc.fps == 0) {
     srcDesc.fps = 25;
@@ -39,6 +40,15 @@ void VideoTrack::setTrackDesc(const VTrackDesc& trackDesc) {
   }
   onInitDesc();
   frameQueue.setClose(false);
+}
+
+void VideoTrack::getDisplaySize(int32_t& width, int32_t& height) const {
+  width = srcDesc.width;
+  height = srcDesc.height;
+  if (videoRotation == 90 || videoRotation == 270) {
+    width = srcDesc.height;
+    height = srcDesc.width;
+  }
 }
 
 void VideoTrack::start() {
@@ -55,7 +65,10 @@ void VideoTrack::start() {
     SubtitleView* subtitleView = mediaPlayer->getSubtitleView();
     if (subtitleView) {
       subtitleView->setWindowRender(windowRender.get());
-      subtitleView->setStorageSize(srcDesc.width, srcDesc.height);
+      // display matrix 校正后的坐标系: 字幕/OSD 在显示方向叠加
+      int32_t dw = 0, dh = 0;
+      getDisplaySize(dw, dh);
+      subtitleView->setStorageSize(dw, dh);
     }
   }
   log(LogLevel::info, "decode and render start success");
@@ -89,6 +102,8 @@ void VideoTrack::onVideoDesc() {
   // 会导致文本字号按错的比例缩放
   // 按流下发颜色空间(矩阵+量程+transfer): 图未建时 VkVideoRender 存成员, 建图时应用
   windowRender->setColorSpace(srcDesc.colorSpace);
+  // display matrix 旋转: 内部下发, 渲染层入口只转一次(下图前生效)
+  windowRender->setVideoRotation(videoRotation);
   // 记录track里的渲染器创建
   PBMediaAction pb = {};
   pb.mediaObject = MediaObject::render;
@@ -499,7 +514,9 @@ void VideoTrack::attachSubtitle(SubtitleView* view) {
   }
   view->setWindowRender(windowRender.get());
   if (srcDesc.width > 0 && srcDesc.height > 0) {
-    view->setStorageSize(srcDesc.width, srcDesc.height);
+    int32_t dw = 0, dh = 0;
+    getDisplaySize(dw, dh);
+    view->setStorageSize(dw, dh);
   }
   // 轨通道惰性建立(无插件降级为不渲染字幕轨); 文本路径不经过这里
   view->openTrackChannel();

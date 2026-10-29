@@ -37,6 +37,11 @@ class VideoTrack : public TAVTrack<VideoFramePtr>,
   VideoDesc srcDesc = {};
   // 容器 DOVI conf 的 profile(0=非DV): 供元数据提取器初始化 DV 上下文
   int32_t dvProfile = 0;
+  // 容器 display matrix 旋转角(0/90/180/270, 顺时针): 内部下发渲染器,
+  // 宿主不感知; 字幕坐标系按显示宽高
+  int32_t videoRotation = 0;
+  // display matrix 校正后的显示宽高(90/270 交换编码宽高)
+  void getDisplaySize(int32_t& width, int32_t& height) const;
 
   // 统一字幕视图(可空): 挂渲染对象/开轨通道由 MediaPlayer 驱动
   SubtitleView* subtitleView = nullptr;
