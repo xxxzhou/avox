@@ -264,22 +264,11 @@ void VkInputLayer::onCommand() {
   // It will be re-initialized with proper layout transitions next frame
 }
 
-bool VkInputLayer::onFrame() {
-  // 延迟释放: 在渲染线程上释放 Vulkan 资源
-  if (bPendingRelease) {
-    bVkInterop = false;
-    bPendingRelease = false;
-    sharedImage->release();
-  }
-// 测试
-#ifdef __ANDROID__
-  // if (vkAndImage) {
-  //   vkAndImage->logData();
-  // }
-#endif
-#ifdef WIN32
-  winImage->signalFence();
-#endif
+// 输入上传必须在submit前(onPreFrame): 图每帧同步等待fence, 此刻无在飞命令
+// 读暂存缓冲。原先在onFrame(submit+fence等待之后)上传, 本帧submit消费的是
+// 上一帧写入的数据 —— 管线整体滞后一帧(录制内容晚一帧=音画偏移), 且重建后
+// 首帧submit消费建图时的暂存内容(字节视图路径为全零) → 10bit首帧纯绿
+void VkInputLayer::onPreFrame() {
   if (inBuffer && bDateUpdate) {
     if (bByteView) {
       // 缓冲含(可能的)尾半行填充, 只搬真实数据, 不越读 CPU 缓冲
@@ -320,8 +309,26 @@ bool VkInputLayer::onFrame() {
              " bGpu:", bGpuInput ? 1 : 0);
     }
 #endif
-    return true;
   }
+  VkLayer::onPreFrame();
+}
+
+bool VkInputLayer::onFrame() {
+  // 延迟释放: 在渲染线程上释放 Vulkan 资源
+  if (bPendingRelease) {
+    bVkInterop = false;
+    bPendingRelease = false;
+    sharedImage->release();
+  }
+// 测试
+#ifdef __ANDROID__
+  // if (vkAndImage) {
+  //   vkAndImage->logData();
+  // }
+#endif
+#ifdef WIN32
+  winImage->signalFence();
+#endif
   return false;
 }
 

@@ -426,8 +426,8 @@ bool VkOutputLayer::fetchData(IImageBuffer* buffer) {
   if (!vkPipeGraph || !vkPipeGraph->resourceReady()) {
     return false;
   }
-// 输入尚未流动起来: 本层输出纹理的内容来自「上一次submit消费的输入纹理」。
-// 图刚重建时输入纹理是新的空纹理, 首帧submit消费的就是它 —— 读回即全默认
+// 冷启动裕度: 历史上输入上传在submit后, 重建后首帧submit消费空纹理(读回全
+// 默认); 上传已前移到onPreFrame后该窗口不再存在, 保留计数仅作重建期缓冲
   if (vkPipeGraph->framesRendered() < 3) {
     return false;
   }

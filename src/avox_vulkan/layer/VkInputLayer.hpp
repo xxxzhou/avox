@@ -80,6 +80,7 @@ class VkInputLayer : public VInputLayer, public VkLayer {
   virtual void onInitVkBuffer() override;
   virtual void onInitPipe() override;
   virtual void onCommand() override;
+  virtual void onPreFrame() override;
   virtual bool onFrame() override;
 
   virtual void onUnInit() override;

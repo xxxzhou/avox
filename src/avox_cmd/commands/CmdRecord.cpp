@@ -110,6 +110,9 @@ Command cmdRecord() {
       {"-novideo", "", ArgType::Boolean, false, "关闭视频轨 (只录音频)", ""});
   cmd.parser.addArg(
       {"-noaudio", "", ArgType::Boolean, false, "关闭音频轨 (只录视频)", ""});
+  // 输出视频编码 (仅 -tc 转码路生效)
+  cmd.parser.addArg({"-vc", "--vcodec", ArgType::String, false,
+                     "输出视频编码: h264/h265 (仅-tc生效, 缺省h265)", ""});
   // IO 方案
   cmd.parser.addArg(
       {"-io", "", ArgType::String, false,
@@ -152,6 +155,20 @@ Command cmdRecord() {
     bool bTranscode = args.getBool("tc");
     bool noVideo = args.getBool("novideo");
     bool noAudio = args.getBool("noaudio");
+    std::string vcodecStr = args.getString("vcodec");
+    for (auto& c : vcodecStr) {
+      c = (char)tolower((unsigned char)c);
+    }
+    VCodecId vcodecId = VCodecId::h265;
+    if (vcodecStr == "h264" || vcodecStr == "avc") {
+      vcodecId = VCodecId::h264;
+    } else if (!vcodecStr.empty() && vcodecStr != "h265" && vcodecStr != "hevc") {
+      fprintf(stderr, "未知 -vc 值: %s (可选 h264/h265)\n", vcodecStr.c_str());
+      return 1;
+    }
+    if (!vcodecStr.empty() && !bTranscode) {
+      fprintf(stderr, "提示: -vc 仅在 -tc 转码录制生效(当前是转封装)\n");
+    }
     std::string ioPlanStr = args.getString("io", "");
     bool hardEncode = args.getBool("hard");
     float speed = args.getFloat("speed", 1.0f);
@@ -218,7 +235,7 @@ Command cmdRecord() {
     recorder->setIoPlan(ioPlan);
     recorder->setMuxerType(MuxerType::ffmpeg);
     // 丢弃视频/音频轨(open前),设none丢弃对应轨
-    recorder->setVideoCodec(noVideo ? VCodecId::none : VCodecId::h265);
+    recorder->setVideoCodec(noVideo ? VCodecId::none : vcodecId);
     recorder->setAudioCodec(noAudio ? ACodecId::none : ACodecId::aac);
     // RTSP拉流倍速(open前经option下发,仅zlmediakit IO生效)
     if (speed != 1.0f) {

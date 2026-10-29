@@ -50,9 +50,10 @@ class VkPipeGraph : public VPipeGraph<VkLayer>, public VkContextRef {
   VkEvent outEvent = VK_NULL_HANDLE;
   VkPipelineStageFlags stageFlags = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
   // 本graph建好后已提交渲染的帧数; onReset 归零。抓帧读回的纹理内容是
-  // 「上一次submit消费的输入」——重建后首帧的输入纹理仍是空的(数据要下一帧
-  // 才被消费), 读回即全默认值(10bit YUV(0,0,0)经BT.2020 offset列 = 纯绿)。
-  // fetchData 据此拒读未流动起来的帧。
+  // 「上一次submit消费的输入」——历史上输入上传在submit后, 重建后首帧
+  // submit消费空纹理(10bit YUV(0,0,0)经BT.2020 offset列 = 纯绿), fetchData
+  // 据此拒读未流动起来的帧; 上传已前移到onPreFrame(submit前), 该窗口不再
+  // 存在, 计数仅作冷启动裕度保留。
   uint64_t renderEpoch = 0;
   // 共享VkDevice的代际, 与VkContext::devEpoch()不一致时需重拉句柄并重建
   uint32_t vkDevEpoch = 0;
