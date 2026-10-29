@@ -5,6 +5,17 @@
 
 namespace avox {
 
+namespace {
+// mka 是 matroska 音频容器, FFmpeg 的 muxer 扩展表只登记了 mkv
+const AVOutputFormat* guessOutputFormat(const std::string& url) {
+  const AVOutputFormat* fmt = av_guess_format(nullptr, url.c_str(), nullptr);
+  if (!fmt && url.size() >= 4 && url.compare(url.size() - 4, 4, ".mka") == 0) {
+    fmt = av_guess_format("matroska", nullptr, nullptr);
+  }
+  return fmt;
+}
+}  // namespace
+
 void regFFMuxer() {
   RegFunc ffIoReg = {"ffmpeg muxer init", []() {
                        MuxerDesc ffDesc = {};
@@ -28,15 +39,19 @@ bool IOMuxerFF::onInit() {
   if (bHaveVideo && videoConfigs.empty()) {
     return false;
   }
-  const AVOutputFormat* avFormat =
-      av_guess_format(nullptr, url.c_str(), nullptr);
+  const AVOutputFormat* avFormat = guessOutputFormat(url);
   AVFormatContext* tempOut = nullptr;
   int32_t ret = 0;
   AVCodecID acodecId = getFFCodecId(aDesc.codecId);
-  // mp4只支持AAC,如果非AAC音频,自动换成mov格式
-  if (avFormat && strcmp(avFormat->name, "mp4") == 0) {
-    if (acodecId != AV_CODEC_ID_AAC) {
-      avFormat = av_guess_format("mov", nullptr, nullptr);
+  // 装不下该音频编码才改道 mov; 按 tag 表判断而不是"非 AAC 一律改",
+  // 否则用户选的 mp4 实际落成 qt 容器, 部分播放器认不出 mp3 音轨
+  if (avFormat && strcmp(avFormat->name, "mp4") == 0 &&
+      acodecId != AV_CODEC_ID_NONE &&
+      (!avFormat->codec_tag ||
+       !av_codec_get_tag(avFormat->codec_tag, acodecId))) {
+    const AVOutputFormat* movFormat = av_guess_format("mov", nullptr, nullptr);
+    if (movFormat) {
+      avFormat = movFormat;
     }
   } else if (!avFormat) {
     // 无扩展名的协议 URL，按协议映射到对应的 muxer 名称
@@ -149,8 +164,8 @@ bool IOMuxerFF::onInit() {
   return true;
 }
 
-// 容器能否容纳该音频编码: 与 onInit 的格式选择同一套规则(mp4 装不下非 AAC 时
-// 改道 mov), 再按容器 tag 表查 —— movenc 写头前正是这一步查不到就
+// 容器能否容纳该音频编码: 与 onInit 同一套判断 —— 只按容器 tag 表查,
+// mp4 能装 mp3 等标准 tag 的编码, 不再整体改道 mov
 bool IOMuxerFF::canStoreAudio(const char* outUrl, ACodecId codecId) {
   if (!outUrl || !outUrl[0]) {
     return true;
@@ -159,14 +174,11 @@ bool IOMuxerFF::canStoreAudio(const char* outUrl, ACodecId codecId) {
   if (ffId == AV_CODEC_ID_NONE) {
     return true;  // 未知编码不预判, 交 onInit 兜底
   }
-  const AVOutputFormat* avFormat = av_guess_format(nullptr, outUrl, nullptr);
+  const AVOutputFormat* avFormat = guessOutputFormat(outUrl);
   if (!avFormat) {
     return true;  // 无扩展名的协议 URL: onInit 另按协议映射 muxer, 此处不设限
   }
-  if (strcmp(avFormat->name, "mp4") == 0 && ffId != AV_CODEC_ID_AAC) {
-    avFormat = av_guess_format("mov", nullptr, nullptr);
-  }
-  if (!avFormat || !avFormat->codec_tag) {
+  if (!avFormat->codec_tag) {
     return true;
   }
   return av_codec_get_tag(avFormat->codec_tag, ffId) != 0;
