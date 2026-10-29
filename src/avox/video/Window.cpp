@@ -133,7 +133,13 @@ void Window::close() {
   onCloseWin();
 #ifdef WIN32
   if (surface) {
-    DestroyWindow(surface);
+    // 任务线程收尾时跨线程 DestroyWindow 会失败, 窗口残留在父窗上盖住下一路;
+    // 投递 WM_CLOSE 交给创建窗口的那个线程自己销毁
+    if (!DestroyWindow(surface)) {
+      // userData 指向即将析构的窗口对象, 先摘掉再让默认过程收尾
+      SetWindowLongPtrW((HWND)surface, GWLP_USERDATA, 0);
+      PostMessageW((HWND)surface, WM_CLOSE, 0, 0);
+    }
     surface = nullptr;
     LOGFLF(LogLevel::info, "surface release");
   }
