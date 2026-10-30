@@ -9,6 +9,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <vector>
 
 #include "../../avox/module/RunTask.hpp"
 #include "../../avox/source/VideoSource.hpp"

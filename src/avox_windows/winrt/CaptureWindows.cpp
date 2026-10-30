@@ -563,6 +563,10 @@ void RTCaptureWindows::onRunTask() {
               outSharedTex->getDx11Texture()->texture.Get();
           // 区域路拷子框(按内容钳位); 全画面路拷整帧, 目标多出的边留黑
           D3D11_BOX srcBox = {};
+          // D3D11_BOX 是 3D 盒: front/back 必须成区间(0..1)。0/0 是空盒,
+          // CopySubresourceRegion 会静默拷 0 字节(整段录屏黑帧)
+          srcBox.front = 0;
+          srcBox.back = 1;
           if (bStrict && bRegion) {
             srcBox.left =
                 std::min<uint32_t>((uint32_t)srcBoxX, (uint32_t)contentW);
@@ -576,6 +580,7 @@ void RTCaptureWindows::onRunTask() {
             srcBox.right = (uint32_t)realW;
             srcBox.bottom = (uint32_t)realH;
           }
+          // 帧 surface -> NT 共享纹理全程 GPU 直拷; 不做 CPU 读回
           context->CopySubresourceRegion(gdiTexture, 0, 0, 0, 0,
                                          frameSurface.get(), 0, &srcBox);
           outSharedTex->signalFence();
