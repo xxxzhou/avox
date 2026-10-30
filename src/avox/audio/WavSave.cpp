@@ -103,7 +103,10 @@ int64_t WavSave::patchHeader() {
   if (!file.is_open()) {
     return dataSize.load();
   }
-  writeWavHeader((uint32_t)std::min<int64_t>(dataSize.load(), kWavDataLimit));
+  const int64_t size = std::min<int64_t>(dataSize.load(), kWavDataLimit);
+  writeWavHeader((uint32_t)size);
+  // 回填头把写指针留在 44, 不恢复到数据末尾, 下一帧会从头部覆盖已写音频
+  file.seekp(44 + size);
   file.flush();
   return dataSize.load();
 }
