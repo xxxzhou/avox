@@ -61,8 +61,11 @@ void BaseSource::addAudioDesc(const ATrackDesc& desc) {
 
 void BaseSource::addSubtitleDesc(int32_t trackId, SCodecId codecId,
                                  const std::string& lang,
-                                 const std::string& title, bool forced) {
-  subtitleTracks.emplace_back(trackId, codecId, lang, title, forced);
+                                 const std::string& title, bool forced,
+                                 const std::string& codecName,
+                                 bool defaultTrack) {
+  subtitleTracks.emplace_back(trackId, codecId, lang, title, forced, codecName,
+                              defaultTrack);
   LOGFLF(LogLevel::info, "add subtitle track: id:", trackId,
          " codec:", (int32_t)codecId, " lang:", lang);
 }

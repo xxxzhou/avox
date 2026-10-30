@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 #include "../codec/VideoEncoderChain.hpp"
 #include "../video/VideoEncoder.hpp"
 
@@ -25,6 +27,8 @@ protected:
   bool bEmittedPacket = false;
   // 候选链试完仍打不开: 只报一次(否则逐帧刷屏)
   bool bWarnedEncDead = false;
+  // 编码器拒收计数(send_frame EAGAIN=输入缓冲满, 帧被静默丢弃), open 前清零
+  std::atomic<int64_t> encoderDropped{0};
 
   // 候选链宿主: 编码器的"打不开"在首帧(onPreEncoder)不在建实例, 故这里只接线,
   // laneInit 恒成功; 真正的换道由 encoderFrame 见 openFailed 时发起
@@ -40,6 +44,8 @@ protected:
 public:
   void setHardEncode(bool bHard);
   bool getHardEncode();
+  // 编码器拒收帧数(send EAGAIN); 高码率/低性能机上非零, 应提示降码率
+  int64_t getEncoderDropped() const { return encoderDropped.load(); }
   void setEncodeParam(const VideoEncodeParam &param) { encodeParam = param; }
   void setVideoDesc(const VTrackDesc &desc);
   void encoderFrame(const YUVFrame &frame);

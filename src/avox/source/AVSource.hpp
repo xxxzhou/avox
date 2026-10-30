@@ -257,6 +257,8 @@ class AVOX_EXPORT AVSource : public BaseSource,
  public:
   // 返回相对起始时间的播放时间，单位毫秒
   virtual int64_t position() const override;
+  // ISourceInfo 1029 追加: 转发 IAVSource::duration(虚派发到 IO 实现, 如 IOParseFF)
+  virtual int64_t durationMs() override;
   void updateConfig(const AvoxPacket& data);
 
  public:

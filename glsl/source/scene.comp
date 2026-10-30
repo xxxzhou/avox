@@ -1,0 +1,117 @@
+#version 450
+
+// 场景合成(录屏包装导出): 背景渐变 → 圆角阴影 → 镜头裁切内容
+// (≥2x 降采样 4-tap tent)→ 圆角 mask → 光标精灵 → 点击涟漪。
+// 输入 0=屏幕内容(yuv2RGBA 后 rgba8, gamma 域), 输入 1=光标图集(CPU RGBA);
+// 依赖 VkLayer 的 sampler 通道(getSampled=true, 硬件双线性)
+
+layout (local_size_x = 16, local_size_y = 16) in;
+layout (binding = 0) uniform sampler2D inScene;
+layout (binding = 1) uniform sampler2D inAtlas;
+layout (binding = 2, rgba8) uniform image2D outTex;
+
+layout (std140, binding = 3) uniform UBO {
+    // outW, outH, radiusPx, shadowRadiusPx
+    vec4 outMisc;
+    // 内容区 x, y, w, h(画布像素)
+    vec4 canvasRect;
+    // shadowAlpha, offX(px), offY(px), 0
+    vec4 shadowMisc;
+    // 背景纵向渐变两色
+    vec4 bgTop;
+    vec4 bgBottom;
+    // 源像素 x, y, w, h(当前镜头)
+    vec4 cropRect;
+    // srcW, srcH, bTent(降采样≥2x), 0
+    vec4 srcMisc;
+    // 光标 画布像素 x, y, w, h
+    vec4 cursorRect;
+    // 图集格子 u0, v0, u1, v1
+    vec4 cursorUv;
+    // cursorAlpha, nowSec, 0, 0
+    vec4 cursorMisc;
+    // 每格: cx, cy(画布px), t0Sec, maxR(px); w<=0 无效
+    vec4 ripples[4];
+} ubo;
+
+const float RIPPLE_LIFE = 0.6;
+
+// 圆角矩形 SDF(像素空间, p 相对中心)
+float roundedBox(vec2 p, vec2 halfSize, float r) {
+    vec2 q = abs(p) - halfSize + r;
+    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+}
+
+// 镜头内容采样: 内容区像素 -> 源 uv
+vec4 sampleContent(vec2 p) {
+    vec2 uvIn = (p - ubo.canvasRect.xy) / max(ubo.canvasRect.zw, vec2(1.0));
+    uvIn = clamp(uvIn, vec2(0.0), vec2(1.0));
+    vec2 srcPx = ubo.cropRect.xy + uvIn * ubo.cropRect.zw;
+    vec2 srcSize = vec2(ubo.srcMisc.x, ubo.srcMisc.y);
+    vec2 suv = srcPx / srcSize;
+    if (ubo.srcMisc.z > 0.5) {
+        // 4-tap tent: 目标像素对应源跨度四角各一次双线性, 抑制闪点
+        vec2 o = 0.25 * (ubo.cropRect.zw / ubo.canvasRect.zw) / srcSize;
+        return (texture(inScene, suv + vec2(o.x, o.y)) +
+                texture(inScene, suv + vec2(-o.x, o.y)) +
+                texture(inScene, suv + vec2(o.x, -o.y)) +
+                texture(inScene, suv + vec2(-o.x, -o.y))) * 0.25;
+    }
+    return texture(inScene, suv);
+}
+
+void main() {
+    uvec3 gid = gl_GlobalInvocationID;
+    if (gid.x >= uint(ubo.outMisc.x) || gid.y >= uint(ubo.outMisc.y)) {
+        return;
+    }
+    ivec2 pix = ivec2(gid.xy);
+    vec2 p = vec2(gid.xy) + 0.5;
+    // 背景: 纵向渐变
+    float t = clamp(p.y / max(ubo.outMisc.y, 1.0), 0.0, 1.0);
+    vec3 col = mix(ubo.bgTop.rgb, ubo.bgBottom.rgb, t);
+    // 内容区圆角 + 阴影(SDF 近似)
+    vec2 cC = ubo.canvasRect.xy + ubo.canvasRect.zw * 0.5;
+    vec2 cH = ubo.canvasRect.zw * 0.5;
+    float radius = max(ubo.outMisc.z, 0.0);
+    float d = roundedBox(p - cC, cH, radius);
+    if (ubo.outMisc.w > 0.0 && ubo.shadowMisc.x > 0.0) {
+        float ds = roundedBox(p - cC - vec2(ubo.shadowMisc.y, ubo.shadowMisc.z),
+                              cH, radius);
+        // 投影: 影形内(ds<=0)全量, 形外 shadowRadius 像素淡出
+        float sh = (1.0 - smoothstep(0.0, ubo.outMisc.w, ds)) * ubo.shadowMisc.x;
+        col = mix(col, vec3(0.0), clamp(sh, 0.0, 1.0));
+    }
+    // 内容 + 圆角 mask(0.75px 软边)
+    if (d <= 0.75) {
+        vec4 c = sampleContent(p);
+        float a = 1.0 - smoothstep(-0.75, 0.75, d);
+        col = mix(col, c.rgb, a);
+    }
+    // 光标精灵(画布空间, 只画在内容区内)
+    if (ubo.cursorMisc.x > 0.5 && d <= 0.0) {
+        vec2 cuv = mix(ubo.cursorUv.xy, ubo.cursorUv.zw,
+                       (p - ubo.cursorRect.xy) / max(ubo.cursorRect.zw, vec2(1.0)));
+        cuv = clamp(cuv, ubo.cursorUv.xy, ubo.cursorUv.zw);
+        vec4 cu = texture(inAtlas, cuv);
+        col = mix(col, cu.rgb, cu.a * ubo.cursorMisc.x);
+    }
+    // 点击涟漪: 0.6s 扩散圆环
+    for (int i = 0; i < 4; i++) {
+        vec4 rp = ubo.ripples[i];
+        if (rp.w <= 0.0) {
+            continue;
+        }
+        float age = ubo.cursorMisc.y - rp.z;
+        if (age < 0.0 || age > RIPPLE_LIFE) {
+            continue;
+        }
+        float prog = age / RIPPLE_LIFE;
+        float ringR = prog * rp.w;
+        float dist = length(p - rp.xy);
+        float band = 1.0 - smoothstep(0.0, 6.0, abs(dist - ringR));
+        float fade = (1.0 - prog);
+        col = mix(col, vec3(1.0), band * fade * fade * 0.5 * step(d, 0.0));
+    }
+    imageStore(outTex, pix, vec4(col, 1.0));
+}

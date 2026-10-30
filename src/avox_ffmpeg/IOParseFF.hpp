@@ -169,6 +169,9 @@ public:
   virtual int64_t duration() const override;
   // 返回进度，0~1
   virtual double progress() const override;
+  // ISourceInfo 1029 追加: 容器总码率/格式名(fmtCtx 可用时)
+  virtual int64_t bitRate() override;
+  virtual const char* formatName() override;
 
 public:
   virtual bool vaild() { return running(); }

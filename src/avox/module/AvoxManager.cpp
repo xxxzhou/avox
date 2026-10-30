@@ -6,6 +6,10 @@
 namespace avox {
 
 extern void regDeviceRawSource();
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+extern void regMacCaptureDevice();
+#endif
 // 静态链接可能忽略注册那种方式(因为注册的类很多没被别的CPP文件调用)
 #ifdef AVOX_ENABLE_FAAC
 // 多平台集成FAAC的音频编码方案
@@ -190,6 +194,9 @@ void AvoxManager::init() {
   regIOSCameraSource();
   regIOSAudioRender();
   regIOSAudioSource();
+#if TARGET_OS_MAC && !TARGET_OS_IPHONE
+  regMacCaptureDevice();
+#endif
 #endif
 #ifdef __ONLY_LINUX__
 #ifdef AVOX_ENABLE_FFMPEG

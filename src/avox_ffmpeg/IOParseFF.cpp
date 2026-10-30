@@ -1298,7 +1298,9 @@ void IOParseFF::onRunTask() {
         title = e->value ? e->value : "";
       }
       addSubtitleDesc(st->index, subCodec, lang, title,
-                      (st->disposition & AV_DISPOSITION_FORCED) != 0);
+                      (st->disposition & AV_DISPOSITION_FORCED) != 0,
+                      avcodec_get_name(st->codecpar->codec_id),
+                      (st->disposition & AV_DISPOSITION_DEFAULT) != 0);
     }
   }
 // 禁用的流打 AVDISCARD_ALL: 带采样索引的 demuxer(mov/mp4) 对 discard 流不再
@@ -2056,6 +2058,22 @@ int64_t IOParseFF::duration() const {
   }
   // 转换为毫秒（同时避免溢出）
   return duration_us / (AV_TIME_BASE / 1000);
+}
+
+// ISourceInfo 1029 追加: 容器总码率/格式名(实现在 fmtCtx 可用时)
+int64_t IOParseFF::bitRate() {
+  if (!fmtCtx) {
+    return 0;
+  }
+  return fmtCtx->bit_rate > 0 ? fmtCtx->bit_rate : 0;
+}
+
+const char* IOParseFF::formatName() {
+  if (!fmtCtx || !fmtCtx->iformat || !fmtCtx->iformat->name) {
+    return "";
+  }
+  // iformat->name 是 demuxer 静态字符串, 进程内稳定
+  return fmtCtx->iformat->name;
 }
 
 double IOParseFF::progress() const {

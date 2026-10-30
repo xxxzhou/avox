@@ -42,7 +42,11 @@ class OptionLink : public IOptionOb {
   JsonOption* option = nullptr;
 
  public:
+  // 链到上游配置树: 摘掉旧链(重链安全), 全量重放已有键给 onOptionChange。
+  // 遍历 Json 不加锁, 只能在停止态、由同一控制线程调用
   void linkOption(IOption* context);
+  // 与上游解绑(析构兜底); 持有上游指针的组件(如设备源比会话活得久)必须显式调
+  void unlinkOption();
   JsonOption* getLink();
 };
 

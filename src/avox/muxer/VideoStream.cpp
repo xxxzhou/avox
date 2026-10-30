@@ -84,7 +84,13 @@ void VideoStream::encodeFrameImpl(const TFrame& frame) {
   }
   // HighClock clock = {};
   const DecodeResult result = encoder()->encode(frame);
-  // log(LogLevel::debug, "encoder frame:", clock.recordDelta());
+  // log(LogLevel::info, "encoder frame:", clock.recordDelta());
+  // send_frame EAGAIN = 编码器输入缓冲满, 帧被拒(高码率/低性能机暴露面);
+  // 上层统计暴露, 必要时再上有界重试
+  if (result == DecodeResult::dataNoReady) {
+    encoderDropped++;
+    return;
+  }
   if (result != DecodeResult::openFailed) {
     return;
   }

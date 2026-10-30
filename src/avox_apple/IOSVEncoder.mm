@@ -176,9 +176,13 @@ DecodeResult IOSVEncoder::onPreEncoder() {
     setSessionProperty(compressionSession, kVTCompressionPropertyKey_ProfileLevel,
                        kVTProfileLevel_HEVC_Main_AutoLevel);
   }
-  // B 帧重排: 录制允许(出帧回调按 VT 的解码时间填 dts, 下游 muxer 都按 dts 落盘)
+  // B 帧重排: 一律关。record 曾开(画质取向), 但 macOS 26 的 VT 对重排队列给
+  // 的 decodeTimeStamp 是"输出槽位×帧距"而非真解码序 —— B 帧包 dts 落到 pts
+  // 之后(如 pts=33/dts=100), mp4 封装按非单调拒收 EINVAL, 30fps 导出实际丢半
+  // (1030 muxdbg/vtdbg 双端插桩定谳)。录制管线与 Windows MF 车道(无 B)对齐;
+  // 要 B 帧画质得先在封装侧重导 dts, 另立工程
   setBoolProperty(compressionSession,
-                  kVTCompressionPropertyKey_AllowFrameReordering, bRec);
+                  kVTCompressionPropertyKey_AllowFrameReordering, false);
   // 预设: VT 只有"是否把速度排在质量前面"这一个开关, 均衡档即不下发(取系统缺省)
   const EncodePreset preset = getPreset();
   if (preset != EncodePreset::inherit &&

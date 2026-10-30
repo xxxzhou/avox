@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 #include "../source/RawSource.hpp"
 #include "../video/VideoEncodeParams.hpp"
 #include "MediaMuxer.hpp"
@@ -40,11 +42,20 @@ class RawMuxer : public MediaMuxer {
   // 连续尺寸不符帧数: 单帧瞬态(换图/首帧)不算, 持续不符才判定渲染腿没缩放
   int32_t sizeMismatchFrames = 0;
   bool bWarnedSizeMismatch = false;
+  // 丢弃计数(采集会话统计用): 尺寸守卫丢/帧率门丢/编码器拒收(send EAGAIN)
+  std::atomic<int64_t> sizeDropped{0};
+  std::atomic<int64_t> gateDropped{0};
   // 帧与声明输出尺寸是否一致(不符则丢, 防流头/编码器描述与实际帧错位)
   bool checkFrameSize(int32_t width, int32_t height);
 
  public:
   bool getHardEncode();
+  // 丢弃计数 getters(实例生命周期累计, close 不清零 —— session.json 在 close 后读)
+  int64_t getDroppedBySize() const { return sizeDropped.load(); }
+  int64_t getDroppedByFpsGate() const { return gateDropped.load(); }
+  int64_t getEncoderDropped() const {
+    return videoStream ? videoStream->getEncoderDropped() : 0;
+  }
   virtual void setHardEncode(bool bHard) override;
   // 视频编码参数(码控模式/质量/码率/预设/profile/关键帧间隔), open 前设置生效
   void setEncodeParam(const VideoEncodeParam& param);

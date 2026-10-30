@@ -1,5 +1,8 @@
 #include "VideoEncodeParams.hpp"
 
+#include <cstdio>
+#include <cstdlib>
+
 namespace avox {
 
 int32_t getAutoVideoBitrate(const VideoDesc& desc, VCodecId codecId) {
@@ -61,8 +64,10 @@ bool recordFpsGate(int64_t ptsMs, FpsGateState& state, double maxFps) {
     return true;
   }
   state.lastPtsMs = ptsMs;
-  // 半毫秒容差: pts 按整数毫秒进, 33.33 的目标不该把 33 判丢
-  if ((double)ptsMs + 0.5 < state.nextPtsMs) {
+  // 容差 1ms: 整数毫秒 pts 网格与浮点周期累积存在 <1ms 的拍频差(0.5ms 会
+  // 撞上 x.67 相位周期性丢帧, CFR 源每秒丢数帧); 真超频源(pts 差 <周期-1ms)
+  // 不受影响
+  if ((double)ptsMs + 1.0 < state.nextPtsMs) {
     return false;
   }
   state.nextPtsMs += periodMs;

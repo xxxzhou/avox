@@ -35,4 +35,11 @@ class AVOX_EXPORT VideoSource : public TDeviceSource<IVideoSource, IVideoSourceO
   bool checkSizeChanged(const YUVFormat& format);
 };
 
+// 视频源占用登记(进程级, 跨模块): 采集会话 add 时打标/stop 时清除,
+// 平台设备管理器刷新时对占用中的源对象 pin 住不替换
+// (同一源被两个会话同时 open 会互相覆盖内部采集资源, 必须拒绝)
+AVOX_EXPORT bool markVideoSourceBusy(void* source);
+AVOX_EXPORT void unmarkVideoSourceBusy(void* source);
+AVOX_EXPORT bool isVideoSourceBusy(void* source);
+
 }

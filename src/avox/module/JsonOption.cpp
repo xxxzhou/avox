@@ -50,11 +50,23 @@ OptionLink::~OptionLink() {
   }
 }
 
-void OptionLink::linkOption(IOption* context) {
-  option = (JsonOption*)context;
+void OptionLink::unlinkOption() {
   if (option) {
-    option->addObserver(this);
+    option->removeObserver(this);
+    option = nullptr;
   }
+}
+
+void OptionLink::linkOption(IOption* context) {
+  // 重链先摘旧链: 否则旧树仍持观察者, 之后旧树任何 set 都打到本对象
+  unlinkOption();
+  // 类型/空检查: 盲转后解引用会在传错类型或 nullptr 时崩
+  option = dynamic_cast<JsonOption*>(context);
+  if (!option) {
+    LOGFLF(LogLevel::warn, "linkOption invalid context, not JsonOption");
+    return;
+  }
+  option->addObserver(this);
   // 选项里的值发一次给当前对象,让对象只需要处理onOptionChange
   Json& srcJson = option->getOption();
   const Json::JsonObject* srcObject = srcJson.get<Json::JsonObject*>();

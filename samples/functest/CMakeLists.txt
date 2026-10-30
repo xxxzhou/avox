@@ -13,6 +13,13 @@ if(MSVC)
 endif()
 generatetest(recordertest)
 generatetest(transcoderecordertest)
+# 采集会话探针: ICaptureSession 录主显示器(60fps/无光标/区域裁剪)+双音轨分轨 WAV
+generatetest(capturetest)
+# 编辑场景导出探针(录屏方案 P1-a): 静态样式/X1 帧率门/X2 尺寸契约负例
+generatetest(scenetest)
+if(MSVC)
+    target_compile_options(scenetest PRIVATE /utf-8)
+endif()
 # 离线超分转码探针: 转码录制器 + Real-ESRGAN 逐帧出增强 mp4 (倍率/耗时表回写方案 P0-T1)
 generatetest(enhancetest dbghelp)
 if(MSVC)

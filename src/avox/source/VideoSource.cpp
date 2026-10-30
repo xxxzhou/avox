@@ -1,8 +1,32 @@
 #include "VideoSource.hpp"
 
+#include <mutex>
+#include <set>
+
 #include "../module/LogHelper.hpp"
 
 namespace avox {
+
+namespace {
+// 进程级占用表(VideoSource.hpp 契约): 会话打标, 平台刷新 pin 用
+std::mutex g_busyMtx;
+std::set<void*> g_busySources;
+}  // namespace
+
+bool markVideoSourceBusy(void* source) {
+  std::lock_guard<std::mutex> lock(g_busyMtx);
+  return g_busySources.insert(source).second;
+}
+
+void unmarkVideoSourceBusy(void* source) {
+  std::lock_guard<std::mutex> lock(g_busyMtx);
+  g_busySources.erase(source);
+}
+
+bool isVideoSourceBusy(void* source) {
+  std::lock_guard<std::mutex> lock(g_busyMtx);
+  return g_busySources.count(source) > 0;
+}
 
 void VideoSource::onFrame(const YUVFrame& frame) {
   checkSizeChanged(frame.format);

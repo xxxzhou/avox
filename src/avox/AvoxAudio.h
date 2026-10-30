@@ -111,6 +111,13 @@ class IWavSave {
   virtual void addFrame(const AvoxData& raw) = 0;
   // 关闭文件并回填 WAV 头中的文件大小
   virtual void close() = 0;
+  // ⚠️ 新虚函数只追加在接口末尾(往中间插会移动既有槽位, 旧二进制静默调错)
+  // 回填头长度字段(录制中周期调用, 崩溃恢复); 返回已写入数据字节数。
+  // open 时头已占位, 不 patch/close 也是可播文件
+  virtual int64_t patchHeader() { return 0; }
+  // 已写入数据字节数
+  virtual int64_t getDataBytes() const { return 0; }
+  virtual bool bOpen() const { return false; }
 };
 
 class IAudioRender {

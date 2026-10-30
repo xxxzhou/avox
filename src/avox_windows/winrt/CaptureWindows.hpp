@@ -33,6 +33,17 @@ class WinCaptureBase : public VideoSource, public Dx11Context {
   WinCaptureBase() = default;
   virtual ~WinCaptureBase() = default;
 
+ public:
+  // IVideoSource: 采集策略(open 前设置)。未调用的旧路径保持存量行为(30fps/带光标)
+  void setCaptureParam(const CaptureVideoParam& param) override {
+    captureParam = param;
+    bCaptureParamSet = true;
+  }
+  // 采集节拍跳过的槽位数(慢帧累计, 会话统计用)
+  int64_t getMissedTicks() const { return missedTicks.load(); }
+  // 光标实际状态: disabled(已关)/baked(未能关或默认)/absent(GDI 本就不带)
+  const std::string& getCaptureCursorMode() const { return cursorMode; }
+
  protected:
   HWND hwnd = nullptr;
   HMONITOR hmon = nullptr;  // 显示器目标(与 hwnd 互斥)
@@ -42,6 +53,10 @@ class WinCaptureBase : public VideoSource, public Dx11Context {
   ImageFormat frameFormat = {};
   std::string windowClass;   // Win32 窗口类名 (-l 诊断: UWP frame/content 区分)
   std::string processName;   // 拥有窗口的进程 exe (-l 诊断用)
+  CaptureVideoParam captureParam = {};
+  bool bCaptureParamSet = false;
+  std::atomic<int64_t> missedTicks{0};
+  std::string cursorMode = "baked";
 
  public:
   void setWindow(HWND hwnd_);
@@ -106,8 +121,10 @@ class CaptureWindowsMgr : public VideoManager<WinCaptureBase> {
   virtual void onRefreshDevices() override;
 
  public:
-  void addWindow(HWND hwnd);
-  void addMonitor(HMONITOR hmon, int32_t index);
+  // 枚举进 out(刷新时先进临时表再原子换 devices, 见 onRefreshDevices)
+  void addWindow(HWND hwnd, std::vector<std::shared_ptr<WinCaptureBase>>& out);
+  void addMonitor(HMONITOR hmon, int32_t index,
+                  std::vector<std::shared_ptr<WinCaptureBase>>& out);
 };
 
 }

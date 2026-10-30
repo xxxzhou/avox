@@ -15,6 +15,7 @@
 #include "../layer/VkPqUpsampleLayer.hpp"
 #include "../layer/VkRGBA2YUVLayer.hpp"
 #include "../layer/VkResizeLayer.hpp"
+#include "../layer/VkSceneLayer.hpp"
 #include "../layer/VkTransposeLayer.hpp"
 #include "../layer/VkVrLayer.hpp"
 #include "../layer/VkYUV2RGBALayer.hpp"
@@ -94,6 +95,22 @@ class VkVideoRender : public VideoRender, public IVOutputLayerOb {
   bool bVrViewDirty = false;
   VrLayerGeom vrGeom = {};
   VKTNodePtr<VkVrLayer> vrLayer = nullptr;
+  // 编辑场景(录屏包装): 与 resize 互替, 输出画布尺寸; 挂载位 yuv2RGBA 之后。
+  // 与 forceHDR 互斥(attach 拒绝), 与 VR 并存时场景优先(契约上互斥)
+  bool bEnableScene = false;
+  IEditorScene* editorScene = nullptr;  // 不持有, attach/detach 管生命周期
+  // 场景层成员与 editorScene 生命周期由 sceneMtx 保护: detach 返回后宿主即可
+  // destroy 场景(公开契约), 故 render 求值也必须持锁, 不能与 detach 交叠
+  mutable std::mutex sceneMtx;
+  VKTNodePtr<VkInputLayer> sceneAtlasInput = nullptr;
+  VKTNodePtr<VkSceneLayer> sceneLayer = nullptr;
+  // 场景建图拒绝原因(1=画布无效, 2=画布与声明尺寸不一致): 建图前校验失败时
+  // bResetFlag 保持置位每帧重试, 此值防刷日志; 仅渲染线程读写, 建图成功清 0
+  int32_t sceneReject = 0;
+  // 当前帧 pts(SurfaceRenderVk::render 推入), 渲染前 evaluate 用
+  int64_t scenePts = -1;
+  // 无图集时的 1x1 透明兜底(统一描述符, cursorAlpha=0 不采样)
+  std::unique_ptr<ImageBuffer> sceneTinyAtlas = nullptr;
   // 软编一般要求输出为YUV420P格式,硬编是NV12格式
   // IOutFrame里的bOutCpu用来控制是否输出YUV420P格式的CPU资源
   VKTNodePtr<VkRGBA2YUVLayer> rgba2YUV = nullptr;
@@ -155,11 +172,20 @@ class VkVideoRender : public VideoRender, public IVOutputLayerOb {
   }
   // 当前 HDR 输出模式(SurfaceRenderEvent hdr 位用)
   HdrMode getHdrMode() const { return hdrMode; }
-  // 当前拓扑是否支持 resize 层: HDR 直通(PQ 原样落帧)与 VR(视口自带尺寸)
-  // 不挂 resize, 与 vaildAndInitGraph 的挂载条件同源
+  // 当前拓扑是否支持 resize 层: HDR 直通(PQ 原样落帧)、VR(视口自带尺寸)与
+  // 场景(自带画布)不挂 resize, 与 vaildAndInitGraph 的挂载条件同源
   bool canSizeChange() const override {
-    return hdrMode != HdrMode::forceHDR && !bEnableVr;
+    std::lock_guard<std::mutex> lock(sceneMtx);
+    return hdrMode != HdrMode::forceHDR && !bEnableVr && !bEnableScene;
   }
+  // 编辑场景挂载: open 前或首帧前; forceHDR 态拒绝(返回 false)。
+  // 画布尺寸契约由 setCanvas 定, setVideoDesc 不一致在建图时失败
+  bool attachScene(IEditorScene* scene);
+  void detachScene();
+  // 场景画布尺寸(未挂场景返回 false): 录制链尺寸守卫的权威来源
+  bool sceneCanvas(int32_t& w, int32_t& h);
+  // 当前帧 pts(渲染线程 render 入口推入, 供场景求值)
+  void pushSceneTime(int64_t ptsMs) { scenePts = ptsMs; }
   // 录制改输出尺寸前保存/结束后恢复播放侧缩放状态(enableSizeScale 与
   // enableSizeChange 共用 bUseNewSize/sizeScale/userWidth/userHeight)
   void saveSizeState(bool& bUse, float& scale, int32_t& w, int32_t& h) const {

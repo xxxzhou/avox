@@ -437,6 +437,62 @@ void VkVideoRender::enableVr(const VrParamet& paramet) {
   bResetFlag = true;
 }
 
+bool VkVideoRender::attachScene(IEditorScene* scene) {
+  if (!scene) {
+    return false;
+  }
+  if (hdrMode == HdrMode::forceHDR) {
+    // 直通拓扑裁掉全部可选层, 场景挂上去也会静默消失(录屏方案 §6.4)
+    LOGFLF(LogLevel::warn, "attachScene rejected: forceHDR active");
+    return false;
+  }
+  int32_t w = 0;
+  int32_t h = 0;
+  if (auto* src = dynamic_cast<SceneSource*>(scene)) {
+    src->canvas(w, h);
+  }
+  if (w <= 0 || h <= 0) {
+    LOGFLF(LogLevel::error, "attachScene rejected: canvas not set");
+    return false;
+  }
+  std::lock_guard<std::mutex> lock(sceneMtx);
+  if (bEnableScene && editorScene == scene) {
+    return true;
+  }
+  editorScene = scene;
+  bEnableScene = true;
+  bResetFlag = true;
+  LOGFLF(LogLevel::info, "editor scene attached, canvas:", w, "x", h);
+  return true;
+}
+
+void VkVideoRender::detachScene() {
+  std::lock_guard<std::mutex> lock(sceneMtx);
+  if (!bEnableScene && !editorScene && !sceneLayer) {
+    return;
+  }
+  editorScene = nullptr;
+  bEnableScene = false;
+  // 立即摘下场景层而不是等下一帧重建: 契约是 detach 返回后宿主即可 destroy
+  // 场景, 只置 bResetFlag 会留窗口(期间 render 仍会 evaluate 旧场景)
+  sceneLayer = nullptr;
+  sceneAtlasInput = nullptr;
+  bResetFlag = true;
+}
+
+bool VkVideoRender::sceneCanvas(int32_t& w, int32_t& h) {
+  w = 0;
+  h = 0;
+  std::lock_guard<std::mutex> lock(sceneMtx);
+  if (!bEnableScene || !editorScene) {
+    return false;
+  }
+  if (auto* src = dynamic_cast<SceneSource*>(editorScene)) {
+    src->canvas(w, h);
+  }
+  return w > 0 && h > 0;
+}
+
 void VkVideoRender::disableVr() {
   std::lock_guard<std::mutex> lock(vrViewMutex);
   if (!bEnableVr) {
@@ -493,13 +549,22 @@ void VkVideoRender::setVrStereoStrength(float strengthDeg) {
 }
 
 vec2i VkVideoRender::getOutSize() {
-  // 默认输出=显示方向下的输入尺寸(90/270 交换宽高); 仍是预算值, 真相以
+  // 默认输出=显示方向下的输入尺寸(90/270 交换编码宽高); 仍是预算值, 真相以
   // 帧回调实际图像为准
   vec2i size = {imageFormat.width, imageFormat.height};
   if (bSwapInputSize()) {
     size = {imageFormat.height, imageFormat.width};
   }
-  if (bEnableVr) {
+  if (bEnableScene && editorScene) {
+    int32_t w = 0;
+    int32_t h = 0;
+    if (auto* src = dynamic_cast<SceneSource*>(editorScene)) {
+      src->canvas(w, h);
+    }
+    if (w > 0 && h > 0) {
+      size = {w, h};
+    }
+  } else if (bEnableVr) {
     size = {vrGeom.outWidth, vrGeom.outHeight};
   } else if (bUseNewSize) {
     size = {resizeParamet.newWidth, resizeParamet.newHeight};
@@ -552,11 +617,51 @@ bool VkVideoRender::vaildAndInitGraph() {
     onParametUpdate();
     return true;
   }
+  // 场景前置校验(X2 尺寸契约): 放建图之前 —— 失败直接返回, 不产生半成品图,
+  // 也不把 bRebuilding 粘成 true(那会让 getOutputLayer 恒空、宿主改对画布也
+  // 重试不回来)。bResetFlag 保持置位, 每帧重试到参数成立; 日志只在原因变化时打
+  if (bEnableScene && hdrMode != HdrMode::forceHDR) {
+    SceneSource* sceneSrc = nullptr;
+    int32_t scW = 0;
+    int32_t scH = 0;
+    {
+      std::lock_guard<std::mutex> lock(sceneMtx);
+      if (editorScene) {
+        sceneSrc = dynamic_cast<SceneSource*>(editorScene);
+        if (sceneSrc) {
+          sceneSrc->canvas(scW, scH);
+        }
+      }
+    }
+    if (!sceneSrc || scW <= 0 || scH <= 0) {
+      if (sceneReject != 1) {
+        LOGFLF(LogLevel::error, "scene canvas invalid, graph aborted");
+        sceneReject = 1;
+      }
+      return false;
+    }
+    if (bUseNewSize && sizeScale == 1.0f &&
+        (userWidth != scW || userHeight != scH)) {
+      if (sceneReject != 2) {
+        LOGFLF(LogLevel::error, "scene canvas:", scW, "x", scH,
+               " != declared out:", userWidth, "x", userHeight);
+        sceneReject = 2;
+      }
+      return false;
+    }
+  }
   // 先消费再重建: 重建耗时数十毫秒, 期间宿主线程新置的请求留到下一帧,
   // 不会被这次重建的收尾清掉(末尾清零会吞请求, 表现为"开关不生效")
   bResetFlag = false;
   // 重建窗口开始: getOutputLayer/getInputLayer 对外部返回空, 直至重建完成
   bRebuilding.store(true);
+  {
+    // 场景层随旧图失效: 旧节点里绑的是宿主 SceneSource 裸指针, 不摘掉的话重建
+    // 后 render 仍会 evaluate(见 render*Frame), detach 后场景已释放即野指针
+    std::lock_guard<std::mutex> lock(sceneMtx);
+    sceneLayer = nullptr;
+    sceneAtlasInput = nullptr;
+  }
   VkContext* ctx = nullptr;
   graph = std::make_unique<VkPipeGraph>(ctx);
   inputLayer = graph->addNode<VkInputLayer>();
@@ -636,6 +741,42 @@ bool VkVideoRender::vaildAndInitGraph() {
     if (bEnableFSR && !bPt) {
       fsrLayer = graph->addNode<VkFSRLayer>();
       fsrLayer->get()->updateParamet(fsrParamet);
+    }
+    if (bEnableScene) {
+      // 画布有效性/尺寸契约已在建图前校验过; 此处只挂节点。若期间被 detach,
+      // 这次不挂(下帧按新状态重建)
+      std::lock_guard<std::mutex> lock(sceneMtx);
+      SceneSource* sceneSrc =
+          editorScene ? dynamic_cast<SceneSource*>(editorScene) : nullptr;
+      int32_t scW = 0;
+      int32_t scH = 0;
+      if (sceneSrc) {
+        sceneSrc->canvas(scW, scH);
+      }
+      if (sceneSrc && scW > 0 && scH > 0) {
+        // 场景建图: 数据源+画布; 图集输入统一接(无图集给 1x1 透明兜底)
+        sceneAtlasInput = graph->addNode<VkInputLayer>();
+        IImageBuffer* atlas = sceneSrc->getAtlas();
+        if (!atlas) {
+          if (!sceneTinyAtlas) {
+            sceneTinyAtlas = std::make_unique<ImageBuffer>();
+            ImageFormat fmt = {};
+            fmt.width = 1;
+            fmt.height = 1;
+            fmt.imageType = ImageType::rgba8;
+            sceneTinyAtlas->setImageFormat(fmt);
+            if (sceneTinyAtlas->getPointer()) {
+              memset(sceneTinyAtlas->getPointer(), 0,
+                     sceneTinyAtlas->getBufferSize());
+            }
+          }
+          atlas = sceneTinyAtlas.get();
+        }
+        sceneAtlasInput->get()->inputCpuData(atlas, true);
+        sceneLayer = graph->addNode<VkSceneLayer>();
+        sceneLayer->get()->bindScene(sceneSrc, scW, scH);
+        LOGFLF(LogLevel::info, "scene layer on, canvas:", scW, "x", scH);
+      }
     }
     if (bEnableVr && !bPt) {
       vrLayer = graph->addNode<VkVrLayer>();
@@ -729,7 +870,11 @@ bool VkVideoRender::vaildAndInitGraph() {
   if (bChainF) {
     outNode = outNode->addLine(pqUpsampleLayer);
   }
-  if (bEnableVr && !bPt) {
+  if (sceneLayer) {
+    // 场景自带画布尺寸, 替代 resize; 图集接第二输入槽
+    outNode = outNode->addLine(sceneLayer);
+    sceneAtlasInput->addLine(sceneLayer, 0, 1);
+  } else if (bEnableVr && !bPt) {
     // VR投影自带视口尺寸, 替代 resize; 后续画质层作用于透视后的视口图
     // (= 输出端增强, 上采样发软由 FSR/Anime4K 在视口分辨率补偿)
     outNode = outNode->addLine(vrLayer);
@@ -804,7 +949,7 @@ bool VkVideoRender::vaildAndInitGraph() {
     outNode->addLine(rgba2YUV);
   }
 // enableImage: 每帧把处理后的 RGBA 经 GPU 缩放到 imageOutFormat
-// 后零拷贝写入用户 buf 不设 observer (区别于 YUV 的 onCpuData), 用
+// 后零拷贝写入用户 buf 不设 observer (区别于 YUV 的 onCpuData), 用renderer->enableImage(outBuffer.get());
   if (bEnableImage && imageOutBuffer && !bPt) {
     imageResizeLayer = graph->addNode<VkResizeLayer>();
     ReSizeParamet imgResize = {};
@@ -823,6 +968,8 @@ bool VkVideoRender::vaildAndInitGraph() {
   // surface||!bOutCpuYuv 裁剪, 离屏+cpuYuv(录制/yuvout/截图)时未连边,
   // fetchFrame 读到空纹理 → vk 车道截图恒败(shot-vk 已知取舍的根因)
   outNode->addLine(outputLayer);
+  // 建图成功: 场景拒绝记录清掉, 后续再失败重新打日志
+  sceneReject = 0;
   bRebuilding.store(false);
   return true;
 }
@@ -830,6 +977,12 @@ bool VkVideoRender::vaildAndInitGraph() {
 void VkVideoRender::releaseGraph() {
   // 图已销毁, 后续外部 getOutputLayer/getInputLayer 返回空直至下次重建
   bRebuilding.store(true);
+  {
+    // 场景层随图失效(旧节点绑的是宿主裸指针, 不能在无图状态下再被求值)
+    std::lock_guard<std::mutex> lock(sceneMtx);
+    sceneLayer = nullptr;
+    sceneAtlasInput = nullptr;
+  }
 #ifdef AVOX_ENABLE_FREETYPE
   fontRender->setFontLayer(nullptr);
 #endif
@@ -859,6 +1012,14 @@ void VkVideoRender::renderGpuFrame(IRenderContext* context) {
   // HighClock clock = {};
   // log(LogLevel::info, "vk render cost 1:", clock.recordLast());
   inputLayer->get()->inputGpuData(context);
+  {
+    // 与 detachScene 持同一把锁: detach 返回后宿主即可销毁场景, 这里保证
+    // 不会在场景释放后还在 evaluate
+    std::lock_guard<std::mutex> lock(sceneMtx);
+    if (sceneLayer) {
+      sceneLayer->get()->evaluate(scenePts);
+    }
+  }
   // log(LogLevel::info, "vk render cost 2:", clock.recordLast());
   graph->run();
   // log(LogLevel::info, "vk render cost 3:", clock.recordLast());
@@ -869,6 +1030,13 @@ void VkVideoRender::renderCpuFrame(const YUVFrame& frame) {
     yuv2RGBA->get()->updateParamet(frame.format.type);
   }
   inputLayer->get()->inputCpuData(frame, false);
+  {
+    std::lock_guard<std::mutex> lock(sceneMtx);
+    if (sceneLayer) {
+      scenePts = frame.pts;
+      sceneLayer->get()->evaluate(scenePts);
+    }
+  }
   graph->run();
 }
 
@@ -879,6 +1047,12 @@ void VkVideoRender::renderCpuFrame(IImageBuffer* buffer) {
   // 直接输入IImageBuffer到VkInputLayer(rgba8/bgra8等格式)
   // VkInputLayer会自动处理bgra8/argb8/rgb8 -> rgba8转换
   inputLayer->get()->inputCpuData(buffer, true);
+  {
+    std::lock_guard<std::mutex> lock(sceneMtx);
+    if (sceneLayer) {
+      sceneLayer->get()->evaluate(scenePts);
+    }
+  }
   graph->run();
 }
 

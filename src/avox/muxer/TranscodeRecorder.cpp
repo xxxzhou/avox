@@ -6,6 +6,9 @@
 #include "../module/LogHelper.hpp"
 #include "../module/OptionKey.hpp"
 #include "RecordVideoFilter.hpp"
+#ifdef AVOX_ENABLE_VULKAN
+#include "avox_vulkan/vulkan/VkVideoRender.hpp"
+#endif
 
 namespace avox {
 
@@ -347,6 +350,45 @@ void TranscodeRecorder::onReady() {
       }
     }
     if (muxer) {
+      // X1(录屏方案 §7.1): 先声明输出规格再接流头 —— RawMuxer 的帧率门读
+      // outVideoDesc.fps, 之前从不调用导致门恒旁路(60→30 导出实际仍 60fps)。
+      // 同时启用尺寸守卫: 声明尺寸须与渲染输出一致。声明尺寸按显示方向:
+      // 显式 outVideo 即宿主口径; 无声明时源编码尺寸对 90/270 换向
+      VideoDesc gateDesc = vdesc.desc;
+      // 场景挂载时渲染腿输出=画布(场景替代 resize), 尺寸守卫须按画布声明
+      bool bSceneOut = false;
+#ifdef AVOX_ENABLE_VULKAN
+      if (auto* vk = getVkVideoRender(surfaceRender.get())) {
+        int32_t sceneW = 0;
+        int32_t sceneH = 0;
+        if (vk->sceneCanvas(sceneW, sceneH)) {
+          gateDesc.width = sceneW;
+          gateDesc.height = sceneH;
+          bSceneOut = true;
+        }
+      }
+#endif
+      if (bSceneOut) {
+        // 尺寸已按画布; 帧率声明独立生效
+        if (bSetOutVideo && outVideoDesc.fps > 0) {
+          gateDesc.fps = outVideoDesc.fps;
+        }
+      } else if (!videoFilter && bSetOutVideo && outVideoDesc.width > 0) {
+        gateDesc.width = outVideoDesc.width;
+        gateDesc.height = outVideoDesc.height;
+        if (outVideoDesc.fps > 0) {
+          gateDesc.fps = outVideoDesc.fps;
+        }
+      } else if (!bSceneOut && !videoFilter && bSetOutVideo &&
+                 outVideoDesc.fps > 0) {
+        // 只声明帧率(尺寸跟源, 不可缩放腿/降帧导出用)
+        gateDesc.fps = outVideoDesc.fps;
+      } else if (!bSceneOut && !videoFilter && !bSetOutVideo) {
+        if (vdesc.rotation == 90 || vdesc.rotation == 270) {
+          std::swap(gateDesc.width, gateDesc.height);
+        }
+      }
+      muxer->setVideoDesc(gateDesc);
       muxer->setInVideoDesc(vdesc);
     }
     LOGFLF(LogLevel::info, "set video desc:", vdesc);

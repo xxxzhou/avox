@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
+#include <mutex>
 #include <thread>
 
 #ifdef __APPLE__
@@ -321,47 +322,48 @@ void VkContext::initContext(VkInstance instace_, VkPhysicalDevice phDevice_,
 
 bool canVulkan() {
 #if AVOX_ENABLE_VULKAN
-  // 结果在进程生命周期内不会变,缓存避免重复创建/销毁VkInstance/VkDevice
-  static bool checked = false;
+  // 结果在进程生命周期内不会变; call_once 防并发首调:
+  // 旧写法先置 checked=true 再探测, 并发第二个调用会拿到尚未探测完的错误 false
+  static std::once_flag once;
   static bool result = false;
-  if (checked) return result;
-  checked = true;
-  // 1. 检查vulkan loader是否可用(VkReg静态初始化时已调用volkInitialize)
-  // volkGetInstanceVersion返回0表示vulkan不可用,非0则loader已就绪
-  if (volkGetInstanceVersion() == 0) {
-    LOGFLF(LogLevel::warn, "canVulkan: vulkan loader not available");
-    return false;
-  }
-  // 2. 尝试创建VkInstance
-  VkInstanceArgs instArgs = VkInstanceArgs::defArgs(false);
-  VkInstance instance = instArgs.crateInstace();
-  if (instance == VK_NULL_HANDLE) {
-    LOGFLF(LogLevel::warn, "canVulkan: create VkInstance failed");
-    return false;
-  }
-  volkLoadInstance(instance);
-  // 3. 检查是否有可用的物理设备
-  std::vector<VKPhysDevWrapper> physicalDevices;
-  enumerateDevice(instance, physicalDevices);
-  if (physicalDevices.empty()) {
-    LOGFLF(LogLevel::warn, "canVulkan: no vulkan physical device found");
+  std::call_once(once, [] {
+    // 1. 检查vulkan loader是否可用(VkReg静态初始化时已调用volkInitialize)
+    // volkGetInstanceVersion返回0表示vulkan不可用,非0则loader已就绪
+    if (volkGetInstanceVersion() == 0) {
+      LOGFLF(LogLevel::warn, "canVulkan: vulkan loader not available");
+      return;
+    }
+    // 2. 尝试创建VkInstance
+    VkInstanceArgs instArgs = VkInstanceArgs::defArgs(false);
+    VkInstance instance = instArgs.crateInstace();
+    if (instance == VK_NULL_HANDLE) {
+      LOGFLF(LogLevel::warn, "canVulkan: create VkInstance failed");
+      return;
+    }
+    volkLoadInstance(instance);
+    // 3. 检查是否有可用的物理设备
+    std::vector<VKPhysDevWrapper> physicalDevices;
+    enumerateDevice(instance, physicalDevices);
+    if (physicalDevices.empty()) {
+      LOGFLF(LogLevel::warn, "canVulkan: no vulkan physical device found");
+      vkDestroyInstance(instance, nullptr);
+      return;
+    }
+    // 4. 尝试创建VkDevice(使用第一个物理设备)
+    VKPhysDevWrapper& phDevice = physicalDevices[0];
+    VkDeviceArgs devArgs = VkDeviceArgs::defArgs(phDevice);
+    VkDevice device = devArgs.crateDevice(phDevice);
+    if (device == VK_NULL_HANDLE) {
+      LOGFLF(LogLevel::warn, "canVulkan: create VkDevice failed");
+      vkDestroyInstance(instance, nullptr);
+      return;
+    }
+    // 检查通过,清理临时资源
+    vkDestroyDevice(device, nullptr);
     vkDestroyInstance(instance, nullptr);
-    return false;
-  }
-  // 4. 尝试创建VkDevice(使用第一个物理设备)
-  VKPhysDevWrapper& phDevice = physicalDevices[0];
-  VkDeviceArgs devArgs = VkDeviceArgs::defArgs(phDevice);
-  VkDevice device = devArgs.crateDevice(phDevice);
-  if (device == VK_NULL_HANDLE) {
-    LOGFLF(LogLevel::warn, "canVulkan: create VkDevice failed");
-    vkDestroyInstance(instance, nullptr);
-    return false;
-  }
-  // 检查通过,清理临时资源
-  vkDestroyDevice(device, nullptr);
-  vkDestroyInstance(instance, nullptr);
-  result = true;
-  return true;
+    result = true;
+  });
+  return result;
 #else
   return false;
 #endif

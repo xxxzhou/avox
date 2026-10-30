@@ -63,12 +63,17 @@ elseif(APPLE)
     # seektest/stutterprobe: seek 续播帧契约/供给帧距探针, 引擎级 seek 复现用(0926)
     # downmixtest: 下混系数/对白增强探针(直驱 FFResample, 合成 5.1 量测 RMS)
     # chromatest: 色度升采样探针(方案 §5 T1: 原生腿/VK 腿逐像素彩边剖面比对)
-    foreach(_probe asstest smbsourcetest hdrtest chromatest seektest stutterprobe downmixtest)
+    # capturetest: 采集会话探针(mac 走 SCK 源, 1030); scenetest: 场景导出探针(P1-a)
+    foreach(_probe asstest smbsourcetest hdrtest chromatest seektest stutterprobe downmixtest capturetest scenetest)
         add_executable(${_probe} functest/${_probe}.cpp)
         target_link_libraries(${_probe} "$<LINK_LIBRARY:WHOLE_ARCHIVE,avox>")
         target_link_options(${_probe} PRIVATE -Wl,-export_dynamic)
         avox_output(${_probe})
         avox_bundle_resources(${_probe})
+        # 稳定 bundle id: TCC 授权(屏录/麦克风)按身份记录, 没有 id 每次构建都失效
+        set_target_properties(${_probe} PROPERTIES
+            MACOSX_BUNDLE_GUI_IDENTIFIER "com.avox.${_probe}"
+            MACOSX_BUNDLE_BUNDLE_NAME ${_probe})
     endforeach()
     # 外挂 .srt 端到端(光栅→canvas 合成→像素判据), setOffSurface 无头可跑(1002)
     if(AVOX_ENABLE_FREETYPE)

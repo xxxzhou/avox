@@ -178,7 +178,13 @@ LogTask::LogTask() {
   startTask();
 }
 
-LogTask::~LogTask() { stopTask(); }
+LogTask::~LogTask() {
+  // 快退丢尾行(1030 mac 排查定谳): stopTask 置位后 worker 在两次 dequeue 之间
+  // 退出, 队列残留全丢 —— 析构先排空一次, 停线程后无竞争再兜底排空一次
+  drain();
+  stopTask();
+  drain();
+}
 
 void LogTask::addItem(LogLevel level, const char* message) {
   LogItem item = {};

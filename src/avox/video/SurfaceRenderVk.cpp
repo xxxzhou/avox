@@ -398,6 +398,12 @@ void SurfaceRenderVk::render(const VideoFrame& frame) {
 void SurfaceRenderVk::render(const GpuFrame& frame) {
   // 能渲染的只有直接的RGBA的原生GPU资源
   if (frame.format.type == YuvType::other) {
+#ifdef AVOX_ENABLE_VULKAN
+    // 场景求值时间源(pts): 在渲染前进, 场景层据此查镜头/光标/涟漪
+    if (vkVideoRender) {
+      vkVideoRender->pushSceneTime(frame.pts);
+    }
+#endif
     vkVideoRender->renderGpuFrame(frame.context);
   }
   onRenderOut();
@@ -540,6 +546,27 @@ VkVideoRender* getVkVideoRender(ISurfaceRender* render) {
     return nullptr;
   }
   return vkVideoRender;
+}
+
+bool attachEditorScene(ISurfaceRender* render, IEditorScene* scene) {
+  if (!render || !scene) {
+    return false;
+  }
+  VkVideoRender* vk = getVkVideoRender(render);
+  if (!vk) {
+    LOGFLF(LogLevel::warn, "attachEditorScene: vulkan lane required");
+    return false;
+  }
+  return vk->attachScene(scene);
+}
+
+void detachEditorScene(ISurfaceRender* render) {
+  if (!render) {
+    return;
+  }
+  if (VkVideoRender* vk = getVkVideoRender(render)) {
+    vk->detachScene();
+  }
 }
 #endif
 }

@@ -17,14 +17,22 @@ namespace avox {
 class STrackDescImpl : public ISTrackDesc {
  public:
   STrackDescImpl(int32_t id, SCodecId codec, const std::string& langText,
-                 const std::string& titleText, bool forcedFlag)
+                 const std::string& titleText, bool forcedFlag,
+                 const std::string& codecNameText = "",
+                 bool defaultFlag = false)
       : track_id(id), codec_id(codec), lang_text(langText),
-        title_text(titleText), forced_flag(forcedFlag) {}
+        title_text(titleText), forced_flag(forcedFlag),
+        codec_name_text(codecNameText), default_flag(defaultFlag) {}
   virtual int32_t trackId() const override { return track_id; }
   virtual SCodecId codecId() const override { return codec_id; }
   virtual const char* lang() const override { return lang_text.c_str(); }
   virtual const char* title() const override { return title_text.c_str(); }
   virtual bool forced() const override { return forced_flag; }
+  // 1029 追加(ISTrackDesc 末尾槽位): 原始 avcodec 名与容器 default 轨
+  virtual const char* codecName() const override {
+    return codec_name_text.c_str();
+  }
+  virtual bool isDefault() const override { return default_flag; }
 
  private:
   int32_t track_id;
@@ -32,6 +40,8 @@ class STrackDescImpl : public ISTrackDesc {
   std::string lang_text;
   std::string title_text;
   bool forced_flag;
+  std::string codec_name_text;
+  bool default_flag;
 };
 
 // IAVSource表示编码音视频流
@@ -84,10 +94,12 @@ class AVOX_EXPORT BaseSource : public OptionLink, public ISourceInfo {
   // 在open之后调用
   void addVideoDesc(const VTrackDesc& desc);
   void addAudioDesc(const ATrackDesc& desc);
-  // 字幕轨登记(生产端只传值, 字符串在源内持有)
+  // 字幕轨登记(生产端只传值, 字符串在源内持有); codecName/isDefault 为
+  // 1029 追加(带默认值, 旧调用点不受影响)
   void addSubtitleDesc(int32_t trackId, SCodecId codecId,
                        const std::string& lang, const std::string& title,
-                       bool forced);
+                       bool forced, const std::string& codecName = "",
+                       bool defaultTrack = false);
 
  public:
   // 当音频与视频都准备好了，请调用开始下一步

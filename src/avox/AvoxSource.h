@@ -114,6 +114,7 @@ enum class VDeviceSdk {
   and_ndkcamer2,
   ios_avf,
   win_decklink,
+  mac_capture,  // macOS ScreenCaptureKit 屏幕采集(新值只追加在末尾)
 };
 
 class IAudioSourceOb {
@@ -125,6 +126,34 @@ class IAudioSourceOb {
   virtual void onAudioError(AVError error, const char* msg) {};
   virtual void onAudioFrame(const AvoxAFrame& frame) {};
   virtual void onAudioClose() {}
+};
+
+// 采集策略(屏幕/窗口采集源用; open 前经 IVideoSource::setCaptureParam 下发)。
+// 缺省值=存量行为: 未调用 setCaptureParam 的旧路径保持 30fps/带光标/带边框
+struct CaptureVideoParam {
+  // CFR 目标帧率; <=0 沿用源默认(30)
+  double fps = 0.0;
+  // 是否把系统光标烧进画面(WGC 车道有效; 老系统不支持关闭时按 true 处理)
+  bool captureCursor = true;
+  // WGC 采集黄框(仅 Win11 可关)
+  bool border = true;
+  // 采集矩形, 虚拟屏绝对物理像素; w/h<=0 = 整屏(录屏会话必须显式给矩形)
+  int32_t regionX = 0;
+  int32_t regionY = 0;
+  int32_t regionW = 0;
+  int32_t regionH = 0;
+};
+
+// 采集实际生效信息(IVideoSourceOb::onCaptureInfo, 启动后首帧前回报一次)。
+// cursorMode: disabled=系统光标已关(后期可重画) / baked=未能关闭(烧进画面) /
+// absent=源本身不带光标(GDI BitBlt)
+struct CaptureInfo {
+  const char* cursorMode = "baked";
+  // 实际采集矩形(虚拟屏绝对物理像素, 偶数对齐)与内容尺寸; w/h=0=未应用区域裁剪
+  int32_t regionX = 0;
+  int32_t regionY = 0;
+  int32_t regionW = 0;
+  int32_t regionH = 0;
 };
 
 class IVideoSourceOb {
@@ -140,6 +169,9 @@ class IVideoSourceOb {
   // GPU视频帧
   virtual void onGpuFrame(const GpuFrame& frame) {};
   virtual void onVideoClose() {}
+  // ⚠️ 新虚函数只追加在接口末尾(往中间插会移动既有槽位, 旧二进制静默调错)
+  // 采集实际生效信息: 源在采集启动后、首帧前回报一次(同步派发)
+  virtual void onCaptureInfo(const CaptureInfo& info) { (void)info; }
 };
 
 class IVideoSource {
@@ -159,6 +191,10 @@ class IVideoSource {
   virtual bool bOpening() = 0;
   // 设备来源类别
   virtual VDeviceKind getDeviceKind() = 0;
+  // ⚠️ 新虚函数只追加在接口末尾(往中间插会移动既有槽位, 旧二进制静默调错)
+  // 采集策略, open 前设置生效; 不支持该能力的源忽略。
+  // 缺省值=存量行为(30fps/带光标/带边框), 未调用本接口的旧路径不受影响
+  virtual void setCaptureParam(const CaptureVideoParam& param) { (void)param; }
 };
 
 class IAudioSource {
@@ -222,6 +258,18 @@ class ISourceInfo {
   virtual int32_t subtitleSize() { return 0; }
   // 字幕轨描述(托管对象: 生命周期同本对象, close/换源后失效; 无效索引 nullptr)
   virtual const ISTrackDesc* getSubtitleDesc(int32_t) { return nullptr; }
+
+  // ---- 1029 追加(只增不改, 旧宿主不调用新槽位即安全) ----
+  // 容器总时长(ms); 未知为 0
+  virtual int64_t durationMs() { return 0; }
+  // 容器总码率; 未知为 0
+  virtual int64_t bitRate() { return 0; }
+  // 容器格式名(avformat iformat name); 未知为空串
+  virtual const char* formatName() { return ""; }
+  // 原始 avcodec 名(如 "h264"/"vp8"); index=轨序号(与 getVideoDesc 同语义),
+  // 要按容器流号找先经 getVideoDesc(i).trackId 映射; 无效索引/未知为空串
+  virtual const char* getVideoCodecName(int32_t index) { return ""; }
+  virtual const char* getAudioCodecName(int32_t index) { return ""; }
 };
 
 // 编码数据源，如H264/H265/AAC

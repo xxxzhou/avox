@@ -2,6 +2,7 @@
 
 #include "../source/DeviceSource.hpp"
 #include "BasePlayer.hpp"
+#include "CaptureSession.hpp"
 #include "MPPingback.hpp"
 #include "MediaPlayer.hpp"
 #include "SourcePlayer.hpp"
@@ -9,6 +10,8 @@
 namespace avox {
 
 IMediaPlayer* createMediaPlayer() { return new MediaPlayer(); }
+
+ICaptureSession* createCaptureSession() { return new CaptureSession(); }
 
 void addMediaPlayerOb(IMediaPlayer* player, IMediaPlayerOb* ob) {
   MediaPlayer* mp = dynamic_cast<MediaPlayer*>(player);

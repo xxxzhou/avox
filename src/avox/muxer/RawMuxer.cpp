@@ -45,8 +45,9 @@ void RawMuxer::setAudioEncodeParam(const AudioEncodeParam& param) {
 }
 
 void RawMuxer::setVideoDesc(const VideoDesc& desc) {
-  // open 前契约: 开录后改会让流头/编码器描述与门限/守卫不一致, 等于现场切断画面
-  if (state == RecorderState::opening || state == RecorderState::recording) {
+  // 契约: 流头/编码器描述落定(recording, 包已流)后改 = 现场切断画面, 拒绝;
+  // opening(容器已开包未流)是 onReady 声明规格的窗口, 放行(录屏方案 §7.1 X1)
+  if (state == RecorderState::recording) {
     LOGFLF(LogLevel::warn, "setVideoDesc ignored while recording");
     return;
   }
@@ -155,6 +156,8 @@ void RawMuxer::onClose() {
   fpsGate.reset();
   sizeMismatchFrames = 0;
   bWarnedSizeMismatch = false;
+  // 丢弃计数不清: stop 后 session.json 还要读(close 在写 json 之前);
+  // 采集会话每次 start 新建 RawMuxer, 天然按会话隔离
 }
 
 void RawMuxer::pushFrame(const YUVFrame& frame) {
@@ -178,10 +181,12 @@ void RawMuxer::pushFrame(const YUVFrame& frame) {
   // 尺寸守卫在帧率门之前: 腿没缩放的帧不该消耗门的保留槽位
   if (!checkFrameSize((int32_t)frame.format.width,
                       (int32_t)frame.format.height)) {
+    sizeDropped++;
     return;
   }
   // 帧率门(声明了输出 fps 才生效): 超频帧按 pts 丢, 音频不动
   if (!recordFpsGate(frame.pts, fpsGate, outVideoDesc.fps)) {
+    gateDropped++;
     return;
   }
   // LOGFLF(LogLevel::info, "video pts:", frame.pts);
@@ -199,9 +204,11 @@ void RawMuxer::pushFrame(const GpuFrame& frame) {
   // 尺寸守卫在帧率门之前: 腿没缩放的帧不该消耗门的保留槽位
   if (!checkFrameSize((int32_t)frame.format.width,
                       (int32_t)frame.format.height)) {
+    sizeDropped++;
     return;
   }
   if (!recordFpsGate(frame.pts, fpsGate, outVideoDesc.fps)) {
+    gateDropped++;
     return;
   }
   videoStream->encoderFrame(frame);

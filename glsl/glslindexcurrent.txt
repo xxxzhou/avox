@@ -13,3 +13,4 @@ canvasBlendHDR.comp
 vrProject.comp
 yuv2rgbaHDR.comp
 pqUpsample.comp
+scene.comp

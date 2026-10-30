@@ -519,7 +519,7 @@ if(APPLE)
     set(COMMON_FRAMEWORKS Foundation UIKit GLKit OpenGLES IOSurface Metal QuartzCore)
   else()
     # macOS: iOS 独有(UIKit/GLKit/OpenGLES)换 AppKit, avox_apple 依赖的媒体框架全列
-    set(COMMON_FRAMEWORKS Foundation AppKit QuartzCore Metal IOSurface CoreGraphics CoreMedia CoreVideo VideoToolbox AudioToolbox AudioUnit CoreAudio AVFoundation Security CoreFoundation CFNetwork)
+    set(COMMON_FRAMEWORKS Foundation AppKit QuartzCore Metal IOSurface CoreGraphics CoreMedia CoreVideo VideoToolbox AudioToolbox AudioUnit CoreAudio AVFoundation Security CoreFoundation CFNetwork ScreenCaptureKit)
   endif()
   if(AVOX_ENABLE_FFMPEG)
     avox_list_append_unique(COMMON_FRAMEWORKS AVFoundation CoreGraphics CoreMedia VideoToolbox AudioToolbox CoreVideo z bz2 iconv)

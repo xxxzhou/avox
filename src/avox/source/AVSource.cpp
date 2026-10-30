@@ -71,6 +71,9 @@ void AVSource::close() {
 
 ISourceInfo* AVSource::getSourceInfo() { return this; }
 
+// ISourceInfo 1029 追加: duration() 是 IAVSource 虚函数, 派发到具体 IO(如 IOParseFF)
+int64_t AVSource::durationMs() { return duration(); }
+
 void AVSource::onTrackOpen() {
   baseTimeMS = AVOX_NOVALID_PTS;
   bSyncPts = false;
