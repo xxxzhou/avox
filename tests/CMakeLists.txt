@@ -37,6 +37,7 @@ add_executable(avox_tests
   ${AVOX_TESTS_SRC}/test_packetbuf.cpp
   ${AVOX_TESTS_SRC}/test_recordknobs.cpp
   ${AVOX_TESTS_SRC}/test_audioencodeknobs.cpp
+  ${AVOX_TESTS_SRC}/test_media_reader.cpp
   ${AVOX_TESTS_SRC}/log_sink.cpp
   # 被测源码 (自包含编译)
   ${AVOX_SRC}/module/AvoxMath.cpp
@@ -71,6 +72,8 @@ add_executable(avox_tests
   ${AVOX_SRC}/audio/AudioLeveler.cpp
   ${AVOX_SRC}/module/Json.cpp   # parserJson
   ${AVOX_SRC}/module/Time.cpp   # timeStampMS / localTimeStampMS / timeTick
+  # 被测 TU (media reader 枚举字符串表/无FFmpeg工厂stub, 纯逻辑)
+  ${AVOX_SRC}/module/AvoxMedia.cpp
 )
 
 target_include_directories(avox_tests PRIVATE

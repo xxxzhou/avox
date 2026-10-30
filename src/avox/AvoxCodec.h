@@ -192,6 +192,12 @@ class ISTrackDesc {
   virtual const char* title() const = 0;
   // 强制字幕(forced disposition): 听障翻译轨/外语对白轨, 选轨 UI 可用
   virtual bool forced() const = 0;
+
+  // ---- 1029 追加(只增不改, 旧宿主不调用新槽位即安全) ----
+  // 原始 avcodec 名(如 "subrip"/"mov_text"/"hdmv_pgs_subtitle"); 未知为空串
+  virtual const char* codecName() const { return ""; }
+  // 容器 default 轨
+  virtual bool isDefault() const { return false; }
 };
 
 // 视频Buffer,YUV图像,可以直接转ImageBuffer使用

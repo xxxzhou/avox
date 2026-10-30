@@ -1,11 +1,19 @@
 # 媒体读取接口 IMediaReader 实施方案（审查稿）
 
-> 状态: 进行中 · 上次核对: 2026-10-29 · 权威源: -
+> 状态: 已落地 · 上次核对: 2026-10-30 · 权威源: src/avox/AvoxMedia.h
 
 avoxkit 会话 `session_dd65acec0458d06eac9020adba5239aa` 提出了把 avoxkit 里
 `ak_probe` / `ak_index` / `ak_frames` / `ak_engine` 的直连 FFmpeg 收回 avox 的
 `IMediaReader` 方案。本文按 avox 真实代码逐条核对可行性，给出修正后的接口、
-实现落点、迁移步骤与验收矩阵。**本文只是方案，代码未动。**
+实现落点、迁移步骤与验收矩阵。
+
+**落地进度（2026-10-30）**：P0 接口、P1 open/probe/index、P2 VK 抓帧均已落地
+（`avox_ffmpeg/MediaReaderFF.cpp` + `avox/video/MediaThumbRenderer.*`）；
+avoxkit 四个入口全部切到新接口，`ak_frames.cpp` 已删掉 libav 采样/旋转路径。
+录屏收尾的音频混音/流直拷封装在同一轮收回 avox：新增 `IMediaComposer`
+（`src/avox/AvoxCapture.h` + `avox_ffmpeg/MediaComposerFF.cpp`），avoxkit
+已无任何 libav include，CMake 摘掉 avformat/avcodec/avutil/swresample 链接。
+下文保留设计过程，接口以头文件为准。
 
 ---
 
@@ -32,7 +40,7 @@ avoxkit 会话 `session_dd65acec0458d06eac9020adba5239aa` 提出了把 avoxkit �
 
 | 设计点 | 结论 | 代码依据 |
 |---|---|---|
-| MediaInfo 合并进 ISourceInfo | 成立。`durationMs/bitRate/formatName` 追加到 `ISourceInfo` 末尾即可；全仓只有 `BaseSource` 一个实现，默认实现可保旧二进制 | `src/avox/AvoxSource.h:210`、`src/avox/source/BaseSource.hpp:40` |
+| MediaInfo 合并进 ISourceInfo | 成立。`durationMs/bitRate/formatName` 追加到 `ISourceInfo` 末尾即可；实现者有 `BaseSource` 与 webrtc 的 `RtcSourceInfo`（`plugins/avox_webrtc/RtcPlayer.hpp:17`），新方法带默认实现可保旧二进制 | `src/avox/AvoxSource.h:210`、`src/avox/source/BaseSource.hpp:40` |
 | 抓帧走 VK 管线 | 成立。`SurfaceRenderVk::setOffSurface(YuvType::other)` + `enableImage(IImageBuffer*)` + `render(YUVFrame)` 是现成的离屏图像分支，`render()` 内部 `vkWaitForFences` 后才返回，返回时数据已就绪 | `src/avox/video/SurfaceRenderVk.cpp:48/80/396`、`src/avox_vulkan/layer/VkPipeGraph.cpp` 的 `onRun()` |
 | enableImage 只支持 rgba8 | 成立，且 `VideoRender::enableImage` 有显式校验；输出宽度/高度由 buffer 的 ImageFormat 决定，GPU 侧 `VkResizeLayer` 缩放 | `src/avox/video/VideoRender.cpp:38-58` |
 | 首次 enableImage 后先渲染 dummy 帧 | 成立，`QEnhanceFilter` 已经踩过这个坑并留了注释：图重建会销毁旧 staging，用户 buffer 在重建后到下一帧输出前悬存 | `src/avox/muxer/QEnhanceFilter.cpp:51-73` |
@@ -71,13 +79,17 @@ avoxkit 会话 `session_dd65acec0458d06eac9020adba5239aa` 提出了把 avoxkit �
 => 迁移后会出现“以前有缩略图、现在没有”的回归。三种处理：
 
 - **A（建议）**：只承诺 VK 已支持的格式；其余返回
-  `MediaError::unsupportedPixFmt`，消息里带 `av_get_pix_fmt_name`。同时把
-  `AV_PIX_FMT_GRAY8 → YuvType::gray` 补进 `ffYuvType`（VK 对 gray 有 r8 路径，
-  见 `yuv2ImageFormat` 和 `getVkFormat`）。12bit/444P10 明确列为不支持。
+  `MediaError::unsupportedPixFmt`，消息里带 `av_get_pix_fmt_name`。
+  **gray8 一律 `unsupportedPixFmt`**：离屏渲染链 `VkYUV2RGBALayer::onInitLayer`
+  没有 gray 分支（`getVkFormat(YuvType,bitDepth)` 的 gray 项在 src 内无调用者），
+  补进 `ffYuvType` 会走 V1 shader 读不存在的 UV 面出坏图；`ffYuvType` 产出的
+  `yuv444P` 同样没有 VK 渲染分支，也不能放行。12bit/444P10 明确列为不支持。
 - B：为 12bit/444P10 扩 `YuvType` 与 VK 输入层，工作量大，收益低。
 - C：保留 CPU 采样兜底，等于把要删的第二套又留下，不推荐。
 
 建议先按 A 落，验收里把“不支持格式返回明确错误”写成用例，不要静默空图。
+实施时按 pixfmt → YuvType → shader 变体列一张 reader 支持矩阵（以
+`VkYUV2RGBALayer::onInitLayer` 的分支表为准，不要按 `ffYuvType` 列）。
 
 ### 2.3 HDR/DV 元数据没有来源（硬问题）
 
@@ -445,15 +457,16 @@ AVOX_EXPORT const char* getMediaErrorStr(MediaError error);
 
 namespace avox {
 
-struct FFmpegRuntimeInfo {
-  const char* version = nullptr;      // av_version_info(), engine 托管
-  const char* buildConfig = nullptr;  // avcodec_configuration(), engine 托管
+struct FFmpegVersionInfo {
   int32_t avcodecVersion = 0;
   int32_t avformatVersion = 0;
   int32_t avutilVersion = 0;
 };
 
-AVOX_EXPORT FFmpegRuntimeInfo getFFmpegRuntimeInfo();
+AVOX_EXPORT FFmpegVersionInfo getFFmpegVersionInfo();
+// 版本串/编译配置串(engine 托管, 进程内稳定); 不放结构体字段
+AVOX_EXPORT const char* getFFmpegVersion();
+AVOX_EXPORT const char* getFFmpegBuildConfig();
 // 只查编码器是否注册, 不做真编
 AVOX_EXPORT bool isEncoderRegistered(const char* name);
 AVOX_EXPORT bool hasMuxer(const char* name);
@@ -475,7 +488,9 @@ virtual int64_t durationMs() { return 0; }
 virtual int64_t bitRate() { return 0; }
 // 容器格式名(avformat iformat name); 未知为空串
 virtual const char* formatName() { return ""; }
-// 原始 avcodec 名(如 "h264"/"hevc"/"vp8"); 无效索引/未知为空串
+// 原始 avcodec 名(如 "h264"/"hevc"/"vp8"); 无效索引/未知为空串。
+// index 是视频/音频轨序号(0..videoSize()-1, 与 getVideoDesc 同一语义);
+// 要按容器流号找, 先用 getVideoDesc(i).trackId 映射
 virtual const char* getVideoCodecName(int32_t index) { return ""; }
 virtual const char* getAudioCodecName(int32_t index) { return ""; }
 ```
@@ -662,7 +677,8 @@ DX11 CS/EGL/Metal 分 P2/P3，未落地的车道不能声称已旋正。
 | `src/avox/AvoxMedia.h` | 本文 §3 的公共接口 |
 | `src/avox/AvoxRuntime.h` | 运行时能力查询 |
 | `src/avox_ffmpeg/MediaReaderFF.hpp/.cpp` | `IMediaReader` 实现 + 工厂 |
-| `src/avox_ffmpeg/AvoxRuntimeFF.cpp` | `AvoxRuntime` 的 FFmpeg 实现 |
+| `src/avox_ffmpeg/MediaSourceInfo.hpp/.cpp` | reader 的 `ISourceInfo` 实现（继承 `BaseSource` 复用轨道容器，补 durationMs/bitRate/formatName/codecName/canSeek） |
+| `src/avox_ffmpeg/AvoxRuntimeFF.cpp` | `AvoxRuntime` 的 FFmpeg 实现（`isVulkanAvailable` 放 `avox_vulkan/VkContext.cpp`） |
 | `src/avox/video/MediaThumbRenderer.hpp/.cpp` | VK 抓帧渲染器（可先内联在 MediaReaderFF，超过 ~300 行再拆） |
 | `src/avox/source/BaseSource.hpp/.cpp` | 字幕轨描述补字段 |
 | `src/avox/AvoxSource.h` / `AvoxCodec.h` | 追加虚函数 |
@@ -688,8 +704,11 @@ DX11 CS/EGL/Metal 分 P2/P3，未落地的车道不能声称已旋正。
    - 音频：`ATrackDesc`（trackId、codecId、channels、sampleRate、AudioFormat）。
    - 字幕：`STrackDescImpl`（trackId、SCodecId、lang、title、forced、default、
      codecName）。
-   - 原始 codec 名按 track 存到 reader 自己的 `std::vector<std::string>`，
-     供 `getVideoCodecName/getAudioCodecName`。
+   - 原始 codec 名按 track 存到 reader 自己的容器，供
+     `getVideoCodecName/getAudioCodecName`；用 `std::deque<std::string>` 或
+     open 期一次性填满不再追加（vector 扩容会让已返回的 `c_str()` 悬空）。
+   - 与 `IOParseFF` 的口径差异是有意的：IOParseFF 会跳过打不开的音频编码
+     （`skipAudioStreams`，播放口径），reader probe 不跳（列全口径）。
 4. `durationMs` 只填容器时长；`bitRate`、`formatName`、`canSeek`
    （`pb && seekable & AVIO_SEEKABLE_NORMAL`）照 `ak_probe`。
 5. `canSeek` 直接决定 `ISourceInfo::canSeek()`。
@@ -698,8 +717,10 @@ DX11 CS/EGL/Metal 分 P2/P3，未落地的车道不能声称已旋正。
 
 一个 `av_read_frame` 循环：
 
-- 视频包：`AV_PKT_FLAG_KEY` → `(pts - start_time)` 转 ms，单调去重后入
-  keyframes。
+- 视频包：`AV_PKT_FLAG_KEY` → `(pts - start_time)` 转 ms，pts 为 NOPTS 时用
+  dts（与 `ak_index.cpp:220` 一致），单调去重后入 keyframes。
+- `videoTrack<0` 用 `av_find_best_stream`（与 `ak_index.cpp:141` 一致，保持
+  keyframes 来源轨不变）；“第一条非封面”只用于 `grabFrame` 的默认轨。
 - 音频包：送 `avcodec_send_packet`，`receive_frame` 逐帧算峰值（U8/S16/S32/
   FLT/DBL，planar/interleaved 全支持，逻辑照抄 `ak_index.cpp:61-115`）。
 - 进度：按 `avio_tell/avio_size` 或包 PTS 估算，每 1% 或 50ms 限频回调。
@@ -757,14 +778,18 @@ DX11 CS/EGL/Metal 分 P2/P3，未落地的车道不能声称已旋正。
 
 ### 5.5 AvoxRuntime
 
-- `getFFmpegRuntimeInfo()`：直接返回 `av_version_info()` /
-  `avcodec_configuration()` / 三个版本号。
+- `getFFmpegVersionInfo()`：返回三个版本号。
+- `getFFmpegVersion()` / `getFFmpegBuildConfig()`：分别直传 `av_version_info()` /
+  `avcodec_configuration()`，engine 托管指针（字符串不放结构体字段，跨 DLL 与
+  绑定层都好处理）。
 - `isEncoderRegistered`：`avcodec_find_encoder_by_name`。
 - `hasMuxer`：`av_guess_format(name, nullptr, nullptr)`。
 - `getProtocolCount/Name`：首次调用用 `avio_enum_protocols` 缓存两个
   `std::vector<std::string>`，加 mutex；返回 `c_str()`。
 - `isVulkanAvailable`：包装 `canVulkan()`；把 `canVulkan` 的静态缓存改成
-  `std::once_flag`。
+  `std::once_flag`（现有写法先置 `checked=true` 再探测，并发第二个调用会拿到
+  错误的 false）。注意 `canVulkan` 首次调用会真建/销 VkInstance+VkDevice，
+  是重操作——`capabilities_json` 每进程一次可接受，别放进高频路径。
 
 ### 5.6 构建 / ABI
 
@@ -773,8 +798,10 @@ DX11 CS/EGL/Metal 分 P2/P3，未落地的车道不能声称已旋正。
 - `VTrackDesc` 末尾加 `rotation`（1029 用户口径，旋转信息放结构体、引擎内部
   消费），这是**唯一的结构体变大**：旧宿主/插件（panvox/avoxkit/playtest）
   必须重建；`ATrackDesc`/`VideoDesc` 不动，原始 codec 名仍走 `ISourceInfo` 方法。
-- `swig/common.i` 若不打算暴露 reader，可不动；若要暴露，加
-  `%include "avox/AvoxMedia.h"` 与 `%feature("director") IMediaReaderOb;`。
+- `swig/common.i` 已 include `AvoxSource.h`/`AvoxCodec.h`：`ISourceInfo`/
+  `ISTrackDesc`/`VTrackDesc` 的改动会进 SWIG 绑定，改完必须重新生成绑定并重编
+  C#/node/python 包装。reader 本身若不打算暴露，可不加
+  `%include "avox/AvoxMedia.h"`。
 - 无 FFmpeg / 无 Vulkan 两种构建都要能编：前者工厂返回 nullptr，后者抓帧
   `renderUnavailable`。
 
@@ -807,8 +834,8 @@ struct SyncOb : avox::IMediaReaderOb {
 |---|---|
 | `ak_probe.cpp` | `createMediaReader` → `open` → 等 `onReady` → 读 `ISourceInfo`；`format/duration_ms/bit_rate/can_seek/video/audio/subtitles` 字段名不变；视频/音频 `codec` 用 `getVideoCodecName/getAudioCodecName`，字幕 `codec` 用 `codecName()`、`text` 用 `isTextSubtitleCodec(codecName())`；视频轨只增加 `rotation`（从 `VTrackDesc.rotation`），不输出 display_width/height（输出尺寸只有帧回调知道）；带封面的音频文件不再报视频轨（attached_pic 被排除，见 §2.11）；`pix_fmt/sample_fmt/每轨 bit_rate` 可删（Dart 无消费者） |
 | `ak_index.cpp` | `open` → `buildIndex`；`onIndexDone` 里拷 peaks/keyframes；`has_audio=result.hasAudio`；peaks 按 `(int)(sqrt(p)*100)` 转 0-100；`duration_ms/bucket_ms` 取 result |
-| `ak_frames.cpp` | `open` → 每个时间点 `grabFrame`；`onFrame` 内 JPEG 编码；JSON 的 `width/height` 与 JPEG 尺寸取回调图像的实际 `ImageFormat`（不是 `request.width` 或 probe 预算；多帧时顶层取最后一个成功帧，保持现有覆盖语义）；`reason` 映射 `MediaError`（`unsupportedPixFmt→unsupported_pix_fmt`、`renderUnavailable→render_unavailable`、`decoderMissing→decode_failed`）；目标时间生成（count/等距）留在 shim；**删除 libav、YUV 采样和 display matrix/旋转代码**，方向由渲染层统一保证（reader 不再 CPU 旋转） |
-| `ak_engine.cpp` | `getFFmpegRuntimeInfo/isEncoderRegistered/hasMuxer/协议列表/isVulkanAvailable`；删 libav include；`encoder_probe_impl` 语义不变 |
+| `ak_frames.cpp` | `open` → 每个时间点 `grabFrame`；`onFrame` 内 JPEG 编码；JSON 的 `width/height` 与 JPEG 尺寸取回调图像的实际 `ImageFormat`（不是 `request.width` 或 probe 预算；多帧时顶层取最后一个成功帧，保持现有覆盖语义）；`reason` 映射 `MediaError`（`bad_source`/`input_open_failed` 留在 shim 入参与 open 阶段；`unsupportedPixFmt→unsupported_pix_fmt`、`renderUnavailable→render_unavailable`、`decoderMissing→decode_failed`；`encode_failed` 是 shim 侧 JPEG 编码失败，不出自 reader）；目标时间生成（count/等距）留在 shim；**删除 libav、YUV 采样和 display matrix/旋转代码**，方向由渲染层统一保证（reader 不再 CPU 旋转） |
+| `ak_engine.cpp` | `getFFmpegVersionInfo/getFFmpegVersion/getFFmpegBuildConfig/isEncoderRegistered/hasMuxer/协议列表/isVulkanAvailable`；删 libav include；`self_check` 改用 AvoxRuntime（`avformatVersion>>16==63` + `isEncoderRegistered("libmp3lame"/"aac")` + `getFFmpegBuildConfig()` 含 `--enable-libmp3lame`）——它是 FFmpeg DLL 版本错配守卫，删 libav 后编不过；`make_version_json` 的 `config_fnv1a` 改对 `getFFmpegBuildConfig()` 求 hash；`encoder_probe_impl` 语义不变 |
 
 `ak_media_index` 对直播/未知时长返回
 `{"ok":false,"code":"unsupported",...}`；`ak_media_frames` 无 Vulkan 返回
@@ -835,7 +862,8 @@ struct SyncOb : avox::IMediaReaderOb {
 3. **P2 抓帧**：VK 渲染器 + `setVideoRotation`（方向由渲染层保证）+ HDR/DV
    元数据；替换 `ak_frames`。
 4. **P3 清账**：`ak_engine` 换 runtime API；删链接/头路径；能力位与 Dart 提示；
-   文档；全量回归。
+   文档（含同步 `doc/player/core/数据源.md` 的 ISourceInfo mermaid，已过期
+   还写着 `getVideoTrackCount`）；全量回归。
 5. **P4（可选）handle API**：clip 页复用长生命周期 reader，省掉每次拖动重建
    VK 图；不在本次范围。
 
@@ -893,7 +921,10 @@ fixture 输出 JSON/JPEG，存到临时目录（不入库，或存 avox-test 私
   字段与迁移前一致；视频/音频 `codec` 原始名一致；字幕 `default/forced/text`
   一致。
 - `ak_index`：`duration_ms/bucket_ms/keyframes_ms` 完全一致；`peaks` 逐桶
-  ±1；`has_audio` 一致；无音轨/解码器缺失两种空 peaks 场景一致。
+  ±1（例外：时长原本靠音频末帧推出、peaks 全 0 的文件，修 §2.6 bug 后 peaks
+  会从全 0 变有值，此类 fixture 断言“有值且非全零”而不是 ±1）；`has_audio`
+  一致；无音轨/解码器缺失两种空 peaks 场景一致；直播从 `ok:true` 变
+  `ok:false/unsupported` 是有意变更（v1 网络在 open 即拒，实际到不了这）。
 - `ak_frames`：`actual_ms/duration/width/height/旋转方向` 一致；`width/height`
   必须等于 `onFrame` 图像的实际尺寸（不是请求/源比例预算）；SDR JPEG 视觉
   无明显差异；HDR/DV 允许差异（新路径做 tone map/DV，旧路径近似）。
@@ -919,7 +950,8 @@ fixture 输出 JSON/JPEG，存到临时目录（不入库，或存 avox-test 私
   状态 ready → 可再次 index。
 - 生命周期：open 前 `getSourceInfo()==nullptr`；正常
   `open→ready→index→frame→close`；close 返回后无回调；close 后可重新 open。
-- 内存：同一 reader 连续 100 轮 index/frame，RSS 稳定；reader 析构后 VK 资源
+- 内存：短片（秒级）20 轮 + 长片 3 轮 index/frame，RSS 稳定（index 一次全
+  文件解音频，长片 100 轮不可行）；reader 析构后 VK 资源
   释放（`graph->waitIdle` 正常返回）。
 - 并发：两个线程各自 create reader、并发 grabFrame，不崩、输出正确
   （`VkCommand::submit`/`graph->run` 已有 queue 锁）。
@@ -936,7 +968,7 @@ fixture 输出 JSON/JPEG，存到临时目录（不入库，或存 avox-test 私
 
 - `tests/test_media_reader.cpp`：错误/状态字符串；桶映射与峰值归一化；
   display matrix 角度归一化（0/90/180/270；reader 不再做图像旋转）；
-  状态机（fake reader）；`getFFmpegRuntimeInfo` 版本 > 0；
+  状态机（fake reader）；`getFFmpegVersionInfo()` 版本 > 0；
   `isEncoderRegistered("libx264")/("aac")`。
 - 输出尺寸契约：fake renderer 返回与请求不同的宽高，断言
   `MediaFrameInfo.width/height` 取自实际图像，而不是请求/源比例预算。
@@ -949,7 +981,7 @@ fixture 输出 JSON/JPEG，存到临时目录（不入库，或存 avox-test 私
 
 | # | 事项 | 结论 |
 |---|---|---|
-| 1 | 不支持像素格式（12bit/444P10/打包格式） | **已定（1029）**：按 A，VK 支持范围 + 明确 `unsupportedPixFmt`；补 `gray8` 映射；不保留 CPU 兜底 |
+| 1 | 不支持像素格式（12bit/444P10/打包格式） | **已定（1029）**：按 A，VK 支持范围 + 明确 `unsupportedPixFmt`；gray8/444P10 都不放行（VK 渲染层无对应分支）；不保留 CPU 兜底 |
 | 2 | v1 网络范围 | **已定（1029）**：只承诺本地文件/挂载盘/UNC；HTTP/RTSP v1 返回 unsupported，v2 走 avox IO |
 | 3 | 封面图口径 | **建议排除**（与 `IOParseFF`/`ak_frames` 一致）；带封面音频的 `ak_probe` 不再报视频轨。待你确认 |
 | 4 | `closed` 状态 | **已定（1029）**：去掉，close 回 idle，reader 可复用 |
