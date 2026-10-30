@@ -183,10 +183,15 @@ bool MacCapture::onOpen() {
     SCStream* s = [[SCStream alloc] initWithFilter:filter
                                      configuration:config
                                           delegate:nil];
-    streamOutput = (__bridge_retained void*)[[MacStreamOutputBridge alloc] initWithOwner:this];
-    outputQueue = (__bridge void*)dispatch_queue_create("avox.mac.capture", DISPATCH_QUEUE_SERIAL);
+    MacStreamOutputBridge* out =
+        [[MacStreamOutputBridge alloc] initWithOwner:this];
+    streamOutput = (__bridge_retained void*)out;
+    // dispatch_queue_create 返回 +1; __bridge 不转移所有权, ARC 会在语句结束
+    // 释放队列, addStreamOutput 拿到野指针 (macOS 26 objc_retain 崩溃)。
+    outputQueue = (__bridge_retained void*)dispatch_queue_create(
+        "avox.mac.capture", DISPATCH_QUEUE_SERIAL);
     NSError* addErr = nil;
-    if (![s addStreamOutput:(id<SCStreamOutput>)(__bridge id)streamOutput
+    if (![s addStreamOutput:out
                        type:SCStreamOutputTypeScreen
          sampleHandlerQueue:(__bridge dispatch_queue_t)outputQueue
                       error:&addErr] ||
@@ -200,7 +205,11 @@ bool MacCapture::onOpen() {
         obj = nil;
       }
       streamOutput = nullptr;
-      outputQueue = nullptr;  // queue 单实例泄漏量级可忽略(同 onClose)
+      {
+        id obj = (__bridge_transfer id)outputQueue;
+        obj = nil;
+      }
+      outputQueue = nullptr;
       dispatch(&IVideoSourceOb::onVideoError, AVError::deviceError,
                "add stream output failed");
       return false;
@@ -222,6 +231,10 @@ bool MacCapture::onOpen() {
         obj = nil;
       }
       streamOutput = nullptr;
+      {
+        id obj = (__bridge_transfer id)outputQueue;
+        obj = nil;
+      }
       outputQueue = nullptr;
       dispatch(&IVideoSourceOb::onVideoError, AVError::deviceError,
                "stream start failed");
@@ -270,7 +283,11 @@ void MacCapture::onClose() {
     obj = nil;
   }
   streamOutput = nullptr;
-  outputQueue = nullptr;  // queue 单实例泄漏量级可忽略(create 的 +1 归 void*)
+  {
+    id obj = (__bridge_transfer id)outputQueue;
+    obj = nil;
+  }
+  outputQueue = nullptr;
   {
     std::lock_guard<std::mutex> lock(frameMtx);
     if (pendingBuffer) {
