@@ -336,6 +336,9 @@ void FFVEncoder::applyEncoderParams(AVCodecContext* ctx, const AVCodec* codec,
   }
   if (nameHas(name, "videotoolbox")) {
     // Apple 的 FFmpeg 兜底车道(默认车道是原生 IOSVEncoder, 见 IOSVEncoder.mm)
+    // B 帧在本项目的 muxer 上会丢尾/乱序(H.264 VT 实测 60 帧只出 43);
+    // 文件转码不需要 B 帧, 直接关掉换稳定的帧序。
+    ctx->max_b_frames = 0;
     av_dict_set(param, "profile",
                 bH265 ? "main"
                       : profileAvc(profile, "baseline", "main", "high"),
@@ -348,8 +351,10 @@ void FFVEncoder::applyEncoderParams(AVCodecContext* ctx, const AVCodec* codec,
           preset == EncodePreset::speed ? 1 : 0, 0);
     }
     if (bQuality) {
-      // 画质档走 FFmpeg 通用 quality 字段(与 -q:v 同口径); 该封装无 ICQ 类模式
-      ctx->global_quality = crf;
+      // VideoToolbox 的 q:v/global_quality 是 0..100、越大越好，与统一 quality
+      // 同向；不能塞 x264 的 CRF（16..40、越小越好）——实测默认 60 档会落成
+      // 12 kbps，画面基本不可用。
+      ctx->global_quality = quality;
       ctx->bit_rate = 0;
     } else {
       ctx->bit_rate = bitrate;
@@ -541,6 +546,29 @@ DecodeResult FFVEncoder::encode(const YUVFrame& yframe) {
   }
   // LOGFLF(LogLevel::info, "encode video pts:", frame->pts);
   int32_t ret = avcodec_send_frame(codecCtx.get(), frame.get());
+  auto emitPacket = [&](AVPacket* packet) {
+    av_packet_rescale_ts(packet, codecCtx->time_base, {1, 1000});
+    AvoxPacket cpacket = ffAvoxPacket(packet);
+    cpacket.packtype = (int32_t)PackType::video;
+    dispatch(&IEncoderOb::onPacket, cpacket);
+  };
+  // 输入缓冲满: 先收包腾位, 再重发同一帧。直接丢帧会让 H.264 VideoToolbox
+  // 实测 60 帧只出 43 帧(HEVC 缓冲不同, 不暴露)。
+  if (ret == AVERROR(EAGAIN)) {
+    while (true) {
+      AVPacket* packet = av_packet_alloc();
+      int32_t r = avcodec_receive_packet(codecCtx.get(), packet);
+      if (r < 0) {
+        av_packet_free(&packet);
+        break;
+      }
+      if (packet->size > 4) {
+        emitPacket(packet);
+      }
+      av_packet_free(&packet);
+    }
+    ret = avcodec_send_frame(codecCtx.get(), frame.get());
+  }
   if (ret >= 0) {
     ++sentFrames;
   }
@@ -631,7 +659,30 @@ void FFVEncoder::drain() {
   // send NULL 让编码器把内部缓冲吐完。不能用 avcodec_flush_buffers 顶替:
   // 那是"丢弃缓冲并复位" —— 实测 h264_mf 质量档前瞻积了 33 帧(1.1 秒),
   // 停流时丢弃就是产物尾部静默少一截
-  int32_t ret = avcodec_send_frame(codecCtx.get(), nullptr);
+  int32_t ret = AVERROR(EAGAIN);
+  int32_t drained = 0;
+  for (int32_t attempt = 0;
+       attempt < 256 && ret == AVERROR(EAGAIN); ++attempt) {
+    // 输入队列满时 send NULL 也返 EAGAIN; 先把已编码的包收出来腾位再重发,
+    // 直接 return 会静默丢尾(H.264 VideoToolbox 实测 60 帧只出 43)
+    while (true) {
+      AVPacket* packet = av_packet_alloc();
+      int32_t r = avcodec_receive_packet(codecCtx.get(), packet);
+      if (r < 0) {
+        av_packet_free(&packet);
+        break;
+      }
+      if (packet->size > 4) {
+        av_packet_rescale_ts(packet, codecCtx->time_base, {1, 1000});
+        AvoxPacket cpacket = ffAvoxPacket(packet);
+        cpacket.packtype = (int32_t)PackType::video;
+        dispatch(&IEncoderOb::onPacket, cpacket);
+        ++drained;
+      }
+      av_packet_free(&packet);
+    }
+    ret = avcodec_send_frame(codecCtx.get(), nullptr);
+  }
   if (ret < 0 && ret != AVERROR_EOF) {
     AVOX_FFMEPG_LOG(ret, "avcodec_send_frame null failed");
     return;
@@ -640,7 +691,6 @@ void FFVEncoder::drain() {
   // 要轮询等到吐完(软件编码器会一路吐到 EOF)。给个上限, 不能死等
   const auto deadline =
       std::chrono::steady_clock::now() + std::chrono::seconds(2);
-  int32_t drained = 0;
   while (true) {
     AVPacket* packet = av_packet_alloc();
     ret = avcodec_receive_packet(codecCtx.get(), packet);

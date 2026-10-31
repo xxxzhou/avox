@@ -1,5 +1,7 @@
 #include "Muxer.hpp"
 
+#include <TargetConditionals.h>
+
 #include "../AvoxMuxer.h"
 #include "RawMuxer.hpp"
 
@@ -40,8 +42,13 @@ const char* getDefaultEncoderName(VCodecId codecId, bool bHard) {
     // AVOX_ANDROID_H264_ENCODER h264
     return bHard ? AVOX_ANDROID_H264_ENCODER : AVOX_FF_H264_ENCODER;
 #elif __APPLE__
-    // h264_qsv h264_vulkan h264 libx264
+#if TARGET_OS_OSX
+    // macOS 统一走 FFmpeg VideoToolbox: 原生 IOSVEncoder 实测 30fps 输入只出
+    // 20fps(丢帧), 且 quality 档位与统一档不一致; 原生车道留给 iOS。
+    return AVOX_FF_H264_ENCODER;
+#else
     return bHard ? AVOX_IOS_H264_ENCODER : AVOX_FF_H264_ENCODER;
+#endif
 #elif defined(__ONLY_LINUX__)
     // Linux 硬编走 VAAPI(FFVaapiEncoder), 软编兜底名由渠道注入
     //(Linux 白名单无视频软编, 兜底未命中时 openFailed 明确报错)
@@ -56,8 +63,11 @@ const char* getDefaultEncoderName(VCodecId codecId, bool bHard) {
     // AVOX_ANDROID_H264_ENCODER hevc
     return bHard ? AVOX_ANDROID_H265_ENCODER : AVOX_FF_H265_ENCODER;
 #elif __APPLE__
-    // hevc_qsv hevc_vulkan hevc libx264
+#if TARGET_OS_OSX
+    return AVOX_FF_H265_ENCODER;
+#else
     return bHard ? AVOX_IOS_H265_ENCODER : AVOX_FF_H265_ENCODER;
+#endif
 #elif defined(__ONLY_LINUX__)
     // Linux 硬编走 VAAPI(同 h264)
     return bHard ? AVOX_FFVAAPI_H265_ENCODER : AVOX_FF_H265_ENCODER;
