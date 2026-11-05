@@ -466,6 +466,9 @@ class ISurfaceRender {
   // 立体强度(度, 0~5): 双眼水平反向各偏转一半加大视差, 只影响
   // anaglyph/sbsPreview(mono单眼无效); 负值自动钳0, 快速通道
   virtual void setVrStereoStrength(float strengthDeg) {}
+  // 录制改输出尺寸能力(投屏转码腿开工前由宿主查询; 仅在接口末尾追加):
+  // 默认不支持, WindowRender 按当前渲染车道(VK 处理链)覆写。
+  virtual bool canRecordSizeChange() { return false; }
 };
 
 // 静态图像渲染器 - 显示单张图片,不用RunTask循环
