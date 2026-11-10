@@ -94,6 +94,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 
 **播放中** → [`references/病族-播放中.md`](references/病族-播放中.md)
 - iOS 软解 AV1/10bit 横带撕裂+绿线(行错位斜切, 声正常不卡) → 已修(1004, Video.cpp 三处, 真机验收); 判据 = `[vkin] …rowPitch=2048`(>width*2 即 padding) + `10bit byte-view: words 960x864`; 修后 words 960x810
+- mac 缩略图抽帧崩(SIGSEGV@0x68; 崩栈 TranscodeRecorder::onReady × close 并发) → 已修 7bbaf0c(1110): close/关源与解析线程 onReady 收尾互斥(teardownMtx+bClosing, 锁不跨 join); 判据 = .ips 同帧并存 onReady 线程与 pvxThumbTry→close→stopTask 线程; 详见 `references/病族-播放中.md`
 - mac 切流彩色马赛克(偶发; 拖新片/切 HDR↔SDR 后) → 已修 a5af7c7(1003); 判据 = `layer format drift: target f16:0 pipeline f16:1`
 - mac 切流/关闭闪退 → 已修 a5af7c7(1003); 排 crash 先查 `~/Library/Logs/DiagnosticReports/panvox-*.ips`, 修后 `texture cache retire deferred` = 命中过原崩溃窗口且安全兑现
 - 黑屏有声 + `[FF][hevc] PPS id out of range` 风暴(手机/微信导出 HEVC 双 PPS 流) → 已修(1003); 参考解码器软/硬解全通 + 引擎拼的 hvcC 数组数少于文件真值 → 别往 avcodec/渲染层查
