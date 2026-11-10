@@ -140,7 +140,13 @@ void TranscodeRecorder::clearIoSource() {
 // 源收尾唯一入口: 编码线程与开源失败路径都可能调, 幂等(第二次是 no-op)
 void TranscodeRecorder::teardownSource() {
   if (source) {
-    clearIoSource();  // 必须在 close/reset 之前: 否则中间窗口读侧拿到悬空指针
+    {
+      // 收尾互斥: 先等 in-flight onReady 结束(它持锁跑完整个回调), 再拆; bClosing
+      // 封死后续 onReady。锁只圈清指针, 不跨 source->close()(join 解析线程)。
+      std::lock_guard<std::mutex> teardownLock(teardownMtx);
+      bClosing.store(true);
+      clearIoSource();  // 必须在 close/reset 之前: 否则中间窗口读侧拿到悬空指针
+    }
     source->close();
     source.reset();
   }
@@ -153,6 +159,11 @@ bool TranscodeRecorder::open(const char* url, const char* file) {
     LOGFLF(LogLevel::info,
            "recorder is opening or recording, can't open again");
     return false;
+  }
+  {
+    // 重开清收尾态: 上次 close 置的 bClosing 必须复位, 否则 onReady 直接退
+    std::lock_guard<std::mutex> teardownLock(teardownMtx);
+    bClosing.store(false);
   }
   inputUrl = url;
   outputFile = file ? file : "";
@@ -244,29 +255,40 @@ bool TranscodeRecorder::open(const char* url, const char* file) {
 }
 
 void TranscodeRecorder::close() {
-  // 先置completed封死close期重入窗口(编码线程join前source.reset会悬空ioSource); 失败态保持failed
-  if (state != RecorderState::failed) {
-    setRecState(RecorderState::completed);
-  }
-  // close意图先落位, 排空/丢弃由编码线程收尾块裁决(source仅编码线程可读)
-  bStopPending.store(true);
-  // 封队解锁堵在enqueueWait的生产者, 防收尾join死锁(G13); 只封不清, 排空要编残帧
-  vFrameQueue.setClose(true);
-  aFrameQueue.setClose(true);
-  if (audioRender) {
-    // 先 closeTap 唤醒可能堵在 tap push 的解码线程(反压开着时), 再关设备;
-    // tap 未 open 时 no-op
-    audioRender->closeTap();
-    audioRender->close();
+  // 收尾互斥: 与解析线程 onReady 串行(2026-11-10 抽帧崩栈); 锁不跨 stopTask(防与收尾 join 互等)
+  {
+    std::lock_guard<std::mutex> teardownLock(teardownMtx);
+    bClosing.store(true);
+    // 先置completed封死close期重入窗口(编码线程join前source.reset会悬空ioSource); 失败态保持failed
+    if (state != RecorderState::failed) {
+      setRecState(RecorderState::completed);
+    }
+    // close意图先落位, 排空/丢弃由编码线程收尾块裁决(source仅编码线程可读)
+    bStopPending.store(true);
+    // 封队解锁堵在enqueueWait的生产者, 防收尾join死锁(G13); 只封不清, 排空要编残帧
+    vFrameQueue.setClose(true);
+    aFrameQueue.setClose(true);
+    if (audioRender) {
+      // 先 closeTap 唤醒可能堵在 tap push 的解码线程(反压开着时), 再关设备;
+      // tap 未 open 时 no-op
+      audioRender->closeTap();
+      audioRender->close();
+    }
   }
   // 停止编码线程(编码线程收尾块排空/清队并关源后join返回)
   stopTask();
   // 滤镜随open重建(下次open重新prepare); 析构内disableImage关图分支
-  videoFilter.reset();
+  {
+    std::lock_guard<std::mutex> teardownLock(teardownMtx);
+    videoFilter.reset();
+  }
   // join后复位标志与队列开关(close自含); ioSource已随source析构, 置空恢复判空语义
   bStopPending.store(false);
   bDrainPhase.store(false);
-  clearIoSource();
+  {
+    std::lock_guard<std::mutex> teardownLock(teardownMtx);
+    clearIoSource();
+  }
   vFrameQueue.setClose(false);
   aFrameQueue.setClose(false);
   LOGFLF(LogLevel::info, "encode thread stopped, recorder close done");
@@ -274,7 +296,9 @@ void TranscodeRecorder::close() {
 
 // IRawSourceOb::onReady - 解码就绪
 void TranscodeRecorder::onReady() {
-  if (!source) {
+  // 收尾互斥: 整个回调持锁, close/关源等本回调结束再拆; bClosing 封后续进入
+  std::lock_guard<std::mutex> teardownLock(teardownMtx);
+  if (bClosing.load() || !source) {
     return;
   }
   const auto& vTracks = source->getVideoTracks();

@@ -82,6 +82,10 @@ class TranscodeRecorder : public IRecorder,
   // 开源窗口(调用者线程在 source->open() 内): 期间编码线程不得收尾删源, 否则
   // 删掉调用者仍在用的对象(2026-09-28 抽帧 0xC0000374 根因)
   std::atomic<bool> bSourceOpening{false};
+  // 收尾互斥(2026-11-10 抽帧崩栈): 解析线程 onReady 与 close/关源并发会撞
+  // ioSource/audioRender/filter 的 null 或半拆状态; 锁不跨 join(防与收尾 join 互等)
+  std::mutex teardownMtx;
+  std::atomic<bool> bClosing{false};
   //
   ACodecId aCodecid = ACodecId::aac;
   // 默认 H.264: 硬编兼容性远好于 h265(低端安卓/老设备 hevc 编码器常缺失), 兼容性敏感的转码录不赌设备能力
