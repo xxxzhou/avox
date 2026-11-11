@@ -93,12 +93,63 @@ static int32_t ffDisplayRotation(const int32_t* matrix) {
 // 同文消息折叠状态: 解码器逐包刷同一警告时(如 mlp "Stream parameters not
 // seen")按窗口限频, 防洪泛拖垮生产线程——LogTask 队列满会在调用线程同步
 // 排空, 洪泛把解码线程钉在控制台打印速度上
+struct FFLogFoldSlot {
+  std::string key;
+  std::string msg;
+  LogLevel level = LogLevel::info;
+  int64_t lastMs = 0;
+  int64_t count = 0;
+};
 static std::mutex ffLogFloodMtx;
-static std::string ffLogFloodMsg;
-static LogLevel ffLogFloodLevel = LogLevel::info;
-static int64_t ffLogFloodLastMs = 0;
-static int64_t ffLogFloodCount = 0;
+static constexpr int kFFLogFoldSlots = 8;
+static FFLogFoldSlot ffLogFoldSlots[kFFLogFoldSlots];
 static constexpr int64_t kFFLogFloodWindowMs = 3000;
+
+// 洪泛折叠键: 含数字的字母数字混跑(十进制/十六进制/0x 偏移)归一成 #, 动态值
+// (pts/dts/hex offset/行号等)不再击穿同文折叠——hex 位字母不定曾致键空间爆炸(r4-002)
+static std::string foldKey(const std::string& msg) {
+  auto isHexish = [](char c) {
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
+           (c >= 'A' && c <= 'F') || c == 'x' || c == 'X';
+  };
+  std::string key;
+  key.reserve(msg.size());
+  std::size_t i = 0;
+  while (i < msg.size()) {
+    if (!isHexish(msg[i])) {
+      key += msg[i];
+      i++;
+      continue;
+    }
+    std::size_t j = i;
+    bool hasDigit = false;
+    while (j < msg.size() && isHexish(msg[j])) {
+      if (msg[j] >= '0' && msg[j] <= '9') hasDigit = true;
+      j++;
+    }
+    if (hasDigit) {
+      key += '#';
+    } else {
+      key.append(msg, i, j - i);
+    }
+    i = j;
+  }
+  return key;
+}
+
+// 槽位巡检: 超窗仍有累计补一条摘要, 长期无累计的槽回收
+static void foldSweep(FFLogFoldSlot& sl, int64_t nowMs) {
+  if (sl.key.empty() || nowMs - sl.lastMs < kFFLogFloodWindowMs) return;
+  if (sl.count > 0) {
+    std::string summary;
+    string_format(summary, sl.msg, " (+", sl.count, " suppressed)");
+    logMsg(sl.level, summary.c_str());
+    sl.count = 0;
+    sl.lastMs = nowMs;
+  } else {
+    sl.key.clear();
+  }
+}
 
 // FFmpeg av_log 回调 -> avox logMsg, 跟 ZLMediaKit onZmLog 同模式
 static void onFFLog(void* avcl, int ffLevel, const char* fmt, va_list vl) {
@@ -112,7 +163,9 @@ static void onFFLog(void* avcl, int ffLevel, const char* fmt, va_list vl) {
   // 解码器逐包 "no frame!" (纯参数集包/首个关键帧前等常态) 纯噪音, 屏掉
   size_t len = strlen(buf);
   while (len > 0 && (buf[len - 1] == '\n' || buf[len - 1] == '\r' || buf[len - 1] == ' ')) --len;
+  buf[len] = '\0';  // FFmpeg fmt 多带尾 \n, 不截断则日志每条 [FF] 行后多一空行
   if (len == 9 && memcmp(buf, "no frame!", 9) == 0) return;
+  if (len == 0) return;
   std::string msg;
   const AVClass* avc = avcl ? *(const AVClass* const*)avcl : nullptr;
   if (avc && avc->item_name) {
@@ -120,23 +173,45 @@ static void onFFLog(void* avcl, int ffLevel, const char* fmt, va_list vl) {
   } else {
     string_format(msg, "[FF] ", buf);
   }
-  // 同文折叠: 窗口内重复消息只计次, 换文/超窗补一条累计再放行当前条
+  // 同键折叠: 键(数字归一)同文未超窗只计次; 每键每窗至多 1 条; 多键并存防互踢
   {
     std::lock_guard<std::mutex> lk(ffLogFloodMtx);
     const int64_t nowMs = timeStampMS();
-    if (msg == ffLogFloodMsg && nowMs - ffLogFloodLastMs < kFFLogFloodWindowMs) {
-      ++ffLogFloodCount;
-      return;
+    for (auto& sl : ffLogFoldSlots) {
+      foldSweep(sl, nowMs);
     }
-    if (ffLogFloodCount > 0) {
-      string_format(msg, ffLogFloodMsg, " (+", ffLogFloodCount, " suppressed)");
-      logMsg(ffLogFloodLevel, msg.c_str());
+    const std::string key = foldKey(msg);
+    for (auto& sl : ffLogFoldSlots) {
+      if (sl.key == key) {
+        ++sl.count;
+        return;
+      }
     }
-    ffLogFloodLevel = avoxLevel;
-    ffLogFloodLastMs = nowMs;
-    ffLogFloodCount = 0;
-    ffLogFloodMsg = std::move(msg);
-    logMsg(ffLogFloodLevel, ffLogFloodMsg.c_str());
+    FFLogFoldSlot* sl = nullptr;
+    for (auto& s : ffLogFoldSlots) {
+      if (s.key.empty()) {
+        sl = &s;
+        break;
+      }
+    }
+    if (!sl) {
+      // 槽满: 让出最老槽, 其累计先补摘要不丢
+      sl = &ffLogFoldSlots[0];
+      for (auto& s : ffLogFoldSlots) {
+        if (s.lastMs < sl->lastMs) sl = &s;
+      }
+      if (sl->count > 0) {
+        std::string summary;
+        string_format(summary, sl->msg, " (+", sl->count, " suppressed)");
+        logMsg(sl->level, summary.c_str());
+      }
+    }
+    sl->key = key;
+    sl->msg = std::move(msg);
+    sl->level = avoxLevel;
+    sl->lastMs = nowMs;
+    sl->count = 0;
+    logMsg(avoxLevel, sl->msg.c_str());
     return;
   }
 }
