@@ -223,7 +223,7 @@ bool MediaReaderFF::openInput(const char* uri) {
     return false;
   }
   fillSourceInfo();
-  LOGFLF(LogLevel::info, "[media-reader] open ok:", uri, " video:",
+  LOGFLF(LogLevel::info, "[media-reader] open ok:", sanitizedUrl(uri), " video:",
          sourceInfo->videoSize(), " audio:", sourceInfo->audioSize(),
          " subtitle:", sourceInfo->subtitleSize(),
          " duration:", sourceInfo->durationMs(), " seekable:",

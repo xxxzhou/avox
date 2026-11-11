@@ -58,7 +58,8 @@ bool MediaMuxer::open(const char* url_) {
   }
   const auto& mutxerClass = AvoxManager::Get().muxers.initFunc(muxerType);
   ioMuxer = std::unique_ptr<IOMuxer>(mutxerClass.initFunc());
-  LOGFLF(LogLevel::info, "url:", url, " mutxer type:", mutxerClass.desc.name);
+  LOGFLF(LogLevel::info, "url:", sanitizedUrl(url),
+         " mutxer type:", mutxerClass.desc.name);
   ioMuxer->setRawMuxer(this);
   ioMuxer->open(url_);
   // 给RawMuxer检测Onvif流信息
@@ -334,7 +335,7 @@ void MediaMuxer::close() {
   if (muxerOb) {
     muxerOb->onMuxerClose();
   }
-  LOGFLF(LogLevel::info, "url:", url);
+  LOGFLF(LogLevel::info, "url:", sanitizedUrl(url));
   setRecState(RecorderState::completed);
 }
 

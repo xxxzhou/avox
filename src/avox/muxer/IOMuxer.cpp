@@ -73,7 +73,7 @@ void IOMuxer::open(const char* url_) {
   pendingAudio.clear();
   packetQueue.setMaxSize(100);
   //
-  LOGFLF(LogLevel::info, "url:", url);
+  LOGFLF(LogLevel::info, "url:", sanitizedUrl(url));
   // 检查是否onvif
   onOpen();
   startTask();

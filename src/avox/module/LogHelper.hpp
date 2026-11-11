@@ -30,6 +30,23 @@ inline const char* extractFileInline(const char* path) {
   log(level, extractFileInline(__FILE__), ":", __LINE__, " ", __func__, " ", \
       __VA_ARGS__)
 
+// 日志脱敏: 抹掉 URL scheme:// 与 host 之间的 userinfo(user:pass@), 无凭据原样返回
+inline std::string sanitizedUrl(const std::string& url) {
+  const std::size_t scheme = url.find("://");
+  if (scheme == std::string::npos) return url;
+  const std::size_t slash = url.find('/', scheme + 3);
+  const std::size_t at = url.find('@', scheme + 3);
+  if (at == std::string::npos || (slash != std::string::npos && slash < at)) {
+    return url;
+  }
+  return url.substr(0, scheme + 3) + "***" + url.substr(at);
+}
+
+// const char* 重载: 空指针安全
+inline std::string sanitizedUrl(const char* url) {
+  return url ? sanitizedUrl(std::string(url)) : std::string();
+}
+
 #define LOGASSERT(ret, ...)                                  \
   if (!(ret)) {                                              \
     LOGFLF(LogLevel::error, "assert failed: ", __VA_ARGS__); \

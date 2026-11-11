@@ -274,7 +274,8 @@ void AMediaSource::onPacket(const AvoxPacket& packet) {
           }
 // 车道从没出过帧且连续喂包失败(FFDecoder 判据)= 解码车道死(如无软解
 // 构建下的 AV1: 每包 ENOSYS)。停喂并按源错误上报 —— 否则整片喂完,
-          LOGFLF(LogLevel::error, "video decode lane dead, stop feeding:", uri);
+          LOGFLF(LogLevel::error, "video decode lane dead, stop feeding:",
+                 sanitizedUrl(uri));
           videoChain.reset(*this);  // 候选走完, 解绑并销毁
           onError(AVError::decodeLaneDead, "video decode lane dead");
         }
@@ -308,7 +309,7 @@ void AMediaSource::onPacket(const AvoxPacket& packet) {
           if (!bOpenADecoder && audioChain.selectNext(*this)) {
             break;
           }
-          LOGFLF(LogLevel::error, "audio decode lane dead:", uri);
+          LOGFLF(LogLevel::error, "audio decode lane dead:", sanitizedUrl(uri));
         }
       }
       break;

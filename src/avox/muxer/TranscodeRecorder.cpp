@@ -230,7 +230,7 @@ bool TranscodeRecorder::open(const char* url, const char* file) {
   bSourceOpening.store(true);
   const bool bOpened = source->open();
   if (!bOpened) {
-    LOGFLF(LogLevel::error, "failed to open source:", url);
+    LOGFLF(LogLevel::error, "failed to open source:", sanitizedUrl(url));
     bSourceOpening.store(false);
     stopTask();
     // 窗口内编码线程被挡, 源收尾落在本线程: join 之后无并发读者
@@ -248,7 +248,7 @@ bool TranscodeRecorder::open(const char* url, const char* file) {
   }
   ioSource = source->getSource();
   setRecState(RecorderState::opening);
-  LOGFLF(LogLevel::info, "transcode recorder opening, input:", url,
+  LOGFLF(LogLevel::info, "transcode recorder opening, input:", sanitizedUrl(url),
          " output:", outputFile);
   bSourceOpening.store(false);
   return true;

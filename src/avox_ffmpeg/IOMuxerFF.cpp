@@ -160,7 +160,7 @@ bool IOMuxerFF::onInit() {
     releaseOutput();
     return false;
   }
-  LOGFLF(LogLevel::info, "success,url:", url);
+  LOGFLF(LogLevel::info, "success,url:", sanitizedUrl(url));
   return true;
 }
 

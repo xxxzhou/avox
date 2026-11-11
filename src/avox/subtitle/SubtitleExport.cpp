@@ -339,11 +339,12 @@ int32_t exportSubtitleTrack(const char* url, int32_t streamIndex,
 
   AVFormatContext* format = nullptr;
   if (avformat_open_input(&format, url, nullptr, nullptr) < 0 || !format) {
-    LOGFLF(LogLevel::warn, "subtitle export: open failed: ", url);
+    LOGFLF(LogLevel::warn, "subtitle export: open failed: ", sanitizedUrl(url));
     return -1;
   }
   if (avformat_find_stream_info(format, nullptr) < 0) {
-    LOGFLF(LogLevel::warn, "subtitle export: stream info failed: ", url);
+    LOGFLF(LogLevel::warn, "subtitle export: stream info failed: ",
+           sanitizedUrl(url));
     avformat_close_input(&format);
     return -1;
   }

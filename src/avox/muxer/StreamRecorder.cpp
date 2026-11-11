@@ -81,13 +81,13 @@ bool StreamRecorder::open(const char* url, const char* file) {
   source->disableVideo(bDiscardVideo);
   source->disableAudio(bDiscardAudio);
   if (!source->open(url)) {
-    LOGFLF(LogLevel::error, "failed to open source:", url);
+    LOGFLF(LogLevel::error, "failed to open source:", sanitizedUrl(url));
     setRecState(RecorderState::failed);
     return false;
   }
   setRecState(RecorderState::opening);
-  LOGFLF(LogLevel::info, "recorder opening, input:", url, " output:",
-         outputFile);
+  LOGFLF(LogLevel::info, "recorder opening, input:", sanitizedUrl(url),
+         " output:", outputFile);
   return true;
 }
 

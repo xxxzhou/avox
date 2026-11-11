@@ -232,7 +232,7 @@ void IOMuxerZM::sendAudioData(const AvoxPacket& packet) {
 void IOMuxerZM::onClose() {
   if (bLocalRecord) {
     mk_recorder_stop(1, vhost.c_str(), app.c_str(), streamId.c_str());
-    log(LogLevel::info, "zlmediakit local record stop:", url);
+    log(LogLevel::info, "zlmediakit local record stop:", sanitizedUrl(url));
   }
   if (zmPusher) {
     mk_pusher_release(zmPusher);
