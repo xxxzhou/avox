@@ -3,6 +3,7 @@
 #include <atomic>
 #include <deque>
 #include <mutex>
+#include <unordered_map>
 
 #include "../AvoxPlayer.h"
 #include "../module/RunTask.hpp"
@@ -48,6 +49,12 @@ class MediaPlayer : public IMediaPlayer,
   std::vector<VideoTrackPtr> videoTracks;
   // 音频解码(缓存数据都在这里面)
   std::vector<AudioTrackPtr> audioTracks;
+  // 未配轨包告警限频状态: master playlist 直喂时逐包刷屏实证(r2-006)
+  struct PktWarnState {
+    int64_t lastMs = 0;
+    int64_t count = 0;
+  };
+  std::unordered_map<int32_t, PktWarnState> pktWarnStates;
   // 字幕显示(统一视图: 三槽位仲裁内聚, 计划 字幕模块合并计划.md P3)。
   // extradata 由 IO 线程经 onPacket 存表, 锁只护表本身;
   // subTrackIndex 两线程读, atomic
@@ -359,6 +366,8 @@ class MediaPlayer : public IMediaPlayer,
   void pauseRender(bool pause);
   // 暂停解码器，主要是seek时,暂停解码线程好清理队列数据
   void pauseDecoder(bool pause);
+  // 未配轨包告警限频: 同 index 3s 窗内只报首条, 超窗补一条累计
+  void warnPktOutOfRange(bool bVideo, int32_t index);
 };
 
 }

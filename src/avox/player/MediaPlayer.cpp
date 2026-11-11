@@ -475,7 +475,7 @@ void MediaPlayer::onPacket(const AvoxPacket& packet) {
     case (int32_t)PackType::aconfig:
     case (int32_t)PackType::audio: {
       if (index >= audioTracks.size()) {
-        LOGFLF(LogLevel::warn, "audio index out of range:", index);
+        warnPktOutOfRange(false, index);
         return;
       }
       if (!audioTracks[index]) {
@@ -507,7 +507,7 @@ void MediaPlayer::onPacket(const AvoxPacket& packet) {
     case (int32_t)PackType::vconfig:
     case (int32_t)PackType::video: {
       if (index >= videoTracks.size()) {
-        LOGFLF(LogLevel::warn, "video index out of range:", index);
+        warnPktOutOfRange(true, index);
         return;
       }
       // 尺寸闸只挡普通视频包: 4字节WMV3/VC-1序列头是合法vconfig,
@@ -527,6 +527,27 @@ void MediaPlayer::onPacket(const AvoxPacket& packet) {
   if (bIOComplete) {
     bIOComplete = false;
   }
+}
+
+// 未配轨包告警限频: 同 index 3s 窗内只报首条, 超窗补一条累计——master
+// playlist 直喂时未选轨包逐包刷屏实证(r2-006, 90s 计 16.3k 行)
+void MediaPlayer::warnPktOutOfRange(bool bVideo, int32_t index) {
+  static constexpr int64_t kPktWarnWindowMs = 3000;
+  const int64_t nowMs = timeStampMS();
+  const int32_t key = (bVideo ? 0x10000 : 0) + index;
+  auto& st = pktWarnStates[key];
+  if (st.lastMs != 0 && nowMs - st.lastMs < kPktWarnWindowMs) {
+    ++st.count;
+    return;
+  }
+  const char* prefix = bVideo ? "video index out of range:" : "audio index out of range:";
+  if (st.count > 0) {
+    LOGFLF(LogLevel::warn, prefix, index, " (+", st.count, " suppressed)");
+    st.count = 0;
+  } else {
+    LOGFLF(LogLevel::warn, prefix, index);
+  }
+  st.lastMs = nowMs;
 }
 
 void MediaPlayer::onPgsFrame(const AssCanvas& canvas) {
