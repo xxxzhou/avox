@@ -136,7 +136,7 @@ else()
     "-framework QuartzCore" "-framework CoreVideo" "-framework CoreMedia"
     "-framework AudioToolbox" "-framework AVFoundation" "-framework CoreAudio"
     "-framework VideoToolbox" "-framework IOSurface" "-framework CoreFoundation"
-    "-framework CoreGraphics" "-framework Security"
+    "-framework CoreGraphics" "-framework Security" "-framework ScreenCaptureKit"
     z bz2 lzma iconv c++)
   # MoltenVK: 无头回环/渲染需要, 按仓库构建产物相对路径找
   set(AVOX_MOLTENVK_LIB "${AVOX_LIB_DIR}/../MoltenVK.xcframework/macos-arm64_x86_64/libMoltenVK.a"
