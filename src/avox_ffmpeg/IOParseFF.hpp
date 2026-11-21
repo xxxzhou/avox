@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <deque>
 #include <list>
 #include <memory>
@@ -74,6 +75,12 @@ protected:
   std::atomic<bool> bStopIo{false};
   // 读线程已退出主循环的确认(closeBounded 限时 join 的轮询信号)
   std::atomic<bool> bParseExited{false};
+  // open 相位 deadline: open_input/find_stream_info 期间 interrupt 对超期返回
+  // true, 掐断 demuxer 内部不碰 I/O 超时的重试/睡眠循环(HLS live reload 等,
+  // ffmpeg 睡眠点 100ms 粒度查 interrupt); 读取期不武装, live 等下一段合法
+  std::atomic<bool> bOpenPhase{false};  // open 相位闸; interrupt 回调可能自命令线程读
+  std::chrono::steady_clock::time_point openStartCk_{};  // IO 线程独占写读
+  static constexpr int32_t kOpenDeadlineMs = 15000;
   // 最近一次 seekTo 的实际落点(seekTo 独占期写, cmdSeek 读)
   int64_t seekLandedMs_ = AV_NOPTS_VALUE;
   // IO 线程已退出 av_read_frame 的确认 (seekTo 等它再操作 fmtCtx)
@@ -187,8 +194,18 @@ public:
 public:
   virtual bool vaild() { return running(); }
   virtual void onSpeed() override;
-  // interrupt_callback 用: seek 窗口或 close 后返回 true 打断 in-flight 读
-  bool interruptIo() const { return bInterruptRead.load() || bStopIo.load(); }
+  // interrupt_callback 用: seek 窗口/close 后/open 相位超期时返回 true 打断
+  bool interruptIo() const {
+    if (bInterruptRead.load() || bStopIo.load()) {
+      return true;
+    }
+    if (bOpenPhase) {
+      return std::chrono::duration_cast<std::chrono::milliseconds>(
+                 std::chrono::steady_clock::now() - openStartCk_)
+                 .count() > kOpenDeadlineMs;
+    }
+    return false;
+  }
 };
 
 }

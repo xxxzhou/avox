@@ -72,6 +72,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 - Android/iOS 远程源或「最近」续播**恒转圈**、随后整 app 冻死(报「crash」但 crash buffer 空) → 裸 tailnet :18093 地址未落管道 + 主线程同步 FFI ANR + 管道拨号无死线三案并发; 已修(1014, panvox 0b1bdd0 / avox-tunnel 6383837); 取证与判据见分册「远程源转圈+ANR」条
 - Mac VT 起播全帧 `-12909` 风暴(resync 循环无效, 黑屏只有声) → 多 slice 流被逐 slice 包直喂 VT; 已修 AU 重组+让道软解(1002)
 - mac 播 HLS/IPTV「黑屏有声」(playing 全绿但视频帧队列恒 0) → VT 全帧 -12909(标准单 slice 流也中, a02 未决)+ **让道死端已修(1006)**: decoderImp 多 NALU 分支恒 return success 吞 give-up 返回值, 软解兜底永不触发; 修后 `give up hw lane`→`video decoder fallback to:h264`→出帧(黑 ~25s 才换道属预期); 详见分册「让道死端」条
+- HLS playlist 截断/坏表开流 ~20s 才报错(中途 `io open result: success` 是发起假象, 真活儿在 IO 线程) → 已修(2026-11-21, open 相位 deadline): 截断表无 ENDLIST 被 ffmpeg 判 live 进 reload 循环(`av_usleep` 等待只认 interrupt 不查 I/O 超时, max_reload 默认 100), IOParseFF open 相位 >15s 由 interrupt 打断换干净失败; 对照有 ENDLIST 的全缺分片 VOD 2.2s 秒败不变; 判据 = 对抗 `adv_hls_struct_trunc` stall→graceful(20.6s→15.1s), 矩阵 132P/6F 零漂移; 详见分册
 - ProRes(及一切白名单外编码)「打开有声无画面」→ 编码映射白名单缺口(有 `add video track: invalid-…` 而无 `video decode create`), 已修(1003); VK/D3D11 腿实测出画, Metal/VT 腿待 mac 验; 方案见 [doc/plan/gpu/422-10bit解码与呈现方案.md](../../../../doc/plan/gpu/422-10bit解码与呈现方案.md)
 - wmv3 拒播/有声无画 → 已修 ee8bf7b(0927)
 - open 后卡死(`partial file` 风暴 + misland EOF + `clock-leak guard seek(0)` 死循环) → **0926 定谳未修**

@@ -236,8 +236,8 @@ int decode_interrupt_cb(void* ctx) {
   if (!ioSource) {
     return 1;
   }
-  // seek 窗口内或 close 后打断 IO 线程阻塞的 av_read_frame: seek 让 seekTo 能
-  // 独占 fmtCtx, close 让 stopTask 的 join 不干等对端断开
+  // seek 窗口/close 后/open 相位超期时打断 ffmpeg: open 期 demuxer 内部的
+  // 重试/睡眠循环(HLS live reload 等)不查 I/O 超时, 只认 interrupt
   return ioSource->interruptIo() ? 1 : 0;
 }
 
@@ -1194,9 +1194,14 @@ void IOParseFF::evictHttpSeg(bool bPin) {
 
 void IOParseFF::onRunTask() {
   // 起播耗时拆解 (a02-T1): open_input 与 find_stream_info 分段
-  const auto ioOpenStart = std::chrono::steady_clock::now();
+  // 武装 open deadline(见 kOpenDeadlineMs): open 相位内部重试循环只有
+  // interrupt 一个出口, 超期打断换有界失败
+  bOpenPhase = true;
+  openStartCk_ = std::chrono::steady_clock::now();
+  const auto ioOpenStart = openStartCk_;
   int ret = reopenInput();
   if (ret < 0) {
+    bOpenPhase = false;
     dispatch(&IAVSourceOb::onError, ffIoError(ret), "open input failed");
     return;
   }
@@ -1225,6 +1230,7 @@ void IOParseFF::onRunTask() {
   }
   const auto findInfoStart = std::chrono::steady_clock::now();
   if ((ret = avformat_find_stream_info(fmtCtx.get(), nullptr)) < 0) {
+    bOpenPhase = false;
     AVOX_FFMEPG_LOG(ret, "avformat_find_stream_info failed");
     dispatch(&IAVSourceOb::onError, ffIoError(ret), "open stream failed");
     return;
@@ -1253,6 +1259,7 @@ void IOParseFF::onRunTask() {
       // FFmpeg9 探测态已随上次 find_stream_info 释放: 重开上下文按默认参数整探
       fmtCtx.reset();
       if ((ret = reopenInput()) < 0) {
+        bOpenPhase = false;
         dispatch(&IAVSourceOb::onError, ffIoError(ret), "open input failed");
         return;
       }
@@ -1261,12 +1268,14 @@ void IOParseFF::onRunTask() {
       fmtCtx->probesize = 32 * 1024 * 1024;         // 32MB
       fmtCtx->max_analyze_duration = 8000000;       // 8s(微秒)
       if ((ret = avformat_find_stream_info(fmtCtx.get(), nullptr)) < 0) {
+        bOpenPhase = false;
         AVOX_FFMEPG_LOG(ret, "avformat_find_stream_info fallback failed");
         dispatch(&IAVSourceOb::onError, ffIoError(ret), "open stream failed");
         return;
       }
     }
   }
+  bOpenPhase = false;  // open 相位结束, 读取/live 等待期不再受 deadline 打断
   LOGFLF(LogLevel::info, "[metrics] io open_input_ms:", openInputMs,
          " find_stream_info_ms:",
          std::chrono::duration_cast<std::chrono::milliseconds>(
