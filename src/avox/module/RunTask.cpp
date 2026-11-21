@@ -137,6 +137,15 @@ void RunTask::stopTask() {
 
 bool RunTask::running() { return runflag.load(); }
 
+void RunTask::detachTask() {
+  std::unique_lock<std::mutex> lock(taskMtx);
+  runflag.store(false);
+  tpause.store(false);
+  if (thread.joinable()) {
+    thread.detach();
+  }
+}
+
 void RunTask::sleepTask(bool yield, int32_t ms) { sleepThread(yield, ms); }
 
 void RunTask::addAction(const std::function<bool()>& action) {

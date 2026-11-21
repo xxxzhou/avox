@@ -246,6 +246,28 @@ IOParseFF::IOParseFF() {
   // bDisableAudio = true;
 }
 
+bool IOParseFF::closeBounded(int32_t waitMs) {
+  // 有界关闭: ffmpeg demuxer 在已缓冲数据上自旋时 interrupt_callback 救不了
+  // (对抗语料 ps2 PES 长度谎报实证, 读线程卡死在 av_read_frame 内部) ——
+  // waitMs 不退就 detach 读线程并返回 false, 由调用方整体泄漏本对象
+  // (卡死线程引用着 fmtCtx 与全部成员, 析构必 UAF; 进程退出统一回收)
+  bStopIo = true;
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::milliseconds(waitMs);
+  while (!bParseExited.load() &&
+         std::chrono::steady_clock::now() < deadline) {
+    sleepTask(false, 10);
+  }
+  if (!bParseExited.load()) {
+    LOGFLF(LogLevel::warn, "io parse thread stuck in demux, detach and leak");
+    detachTask();
+    return false;
+  }
+  stopTask();
+  bOpen = false;
+  return true;
+}
+
 IOParseFF::~IOParseFF() {
   // 析构不经 close(): 本级先打断再 join, 拖到 ~RunTask 时 fmtCtx 已析构(线程还在 av_read_frame 会 UAF)
   bStopIo = true;
@@ -1637,6 +1659,7 @@ void IOParseFF::onRunTask() {
   }
   // 退出前清 seek 预读残留(线程随 close/reopen 重走 onRunTask, 不许跨开播携带)
   clearSeekStash();
+  bParseExited.store(true);
 }
 
 bool IOParseFF::onOpen() {

@@ -266,6 +266,12 @@ class AVOX_EXPORT AVSource : public BaseSource,
   virtual bool open(const char* url) override;
   // 关闭
   virtual void close() override;
+  // 有界关闭: 返回 false = 内部线程卡死已分离, 调用方必须整体泄漏本对象
+  // (防 UAF), 不可再 reset/析构 —— 默认同步关, 恒 true
+  virtual bool closeBounded(int32_t waitMs) {
+    close();
+    return true;
+  }
   //
   virtual ISourceInfo* getSourceInfo() override;
   // 子类得到track信息后调用，初始化PTS对齐状态值

@@ -48,6 +48,8 @@ class AVOX_EXPORT RunTask {
   bool startTask();
   void runTask();
   void stopTask();
+  // 卡死线程逃生舱: 分离线程自生自灭, 析构不再 join(调用方负责泄漏其引用)
+  void detachTask();
   bool running();
   void sleepTask(bool yield, int32_t ms = 10);
   // 若本对象同时是 TaskTrack（大对象多重继承），返回其 TaskTrack 指针；否则 nullptr

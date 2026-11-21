@@ -1850,8 +1850,14 @@ void MediaPlayer::cmdClose() {
     // mediaMuxer现在关联的source已经是野指针了,先解除关联
     mediaMuxer->close();
     rawMuxer->close();
-    ioSource->close();
-    ioSource.reset();
+    if (ioSource->closeBounded(2000)) {
+      ioSource.reset();
+    } else {
+      // 卡死在 ffmpeg demux 内部(对抗输入): 读线程已分离且引用整个 source,
+      // 整体泄漏(reset/析构必 UAF), 进程退出回收 —— close 永不挂死
+      LOGFLF(LogLevel::warn, "leak stuck io source to detached thread");
+      ioSource.release();
+    }
     // 记录
     PBMediaAction pb = {};
     pb.mediaObject = MediaObject::io;

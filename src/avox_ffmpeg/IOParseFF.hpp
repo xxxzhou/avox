@@ -72,6 +72,8 @@ protected:
   // close/析构时置位, 打断 IO 线程阻塞的 av_read_frame: 不打断则 stopTask 的
   // join 干等到对端断开(回放流推完服务端不主动断, 曾挂 5 分钟)
   std::atomic<bool> bStopIo{false};
+  // 读线程已退出主循环的确认(closeBounded 限时 join 的轮询信号)
+  std::atomic<bool> bParseExited{false};
   // IO 线程已退出 av_read_frame 的确认 (seekTo 等它再操作 fmtCtx)
   std::atomic<bool> bIoPausedAck{false};
   // EOF 停放(见 onRunTask): 读到尾不拆读线程 —— 拆了之后 seek 就是"无人读"的
@@ -154,6 +156,9 @@ public:
   virtual bool onOpen() override;
   // 关闭
   virtual void onClose() override;
+  // 有界关闭: demux 卡死(对抗输入)时 2s 内 detach 读线程并返回 false,
+  // 调用方必须整体泄漏本对象(卡死线程引用着它, 防析构 UAF)
+  virtual bool closeBounded(int32_t waitMs) override;
   // seek 前预通知: 立即打断 IO 线程阻塞中的 av_read_frame(与 seekTo 内设 bInterruptRead 同效,
   // 但提前到 cmdSeek 撤背压的时刻, 快源读线程不会狂奔到 EOF)
   virtual void preSeek() override;
