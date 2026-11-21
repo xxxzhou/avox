@@ -215,6 +215,10 @@ class IMediaPlayerOb {
   virtual void onPause() {}
   virtual void onResume() {}
   virtual void onClose() {}
+  // seek 回执: cmdSeek 收尾派发。landedMs=实际锚定位(锚落点=关键帧落点,
+  // 锚意图=目标自身, seek 失败=-1); targetMs=意图目标。宿主用于进度条
+  // 提前落位/seek 判定去伪(vtable 尾部追加, 跨 DLL 只增纪律)
+  virtual void onSeekAck(int64_t landedMs, int64_t targetMs) {}
 };
 
 // 播放器

@@ -1856,6 +1856,9 @@ void MediaPlayer::cmdClose() {
       // 卡死在 ffmpeg demux 内部(对抗输入): 读线程已分离且引用整个 source,
       // 整体泄漏(reset/析构必 UAF), 进程退出回收 —— close 永不挂死
       LOGFLF(LogLevel::warn, "leak stuck io source to detached thread");
+      // 断开源→宿主派发链: detached 线程仍会泵包(病态文件自旋间隙)到已析构
+      // 的 track 队列 = cv UAF(soak 病态文件第 3 轮实证)
+      ioSource->detachAll();
       ioSource.release();
     }
     // 记录
@@ -2005,6 +2008,7 @@ void MediaPlayer::cmdSeek(SeekCommandPtr cmd) {
     // seekPts 同步锚(getPosition 在 bSeeking 期报 seekPts; 外部 seek() 先写了
     // 意图值, 不重锚则诚实时钟仍被意图反馈盖住)
     seekPts = anchorMs;
+    MPOB::dispatch(&IMediaPlayerOb::onSeekAck, bSeek ? anchorMs : -1, spts);
     pauseIOPacket(false);
     // 恢复解码线程
     pauseDecoder(false);
