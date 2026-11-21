@@ -252,6 +252,10 @@ bool IOParseFF::closeBounded(int32_t waitMs) {
   // waitMs 不退就 detach 读线程并返回 false, 由调用方整体泄漏本对象
   // (卡死线程引用着 fmtCtx 与全部成员, 析构必 UAF; 进程退出统一回收)
   bStopIo = true;
+  // 先请求停任务: EOF 停放线程只看 running(), 不清 runflag 它永不退,
+  // 每次正常 close 都被误判 stuck 走 detach+leak(soak 12 轮 12 发, 每轮漏
+  // 媒体文件 fd)——真 stuck 在 av_read_frame 的场景照旧走 detach
+  requestStop();
   const auto deadline = std::chrono::steady_clock::now() +
                         std::chrono::milliseconds(waitMs);
   while (!bParseExited.load() &&
@@ -1663,7 +1667,10 @@ void IOParseFF::onRunTask() {
     AvoxPacket packet = ffAvoxPacket(refPkt);
     packet.packtype = (int32_t)packType;
     packet.prefixSize = prefixSize;
-    processPacket(packet);
+    // close 泄漏逃生舱后宿主已解挂, 不再向已析构 track 泵包
+    if (!bStopIo.load()) {
+      processPacket(packet);
+    }
     sleepTask(true, 1);
   }
   // 退出前清 seek 预读残留(线程随 close/reopen 重走 onRunTask, 不许跨开播携带)

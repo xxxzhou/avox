@@ -102,6 +102,14 @@ class Observer {
     }
   }
 
+  // 泄漏逃生舱配套: 源被 detach+leak 后断开与宿主的派发链, detached 线程
+  // 不再回调已析构宿主(UAF)。atomic 先置空停快路径, 再写锁清表
+  void detachAll() {
+    observer.store(nullptr, std::memory_order_release);
+    std::unique_lock<std::shared_mutex> lock(mtxOb);
+    observers.clear();
+  }
+
   bool empty() {
     if (observer.load(std::memory_order_relaxed) != nullptr) {
       return false;

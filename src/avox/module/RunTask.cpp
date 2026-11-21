@@ -137,6 +137,12 @@ void RunTask::stopTask() {
 
 bool RunTask::running() { return runflag.load(); }
 
+void RunTask::requestStop() {
+  // 只动原子 flag 不持锁不 join: 持锁版会在并发 stopTask 的 join 上互等
+  runflag.store(false);
+  tpause.store(false);
+}
+
 void RunTask::detachTask() {
   std::unique_lock<std::mutex> lock(taskMtx);
   runflag.store(false);
