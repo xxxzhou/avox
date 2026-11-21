@@ -1,3 +1,8 @@
+#include <TargetConditionals.h>
+// SCK 是 mac 专属(iOS 无此框架, Xcode 27.2 起 SDK 头显式 API_UNAVAILABLE):
+// iOS 编译为空 TU, 注册与调用点两侧同条件门
+#if TARGET_OS_MAC && !TARGET_OS_IPHONE
+
 #import "MacCapture.hpp"
 
 #import <ScreenCaptureKit/ScreenCaptureKit.h>
@@ -419,3 +424,5 @@ void regMacCaptureDevice() {
 }
 
 }
+
+#endif  // TARGET_OS_MAC && !TARGET_OS_IPHONE
