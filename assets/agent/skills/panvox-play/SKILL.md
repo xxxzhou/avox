@@ -66,6 +66,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 签名吻合 → **先按本行结论定案**(是否已修 / 修在哪个 commit, 修态核对用 §3 dll 考古); 需要根因·判据·验收数据时再读对应分册。**对不上任何一行再立新案。**
 
 **open/起播** → [`references/病族-open.md`](references/病族-open.md)
+- 极空间全源打不开(每片都「无法打开该文件」, io open result: success 后 reopenInput 恒 5XX/501) → **服务端 WebDAV 权限被管理员收回, 非 app 病**(2026-11-21 Mac 实证); 判据 = `curl -i` 任一方法(GET/HEAD/OPTIONS)回 501 + body「WebDAV: 管理员没给开通权限,请退出!」; 三客户端(引擎/curl/python)同死即服务端; 旁路 = SMB 同账号仍通(`smbutil view //user:pass@host` 验); 修 = 极空间管理端给账号开通 WebDAV, app 零改动。⚠️ 探针陷阱: 本机 python/urllib 会吃**系统代理**(scutil --proxy 见 127.0.0.1:7897 一类)出 RemoteDisconnected 脏数据——FFmpeg/curl 不走系统代理, 仲裁用 curl; ProxyHandler({}) 可绕
 - 容器头解析失败(EBML…) → 拿到非容器(假 mkv/改后缀 FLV) → 源端假片, §1.2 体检定真身
 - 点卡/启动续播「先闪无法打开该文件, 随后自己正常播」→ 首开喂引擎的是非 URL(webdav/http 源缺换直链一跳, SMB 不中) → 已定位(1003, 修法见分册); 判据 = `io open result: success msg:` 打的是裸路径/哈希而非 `http://`
 - Android/iOS 远程源或「最近」续播**恒转圈**、随后整 app 冻死(报「crash」但 crash buffer 空) → 裸 tailnet :18093 地址未落管道 + 主线程同步 FFI ANR + 管道拨号无死线三案并发; 已修(1014, panvox 0b1bdd0 / avox-tunnel 6383837); 取证与判据见分册「远程源转圈+ANR」条
