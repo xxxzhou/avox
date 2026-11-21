@@ -44,6 +44,8 @@ class AVTrack : public IPlayerContext, public PtsUpdater {
   TrackType trackType = TrackType::none;
   // 解码结束信号
   bool bDecodeEnd = false;
+  // 致命解码错误旗(负码): 全部轨都死时 tick 收摊用, onInitDesc 复位
+  bool bDecodeFatal = false;
 
   // 码率统计
   RateCounter rateCounter = {};
@@ -71,6 +73,10 @@ class AVTrack : public IPlayerContext, public PtsUpdater {
   const PBQueueStatus& getQueueStatus() { return queueStatus; }
 
   TrackType getTrackType() { return trackType; }
+
+  bool isDecodeFatal() const { return bDecodeFatal; }
+  // 全队列放尽且解码器已见 EOF: tick 收尾兜底用; 基类无类型队列恒 false
+  virtual bool eosDrained() { return false; }
 
   void onDecodeError(DecodeResult error);
 
@@ -130,6 +136,12 @@ class TAVTrack : public AVTrack {
 
  public:
   RingBuffer<T>& getFrameQueue() { return frameQueue; }
+
+  bool eosDrained() override {
+    // 不看 bDecodeEnd: VT 硬解(IOSVDecoder::onInputEnd)不吐 complete, 该旗
+    // 恒假; 队列放尽+tick 侧时间驻留兜底足够
+    return packetQueue.empty() && frameQueue.empty();
+  }
   // 检查帧队列数据存入多少时间
   int64_t getFrameQueueTime();
 // 检查队列缓存了多久,返回时间 = 包尾-帧头

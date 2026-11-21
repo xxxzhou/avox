@@ -383,7 +383,9 @@ void MediaPlayer::onError(AVError error, const char* msg) {
   if (error == AVError::none) {
     return;
   }
-  if (error == AVError::endOfFile) {
+  // opening 期的 endOfFile = 开流失败(读头即 EOF, 截断/空文件), 不是优雅
+  // 播完: 走错误出口, 否则状态永挂 opening 无 onIoError(A-语料 RC-2 族)
+  if (error == AVError::endOfFile && state != PlayerState::opening) {
     onComplete();
   } else {
     LOGFLF(LogLevel::warn, "av source error:", getAVErrorStr(error),
@@ -1364,6 +1366,81 @@ void MediaPlayer::tick() {
         cmdClose();
       }
     }
+  }
+  // 全轨死/放尽收口兜底: 解码按轨降级(死一轨另一轨续播)的前提是有轨活着且
+  // 有数据在来; 源已 EOF 而轨全死(含零有效轨, 饿死轨不报错)或全放尽时,
+  // renderFrame/onFrameResult 的既有收尾都可能不再触发(VT 硬解 even 不吐
+  // bDecodeEnd)。tick 每轮必跑: 全死报错收摊, 全放尽收 completed; 250ms
+  // 驻留吸收在飞解码, seek 期(bSeeking)与 IO 未尽不判。
+  if (!bSeeking && (state == PlayerState::ready ||
+                    state == PlayerState::playing ||
+                    state == PlayerState::buffering) &&
+      (bIOComplete || ioSource->atEof())) {
+    bool bAny = false, bAllDead = true, bAllEos = true;
+    for (auto& t : videoTracks) {
+      if (!t->vaild()) continue;
+      bAny = true;
+      bAllDead = bAllDead && t->isDecodeFatal();
+      bAllEos = bAllEos && t->eosDrained();
+    }
+    for (auto& t : audioTracks) {
+      if (!t->vaild()) continue;
+      bAny = true;
+      bAllDead = bAllDead && t->isDecodeFatal();
+      bAllEos = bAllEos && t->eosDrained();
+    }
+    int64_t nowMs = timeStampMS();
+    if (eosIdleMs == 0) {
+      eosIdleMs = nowMs;
+    }
+    bool bSettled = (nowMs - eosIdleMs > 250);
+    // 全轨致命死/零有效轨: 永远不会有帧, 报错收摊
+    if (bSettled && (!bAny || bAllDead)) {
+      LOGFLF(LogLevel::warn, "all tracks decode fatal, close player");
+      MPOB::dispatch(&IMediaPlayerOb::onIoError, AVError::decodeLaneDead,
+                     "decode lane dead");
+      cmdClose();
+      return;
+    }
+    if (bSettled && bAllEos) {
+      if (state == PlayerState::ready) {
+        // ready+源已尽+全轨队列空: 头能解但无可播帧(截断/伪 mdat 族), 报错
+        LOGFLF(LogLevel::warn,
+               "no playable frame before input end, close player");
+        MPOB::dispatch(&IMediaPlayerOb::onIoError, AVError::decodeLaneDead,
+                       "no playable stream");
+        cmdClose();
+        return;
+      }
+      eosIdleMs = 0;
+      if (state != PlayerState::completed) {
+        recordRingBuffer();
+      }
+      auto completeCmd = createCommand<MPCommandType::Complete>();
+      mpCommands.enqueueWaitBackMatch(completeCmd, [](const MPCommandPtr& cmd) {
+        return cmd->type != MPCommandType::Complete;
+      });
+    }
+    if (!bAllEos) {
+      eosIdleMs = 0;
+    }
+    // ready 深度滞留兜底: EOF 已尽却迟迟无首帧(解码卡死在坏包上), 3s 报错;
+    // 慢介质不受影响(atEof 未到则本 gate 不开)
+    if (state == PlayerState::ready) {
+      if (readyNoFrameMs == 0) {
+        readyNoFrameMs = nowMs;
+      } else if (nowMs - readyNoFrameMs > 3000) {
+        LOGFLF(LogLevel::warn, "no first frame after input end, close player");
+        MPOB::dispatch(&IMediaPlayerOb::onIoError, AVError::decodeLaneDead,
+                       "no playable stream");
+        cmdClose();
+        return;
+      }
+    } else {
+      readyNoFrameMs = 0;
+    }
+  } else {
+    eosIdleMs = 0;
   }
   // 播放下，特别是刚连接服务器时，服务器为了秒开会缓冲一组GOP
   // 服务器会把缓存的一段GOP数据过来，如果正常播放，时延会比较大

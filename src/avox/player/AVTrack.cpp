@@ -22,6 +22,7 @@ void AVTrack::onInitDesc() {
   bVaild = true;
   bResetBase = true;
   bDecodeEnd = false;
+  bDecodeFatal = false;
   // 池随轨构造、终生不替换; 换流/切音轨只清囤积(在飞块由旧包死亡自然回流)
   packetPool->reset();
   // 重置状态
@@ -82,6 +83,7 @@ void AVTrack::onUninitDesc() {
 }
 
 void AVTrack::onDecodeError(DecodeResult error) {
+  bDecodeFatal = (int32_t)error < 0;
   mediaPlayer->onDecodeError(this, error);
   // 后续完善，切换别的解码器
 }

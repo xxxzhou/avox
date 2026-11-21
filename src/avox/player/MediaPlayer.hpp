@@ -93,6 +93,10 @@ class MediaPlayer : public IMediaPlayer,
   SyncType preSyncType = SyncType::none;
   // IO完成，如果IO完成了，当解码使用完后，状态切换成完成
   bool bIOComplete = false;
+  // tick 收尾兜底的空队列起始时刻(ms): 驻留超阈值才收口, 吸收在飞解码
+  int64_t eosIdleMs = 0;
+  // ready 深度滞留起始时刻(ms): 源已尽仍无首帧超 3s 报错收摊
+  int64_t readyNoFrameMs = 0;
 
   // 设定延迟,用于平滑网络波动造成的卡顿
   // 最大值应该小于track队列最大-最小的时间差,否则永远满足不了播放条件
