@@ -1194,10 +1194,10 @@ void IOParseFF::evictHttpSeg(bool bPin) {
 
 void IOParseFF::onRunTask() {
   // 起播耗时拆解 (a02-T1): open_input 与 find_stream_info 分段
-  // 武装 open deadline(见 kOpenDeadlineMs): open 相位内部重试循环只有
-  // interrupt 一个出口, 超期打断换有界失败
-  bOpenPhase = true;
+  // 武装 open deadline(见 kOpenDeadlineMs): 先写钟后置闸, interrupt 超期
+  // 打断 demuxer 内部重试循环换有界失败
   openStartCk_ = std::chrono::steady_clock::now();
+  bOpenPhase = true;
   const auto ioOpenStart = openStartCk_;
   int ret = reopenInput();
   if (ret < 0) {
@@ -1880,6 +1880,10 @@ bool IOParseFF::seekTo(int64_t pos) {
           }
         }
         avformat_flush(fmtCtx.get());
+        // 估算失败残留的 landedMs 作废: 回退真落点网络源不校验, 带着废值
+        // 出去会被 cmdSeek 诚实锚当真(锚到与画面无关的位)
+        landedMs = AV_NOPTS_VALUE;
+        sawKey = false;
         bSeek = rawSeek(0);
       }
     } else {

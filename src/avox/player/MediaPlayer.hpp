@@ -143,6 +143,8 @@ class MediaPlayer : public IMediaPlayer,
   // 精确seek(mp.seek.precise): 开=cmdSeek武装各轨丢弃到目标位才显示,
   // 关=落到I帧点即播(默认)
   bool bSeekPrecise = false;
+  // 落点落后意图超此值才锚落点(稀疏 GOP 才会差这么多, 短 GOP 落点≈意图)
+  static constexpr int64_t kSeekHonestGapMs = 3000;
   // 起播指标 (a02-T1): 打开/seek → 首个视频帧, 命令线程写、渲染线程读
   std::atomic<int64_t> openStartMs = 0;
   // 首帧耗时(-1=未记): 只记一次, cmdOpen 重置
