@@ -48,9 +48,8 @@ class AVOX_EXPORT RunTask {
   bool startTask();
   void runTask();
   void stopTask();
-  // 只请求停(清 runflag/tpause, 不 join): closeBounded 等 bParseExited 前用
-  // —— EOF 停放线程只看 running(), 不清 runflag 它永不退; join 是 stuck
-  // 场景要躲的, 所以与 stopTask 分离
+  // 只请求停(清 runflag/tpause, 不 join): 不清 runflag 则 EOF 停放线程永不
+  // 退; join 是 stuck 场景要躲的, 故与 stopTask 分离
   void requestStop();
   // 卡死线程逃生舱: 分离线程自生自灭, 析构不再 join(调用方负责泄漏其引用)
   void detachTask();

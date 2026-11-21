@@ -252,9 +252,8 @@ bool IOParseFF::closeBounded(int32_t waitMs) {
   // waitMs 不退就 detach 读线程并返回 false, 由调用方整体泄漏本对象
   // (卡死线程引用着 fmtCtx 与全部成员, 析构必 UAF; 进程退出统一回收)
   bStopIo = true;
-  // 先请求停任务: EOF 停放线程只看 running(), 不清 runflag 它永不退,
-  // 每次正常 close 都被误判 stuck 走 detach+leak(soak 12 轮 12 发, 每轮漏
-  // 媒体文件 fd)——真 stuck 在 av_read_frame 的场景照旧走 detach
+  // 先请求停任务: 不清 runflag 则 EOF 停放线程永不退, 每次 close 都被误判
+  // stuck 走 detach+leak(soak 12 轮实证漏 fd); 真 stuck 场景照旧 detach
   requestStop();
   const auto deadline = std::chrono::steady_clock::now() +
                         std::chrono::milliseconds(waitMs);
@@ -1795,6 +1794,18 @@ bool IOParseFF::seekTo(int64_t pos) {
   const int64_t target_ts = pos * 1000;
   // 上轮 seek 预读包若有残留(IO 线程停放未消费到), 先清再装填本轮校验结果
   clearSeekStash();
+  // 首个非封面视频流(本地落点校验/flv 快 seek/网络落点记录三处共用)
+  auto firstVideoStreamId = [this]() -> int32_t {
+    for (int32_t i = 0; i < fmtCtx->nb_streams; i++) {
+      auto* vs = fmtCtx->streams[i];
+      if (vs->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
+          (vs->disposition & AV_DISPOSITION_ATTACHED_PIC) == 0 &&
+          vs->discard != AVDISCARD_ALL) {
+        return i;
+      }
+    }
+    return -1;
+  };
   // 落点校验只在本地文件做: RM/AVI 等老容器索引损坏时 avformat_seek_file
   // 落点不可信(RM 真机片源实测续播 seek 落回片头), 而纯 ffmpeg 同上下文重试
   // 即落准(seekprobe12) —— 校验不过就换变体重试; 网络流保持原行为不动
@@ -1802,15 +1813,7 @@ bool IOParseFF::seekTo(int64_t pos) {
       bIoAcked && st == SeekType::normal && sourceMode == AVSourceMode::local;
   int32_t videoStreamId = -1;
   if (bVerifyLanding) {
-    for (int32_t i = 0; i < fmtCtx->nb_streams; i++) {
-      auto* vs = fmtCtx->streams[i];
-      if (vs->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
-          (vs->disposition & AV_DISPOSITION_ATTACHED_PIC) == 0 &&
-          vs->discard != AVDISCARD_ALL) {
-        videoStreamId = i;
-        break;
-      }
-    }
+    videoStreamId = firstVideoStreamId();
     bVerifyLanding = videoStreamId >= 0;
   }
   // flv 网络流快速 seek 门(与本地落点校验互斥): demuxer=flv + 网络源。flv 的
@@ -1822,15 +1825,7 @@ bool IOParseFF::seekTo(int64_t pos) {
   if (bIoAcked && !bVerifyLanding && st == SeekType::normal &&
       sourceMode != AVSourceMode::local && fmtCtx->iformat &&
       fmtCtx->iformat->name && strcmp(fmtCtx->iformat->name, "flv") == 0) {
-    for (int32_t i = 0; i < fmtCtx->nb_streams; i++) {
-      auto* vs = fmtCtx->streams[i];
-      if (vs->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
-          (vs->disposition & AV_DISPOSITION_ATTACHED_PIC) == 0 &&
-          vs->discard != AVDISCARD_ALL) {
-        videoStreamId = i;
-        break;
-      }
-    }
+    videoStreamId = firstVideoStreamId();
     bFlvFastSeek = videoStreamId >= 0;
   }
   // 落点(ms)与关键帧标志: 本地变体纠偏与 flv 估算跳转两条路共用
@@ -1899,18 +1894,10 @@ bool IOParseFF::seekTo(int64_t pos) {
       if (!bSeek && bVerifyLanding) {
         bSeek = rawSeek(0);
       }
-      // 网络源(非 flv)落点记录: 诚实锚(cmdSeek 锚 landedMs)需要落点, 但本地
-      // 的变体纠偏在网络上是多次 seek 代价, 只记录不纠偏; 读到的包进 stash
-      // 原序回灌, 与不走校验同总量
-      if (bSeek && !bVerifyLanding && st == SeekType::normal) {
-        for (int32_t i = 0; i < fmtCtx->nb_streams && videoStreamId < 0; i++) {
-          auto* vs = fmtCtx->streams[i];
-          if (vs->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
-              (vs->disposition & AV_DISPOSITION_ATTACHED_PIC) == 0 &&
-              vs->discard != AVDISCARD_ALL) {
-            videoStreamId = i;
-          }
-        }
+      // 网络源(非 flv)落点只记录不纠偏(纠偏的网络代价是多次 seek); 门含
+      // bIoAcked: 校验独占 fmtCtx/seekStash, 超时放行窗(IO 未停放)是并发 UB
+      if (bSeek && bIoAcked && sourceMode != AVSourceMode::local) {
+        videoStreamId = firstVideoStreamId();
         if (videoStreamId >= 0) {
           verifySeekLanding(videoStreamId, landedMs, sawKey);
         }

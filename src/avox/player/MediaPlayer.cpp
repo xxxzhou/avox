@@ -400,8 +400,8 @@ void MediaPlayer::onError(AVError error, const char* msg) {
   pushPB<MPPBType::MediaIssue>(mpPingback.get(), merror);
 }
 
-// 这里面IO线程会用到audioTracks/videoTracks
-// 因为，需要先关闭IO线程，等IO线程关闭，此回调不在用，再关闭track
+// IO 线程回调会触碰 audioTracks/videoTracks: cmdClose 先关 track(让
+// enqueueWait 立即放行)再 closeBounded 收 IO 线程, 序不可倒
 void MediaPlayer::onPacket(const AvoxPacket& packet) {
   // packet.index在之前已经从全局av转化为对应a/v里的index
   int32_t index = packet.index;
@@ -1856,9 +1856,9 @@ void MediaPlayer::cmdClose() {
       // 卡死在 ffmpeg demux 内部(对抗输入): 读线程已分离且引用整个 source,
       // 整体泄漏(reset/析构必 UAF), 进程退出回收 —— close 永不挂死
       LOGFLF(LogLevel::warn, "leak stuck io source to detached thread");
-      // 断开源→宿主派发链: detached 线程仍会泵包(病态文件自旋间隙)到已析构
-      // 的 track 队列 = cv UAF(soak 病态文件第 3 轮实证)
-      ioSource->detachAll();
+      // 断开源→宿主派发链(Observer::clear): detached 线程仍会泵包(病态文件
+      // 自旋间隙)到已析构的 track 队列 = cv UAF(soak 病态文件第 3 轮实证)
+      ioSource->clear();
       ioSource.release();
     }
     // 记录
@@ -1942,17 +1942,18 @@ void MediaPlayer::cmdComplete() {
 }
 
 void MediaPlayer::cmdSeek(SeekCommandPtr cmd) {
+  const int64_t spts = cmd->getData();
   // ready 态放行: 断点续播在 ready 瞬间发起 seek, 旧判据会静默丢弃它
   // (bSeeking 却已置位 → 位置被钉在目标、画面从 0 播)
   if (!normalState() && state != PlayerState::ready) {
+    // 拒绝也应答(-1): 宿主乐观抑制窗不必干等超时才知道 seek 没发生
+    MPOB::dispatch(&IMediaPlayerOb::onSeekAck, -1, spts);
     return;
   }
   setState(PlayerState::seek);
   // 指标起点 (a02-T1): seek→首帧, 首个视频帧消费
   seekStartMs = localTimeStampMS();
   bSeekPending = true;
-  // 记录当前时间
-  int64_t spts = cmd->getData();
   // 先把解码器的线程暂停
   auto seekType = ioSource->seekType();
   bSeekSeenLanding = false;
@@ -2014,9 +2015,10 @@ void MediaPlayer::cmdSeek(SeekCommandPtr cmd) {
     pauseDecoder(false);
     pauseRender(false);
   } else {
-    // 无 seek 操作(直播等不可 seek 源)
+    // 无 seek 操作(直播等不可 seek 源): 也应答(-1), 宿主不必等超时
     bSeeking = false;
     bSeekSeenLanding = false;
+    MPOB::dispatch(&IMediaPlayerOb::onSeekAck, -1, spts);
   }
   // buffering 态也可 seek(normalState 含 buffering), 而那条路不经 tick 恢复分支,
   // 时钟钉住闩无人解 → 位置永久冻在 seek 目标; 此处统一解闩(seek 后即 playing)
