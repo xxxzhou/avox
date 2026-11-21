@@ -92,7 +92,7 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 - seek 后卡一会/pos 半速爬 + 周期 buffering(rip mega-chunk) → 已修 af17043
 - Mac seek 冻画只有声 + `[vt] BadDataErr(-12909)` 风暴 → 韧性已修 88b0135; 根因待 a02
 - Mac **反向** seek 没反应/进度条弹回 → 未复现(2026-11-21 avoxtest seek 车实测, 短/长 GOP 反向 seek 全真落位; 期间 seek 链提交疑似已顺带治好, 车在 avox-test AVOX_ADV_SEEK)
-- seek 后长冻(GOP≥20s IDR 稀疏) → 已修(2026-11-21, 落点诚实锚): 病机=时钟/seekPts 锚**意图目标**而落点在远前关键帧, 低于目标的帧全被当"落后于钟"丢弃=画面冻+进度条谎报 15s+音频实况重播; 修=cmdSeek 锚 lastSeekLandedMs(落点落后意图 >3s 且非 bSeekPrecise 时), 语义=从前关键帧续播(诚实不冻结); 完整"精确到目标"=a02-T3 解码冲刺(muted catch-up), 未做; **残面(11/21 真机实证)=网络源(非 flv)无落点上报仍锚意图**: HTTP 直链 gop20 seek 15s → HUD 0:15/内容 1.3s(截图), 帧从落点 0 正常续播不冻但进度条谎报——bVerifyLanding 只做本地, 网络侧锚定待扩; 判据=车 gop20 spec 15,5,18,2: pos 从落点真实前进(不再钉意图), 矩阵 132P/6F 零漂移
+- seek 后长冻(GOP≥20s IDR 稀疏) → 已修(2026-11-21, 落点诚实锚): 病机=时钟/seekPts 锚**意图目标**而落点在远前关键帧, 低于目标的帧全被当"落后于钟"丢弃=画面冻+进度条谎报 15s+音频实况重播; 修=cmdSeek 锚 lastSeekLandedMs(落点落后意图 >3s 且非 bSeekPrecise 时), 语义=从前关键帧续播(诚实不冻结); 完整"精确到目标"=a02-T3 解码冲刺(muted catch-up), 未做; **网络源已覆盖(11/21 晚)**: verifySeekLanding 放开网络(只记录落点不纠偏, 变体重试仍限本地), Range 可 seek 的 HTTP 源 seek 15s → `anchor at landed:0` + 车判 honest-resume/reached(min=0 真落); **测试陷阱: python http.server 不支持 Range** → ffmpeg http 标源不可 seek → seekType()=none → seekTo 顶部早退, 表现=seek 无效自然续播(真机 HUD 0:15 vs 内容 1.3s 首次误判即此, 非"锚定残面")——无头网络验证一律用 Range 支持的服务器(hdr_samples webdav_serve.py 实证 206); 判据=车 gop20 spec 15,5,18,2: pos 从落点真实前进(不再钉意图), 矩阵 132P/6F 零漂移
 
 **播放中** → [`references/病族-播放中.md`](references/病族-播放中.md)
 - iOS 软解 AV1/10bit 横带撕裂+绿线(行错位斜切, 声正常不卡) → 已修(1004, Video.cpp 三处, 真机验收); 判据 = `[vkin] …rowPitch=2048`(>width*2 即 padding) + `10bit byte-view: words 960x864`; 修后 words 960x810

@@ -1892,6 +1892,22 @@ bool IOParseFF::seekTo(int64_t pos) {
       if (!bSeek && bVerifyLanding) {
         bSeek = rawSeek(0);
       }
+      // 网络源(非 flv)落点记录: 诚实锚(cmdSeek 锚 landedMs)需要落点, 但本地
+      // 的变体纠偏在网络上是多次 seek 代价, 只记录不纠偏; 读到的包进 stash
+      // 原序回灌, 与不走校验同总量
+      if (bSeek && !bVerifyLanding && st == SeekType::normal) {
+        for (int32_t i = 0; i < fmtCtx->nb_streams && videoStreamId < 0; i++) {
+          auto* vs = fmtCtx->streams[i];
+          if (vs->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
+              (vs->disposition & AV_DISPOSITION_ATTACHED_PIC) == 0 &&
+              vs->discard != AVDISCARD_ALL) {
+            videoStreamId = i;
+          }
+        }
+        if (videoStreamId >= 0) {
+          verifySeekLanding(videoStreamId, landedMs, sawKey);
+        }
+      }
     }
   } else if (st == SeekType::time) {
     // 基于字节位置的跳转 (单位：字节)
