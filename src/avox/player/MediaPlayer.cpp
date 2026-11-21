@@ -1989,8 +1989,24 @@ void MediaPlayer::cmdSeek(SeekCommandPtr cmd) {
       }
       ioSource->setPreciseSeekPts(spts);
     }
-    // 时钟定位到seek
-    updateSeekTime(spts);
+    // 时钟定位到 seek: 默认锚意图目标(短 GOP 落点≈目标, 无观感差); 落点远
+    // 落后意图(稀疏 GOP 全片单 IDR, 20s 病族实证)时锚落点 —— 意图反馈会把
+    // 时钟钉在目标, 低于目标的帧全被当"落后于钟"处理 = 画面冻+进度条谎报
+    // bSeekPrecise 开启时保持锚意图(视频丢弃到目标位, 属精确语义)
+    int64_t anchorMs = spts;
+    if (bSeek && !bSeekPrecise) {
+      const int64_t landedMs = ioSource->lastSeekLandedMs();
+      if (landedMs != AV_NOPTS_VALUE && landedMs >= 0 &&
+          spts - landedMs > 3000) {
+        anchorMs = landedMs;
+        LOGFLF(LogLevel::info, "seek anchor at landed:", landedMs,
+               " target:", spts);
+      }
+    }
+    updateSeekTime(anchorMs);
+    // seekPts 同步锚(getPosition 在 bSeeking 期报 seekPts; 外部 seek() 先写了
+    // 意图值, 不重锚则诚实时钟仍被意图反馈盖住)
+    seekPts = anchorMs;
     pauseIOPacket(false);
     // 恢复解码线程
     pauseDecoder(false);

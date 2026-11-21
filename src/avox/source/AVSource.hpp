@@ -272,6 +272,9 @@ class AVOX_EXPORT AVSource : public BaseSource,
     close();
     return true;
   }
+  // 最近一次 seek 的实际落点(ms; <0=未知): 稀疏 GOP 落点可远在意图目标
+  // 之前, 宿主时钟/进度条应锚落点而非意图
+  virtual int64_t lastSeekLandedMs() const { return -1; }
   //
   virtual ISourceInfo* getSourceInfo() override;
   // 子类得到track信息后调用，初始化PTS对齐状态值

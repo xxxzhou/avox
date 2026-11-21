@@ -1971,6 +1971,7 @@ bool IOParseFF::seekTo(int64_t pos) {
     wrapPb->eof_reached = 0;
   }
   // 恢复IO线程
+  seekLandedMs_ = landedMs;
   resumeTask();
   if (pgsDec) {
     pgsDec->flush();

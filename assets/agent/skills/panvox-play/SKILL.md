@@ -90,8 +90,8 @@ whenToUse: 用户描述 panvox 应用内问题(某源打不开/播放卡/字幕�
 - seek 进片尾 buffering 死锁 → 已修 a501667
 - seek 后卡一会/pos 半速爬 + 周期 buffering(rip mega-chunk) → 已修 af17043
 - Mac seek 冻画只有声 + `[vt] BadDataErr(-12909)` 风暴 → 韧性已修 88b0135; 根因待 a02
-- Mac **反向** seek 没反应/进度条弹回 → **未修**(a02)
-- seek 后长冻(GOP≥20s IDR 稀疏) → **未修**(a02)
+- Mac **反向** seek 没反应/进度条弹回 → 未复现(2026-11-21 avoxtest seek 车实测, 短/长 GOP 反向 seek 全真落位; 期间 seek 链提交疑似已顺带治好, 车在 avox-test AVOX_ADV_SEEK)
+- seek 后长冻(GOP≥20s IDR 稀疏) → 已修(2026-11-21, 落点诚实锚): 病机=时钟/seekPts 锚**意图目标**而落点在远前关键帧, 低于目标的帧全被当"落后于钟"丢弃=画面冻+进度条谎报 15s+音频实况重播; 修=cmdSeek 锚 lastSeekLandedMs(落点落后意图 >3s 且非 bSeekPrecise 时), 语义=从前关键帧续播(诚实不冻结); 完整"精确到目标"=a02-T3 解码冲刺(muted catch-up), 未做; 判据=车 gop20 spec 15,5,18,2: pos 从落点真实前进(不再钉意图), 矩阵 132P/6F 零漂移
 
 **播放中** → [`references/病族-播放中.md`](references/病族-播放中.md)
 - iOS 软解 AV1/10bit 横带撕裂+绿线(行错位斜切, 声正常不卡) → 已修(1004, Video.cpp 三处, 真机验收); 判据 = `[vkin] …rowPitch=2048`(>width*2 即 padding) + `10bit byte-view: words 960x864`; 修后 words 960x810
